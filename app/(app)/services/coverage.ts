@@ -186,7 +186,7 @@ export function warningNotes(persisted: readonly string[], inTab: readonly strin
 function homeChip(
   home: { region: string; count: number }, last: LastScan, inProgress: boolean, lastFailed: boolean, warnings: readonly string[],
   // PR 3d-1 (N1): the shared home-region check; undefined keeps the Phase 1 rule (the Services strip).
-  check?: { kind: 'checked' | 'partial' | 'couldnt'; label: string } | null,
+  check?: { kind: 'checked' | 'partial' | 'couldnt' | 'not_scanned'; label: string } | null,
 ): CoverageChip {
   const chip = (state: CoverageChip['state'], note: string): CoverageChip => ({ key: 'home', state, region: home.region, note })
   if (inProgress) return chip('scanning', `${home.count} · home · scan in progress`)
@@ -195,6 +195,9 @@ function homeChip(
   if (check?.kind === 'couldnt') return chip('failed', `${home.count} · home · ${check.label.charAt(0).toLowerCase()}${check.label.slice(1)}`)
   if (check?.kind === 'partial') return chip('partial', `${home.count} · home · partial`)
   if (last?.status === 'completed') {
+    // PR 3d-1 M-1: the home region changed and the new one isn't scanned yet: the Services card's
+    // "Not scanned yet" (first letter lower-case, as above), never "complete".
+    if (check?.kind === 'not_scanned') return chip('off', `${home.count} · home · ${check.label.charAt(0).toLowerCase()}${check.label.slice(1)}`)
     return warnings.length > 0
       ? chip('partial', `${home.count} · home · partial`)
       : chip('complete', `${home.count} · home · complete`)
@@ -216,7 +219,7 @@ export function isScanAbandoned(lastScan: LastScan, now: number): boolean {
  */
 export function describeCoverage(
   coverage: ServicesCoverage, now: number, inTabWarnings: readonly string[] = [],
-  scan?: { state: 'finished' | 'running' | 'failed' | 'none'; text: string; home?: { kind: 'checked' | 'partial' | 'couldnt'; label: string } | null },
+  scan?: { state: 'finished' | 'running' | 'failed' | 'none'; text: string; home?: { kind: 'checked' | 'partial' | 'couldnt' | 'not_scanned'; label: string } | null },
 ): CoverageView {
   const home = coverage.account.connected ? coverage.scope.home_region : null
   if (!home) {
@@ -233,7 +236,11 @@ export function describeCoverage(
   // "{home} couldn't be checked" exactly when the home chip below says "couldn't check" (same check, same
   // precedence: not while a scan runs, not after one that didn't finish); the rest is unchanged.
   const homeCouldnt = !inProgress && !lastFailed && scan?.home?.kind === 'couldnt'
-  const headline = lastSuccess
+  // PR 3d-1 M-1: a home region never scanned (changed since the last successful scan) is never "scanned":
+  // the headline takes the existing no-success variants ("{home}: not scanned yet", or "first scan in
+  // progress" / "last scan failed" while the cell below says "scan in progress" / "last scan failed").
+  const homeScanned = !!lastSuccess && scan?.home?.kind !== 'not_scanned'
+  const headline = homeScanned
     ? `${home.region} ${homeCouldnt ? "couldn't be checked" : 'scanned'}${plus(scopeParts(coverage, 'S3 buckets in every region', 'CloudFront (global)'))}`
     : inProgress ? `${home.region}: first scan in progress`
     : lastFailed ? `${home.region}: last scan failed`

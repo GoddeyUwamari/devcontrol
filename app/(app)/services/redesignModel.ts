@@ -255,6 +255,17 @@ export function latestScanNotChecked(mr: MultiRegionCoverage): { region: string;
 }
 
 /**
+ * The scan banner's "who couldn't be checked" (flagged): "{r} couldn't be checked" when one named region
+ * wasn't checked, else "{k} regions couldn't be checked" (k = total − checked). Shared with servicesTruth.ts
+ * (PR 3d-1 H-1), so the other pages say what this banner says.
+ */
+export function scanNotCheckedWho(mr: MultiRegionCoverage, scan: { regions_total: number; regions_checked: number }): { k: number; text: string } {
+  const k = Math.max(0, scan.regions_total - scan.regions_checked)
+  const named = latestScanNotChecked(mr)
+  return { k, text: k === 1 && named.length === 1 ? `${named[0].region} couldn't be checked` : `${num(k)} ${regionsWord(k)} couldn't be checked` }
+}
+
+/**
  * The one-line banner after a Scan now in this tab. `coverage` must be the
  * response read AFTER the discover call returned. Flagged: a tone only when
  * the scan it describes is the one Scan now ran (scan.id = jobId); absent
@@ -272,12 +283,8 @@ export function scanBanner(c: ServicesCoverage, outcome: DiscoverOutcome): Banne
     switch (mr.coverage_status) {
       case 'all_checked':
         return { tone: 'success', text: `Scan finished · ${of}`, counts }
-      case 'completed_with_regions_not_checked': {
-        const k = Math.max(0, total - checked)
-        const named = latestScanNotChecked(mr)
-        const who = k === 1 && named.length === 1 ? `${named[0].region} couldn't be checked` : `${num(k)} ${regionsWord(k)} couldn't be checked`
-        return { tone: 'warning', text: `Scan finished · ${of} · ${who}`, counts }
-      }
+      case 'completed_with_regions_not_checked':
+        return { tone: 'warning', text: `Scan finished · ${of} · ${scanNotCheckedWho(mr, mr.scan).text}`, counts }
       case 'latest_scan_failed':
         return { tone: 'danger', text: `Scan failed · it checked ${num(checked)} of ${num(total)} ${regionsWord(total)}, then stopped before finishing · try Scan now again`, counts: null }
       default:
@@ -298,6 +305,25 @@ export function scanBanner(c: ServicesCoverage, outcome: DiscoverOutcome): Banne
 
 export interface OrganisingLine { text: string; failed: boolean }
 
+/**
+ * Flagged, while a scan runs: regions done in this scan but not checked ("not checked"), and regions still
+ * running or waiting. Shared with servicesTruth.ts (PR 3d-1 H-1).
+ */
+export function scanSoFar(p: MultiRegionCoverage['progress'], regionsChecked: number): { failedSoFar: number; left: number } {
+  return { failedSoFar: p ? Math.max(0, p.regions_done - regionsChecked) : 0, left: p ? p.regions_running + p.regions_waiting : 0 }
+}
+
+/**
+ * Flag off (G8 + RR-L2): the home region couldn't be checked: G8 counts no region as checked and the home
+ * region's last status is failed, denied or timed out. The organising line's rule, shared with
+ * servicesTruth.ts (PR 3d-1 H-1).
+ */
+export function homeCouldntBeChecked(c: ServicesCoverage): boolean {
+  const h = c.home_only_coverage
+  const homeRow = (c.region_status ?? []).find((r) => r.home)
+  return !!h && h.regions_checked === 0 && !!homeRow && ['failed', 'denied', 'timed_out'].includes(homeRow.status)
+}
+
 export function organisingLine(c: ServicesCoverage): OrganisingLine {
   const mr = multiRegionOf(c)
   if (mr) {
@@ -308,8 +334,7 @@ export function organisingLine(c: ServicesCoverage): OrganisingLine {
       case 'in_progress': {
         const p = mr.progress
         const total = p?.regions_total ?? s.regions_total
-        const failedSoFar = p ? Math.max(0, p.regions_done - s.regions_checked) : 0
-        const left = p ? p.regions_running + p.regions_waiting : 0
+        const { failedSoFar, left } = scanSoFar(p, s.regions_checked)
         return {
           text: seg([`Scanning: ${num(s.regions_checked)} of ${num(total)} ${regionsWord(total)} checked so far`, ...split, count(failedSoFar, 'not checked'), count(left, 'still running or waiting')]),
           failed: false,
@@ -334,8 +359,7 @@ export function organisingLine(c: ServicesCoverage): OrganisingLine {
     return { text: c.scope.enabled_regions.known ? REDESIGN_COPY.noScanYet : REDESIGN_COPY.regionListUnread, failed: false }
   }
   if (!c.last_scan && !c.last_successful_scan_at) return { text: REDESIGN_COPY.noScanYet, failed: false }
-  const homeRow = (c.region_status ?? []).find((r) => r.home)
-  const couldnt = h.regions_checked === 0 && !!homeRow && ['failed', 'denied', 'timed_out'].includes(homeRow.status)
+  const couldnt = homeCouldntBeChecked(c)
   return { text: seg([`${num(h.regions_checked)} of ${num(h.regions_total)} ${regionsWord(h.regions_total)} checked`, home, couldnt && `${home} couldn't be checked`]), failed: false }
 }
 
@@ -452,8 +476,8 @@ function notEnabledGroup(regions: string[]): PanelRow | null {
   }
 }
 
-/** One region of `multi_region.regions` as a row of its own. */
-function regionRow(r: MultiRegionRegion): PanelRow {
+/** One region of `multi_region.regions` as a row of its own. Exported for servicesTruth.ts (PR 3d-1 H-1: the home region's check). */
+export function regionRow(r: MultiRegionRegion): PanelRow {
   const base = {
     key: `region-${r.region}`, kind: 'region' as const, label: r.region, home: r.home, sublabel: r.opt_in ? REDESIGN_COPY.optIn : undefined,
     resources: r.resources, resourcesNote: earlierNote(r), lastFull: r.last_success_at ? { iso: r.last_success_at } : null,
@@ -530,10 +554,18 @@ function storedCount(c: ServicesCoverage, region: string): number {
   return c.regions.find((r) => r.region === region)?.count ?? 0
 }
 
-/** The panel's rows for an unflagged organization (home region only; G7 for not enabled). */
-function homeOnlyRows(c: ServicesCoverage, home: string, now: number): PanelRow[] {
+/** The region rows an unflagged organization's panel lists: `region_status`, once the region list is known. */
+export function homeOnlyRegionList(c: ServicesCoverage): RegionCoverage[] {
+  return c.scope.enabled_regions.known ? c.region_status ?? [] : []
+}
+
+/**
+ * The panel's rows for an unflagged organization (home region only; G7 for not enabled). Exported for
+ * servicesTruth.ts (PR 3d-1 H-1): the other pages' region lines are built from these rows.
+ */
+export function homeOnlyRows(c: ServicesCoverage, home: string, now: number): PanelRow[] {
   const running = !!c.scan_in_progress
-  const list = c.scope.enabled_regions.known ? c.region_status ?? [] : []
+  const list = homeOnlyRegionList(c)
   const rows: PanelRow[] = []
   const notScanned: string[] = []
   const former = formerHomeOf(c)
@@ -733,6 +765,11 @@ export function allResourcesScope(c: ServicesCoverage | undefined): string | nul
 
 // ── What we didn't check (option b) ──
 
+/** V2-47 (PR 3c, flag off): "{r} hasn't been scanned since {day}, except for S3 buckets." Shared with servicesTruth.ts (PR 3d-1 H-1). */
+export function formerHomeLine(former: FormerHome, now: number): string {
+  return `${former.region} hasn't been scanned since ${dayText(former.changedAt, now)}, except for S3 buckets.`
+}
+
 export interface NotCheckedView { summary: string | null; lines: NotCheckedLine[] }
 
 /** The closed line when no line has a short form (CURRENT heading). */
@@ -773,7 +810,7 @@ export function describeNotChecked(c: ServicesCoverage, stats: AWSServicesStats 
   const former = formerHomeOf(c)
   if (former) {
     const at = ordered.findIndex((l) => l.key === 'regions')
-    ordered.splice(at >= 0 ? at + 1 : 0, 0, { key: 'former-home', text: `${former.region} hasn't been scanned since ${dayText(former.changedAt, now)}, except for S3 buckets.` })
+    ordered.splice(at >= 0 ? at + 1 : 0, 0, { key: 'former-home', text: formerHomeLine(former, now) })
   }
   const lines: NotCheckedLine[] = [...regionLines.map(({ key, text }) => ({ key, text })), ...ordered]
   if (lines.length === 0) return { summary: null, lines }

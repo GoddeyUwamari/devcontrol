@@ -21,9 +21,9 @@ import type { MultiRegionCoverage, ServicesCoverage } from '@/lib/services/aws-s
 import { formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso } from '@/lib/scan-time'
 import {
-  FAILURE_LABEL, LAST_SCAN_FINISHED, dayText, failureCode, formerHomeOf, homeOnlyStatus, homeRegionOf,
-  latestScanNotChecked, multiRegionOf, organisingLine, redesignScanLine, scanIsRunning,
-  type RedesignScanLine, type RedesignScanState,
+  LAST_SCAN_FINISHED, dayText, formerHomeLine, formerHomeOf, homeCouldntBeChecked, homeOnlyRegionList, homeOnlyRows,
+  homeOnlyStatus, homeRegionOf, multiRegionOf, organisingLine, redesignScanLine, regionRow, scanIsRunning,
+  scanNotCheckedWho, scanSoFar, type RedesignScanLine, type RedesignScanState, type RowStatus,
 } from './redesignModel'
 
 export { homeRegionOf, scanIsRunning }
@@ -122,24 +122,24 @@ const regionsWord = (n: number) => plural(n, 'region', 'regions')
 const same = (key: RegionGapKey, text: string, home = false): RegionGap => ({ key, short: text, long: text, home })
 
 /**
- * The regions that aren't checked, by kind, from the same fields and rules as
- * the Services coverage card. null when no region list is known (the caller
- * says "region list not read yet").
+ * The regions that aren't checked, by kind, from the Services coverage card's
+ * own rows and rules (PR 3d-1 H-1: called, never copied). null when no region
+ * list is known (the caller says "region list not read yet").
  *
- * Flag off (home_only_coverage, panel rows of homeOnlyRows):
- * - the home region, when G8 doesn't count it: "{home} couldn't be checked"
- *   (failed, denied, timed out: the organising line's rule) or
- *   "{home} not scanned yet";
- * - the former home region: "{r} not scanned since {day}" (founder ruling, Nov 18; it was scanned,
- *   so never "not scanned yet") / "{r} hasn't been scanned since {day}, except for S3 buckets." (V2-47);
- * - never-scanned regions: "{n} regions not scanned yet" (the group row);
- * - any other non-home region keeps an earlier result:
+ * Flag off (home_only_coverage; the card's rows, homeOnlyRows):
+ * - the home region: "{home} couldn't be checked" by the organising line's
+ *   rule (homeCouldntBeChecked), or "{home} not scanned yet" when its last
+ *   status is the card's "Not scanned yet" (homeRegionCheck; a home region
+ *   changed and not scanned since, the contract's former_home_ok);
+ * - the card's former-home row: "{r} not scanned since {day}" (founder ruling, Nov 18; it was
+ *   scanned, so never "not scanned yet") / Services' V2-47 line (formerHomeLine);
+ * - the card's "{n} regions not scanned yet" group row, its label as it is;
+ * - the card's other non-home region rows (an earlier scan's result):
  *   "{n} regions from an earlier scan".
  * Flagged (multi_region.scan):
- * - while a scan runs: "{n} regions couldn't be checked" (done in this scan,
- *   not checked) and "{n} regions still running or waiting";
- * - otherwise the scan banner's rule: "{r} couldn't be checked" for one named
- *   region, else "{k} regions couldn't be checked" (k = total − checked);
+ * - while a scan runs, the organising line's counts (scanSoFar): "{n} regions
+ *   couldn't be checked" and "{n} regions still running or waiting";
+ * - otherwise the scan banner's "who" (scanNotCheckedWho);
  * - no scan yet: "{n} regions not scanned yet".
  */
 export function regionGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
@@ -148,26 +148,23 @@ export function regionGaps(c: ServicesCoverage, now: number): RegionGap[] | null
 }
 
 function homeOnlyGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
-  const h = c.home_only_coverage
   const home = homeRegionOf(c)
-  const list = c.scope.enabled_regions.known ? c.region_status ?? [] : []
-  if (!h || !home || list.length === 0) return null
+  if (!c.home_only_coverage || !home || homeOnlyRegionList(c).length === 0) return null
+  const rows = homeOnlyRows(c, home, now)
   const gaps: RegionGap[] = []
-  const homeRow = list.find((r) => r.home)
-  if (h.regions_checked === 0 && homeRow) {
-    if (['failed', 'denied', 'timed_out'].includes(homeRow.status)) gaps.push(same('home-couldnt', `${home} couldn't be checked`, true))
-    else if (homeRow.status === 'never_scanned') gaps.push({ ...same('home-not-scanned', `${home} not scanned yet`, true), notScanned: home })
-  }
+  if (homeCouldntBeChecked(c)) gaps.push(same('home-couldnt', `${home} couldn't be checked`, true))
+  else if (homeRegionCheck(c)?.kind === 'not_scanned') gaps.push({ ...same('home-not-scanned', `${home} not scanned yet`, true), notScanned: home })
   const former = formerHomeOf(c)
-  const others = list.filter((r) => !r.home)
-  if (former && others.some((r) => r.region === former.region)) {
-    const day = dayText(former.changedAt, now)
-    gaps.push({ key: 'former-home', short: `${former.region} not scanned since ${day}`, long: `${former.region} hasn't been scanned since ${day}, except for S3 buckets.`, home: false })
+  const formerRow = rows.find((r) => r.formerHome)
+  if (former && formerRow) {
+    gaps.push({ key: 'former-home', short: `${formerRow.label} not scanned since ${dayText(former.changedAt, now)}`, long: formerHomeLine(former, now), home: false })
   }
-  const rest = others.filter((r) => r.region !== former?.region)
-  const notScanned = rest.filter((r) => r.status === 'never_scanned').length
-  if (notScanned > 0) gaps.push({ ...same('not-scanned', `${num(notScanned)} ${regionsWord(notScanned)} not scanned yet`), notScanned: `${num(notScanned)} ${regionsWord(notScanned)}` })
-  const earlier = rest.length - notScanned
+  const group = rows.find((r) => r.kind === 'group' && r.key === 'not-scanned')
+  if (group) {
+    const n = group.regions?.length ?? 0
+    gaps.push({ ...same('not-scanned', group.label), notScanned: `${num(n)} ${regionsWord(n)}` })
+  }
+  const earlier = rows.filter((r) => r.kind === 'region' && !r.home && !r.formerHome).length
   if (earlier > 0) gaps.push(same('earlier', `${num(earlier)} ${regionsWord(earlier)} from an earlier scan`))
   return gaps
 }
@@ -182,18 +179,13 @@ function flaggedGaps(mr: MultiRegionCoverage): RegionGap[] | null {
     return gaps
   }
   if (mr.coverage_status === 'in_progress') {
-    const p = mr.progress
-    const failedSoFar = p ? Math.max(0, p.regions_done - s.regions_checked) : 0
-    const left = p ? p.regions_running + p.regions_waiting : 0
+    const { failedSoFar, left } = scanSoFar(mr.progress, s.regions_checked)
     if (failedSoFar > 0) gaps.push(same('not-checked-by-scan', `${num(failedSoFar)} ${regionsWord(failedSoFar)} couldn't be checked`))
     if (left > 0) gaps.push(same('still-running', `${num(left)} ${regionsWord(left)} still running or waiting`))
     return gaps
   }
-  const k = Math.max(0, s.regions_total - s.regions_checked)
-  if (k > 0) {
-    const named = latestScanNotChecked(mr)
-    gaps.push(same('not-checked-by-scan', k === 1 && named.length === 1 ? `${named[0].region} couldn't be checked` : `${num(k)} ${regionsWord(k)} couldn't be checked`))
-  }
+  const who = scanNotCheckedWho(mr, s)
+  if (who.k > 0) gaps.push(same('not-checked-by-scan', who.text))
   return gaps
 }
 
@@ -220,32 +212,37 @@ export function notCheckedLine(c: ServicesCoverage, now: number, last: string): 
 
 // ── The home region's last check ──
 
-export interface HomeRegionCheck { kind: 'checked' | 'partial' | 'couldnt'; label: string }
+export interface HomeRegionCheck { kind: 'checked' | 'partial' | 'couldnt' | 'not_scanned'; label: string }
 
 export const HOME_CHECKED = 'Checked'
 export const HOME_PARTLY_CHECKED = 'Partly checked'
 
+/** A Services card row status as the home region's check; null for a status that says nothing about it (scanning, waiting, …). */
+function checkOf(status: RowStatus | null): HomeRegionCheck | null {
+  switch (status?.key) {
+    case 'complete': return { kind: 'checked', label: HOME_CHECKED }
+    case 'partial': return { kind: 'partial', label: HOME_PARTLY_CHECKED }
+    case 'couldnt':
+    case 'notdone': return { kind: 'couldnt', label: status.label }
+    case 'not_scanned': return { kind: 'not_scanned', label: status.label }
+    default: return null
+  }
+}
+
 /**
- * The home region's last result in the Services coverage card's words:
- * "Checked", "Partly checked" (Partial), or the card's failure label
- * ("Couldn't check: access denied", …). Flagged: the home row's `state`
- * when it has a result; otherwise (and flag off) its last recorded status,
- * mapped as the Services card maps it. null when nothing says.
+ * The home region's last result in the Services coverage card's words, from the card's own row status
+ * (PR 3d-1 H-1: no second mapping): "Checked", "Partly checked" (Partial), the card's failure label
+ * ("Couldn't check: access denied", …) or "Not scanned yet" (M-1: a home region changed and not scanned
+ * since, never "Checked"). Flagged: the home row's status (regionRow) when it has a result; otherwise
+ * (and flag off) its last recorded status (homeOnlyStatus, the card's classifier, without the running
+ * scan: a scan in progress doesn't change the last result). null when nothing says.
  */
 export function homeRegionCheck(c: ServicesCoverage): HomeRegionCheck | null {
-  const mr = multiRegionOf(c)
-  const homeRegion = mr?.regions.find((r) => r.home)
+  const homeRegion = multiRegionOf(c)?.regions.find((r) => r.home)
   if (homeRegion) {
-    const code = failureCode(homeRegion)
-    if (code) return { kind: 'couldnt', label: FAILURE_LABEL[code] }
-    if (homeRegion.state === 'checked') return { kind: 'checked', label: HOME_CHECKED }
-    if (homeRegion.state === 'checked_with_warnings') return { kind: 'partial', label: HOME_PARTLY_CHECKED }
+    const check = checkOf(regionRow(homeRegion).status)
+    if (check && check.kind !== 'not_scanned') return check
   }
   const row = (c.region_status ?? []).find((r) => r.home)
-  if (!row) return null
-  const { status, code } = homeOnlyStatus(row, false)
-  if (code) return { kind: 'couldnt', label: FAILURE_LABEL[code] }
-  if (status?.key === 'partial') return { kind: 'partial', label: HOME_PARTLY_CHECKED }
-  if (status?.key === 'complete') return { kind: 'checked', label: HOME_CHECKED }
-  return null
+  return row ? checkOf(homeOnlyStatus(row, false).status) : null
 }
