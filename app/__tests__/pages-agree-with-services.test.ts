@@ -65,6 +65,8 @@ interface Expected {
   notChecked: string
   /** Connect's home row "Last scan" cell, after "{count} · home · " (N1: never "complete" unless the home was checked). */
   connectHome: string
+  /** Connect's headline above the table (N12: "{home} couldn't be checked" exactly when the cell says "couldn't check"). */
+  connectHeadline: string
   /** The other-regions lines ("What we checked" on Infrastructure and Security). */
   otherRegions: string[]
   /** Infrastructure's inventory line's ending (the home region's result). */
@@ -81,42 +83,42 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab5('ok'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'complete',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'complete', connectHeadline: 'us-east-1 scanned, plus S3 buckets in every region and CloudFront (global)',
     },
   },
   'home failed': {
     coverage: () => tab5('failed'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
-      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: scan error", connectHome: "couldn't check: scan error",
+      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: scan error", connectHome: "couldn't check: scan error", connectHeadline: "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)",
     },
   },
   'home denied': {
     coverage: () => homeStatus('denied'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
-      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: access denied", connectHome: "couldn't check: access denied",
+      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: access denied", connectHome: "couldn't check: access denied", connectHeadline: "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)",
     },
   },
   'home timed out': {
     coverage: () => homeStatus('timed_out'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
-      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: AWS didn't respond", connectHome: "couldn't check: AWS didn't respond",
+      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: AWS didn't respond", connectHome: "couldn't check: AWS didn't respond", connectHeadline: "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)",
     },
   },
   'home partial': {
     coverage: () => homeStatus('partial'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Partly checked', connectHome: 'partial',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Partly checked', connectHome: 'partial', connectHeadline: 'us-east-1 scanned, plus S3 buckets in every region and CloudFront (global)',
     },
   },
   'former home with an old ok': {
     coverage: () => tab12Coverage(),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: '1 of 4 regions checked · us-west-2',
-      notChecked: `Not scanned yet: us-east-1 since Nov 14 · 2 regions · ${IAM}`, connectHome: 'complete',
+      notChecked: `us-east-1 not scanned since Nov 14 · Not scanned yet: 2 regions · ${IAM}`, connectHome: 'complete', connectHeadline: 'us-west-2 scanned, plus S3 buckets in every region and CloudFront (global)',
       otherRegions: ["us-east-1 hasn't been scanned since Nov 14, except for S3 buckets.", '2 regions not scanned yet'], inventory: 'us-west-2: Checked',
     },
   },
@@ -124,21 +126,21 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab8(),
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 10:21 AM · didn't finish" }, line: 'Last scan failed after checking 1 of 2 regions · 1 with resources',
-      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'last scan failed',
+      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'last scan failed', connectHeadline: 'us-east-1 scanned',
     },
   },
   'abandoned job': {
     coverage: abandoned,
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 12:00 PM · didn't finish" }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'last scan failed',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'last scan failed', connectHeadline: 'us-east-1 scanned',
     },
   },
   'in progress past 60 minutes, lease held': {
     coverage: longRunning,
     expected: {
       scan: { state: 'running', text: 'Scan in progress since 1:00 PM · showing results from today, 10:20 AM' }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'scan in progress',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'scan in progress', connectHeadline: 'us-east-1 scanned',
     },
   },
   'flagged in progress (dormant region progress, item 7)': {
@@ -146,7 +148,7 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     expected: {
       scan: { state: 'running', text: 'Scan in progress since 10:00 AM · 1 of 4 regions done' },
       line: 'Scanning: 1 of 4 regions checked so far · 1 with resources · 3 still running or waiting',
-      notChecked: `3 regions still running or waiting · Not checked yet: ${IAM}`, otherRegions: ['3 regions still running or waiting'], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'scan in progress',
+      notChecked: `3 regions still running or waiting · Not checked yet: ${IAM}`, otherRegions: ['3 regions still running or waiting'], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'scan in progress', connectHeadline: 'us-east-1 scanned',
     },
   },
 }
@@ -203,6 +205,31 @@ describe.each(Object.entries(CASES))('%s', (_name, { coverage, expected }) => {
     const v = describeCoverage(c, NOW, [], { ...scanState(c, NOW), home: homeRegionCheck(c) })
     expect(v.chips[0].note).toBe(`${c.scope.home_region!.count} · home · ${expected.connectHome}`)
     if (expected.connectHome === 'complete') expect(homeRegionCheck(c)?.kind).toBe('checked')
+  })
+
+  // N12 (founder ruling, Nov 18): the headline above the table follows the same check as the cell below it.
+  it('Connect AWS: the headline agrees with the home cell; never "{home} scanned" when the home couldn\'t be checked', () => {
+    const v = describeCoverage(c, NOW, [], { ...scanState(c, NOW), home: homeRegionCheck(c) })
+    expect(v.headline).toBe(expected.connectHeadline)
+    const home = c.scope.home_region!.region
+    if (expected.connectHome.startsWith("couldn't check")) {
+      expect(v.headline!.startsWith(`${home} couldn't be checked`)).toBe(true)
+      expect(v.headline).not.toContain(`${home} scanned`)
+    } else {
+      expect(v.headline).not.toContain("couldn't be checked")
+    }
+  })
+})
+
+describe('N12: the headline keeps the home chip\'s precedence', () => {
+  it('home failed, then a new scan running with the lease: the cell says "scan in progress" and the headline never "couldn\'t be checked"', () => {
+    const c = tab5('failed')
+    c.scan_in_progress = { since: '2026-11-15T16:00:00.000Z' }
+    c.last_scan = { status: 'running', started_at: '2026-11-15T16:00:00.000Z', completed_at: null, warnings: [] }
+    const v = describeCoverage(c, NOW, [], { ...scanState(c, NOW), home: homeRegionCheck(c) })
+    expect(homeRegionCheck(c)?.kind).toBe('couldnt')
+    expect(v.chips[0].note).toBe('9 · home · scan in progress')
+    expect(v.headline).toBe('us-east-1 scanned')
   })
 })
 

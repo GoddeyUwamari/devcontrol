@@ -448,16 +448,17 @@ describe('Connect AWS page: checking and connected', () => {
       scope: { ...COVERAGE.scope, enabled_regions: { known: true, count: 17 } },
       region_status: [{ region: 'us-east-1', home: true, status: 'failed', last_scan_finished_at: COVERAGE.last_successful_scan_at, last_success_at: null, last_error_code: null }],
       home_only_coverage: { regions_total: 17, regions_checked: 0 },
-    }, "7 · home · couldn't check: scan error"],
+    }, "7 · home · couldn't check: scan error", "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)"],
     ['abandoned job', {
       last_scan: { status: 'running', started_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), completed_at: null, warnings: [] },
       scan_in_progress: null,
-    }, '7 · home · last scan failed'],
-  ] as const)('T13 N1 %s: the home row\'s Last scan cell is never "complete"', async (_name, patch, cell) => {
+    }, '7 · home · last scan failed', 'us-east-1 scanned'],
+  ] as const)('T13 N1/N12 %s: the home row\'s Last scan cell is never "complete"; the headline agrees with it', async (_name, patch, cell, headline) => {
     mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
     mockGetCoverage.mockResolvedValue({ ...COVERAGE, ...patch } as unknown as ServicesCoverage)
     renderPage()
-    await screen.findByTestId('coverage-headline')
+    // N12: the headline follows the same home-region check as the cell ("couldn't be checked", never "scanned").
+    expect((await screen.findByTestId('coverage-headline')).textContent).toBe(headline)
     const home = [...screen.getByTestId('coverage-table').querySelectorAll('tbody tr')][1]
     const cells = [...home.querySelectorAll('td')].map((td) => td.textContent)
     expect(cells).toEqual(['Home region (us-east-1)', '7', cell])

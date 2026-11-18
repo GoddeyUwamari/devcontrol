@@ -110,8 +110,9 @@ export type RegionGapKey =
  * One kind of region the last results don't count as checked, in Services'
  * words. `short` is the item form; `long` is the line form ("What we
  * checked"). `notScanned` (3d-1 founder ruling, Nov 18): its item under
- * "Not scanned yet: …" ("16 regions", "us-east-1 since Nov 14"), only for a
- * region that hasn't been scanned. `home`: it is about the home region.
+ * "Not scanned yet: …" ("16 regions"), only for a region that has never been
+ * scanned (a former home region was scanned, so it is a segment of its own:
+ * "{former} not scanned since {day}"). `home`: it is about the home region.
  */
 export interface RegionGap { key: RegionGapKey; short: string; long: string; home: boolean; notScanned?: string }
 
@@ -129,8 +130,8 @@ const same = (key: RegionGapKey, text: string, home = false): RegionGap => ({ ke
  * - the home region, when G8 doesn't count it: "{home} couldn't be checked"
  *   (failed, denied, timed out: the organising line's rule) or
  *   "{home} not scanned yet";
- * - the former home region (PR 3c V2-47): "{r} since {day}" /
- *   "{r} hasn't been scanned since {day}, except for S3 buckets.";
+ * - the former home region: "{r} not scanned since {day}" (founder ruling, Nov 18; it was scanned,
+ *   so never "not scanned yet") / "{r} hasn't been scanned since {day}, except for S3 buckets." (V2-47);
  * - never-scanned regions: "{n} regions not scanned yet" (the group row);
  * - any other non-home region keeps an earlier result:
  *   "{n} regions from an earlier scan".
@@ -161,7 +162,7 @@ function homeOnlyGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
   const others = list.filter((r) => !r.home)
   if (former && others.some((r) => r.region === former.region)) {
     const day = dayText(former.changedAt, now)
-    gaps.push({ key: 'former-home', short: `${former.region} since ${day}`, long: `${former.region} hasn't been scanned since ${day}, except for S3 buckets.`, home: false, notScanned: `${former.region} since ${day}` })
+    gaps.push({ key: 'former-home', short: `${former.region} not scanned since ${day}`, long: `${former.region} hasn't been scanned since ${day}, except for S3 buckets.`, home: false })
   }
   const rest = others.filter((r) => r.region !== former?.region)
   const notScanned = rest.filter((r) => r.status === 'never_scanned').length
@@ -202,6 +203,7 @@ function flaggedGaps(mr: MultiRegionCoverage): RegionGap[] | null {
  * - "Not scanned yet: 16 regions · IAM roles and policies";
  * - with the home region not counted as checked, Services' segment first:
  *   "us-east-1 couldn't be checked · Not scanned yet: 16 regions · IAM roles and policies";
+ * - a former home region is its own segment: "us-east-1 not scanned since Nov 14 · Not scanned yet: 2 regions · …";
  * - any other region that is neither checked nor unscanned (an earlier scan's result; flagged:
  *   couldn't be checked, still running or waiting) is a segment before it, in Services' words;
  * - with no unscanned region the clause keeps the existing "Not checked yet: {last}";

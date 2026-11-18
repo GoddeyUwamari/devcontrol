@@ -229,8 +229,12 @@ export function describeCoverage(
   const abandoned = scan ? false : isScanAbandoned(last, now)
   const lastFailed = scan ? scan.state === 'failed' : last?.status === 'failed' || abandoned
   // "scanned" only after a successful scan; S3/CloudFront only from a completed newest scan (scopeParts).
+  // PR 3d-1 N12 (founder ruling, Nov 18): with the shared home-region check, the headline says Services'
+  // "{home} couldn't be checked" exactly when the home chip below says "couldn't check" (same check, same
+  // precedence: not while a scan runs, not after one that didn't finish); the rest is unchanged.
+  const homeCouldnt = !inProgress && !lastFailed && scan?.home?.kind === 'couldnt'
   const headline = lastSuccess
-    ? `${home.region} scanned${plus(scopeParts(coverage, 'S3 buckets in every region', 'CloudFront (global)'))}`
+    ? `${home.region} ${homeCouldnt ? "couldn't be checked" : 'scanned'}${plus(scopeParts(coverage, 'S3 buckets in every region', 'CloudFront (global)'))}`
     : inProgress ? `${home.region}: first scan in progress`
     : lastFailed ? `${home.region}: last scan failed`
     : `${home.region}: not scanned yet`
