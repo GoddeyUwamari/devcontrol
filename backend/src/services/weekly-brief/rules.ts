@@ -242,8 +242,8 @@ function completedAnalysisAt(a: AnalysisFacts): string | null | undefined {
  * The connection-broken clause (founder Q2, as changed in D-10): security
  * figures name the last completed scan and savings the last completed cost
  * analysis, each with its own time. A source with nothing completed, or
- * security with no figures this week, says there are no figures; one whose
- * dates couldn't be read is left out.
+ * security or savings with no figures this week (their read failed), says
+ * there are no figures; one whose dates couldn't be read is left out.
  */
 function brokenClause(f: WeeklyFacts, lastOkAt: string | null): string {
   const lead = `DevControl couldn't reach your AWS account${lastOkAt ? ` (last successful check ${formatTime(lastOkAt)})` : ''}`;
@@ -251,7 +251,10 @@ function brokenClause(f: WeeklyFacts, lastOkAt: string | null): string {
   // security figures; with the security read failed or preliminary the tile
   // shows none, so the clause says so (brief review L-2).
   const scan = f.security.state !== 'available' ? null : f.scan === null ? undefined : completedScan(f.scan);
-  const analysisAt = completedAnalysisAt(f.analysis);
+  // Savings name the cost analysis only when there are savings figures; with
+  // the savings read failed the tile shows none, so the clause says so
+  // (founder ruling on the savings twin of brief review L-2).
+  const analysisAt = f.savings.state !== 'available' ? null : completedAnalysisAt(f.analysis);
   if (scan === undefined && analysisAt === undefined) return `${lead}.`;
   if (scan === null && analysisAt === null) return `${lead}, so there are no security or savings figures this week.`;
   const parts: string[] = [];

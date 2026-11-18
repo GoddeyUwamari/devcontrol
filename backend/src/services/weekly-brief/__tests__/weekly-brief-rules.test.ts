@@ -161,6 +161,11 @@ const VARIANTS: Record<string, WeeklyFacts> = {
     connectionHealth: health({ state: 'failing', lastResult: 'failing', lastOkAt: '2026-11-15T06:00:00.000Z' }),
     security: noData(SOURCES.security, 'error', 'x'),
   }),
+  // Savings twin of L-2: the connection is broken and the savings read failed.
+  brokenSavingsFailed: facts({
+    connectionHealth: health({ state: 'failing', lastResult: 'failing', lastOkAt: '2026-11-15T06:00:00.000Z' }),
+    recommendations: noData(SOURCES.recommendations, 'error', 'x'),
+  }),
 };
 
 // ── R1 ───────────────────────────────────────────────────────────────────────
@@ -205,7 +210,8 @@ describe('R1: the summary sentence', () => {
         "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so security figures below are from the last completed scan (Nov 16, 06:14 UTC) and there are no savings figures this week."],
       ['neither completed', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), scan: noScan, costAnalysis: noAnalysis },
         "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so there are no security or savings figures this week."],
-      ['neither readable', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), scan: noData(SOURCES.scan, 'error', 'x'), costAnalysis: noData(SOURCES.analysis, 'error', 'x') },
+      // Savings readable (one open opportunity): only the dates are unknown.
+      ['neither readable', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), scan: noData(SOURCES.scan, 'error', 'x'), costAnalysis: noData(SOURCES.analysis, 'error', 'x'), recommendations: recs({ active: 1, estimatedMonthlySavings: 5, estimatedFindings: 1 }) },
         "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC)."],
     ] as Array<[string, Partial<WeeklyEvidence>, string]>)('%s', (_name, over, expected) => {
       expect(clause(over)).toBe(expected);
@@ -223,6 +229,32 @@ describe('R1: the summary sentence', () => {
       for (const out of [summarySentence(f).bold, htmlText, text]) {
         expect(out).not.toContain('security figures below are from the last completed scan');
         expect(out).toContain('there are no security figures this week');
+      }
+    });
+    it('savings twin of L-2: savings read failed: the no-savings-figures variant, never "from the last completed cost analysis"', () => {
+      const broken = failing('2026-11-15T06:00:00.000Z');
+      const lead = "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so ";
+      for (const failed of [
+        { recommendations: noData(SOURCES.recommendations, 'error', 'x') },
+        { stillDetected: noData(SOURCES.still, 'error', 'x') },
+      ] as Array<Partial<WeeklyEvidence>>) {
+        expect(clause({ connectionHealth: broken, ...failed })).toBe(
+          `${lead}security figures below are from the last completed scan (Nov 16, 06:14 UTC) and there are no savings figures this week.`
+        );
+        expect(clause({ connectionHealth: broken, ...failed, security: noData(SOURCES.security, 'error', 'x') })).toBe(
+          `${lead}there are no security or savings figures this week.`
+        );
+      }
+      // M-1: an unreadable analysis with nothing open is a failed savings read too.
+      expect(clause({ connectionHealth: broken, scan: noData(SOURCES.scan, 'error', 'x'), costAnalysis: noData(SOURCES.analysis, 'error', 'x') })).toBe(
+        `${lead}there are no savings figures this week.`
+      );
+      const f = VARIANTS.brokenSavingsFailed;
+      expect(tiles(f)[2]).toMatchObject({ value: '—', lines: ["Couldn't retrieve this week"] });
+      const { htmlText, text } = render(f);
+      for (const out of [summarySentence(f).bold, htmlText, text]) {
+        expect(out).not.toContain('from the last completed cost analysis');
+        expect(out).toContain('there are no savings figures this week');
       }
     });
     it('the old single "from the last completed scan" wording for both is gone', () => {
@@ -741,7 +773,7 @@ describe('guards over every fixture and variant, HTML and text (brief review H-1
   const planOf = (name: string) => (name in FIXTURES ? FIXTURES[name as FixtureId].plan : 'Optimization Engine');
 
   it('the variants include the sources that fail with identifiers and the ARN example', () => {
-    expect(NAMES).toEqual(expect.arrayContaining([...FIXTURE_IDS, 'failedWithIdentifiers', 'unavailableWithIdentifiers', 'stillDetectedArn', 'stillDetectedArnMany']));
+    expect(NAMES).toEqual(expect.arrayContaining([...FIXTURE_IDS, 'failedWithIdentifiers', 'unavailableWithIdentifiers', 'stillDetectedArn', 'stillDetectedArnMany', 'brokenSavingsFailed']));
   });
 
   describe('output privacy: no identifiers or raw errors reach the email', () => {
