@@ -1,12 +1,11 @@
 /**
  * WE-1 review H-1, end to end on the database: open cost_recommendations rows
  * go through the REAL CostRecommendationsRepository.getActiveSavingsBreakdown(),
- * the real composeWeeklySummary() and the real HTML template and text part.
- * A gate-blocked DynamoDB capacity-mode comparison is stored at $0 with a
- * "comparison:" (estimate-class) basis; it is a finding with no dollar
- * estimate, never "$0/month", and the email matches what the dashboard's
- * savings card shows for the same rows (getStats: no total above $0, so
- * "N finding(s) found; none has a dollar estimate yet.").
+ * the real facts and rules (executive brief) and the real HTML template and
+ * text part. A gate-blocked DynamoDB capacity-mode comparison is stored at $0
+ * with a "comparison:" (estimate-class) basis; it is a finding with no dollar
+ * estimate, never "$0/mo" (founder Q6/Q7), and the email's figure is the one
+ * the Cost Optimization page shows for the same rows (getStats).
  *
  * Runs against the local Postgres, like cost-recommendations-savings-dedup.
  * Every organization, figure and URL is synthetic; nothing is sent.
@@ -25,10 +24,10 @@ import * as path from 'path';
 import { Pool } from 'pg';
 import { CostRecommendationsRepository } from '../cost-recommendations.repository';
 import { ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED } from '../../config/optimization-rules';
-import { collectSection } from '../../services/ai-context-contract';
-import { composeWeeklySummary, WEEKLY_SECTION_TITLES } from '../../services/weekly-summary-content';
+import { composeWeeklyBrief } from '../../services/weekly-brief/rules';
+import { weeklyFacts } from '../../services/weekly-brief/facts';
 import { WeeklyAISummaryJob } from '../../jobs/weekly-ai-summary.job';
-import { FIXTURE_ORG_NAME, FIXTURE_URLS, fixtureEvidence } from '../../jobs/__tests__/weekly-email-fixtures';
+import { FIXTURE_ORG_NAME, FIXTURE_URLS, available, connectedEvidence } from '../../jobs/__tests__/weekly-email-fixtures';
 import type { WeeklyRecommendationEvidence } from '../weekly-summary.repository';
 import type { CreateRecommendationRequest } from '../../types';
 
@@ -106,30 +105,18 @@ function blockedComparison(table: string): CreateRecommendationRequest {
   });
 }
 
-/** The org's rows through the real breakdown, composer and renderer; the rest of the email is fixture C2. */
+/** The org's rows through the real breakdown, facts, rules and renderer; every other source is a clean connected week. */
 async function renderFromDatabase(orgId: string) {
   const breakdown = await repository.getActiveSavingsBreakdown(orgId);
-  const evidence = {
-    ...(await fixtureEvidence('C2')),
-    recommendations: await collectSection<WeeklyRecommendationEvidence>(
-      { source: 'DevControl cost recommendations' },
-      async () => ({ state: 'available', data: breakdown })
-    ),
-  };
-  const data = job.buildTemplateData({
-    userName: 'Alex',
-    content: composeWeeklySummary(evidence, { organizationName: FIXTURE_ORG_NAME }),
-    ...FIXTURE_URLS,
-  });
+  const brief = composeWeeklyBrief(
+    weeklyFacts(connectedEvidence({ recommendations: available<WeeklyRecommendationEvidence>('DevControl cost recommendations', breakdown) })),
+    { organizationName: FIXTURE_ORG_NAME, planName: 'Optimization Engine' }
+  );
+  const data = job.buildTemplateData({ userName: 'Alex', brief, organizationName: FIXTURE_ORG_NAME, ...FIXTURE_URLS });
   data.year = 2026;
   const { html, text } = job.renderEmail(data);
-  const lines = text.split('\n');
-  const titles = Object.values(WEEKLY_SECTION_TITLES);
-  const savings: string[] = [];
-  for (let i = lines.indexOf(WEEKLY_SECTION_TITLES.savings) + 1; i < lines.length && lines[i] !== '' && !titles.includes(lines[i]); i++) {
-    savings.push(lines[i]);
-  }
-  return { html, text, savings };
+  const cost = brief.attention.find(item => item.title.startsWith('Cost ·'));
+  return { html, text, tile: brief.tiles[2], cost };
 }
 
 it('the blocked-row basis copied here is the one the detector writes', () => {
@@ -140,19 +127,15 @@ it('the blocked-row basis copied here is the one the detector writes', () => {
 });
 
 describe('weekly email savings from database rows (WE-1 review H-1)', () => {
-  it('one gate-blocked DynamoDB comparison: no "$0/month"; the dashboard\'s "none has a dollar estimate yet" state', async () => {
+  it('one gate-blocked DynamoDB comparison: never "$0/mo"; "1 open · no dollar estimate yet"', async () => {
     const orgId = await insertOrg();
     await repository.createBulk([blockedComparison('table-a')], orgId);
 
-    const { html, text, savings } = await renderFromDatabase(orgId);
-    expect(savings).toEqual([
-      '1 open finding; none has a dollar estimate yet.',
-      'From the cost analysis completed Nov 16, 2026, 06:20 UTC.',
-      'See Cost Optimization: https://app.example.test/cost-optimization',
-    ]);
+    const { html, text, tile, cost } = await renderFromDatabase(orgId);
+    expect(tile).toEqual({ label: 'ESTIMATED SAVINGS', sublabel: 'Open opportunities', value: '1 open · no dollar estimate yet', lines: [] });
+    expect(cost).toMatchObject({ title: 'Cost · 1 open opportunity', body: ['1 open opportunity, no dollar estimate yet.'] });
     for (const out of [html, text]) {
-      expect(out).not.toMatch(/\$0\/month/);
-      expect(out).not.toMatch(/Estimated savings:/);
+      expect(out).not.toMatch(/\$0\/mo/);
     }
 
     // The dashboard card reads getStats for the same rows: a figure only when the total is above $0,
@@ -163,7 +146,7 @@ describe('weekly email savings from database rows (WE-1 review H-1)', () => {
     expect(stats.active_recommendations).toBe(1);
   });
 
-  it('a $845 estimate plus two blocked comparisons: "across 1 open finding", the other two have no estimate', async () => {
+  it('a $845 estimate plus two blocked comparisons: "$845/mo", the other two have no estimate', async () => {
     const orgId = await insertOrg();
     await repository.createBulk([
       rec({ potential_savings: 845, metadata: { savings_basis: 'estimated: list price' } }),
@@ -171,15 +154,11 @@ describe('weekly email savings from database rows (WE-1 review H-1)', () => {
       blockedComparison('table-c'),
     ], orgId);
 
-    const { html, text, savings } = await renderFromDatabase(orgId);
-    expect(savings).toEqual([
-      'Estimated savings: $845/month across 1 open finding. This is a DevControl estimate, not realized savings.',
-      '2 more open findings have no dollar estimate yet.',
-      'From the cost analysis completed Nov 16, 2026, 06:20 UTC.',
-      'See Cost Optimization: https://app.example.test/cost-optimization',
-    ]);
-    expect(html).toContain('Estimated savings: <strong>$845/month</strong> across 1 open finding.');
-    expect(text).not.toMatch(/\$0\/month/);
+    const { html, text, tile, cost } = await renderFromDatabase(orgId);
+    expect(tile.value).toBe('$845/mo');
+    expect(cost!.body).toEqual(['3 open opportunities, about $845/mo estimated; 2 have no dollar estimate yet.']);
+    expect(html).toContain('>$845/mo</p>');
+    expect(text).not.toMatch(/\$0\/mo/);
     expect((await repository.getStats(orgId)).total_potential_savings).toBe(845);
   });
 });

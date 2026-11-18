@@ -20,6 +20,8 @@ import { render, screen } from '@testing-library/react'
 
 const open = vi.hoisted(() => ({ index: -1 }))
 const size = vi.hoisted(() => ({ width: 600 }))
+/** Every `interval` the chart hands its X axis (trend-lag r2 review L-1). */
+const axis = vi.hoisted(() => ({ intervals: [] as unknown[] }))
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>()
   return {
@@ -32,6 +34,10 @@ vi.mock('recharts', async (importOriginal) => {
     Tooltip: (props: React.ComponentProps<typeof actual.Tooltip>) =>
       open.index >= 0 ? <actual.Tooltip {...props} active defaultIndex={open.index} /> : <actual.Tooltip {...props} />,
     Bar: (props: React.ComponentProps<typeof actual.Bar>) => <actual.Bar {...props} isAnimationActive={false} />,
+    XAxis: (props: React.ComponentProps<typeof actual.XAxis>) => {
+      axis.intervals.push(props.interval)
+      return <actual.XAxis {...props} />
+    },
   }
 })
 
@@ -188,5 +194,22 @@ describe('30/90 days and months: dates, labels may skip', () => {
     const { container } = show(-1, '6mo', months)
     expect(await screen.findAllByTestId('cost-trend-not-reported-placeholder')).toHaveLength(1)
     expect(tickLabels(container)).toContain('Jun 2026')
+  })
+})
+
+// Trend-lag round 2 review L-1: jsdom never skips labels, so the label tests
+// above pass whatever interval the chart asks for. This pins that the chart
+// hands its X axis exactly the never-skip helper's interval for every range
+// (a chart that passed interval="preserveEnd" directly fails the 7d case).
+describe('L-1: the X axis gets xAxisInterval(range)', () => {
+  it.each(['7d', '30d', '90d', '6mo', '1yr'] as const)('%s', async (range) => {
+    axis.intervals.length = 0
+    show(-1, range)
+    await vi.waitFor(() => expect(axis.intervals.length).toBeGreaterThan(0))
+    expect(new Set(axis.intervals)).toEqual(new Set([xAxisInterval(range)]))
+  })
+
+  it('the helper never skips a 7-day label', () => {
+    expect(xAxisInterval('7d')).toBe(0)
   })
 })

@@ -11,8 +11,9 @@
  *   3. The CI schema (no aws_accounts table): the connection is 'unknown', the
  *      health read is an error section, and every other read still works.
  *   4. Every cost analysis run status (WE-2 review H-1/L-3): the state it maps
- *      to and the savings line it renders. A partial run with a completion
- *      time is completed with gaps, never "didn't finish".
+ *      to and the footer's analysis line it renders (executive brief). A
+ *      partial run with a completion time is completed with gaps, never
+ *      "didn't finish".
  *
  * aws_accounts is the shared fixture table (shared-fixture-tables.ts), so the
  * "table present" shape works in CI too; the CI shape is a throwaway schema
@@ -29,9 +30,11 @@ jest.mock('../../services/aws-cost.service', () => ({
 
 import { Pool, PoolClient } from 'pg';
 import { WeeklySummaryRepository, weeklySummaryPeriod, type WeeklyEvidence } from '../weekly-summary.repository';
-import { composeWeeklySummary, formatInstant, formatInstantDay } from '../../services/weekly-summary-content';
+import { composeWeeklyBrief, footer } from '../../services/weekly-brief/rules';
+import { weeklyFacts } from '../../services/weekly-brief/facts';
+import { formatTime } from '../../services/weekly-brief/format';
 import { ANALYSIS_PARTIAL_NOTE } from '../../config/weekly-email-copy';
-import { fixtureEvidence } from '../../jobs/__tests__/weekly-email-fixtures';
+import { connectedEvidence } from '../../jobs/__tests__/weekly-email-fixtures';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 import { pool as appPool } from '../../config/database';
 
@@ -198,7 +201,7 @@ describe('each organization gets its own WE-2 reads (aws_accounts present)', () 
     try {
       const e = await repository().gatherWeeklyEvidence(A.org, NOW, client);
       expect(e.awsConnection).toBe('connected');
-      expect(e.connectionHealth).toMatchObject({ state: 'available', data: { state: 'failing', failingSince: ago(2 * DAY).toISOString() } });
+      expect(e.connectionHealth).toMatchObject({ state: 'available', data: { state: 'failing', failingSince: ago(2 * DAY).toISOString(), lastOkAt: null } });
       expect(e.scan?.data).toEqual({
         latest: { state: 'did_not_finish', at: A.times[1], startedAt: ago(3 * HOUR).toISOString() },
         lastCompleted: { at: A.times[0] },
@@ -207,10 +210,11 @@ describe('each organization gets its own WE-2 reads (aws_accounts present)', () 
       expect(e.deploymentHistory.data).toEqual({ anyRecorded: false });
       for (const t of B.times) expect(we2Json(e)).not.toContain(t);
 
-      const content = composeWeeklySummary(e, { organizationName: 'A (synthetic)', planName: await repository().getPlanName(A.org, client) });
-      expect(content.header).toMatch(/^A \(synthetic\) · Visibility plan · /);
-      expect(content.status!.lines.map(l => l.text)[0]).toMatch(/^AWS connection: failing since /);
-      expect(content.sections.find(s => s.id === 'delivery')!.lines[0].text).toBe('No deployments have been recorded in DevControl yet.');
+      const brief = composeWeeklyBrief(weeklyFacts(e), { organizationName: 'A (synthetic)', planName: await repository().getPlanName(A.org, client) });
+      expect(brief.orgLine).toBe('A (synthetic) · Visibility plan');
+      // Never connected successfully (no last_ok_at): the approved Q2 variant.
+      expect(brief.attention[0]).toMatchObject({ title: "DevControl couldn't reach your AWS account.", body: ["It hasn't connected successfully since the account was added."] });
+      expect(brief.delivery.link.label).toBe('Record a deployment on the Deployments page →');
     } finally {
       client.release();
     }
@@ -220,7 +224,7 @@ describe('each organization gets its own WE-2 reads (aws_accounts present)', () 
     const client = await taggedClient(B.org);
     try {
       const e = await repository().gatherWeeklyEvidence(B.org, NOW, client);
-      expect(e.connectionHealth?.data).toMatchObject({ state: 'ok', checkedAt: B.times[2] });
+      expect(e.connectionHealth?.data).toMatchObject({ state: 'ok', checkedAt: B.times[2], lastOkAt: B.times[2] });
       expect(e.scan?.data).toEqual({
         latest: { state: 'completed', at: B.times[0], startedAt: ago(5 * HOUR).toISOString() },
         lastCompleted: { at: B.times[0] },
@@ -310,7 +314,7 @@ describe('tenant context: under row level security each read sees only the tagge
       // aws_accounts has no row level security; aws_connection_checks does, so B's row is invisible.
       expect(health.data?.state).toBe('not_checked_yet');
       expect(scan.data).toEqual({ latest: null, lastCompleted: null });
-      expect(analysis.data).toEqual({ latest: null, lastCompleted: null });
+      expect(analysis.data).toEqual({ latest: null, lastCompleted: null, latestChecks: null });
       expect(history.data).toEqual({ anyRecorded: false });
     } finally {
       await client.query('RESET ROLE');
@@ -369,21 +373,18 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
       [orgId, ago(2 * HOUR), live ? new Date(Date.now() + 10 * 60e3) : ago(HOUR)]
     );
   }
-  /** The analysis read on a client tagged for the org, and the savings lines it renders on C2's other evidence. */
+  /** The analysis read on a client tagged for the org, and the footer's analysis line on an otherwise clean week. */
   async function readAndRender(orgId: string) {
     const client = await taggedClient(orgId);
     try {
       const analysis = await new WeeklySummaryRepository(pool).getCostAnalysisSection(orgId, client);
-      // C2's other evidence, on this run's week (so "this week's" is judged against NOW).
-      const c2 = { ...(await fixtureEvidence('C2')), period: weeklySummaryPeriod(NOW) };
-      const savings = composeWeeklySummary({ ...c2, costAnalysis: analysis }, { organizationName: 'S (synthetic)' })
-        .sections.find(s => s.id === 'savings')!.lines.map(l => l.text).filter(Boolean);
-      return { analysis, savings };
+      // On this run's week, so "this week's" is judged against NOW.
+      const facts = weeklyFacts({ ...connectedEvidence(), period: weeklySummaryPeriod(NOW), costAnalysis: analysis });
+      return { analysis, savings: [footer(facts).lines[2]] };
     } finally {
       client.release();
     }
   }
-  const HEADLINE = 'Estimated savings: $845/month across 3 open findings. This is a DevControl estimate, not realized savings.';
   const DIDNT_FINISH = /didn't finish/;
 
   it('completed: completed, dated by its completion', async () => {
@@ -392,7 +393,21 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     const { analysis, savings } = await readAndRender(o);
     expect(analysis.data).toMatchObject({ latest: { state: 'completed', at: done }, lastCompleted: { at: done } });
     expect(analysis.data?.lastCompleted).not.toHaveProperty('partial');
-    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}.`]);
+    expect(savings).toEqual([`Savings are from the cost analysis completed ${formatTime(done)}.`]);
+  });
+
+  it("the latest run's checks: how many it recorded and how many completed (the savings tile's \"all K active checks ran\")", async () => {
+    const o = await org('st-checks');
+    await pool.query(
+      `INSERT INTO cost_analysis_runs (organization_id, status, started_at, completed_at, created_at, source, checks)
+       VALUES ($1, 'completed', $2, $3, $2, 'discovery', $4)`,
+      [o, ago(3 * HOUR), ago(2.9 * HOUR), JSON.stringify([
+        { rule_id: null, issue: 'synthetic-a', outcome: 'complete', detected: 0, unknown: 0 },
+        { rule_id: null, issue: 'synthetic-b', outcome: 'failed', detected: 0, unknown: 0 },
+      ])]
+    );
+    const { analysis } = await readAndRender(o);
+    expect(analysis.data?.latestChecks).toEqual({ total: 2, complete: 1 });
   });
 
   it('partial: completed with gaps, dated by its own completion with the partial sentence', async () => {
@@ -402,8 +417,9 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     expect(analysis.data).toEqual({
       latest: { state: 'partial', at: done, startedAt: ago(3 * HOUR).toISOString() },
       lastCompleted: { at: done, partial: true },
+      latestChecks: null,
     });
-    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
+    expect(savings).toEqual([`Savings are from the cost analysis completed ${formatTime(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
   });
 
   it('partial after an older completed run: dated by the partial run, not the older one', async () => {
@@ -412,8 +428,8 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     const done = await analysisRun(o, 'partial', ago(3 * HOUR));
     const { analysis, savings } = await readAndRender(o);
     expect(analysis.data).toMatchObject({ latest: { state: 'partial', at: done }, lastCompleted: { at: done, partial: true } });
-    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
-    expect(savings.join('\n')).not.toContain(formatInstantDay(older));
+    expect(savings).toEqual([`Savings are from the cost analysis completed ${formatTime(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
+    expect(savings.join('\n')).not.toContain(formatTime(older));
   });
 
   it('every run partial, none completed: never "didn\'t finish"', async () => {
@@ -423,7 +439,7 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     const done = await analysisRun(o, 'partial', ago(3 * HOUR));
     const { analysis, savings } = await readAndRender(o);
     expect(analysis.data).toMatchObject({ latest: { state: 'partial', at: done }, lastCompleted: { at: done, partial: true } });
-    expect(savings).toEqual([HEADLINE, `From the cost analysis completed ${formatInstant(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
+    expect(savings).toEqual([`Savings are from the cost analysis completed ${formatTime(done)}. ${ANALYSIS_PARTIAL_NOTE}`]);
     expect(savings.join('\n')).not.toMatch(DIDNT_FINISH);
   });
 
@@ -432,7 +448,7 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     await analysisRun(o, 'partial', ago(3 * HOUR), { completed: null });
     const { analysis, savings } = await readAndRender(o);
     expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: null });
-    expect(savings).toEqual([HEADLINE, "The last cost analysis didn't finish."]);
+    expect(savings).toEqual(["The last cost analysis didn't finish."]);
   });
 
   it.each([
@@ -448,7 +464,7 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     if ('lease' in o) await lease(org_, o.lease);
     const { analysis, savings } = await readAndRender(org_);
     expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: { at: older } });
-    expect(savings).toEqual([HEADLINE, `From the last completed cost analysis, ${formatInstantDay(older)}. This week's analysis didn't finish.`]);
+    expect(savings).toEqual([`Savings are from the last completed cost analysis, ${formatTime(older)}. This week's analysis didn't finish.`]);
     expect(savings.join('\n')).not.toContain(ANALYSIS_PARTIAL_NOTE);
   });
 
@@ -459,8 +475,7 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     const { analysis, savings } = await readAndRender(o);
     expect(analysis.data).toMatchObject({ latest: { state: 'did_not_finish' }, lastCompleted: { at: partial, partial: true } });
     expect(savings).toEqual([
-      HEADLINE,
-      `From the last completed cost analysis, ${formatInstantDay(partial)}. ${ANALYSIS_PARTIAL_NOTE} This week's analysis didn't finish.`,
+      `Savings are from the last completed cost analysis, ${formatTime(partial)}. ${ANALYSIS_PARTIAL_NOTE} This week's analysis didn't finish.`,
     ]);
   });
 
@@ -474,6 +489,6 @@ describe('cost analysis run states: mapped state and the savings line (WE-2 revi
     if ('lease' in o) await lease(org_, o.lease);
     const { analysis, savings } = await readAndRender(org_);
     expect(analysis.data).toMatchObject({ latest: { state: 'in_progress' }, lastCompleted: { at: older } });
-    expect(savings).toEqual([HEADLINE, `From the last completed cost analysis, ${formatInstantDay(older)}. A new analysis is in progress.`]);
+    expect(savings).toEqual([`Savings are from the last completed cost analysis, ${formatTime(older)}. A new analysis is in progress.`]);
   });
 });

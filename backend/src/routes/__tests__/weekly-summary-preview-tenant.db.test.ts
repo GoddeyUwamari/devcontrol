@@ -6,15 +6,20 @@
  * non-BYPASSRLS role, so aws_resources' and deployments' tenant policies
  * apply: a read sees rows only through a connection tagged for their
  * organization. Authentication is stubbed (role and org from test headers);
- * Cost Explorer is stubbed to fail, so the inventory estimate is read.
+ * Cost Explorer is stubbed to fail.
  *
- *   1. The preview shows the caller's own org's inventory estimate and
- *      deployments, and nothing of another org's.
+ *   1. The preview's facts show the caller's own org's deployments (this
+ *      week's counts and whether any was ever recorded), and nothing of
+ *      another org's. (The inventory estimate this used to compare was
+ *      dropped from the email with the executive brief, founder F4.)
  *   2. The preview and the scheduled send's read agree.
  *   3. The repository's own fallback (no client passed) reads under the
  *      org's tag too, never on the bare pool.
  *   4. Controls: an untagged read sees nothing, and a connection tagged for
  *      the other org sees nothing of this one.
+ *   5. The still-detected read (getHiddenFindings, via the facts builder;
+ *      brief review L-4): org B's resolved findings that the latest analysis
+ *      found again never appear in org A's facts, and the reverse.
  */
 jest.mock('../../config/database', () => {
   const actual = jest.requireActual('../../config/database');
@@ -55,6 +60,8 @@ import { Pool, PoolClient } from 'pg';
 import * as database from '../../config/database';
 import aiInsightsRoutes from '../ai-insights.routes';
 import { WeeklySummaryRepository, weeklySummaryPeriod } from '../../repositories/weekly-summary.repository';
+import type { WeeklyFacts } from '../../services/weekly-brief/facts';
+import { lowActivityMetadata } from '../../services/__tests__/helpers/low-activity-fixture';
 
 const { role: READER_ROLE, pool: readerPool } = (database as unknown as { mockReader: { role: string; pool: Pool } }).mockReader;
 
@@ -92,6 +99,30 @@ async function resources(orgId: string, costs: number[]) {
   }
 }
 
+const IDLE = 'Idle Instance';
+const stillName = (label: string, i: number) => `we3-still-${label}-${SUFFIX}-${i}`;
+
+/** `count` resolved Idle Instance findings that a completed analysis after the decision detected again. */
+async function stillDetected(orgId: string, label: string, count: number) {
+  const run = (await admin.query(
+    `INSERT INTO cost_analysis_runs (organization_id, status, source, checks, lease_acquired_at, completed_at)
+     VALUES ($1, 'completed', 'discovery', $2, NOW(), NOW()) RETURNING id`,
+    [orgId, JSON.stringify([{ rule_id: null, issue: IDLE, outcome: 'complete', detected: count, unknown: 0 }])]
+  )).rows[0].id;
+  for (let i = 0; i < count; i++) {
+    await admin.query(
+      `INSERT INTO cost_recommendations (organization_id, resource_id, resource_type, resource_name, issue, potential_savings, severity, status, aws_region, updated_at)
+       VALUES ($1, $2, 'EC2', $2, $3, 12.5, 'LOW', 'RESOLVED', 'us-east-1', NOW() - INTERVAL '2 days')`,
+      [orgId, stillName(label, i), IDLE]
+    );
+    await admin.query(
+      `INSERT INTO cost_finding_detections (organization_id, resource_id, issue, run_id, outcome, observed_at, detected_at, resource_type, potential_savings, severity, metadata)
+       VALUES ($1, $2, $3, $4, 'detected', NOW(), NOW(), 'EC2', 12.5, 'LOW', $5::jsonb)`,
+      [orgId, stillName(label, i), IDLE, run, JSON.stringify({ ...lowActivityMetadata(), savings_basis: 'estimated: list price' })]
+    );
+  }
+}
+
 async function deployments(orgId: string, status: string, count: number) {
   const service = (await admin.query(
     `INSERT INTO services (name, template, owner, organization_id) VALUES ($1, 'synthetic', 'synthetic', $2) RETURNING id`,
@@ -117,6 +148,8 @@ beforeAll(async () => {
   await resources(B, [999]);
   await deployments(A, 'success', 2);
   await deployments(B, 'failed', 5);
+  await stillDetected(A, 'a', 1);
+  await stillDetected(B, 'b', 2);
 
   const app = express();
   app.use('/api/ai-insights', aiInsightsRoutes);
@@ -143,6 +176,9 @@ afterAll(async () => {
   await new Promise(resolve => server.close(resolve));
   await readerPool.end();
   for (const id of [A, B].filter(Boolean)) {
+    await admin.query('DELETE FROM cost_finding_detections WHERE organization_id = $1', [id]);
+    await admin.query('DELETE FROM cost_recommendations WHERE organization_id = $1', [id]);
+    await admin.query('DELETE FROM cost_analysis_runs WHERE organization_id = $1', [id]);
     await admin.query('DELETE FROM deployments WHERE organization_id = $1', [id]);
     await admin.query('DELETE FROM services WHERE organization_id = $1', [id]);
     await admin.query('DELETE FROM aws_resources WHERE organization_id = $1', [id]);
@@ -153,7 +189,7 @@ afterAll(async () => {
   await admin.end();
 });
 
-async function preview(org: string): Promise<{ evidence: TenantSections }> {
+async function preview(org: string): Promise<{ facts: WeeklyFacts }> {
   const res = await fetch(`${baseUrl}/api/ai-insights/preview-weekly-summary`, {
     headers: { 'x-test-org': org, 'x-test-role': 'owner' },
   });
@@ -161,30 +197,13 @@ async function preview(org: string): Promise<{ evidence: TenantSections }> {
   return res.json();
 }
 
-/** The two sections read from RLS-protected tables (as gathered, or as the preview's JSON carries them). */
-interface TenantSections {
-  inventoryEstimate: { state: string; data?: unknown } | null;
-  delivery: { state: string; data?: { deploymentCount: number; successfulDeployments: number; failedDeployments: number } | null };
-}
-const tenantRead = (evidence: TenantSections) => ({
-  inventory: evidence.inventoryEstimate?.state === 'available' ? evidence.inventoryEstimate.data : evidence.inventoryEstimate?.state,
-  delivery: evidence.delivery.state === 'available'
-    ? {
-        deploymentCount: evidence.delivery.data!.deploymentCount,
-        successfulDeployments: evidence.delivery.data!.successfulDeployments,
-        failedDeployments: evidence.delivery.data!.failedDeployments,
-      }
-    : evidence.delivery.state,
-});
+/** What the facts carry from the RLS-protected deployments table. */
+const tenantRead = (facts: WeeklyFacts) => (facts.delivery.state === 'available'
+  ? { count: facts.delivery.count, failed: facts.delivery.failed, finished: facts.delivery.finished, everRecorded: facts.delivery.everRecorded }
+  : facts.delivery.state);
 
-const A_ROWS = {
-  inventory: { monthlyRunRate: 30, pricedResources: 2, totalResources: 2 },
-  delivery: { deploymentCount: 2, successfulDeployments: 2, failedDeployments: 0 },
-};
-const B_ROWS = {
-  inventory: { monthlyRunRate: 999, pricedResources: 1, totalResources: 1 },
-  delivery: { deploymentCount: 5, successfulDeployments: 0, failedDeployments: 5 },
-};
+const A_ROWS = { count: 2, failed: 0, finished: 2, everRecorded: true };
+const B_ROWS = { count: 5, failed: 5, finished: 5, everRecorded: true };
 
 describe('preview-weekly-summary reads under the caller org tenant context (WE-3a)', () => {
   it('control: the test role is subject to row level security -- an untagged read sees none of the rows', async () => {
@@ -199,25 +218,25 @@ describe('preview-weekly-summary reads under the caller org tenant context (WE-3
     expect(asAdmin.rows[0].n).toBe(2);
   });
 
-  it("each owner's preview shows their own org's inventory estimate and deployments, and nothing of the other org's", async () => {
+  it("each owner's preview shows their own org's deployments, and nothing of the other org's", async () => {
     const a = await preview(A);
     const b = await preview(B);
-    expect(tenantRead(a.evidence)).toEqual(A_ROWS);
-    expect(tenantRead(b.evidence)).toEqual(B_ROWS);
+    expect(tenantRead(a.facts)).toEqual(A_ROWS);
+    expect(tenantRead(b.facts)).toEqual(B_ROWS);
   });
 
   it("the preview and the scheduled send's read agree", async () => {
-    const previewed = tenantRead((await preview(A)).evidence);
+    const previewed = tenantRead((await preview(A)).facts);
     const repository = new WeeklySummaryRepository(readerPool);
-    const sent = await repository.withOrganizationClient(A, client => repository.gatherWeeklyEvidence(A, new Date(), client));
+    const sent = await repository.withOrganizationClient(A, client => repository.buildWeeklyFacts(A, new Date(), client));
     expect(tenantRead(sent)).toEqual(previewed);
     expect(previewed).toEqual(A_ROWS);
   });
 
   it('with no client passed, the repository still reads under the org tag -- never the bare pool', async () => {
     const repository = new WeeklySummaryRepository(readerPool);
-    expect(tenantRead(await repository.gatherWeeklyEvidence(A, new Date()))).toEqual(A_ROWS);
-    expect(tenantRead(await repository.gatherWeeklyEvidence(B, new Date()))).toEqual(B_ROWS);
+    expect(tenantRead(await repository.buildWeeklyFacts(A, new Date()))).toEqual(A_ROWS);
+    expect(tenantRead(await repository.buildWeeklyFacts(B, new Date()))).toEqual(B_ROWS);
   });
 
   it("control: a connection tagged for the other org sees nothing of this org's rows", async () => {
@@ -228,9 +247,47 @@ describe('preview-weekly-summary reads under the caller org tenant context (WE-3
         { organizationId: A, startDate: new Date(period.delivery.start), endDate: new Date(period.delivery.end) },
         clientB
       ),
-      evidence: await repository.gatherWeeklyEvidence(A, new Date(), clientB),
+      facts: await repository.buildWeeklyFacts(A, new Date(), clientB),
     }));
     expect(crossed.dora.deploymentCount).toBe(0);
-    expect(tenantRead(crossed.evidence).inventory).toBe('unavailable');
+    expect(tenantRead(crossed.facts)).toEqual({ count: 0, failed: 0, finished: 0, everRecorded: false });
+  });
+});
+
+/** What the facts carry from the still-detected read (getHiddenFindings). */
+const stillRead = (facts: WeeklyFacts) => (facts.savings.state === 'available'
+  ? { count: facts.savings.stillDetected.count, resource: facts.savings.stillDetected.example?.resource ?? null }
+  : facts.savings.state);
+
+describe('the still-detected read stays in the caller org (brief review L-4)', () => {
+  it('control: an untagged read sees none of the cost rows; the admin sees them', async () => {
+    const { rows } = await readerPool.query(
+      `SELECT (SELECT COUNT(*)::int FROM cost_recommendations WHERE organization_id = ANY($1)) AS decisions,
+              (SELECT COUNT(*)::int FROM cost_finding_detections WHERE organization_id = ANY($1)) AS detections,
+              (SELECT COUNT(*)::int FROM cost_analysis_runs WHERE organization_id = ANY($1)) AS runs`,
+      [[A, B]]
+    );
+    expect(rows[0]).toEqual({ decisions: 0, detections: 0, runs: 0 });
+    const asAdmin = await admin.query('SELECT COUNT(*)::int AS n FROM cost_recommendations WHERE organization_id = ANY($1)', [[A, B]]);
+    expect(asAdmin.rows[0].n).toBe(3);
+  });
+
+  it("each org's preview counts and names only its own findings detected again", async () => {
+    const a = (await preview(A)).facts;
+    const b = (await preview(B)).facts;
+    expect(stillRead(a)).toEqual({ count: 1, resource: stillName('a', 0) });
+    expect(stillRead(b)).toEqual({ count: 2, resource: expect.stringMatching(new RegExp(`^we3-still-b-${SUFFIX}-[01]$`)) });
+    expect(JSON.stringify(a)).not.toContain('we3-still-b-');
+    expect(JSON.stringify(b)).not.toContain('we3-still-a-');
+  });
+
+  it("the scheduled send's facts builder, with no client and with the other org's tagged client, never sees the other org's findings", async () => {
+    const repository = new WeeklySummaryRepository(readerPool);
+    const plain = await repository.buildWeeklyFacts(A, new Date());
+    const crossed = await repository.withOrganizationClient(B, (clientB: PoolClient) => repository.buildWeeklyFacts(A, new Date(), clientB));
+    for (const facts of [plain, crossed]) {
+      expect(stillRead(facts)).toEqual({ count: 1, resource: stillName('a', 0) });
+      expect(JSON.stringify(facts)).not.toContain('we3-still-b-');
+    }
   });
 });

@@ -1,0 +1,65 @@
+DEVCONTROL WEEKLY SUMMARY
+Nov 9 – 15, 2026
+Example Org (synthetic) · Visibility plan
+
+Hi Alex,
+
+DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so security figures below are from the last completed scan (Nov 15, 06:10 UTC) and savings from the last completed cost analysis (Nov 15, 06:20 UTC). 2 account-level security findings and 3 resource compliance issues are open. 2 cost opportunities are open in Cost Optimization. 4 deployments, 1 failed. Some figures couldn't be retrieved; see the tiles below.
+
+SECURITY
+5 open
+2 account · 3 compliance
+
+AWS SPEND
+—
+Couldn't retrieve this week
+
+ESTIMATED SAVINGS
+Open opportunities
+$120/mo
+
+NEEDS YOUR ATTENTION
+1. DevControl couldn't reach your AWS account.
+Last successful check: Nov 15, 06:00 UTC.
+Open Connect AWS: https://app.example.test/connect-aws
+2. Security · 5 open findings
+2 account-level (security groups, IAM) · 3 resource compliance (encryption, backups, tagging).
+Last completed scan Nov 15, 06:10 UTC
+Review findings: https://app.example.test/security
+3. Cost · 2 open opportunities
+2 open opportunities, about $120/mo estimated.
+This week's analysis didn't finish.
+Review in Cost Optimization: https://app.example.test/cost-optimization
+4. Delivery · 1 failed deployment
+See deployments: https://app.example.test/deployments
+
+COST
+AWS Cost Explorer spend for Nov 9–15 couldn't be retrieved.
+See costs: https://app.example.test/costs
+
+DELIVERY
+4 deployments · 1 failed
+See deployments: https://app.example.test/deployments
+
+Open DevControl: https://app.example.test/dashboard
+
+---
+AWS connection: DevControl couldn't reach your account. Last successful check: Nov 15, 06:00 UTC.
+The latest scan didn't finish (Nov 16, 06:14 UTC); security figures are from the last completed scan, Nov 15, 06:10 UTC.
+Savings are from the last completed cost analysis, Nov 15, 06:20 UTC. This week's analysis didn't finish.
+AWS Cost Explorer unblended cost after credits, by UTC day. Cost Explorer can take several days to finish a day; DevControl counts only finished days and lists the others as so far. If credits take a category below $0 on a day, that category counts as $0.
+Security covers DevControl's own configuration checks, not AWS Security Hub. Savings are estimates, not confirmed billing savings.
+Lead time for changes and time to restore service: not tracked.
+Your active CloudWatch alarms are on Operational Health: https://app.example.test/admin/monitoring
+
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
+
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
+
+DevControl, Inc.
+Questions? Email support@getdevcontrol.com.
+
+© 2026 DevControl. All rights reserved.

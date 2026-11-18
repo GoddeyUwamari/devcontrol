@@ -123,17 +123,16 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       scan: missing('DevControl discovery scans'),
       costAnalysis: missing('DevControl cost analysis runs'),
       deploymentHistory: missing('DevControl deployment records (all time)'),
-      currentWeekSpend: missing('AWS Cost Explorer daily trend'),
-      previousWeekSpend: missing('AWS Cost Explorer daily trend'),
-      weekOverWeek: missing('DevControl week-over-week comparison'),
-      inventoryEstimate: null,
-      alerts: missing('DevControl alert history'),
+      costTrend: missing('AWS Cost Explorer daily trend'),
       delivery: missing('DevControl deployment records'),
       security: await collectSection({ source: 'DevControl security posture score and configuration checks' }, async () => ({
         state: 'available', data: { score: 70, accountLevelFindings: 2, resourceComplianceIssues: 3 },
       })),
       recommendations: await collectSection({ source: 'DevControl cost recommendations' }, async () => ({
         state: 'available', data: { active: 3, estimatedMonthlySavings: 845, estimatedFindings: 3, ceilingByResourceType: {}, unestimatedFindings: 0 },
+      })),
+      stillDetected: await collectSection({ source: 'DevControl resolved cost findings still detected' }, async () => ({
+        state: 'available', data: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, example: null },
       })),
     }));
   }
@@ -162,11 +161,14 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     for (const body of [payload.html, payload.text]) {
       expect(body).toContain(token);
     }
-    expect(payload.text).toContain('Cloud spend data was unavailable for this period');
+    expect(payload.text).toContain('AWS Cost Explorer returned no data for this week.');
     // WE-D11: replies go to the support mailbox, never to the no-reply sender.
     expect(payload.replyTo).toBe(WEEKLY_SUMMARY_REPLY_TO);
     expect(WEEKLY_SUMMARY_REPLY_TO).toBe('support@getdevcontrol.com');
-    expect(payload.text).not.toMatch(/No cloud spend recorded|No alerts|DORA|lead time/i);
+    expect(payload.text).not.toMatch(/No cloud spend recorded|No alerts|DORA/i);
+    // Lead time is named only to say it isn't tracked (moved to the footer, founder-approved).
+    expect(payload.text.match(/lead time/gi)).toEqual(['Lead time']);
+    expect(payload.text).toContain('Lead time for changes and time to restore service: not tracked.');
 
     // B1: no model call; nothing model-written or "AI"-claimed reaches the email.
     expect(modelCall).not.toHaveBeenCalled();
@@ -175,8 +177,8 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
     for (const body of [payload.html, payload.text]) {
       expect(body).not.toMatch(/AI recommendation|AI-Powered/i);
     }
-    expect(payload.html).toContain('Estimated savings: <strong>$845/month</strong>');
-    expect(payload.text).toContain('Estimated savings: $845/month across 3 open findings.');
+    expect(payload.html).toContain('>$845/mo</p>');
+    expect(payload.text).toContain('3 open opportunities, about $845/mo estimated.');
     setModelClientForTests(undefined);
   });
 
@@ -249,7 +251,7 @@ describe('WeeklyAISummaryJob recipient eligibility', () => {
       expect(body.reply_to).toBe('support@getdevcontrol.com');
       expect(body.to).toBe(`owner@${ORG_B}.test`);
       expect(body.subject).toMatch(SUBJECT);
-      expect(body.text).toContain('Cloud spend data was unavailable for this period');
+      expect(body.text).toContain('AWS Cost Explorer returned no data for this week.');
       expect(Object.keys(body.headers).sort()).toEqual(['List-Unsubscribe', 'List-Unsubscribe-Post', 'X-Entity-Ref-ID']);
       expect(body.headers['List-Unsubscribe']).toMatch(/^<.+\/api\/user\/preferences\/unsubscribe\?token=v1\.[^>]+>$/);
       expect(body.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');

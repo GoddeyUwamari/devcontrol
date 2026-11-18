@@ -75,16 +75,16 @@ router.post('/trigger-weekly-summary', requireOwner, weeklySummaryTriggerRateLim
 });
 
 // GET /api/ai-insights/preview-weekly-summary
-// Preview the caller's own org's weekly summary evidence and wording without
-// sending email. Owner only, like the manual send. The evidence carries only
-// what the org's plan includes (the repository leaves plan-gated figures out).
+// Preview the caller's own org's weekly summary facts and wording without
+// sending email. Owner only, like the manual send. The facts carry only what
+// the org's plan includes (the repository leaves plan-gated figures out).
 // Every read runs on one connection tagged for the org (withOrganizationClient),
 // the same way the scheduled send reads, so the preview and the email agree
 // under row level security.
 router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
   try {
     const { WeeklySummaryRepository } = await import('../repositories/weekly-summary.repository');
-    const { composeWeeklySummary } = await import('../services/weekly-summary-content');
+    const { composeWeeklyBrief } = await import('../services/weekly-brief/rules');
 
     const repository = new WeeklySummaryRepository(pool);
     const organizationId = (req as any).user?.organizationId;
@@ -92,11 +92,11 @@ router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Organization context required' });
     }
 
-    const [recipients, evidence, organizationName, planName] = await repository.withOrganizationClient(
+    const [recipients, facts, organizationName, planName] = await repository.withOrganizationClient(
       organizationId,
       (client) => Promise.all([
         repository.getRecipients(organizationId, client),
-        repository.gatherWeeklyEvidence(organizationId, new Date(), client),
+        repository.buildWeeklyFacts(organizationId, new Date(), client),
         repository.getOrganizationName(organizationId, client),
         repository.getPlanName(organizationId, client),
       ])
@@ -106,9 +106,9 @@ router.get('/preview-weekly-summary', requireOwner, async (req, res) => {
       success: true,
       organizationId,
       recipients: recipients.map(r => ({ email: r.email, fullName: r.fullName })),
-      evidence,
-      content: composeWeeklySummary(evidence, { organizationName, planName }),
-      message: 'This is the evidence and wording the weekly email would use'
+      facts,
+      brief: composeWeeklyBrief(facts, { organizationName, planName }),
+      message: 'These are the facts and wording the weekly email would use'
     });
   } catch (error: any) {
     console.error('[AI Insights] Preview error:', error?.message);

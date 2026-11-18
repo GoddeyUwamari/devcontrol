@@ -310,7 +310,12 @@ export function trendPeriodUtc(range: CostTrendRange, now: Date): { start: strin
  * "Amazon"/"AWS" prefix — e.g. "AmazonCloudWatch" has none, while "AWS Glue" does —
  * so both the exact-match table above and this fallback have to tolerate either.
  */
-function normalizeServiceName(rawName: string): string {
+/**
+ * A Cost Explorer SERVICE name as the cost trend chart shows it. Exported for
+ * the weekly email's service lines, so the email and the chart name a service
+ * the same way.
+ */
+export function normalizeServiceName(rawName: string): string {
   const mapped = SERVICE_DISPLAY_NAMES[rawName]
   if (mapped) return mapped
 

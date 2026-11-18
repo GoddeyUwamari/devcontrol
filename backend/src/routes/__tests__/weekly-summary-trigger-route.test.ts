@@ -38,7 +38,7 @@ const mockHeldClients: Array<{ organizationId: string; client: object }> = [];
 const mockRepo = {
   withOrganizationClient: jest.fn(),
   getRecipients: jest.fn(),
-  gatherWeeklyEvidence: jest.fn(),
+  buildWeeklyFacts: jest.fn(),
   getOrganizationName: jest.fn(),
   getPlanName: jest.fn(),
 };
@@ -54,6 +54,7 @@ jest.mock('../../repositories/weekly-summary.repository', () => ({
 import aiInsightsRoutes from '../ai-insights.routes';
 import { notSupported, notConnected } from '../../services/ai-context-contract';
 import { weeklySummaryPeriod } from '../../repositories/weekly-summary.repository';
+import { weeklyFacts } from '../../services/weekly-brief/facts';
 
 let server: http.Server;
 let baseUrl: string;
@@ -187,17 +188,18 @@ describe('POST /api/ai-insights/trigger-weekly-summary errors (WE-1)', () => {
 
 describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
   const missing = (source: string) => notSupported({ source }, 'not evaluated in this test');
-  const evidence = () => ({
+  const facts = () => weeklyFacts(<Parameters<typeof weeklyFacts>[0]>{
     period: weeklySummaryPeriod(new Date('2026-11-16T09:00:00.000Z')),
     awsConnection: 'not_connected',
-    currentWeekSpend: notConnected({ source: 'AWS Cost Explorer daily trend' }, 'no AWS account is connected'),
-    previousWeekSpend: notConnected({ source: 'AWS Cost Explorer daily trend' }, 'no AWS account is connected'),
-    weekOverWeek: missing('DevControl week-over-week comparison'),
-    inventoryEstimate: null,
-    alerts: missing('DevControl alert history'),
+    connectionHealth: null,
+    scan: null,
+    costAnalysis: null,
+    deploymentHistory: missing('DevControl deployment records (all time)'),
+    costTrend: notConnected({ source: 'AWS Cost Explorer daily trend' }, 'no AWS account is connected'),
     delivery: missing('DevControl deployment records'),
     security: notConnected({ source: 'DevControl security posture score and configuration checks' }, 'no AWS account is connected'),
     recommendations: notConnected({ source: 'DevControl cost recommendations' }, 'no AWS account is connected'),
+    stillDetected: notConnected({ source: 'DevControl resolved cost findings still detected' }, 'no AWS account is connected'),
   });
 
   function preview(org: string, role: string) {
@@ -216,7 +218,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
       { userId: 'u', email: 'owner@example.test', fullName: 'Pat Owner' },
       { userId: 'v', email: 'second-owner@example.test', fullName: 'Sam Owner' },
     ]);
-    mockRepo.gatherWeeklyEvidence.mockReset().mockImplementation(async () => evidence());
+    mockRepo.buildWeeklyFacts.mockReset().mockImplementation(async () => facts());
     mockRepo.getOrganizationName.mockReset().mockResolvedValue('Example Org (synthetic)');
     mockRepo.getPlanName.mockReset().mockResolvedValue('Visibility');
   });
@@ -226,19 +228,20 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     const text = await res.text();
     expect(res.status).toBe(403);
     expect(mockRepoConstructed).not.toHaveBeenCalled();
-    expect(mockRepo.gatherWeeklyEvidence).not.toHaveBeenCalled();
+    expect(mockRepo.buildWeeklyFacts).not.toHaveBeenCalled();
     expect(text).not.toContain('owner@example.test');
   });
 
-  it("an owner previews their own org's email content: five sections, composed from what the repository returned", async () => {
+  it("an owner previews their own org's facts and brief, composed from what the repository returned", async () => {
     const res = await preview('org-preview-2', 'owner');
     const body = (await res.json()) as any;
     expect(res.status).toBe(200);
-    expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-2', expect.any(Date), mockHeldClients[0].client);
-    expect(body.content.sections.map((s: any) => s.title)).toEqual(['COSTS', 'SECURITY', 'ESTIMATED SAVINGS', 'ALERTS', 'DELIVERY']);
-    expect(body.content.organizationName).toBe('Example Org (synthetic)');
-    expect(body.content.header).toMatch(/^Example Org \(synthetic\) · Visibility plan · .+ \(UTC\)$/);
-    expect(body.content.subject).toMatch(/^Your DevControl weekly summary · /);
+    expect(mockRepo.buildWeeklyFacts).toHaveBeenCalledWith('org-preview-2', expect.any(Date), mockHeldClients[0].client);
+    expect(body.facts.connection).toEqual({ state: 'not_connected' });
+    expect(body.brief.layout).toBe('not_connected');
+    expect(body.brief.notConnected.sections.map((s: any) => s.title)).toEqual(['COSTS', 'SECURITY', 'ESTIMATED SAVINGS']);
+    expect(body.brief.orgLine).toBe('Example Org (synthetic) · Visibility plan');
+    expect(body.brief.subject).toBe('Your DevControl weekly summary · Nov 9 – 15, 2026');
     expect(body.message).not.toMatch(/\bAI\b/);
   });
 
@@ -250,7 +253,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     const body = (await res.json()) as any;
     expect(res.status).toBe(200);
     expect(body.organizationId).toBe('org-preview-4');
-    for (const read of [mockRepo.withOrganizationClient, mockRepo.getRecipients, mockRepo.gatherWeeklyEvidence, mockRepo.getOrganizationName, mockRepo.getPlanName]) {
+    for (const read of [mockRepo.withOrganizationClient, mockRepo.getRecipients, mockRepo.buildWeeklyFacts, mockRepo.getOrganizationName, mockRepo.getPlanName]) {
       expect(read).toHaveBeenCalledTimes(1);
       expect(read.mock.calls[0][0]).toBe('org-preview-4');
     }
@@ -267,7 +270,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
     expect(mockHeldClients[0].organizationId).toBe('org-preview-5');
     const held = mockHeldClients[0].client;
     expect(mockRepo.getRecipients).toHaveBeenCalledWith('org-preview-5', held);
-    expect(mockRepo.gatherWeeklyEvidence).toHaveBeenCalledWith('org-preview-5', expect.any(Date), held);
+    expect(mockRepo.buildWeeklyFacts).toHaveBeenCalledWith('org-preview-5', expect.any(Date), held);
     expect(mockRepo.getOrganizationName).toHaveBeenCalledWith('org-preview-5', held);
     expect(mockRepo.getPlanName).toHaveBeenCalledWith('org-preview-5', held);
   });
@@ -282,7 +285,7 @@ describe('GET /api/ai-insights/preview-weekly-summary (WE-1, P3)', () => {
   });
 
   it('a failure answers a generic error -- never the raw message', async () => {
-    mockRepo.gatherWeeklyEvidence.mockRejectedValue(new Error('synthetic raw failure detail'));
+    mockRepo.buildWeeklyFacts.mockRejectedValue(new Error('synthetic raw failure detail'));
     const res = await preview('org-preview-3', 'owner');
     const text = await res.text();
     expect(res.status).toBe(500);

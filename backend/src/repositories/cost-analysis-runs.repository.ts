@@ -317,7 +317,8 @@ export async function latestLeasedRun(client: PoolClient, organizationId: string
 
 /** The organization's latest analysis run (any source) as a reader sees it, and its last completed one. */
 export interface LatestAnalysisRuns {
-  latest: Pick<CostAnalysisRun, 'run_state' | 'started_at' | 'completed_at' | 'created_at'> | null;
+  /** `checks`: the run's per-check outcomes (null when it recorded none), for the weekly email's "all K active checks ran". */
+  latest: Pick<CostAnalysisRun, 'run_state' | 'started_at' | 'completed_at' | 'created_at' | 'checks'> | null;
   lastCompleted: Pick<CostAnalysisRun, 'status' | 'completed_at' | 'created_at'> | null;
 }
 
@@ -331,7 +332,7 @@ export interface LatestAnalysisRuns {
  */
 export async function latestAnalysisRuns(client: Pick<PoolClient, 'query'>, organizationId: string): Promise<LatestAnalysisRuns> {
   const latest = await client.query(
-    `SELECT r.started_at, r.completed_at, r.created_at,
+    `SELECT r.started_at, r.completed_at, r.created_at, r.checks,
             CASE
               WHEN r.status <> 'running' THEN r.status
               WHEN r.lease_acquired_at IS NULL

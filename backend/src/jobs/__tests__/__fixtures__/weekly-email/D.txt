@@ -1,0 +1,70 @@
+DEVCONTROL WEEKLY SUMMARY
+Nov 9 – 15, 2026
+Example Org (synthetic) · Visibility plan
+
+Hi Alex,
+
+1 account-level security finding is open. 2 cost opportunities are open in Cost Optimization. Spend for the 3 finished days was $2.25; 1 day is still updating and 3 aren't reported yet. No deployments recorded in DevControl this week.
+
+SECURITY
+1 open
+1 account · 0 compliance
+
+AWS SPEND · 3 FINISHED DAYS
+Nov 9–11
+$2.25
+No comparison yet (see Cost)
++ 1 day still updating · 3 not reported yet
+
+ESTIMATED SAVINGS
+Open opportunities
+2 open · no dollar estimate yet
+
+NEEDS YOUR ATTENTION
+1. Security · 1 open finding
+1 account-level (security groups, IAM).
+Latest scan Nov 16, 06:14 UTC
+Review findings: https://app.example.test/security
+2. Cost · 2 open opportunities
+2 open opportunities, no dollar estimate yet.
+Plus up to $18/mo in estimated ceilings, not expected savings.
+Review in Cost Optimization: https://app.example.test/cost-optimization
+
+COST
+Finished days, Nov 9–11: $2.25.
+No week-over-week comparison: DevControl has 1 finished day from last week, not 3, so the two weeks don't match.
+Still updating, Nov 12: $0.06 so far. Not included in the comparison.
+Not reported by Cost Explorer yet, Nov 13–15.
+
+Total spend by service, finished days (not changes)
+EC2  $1.80
+S3  $0.36
+CloudWatch  $0.09
+See costs: https://app.example.test/costs
+
+DELIVERY
+No deployments recorded in DevControl this week.
+Record a deployment on the Deployments page: https://app.example.test/deployments
+
+Open DevControl: https://app.example.test/dashboard
+
+---
+AWS connection: OK · checked Nov 16, 06:02 UTC.
+Security figures are from the latest scan, completed Nov 16, 06:14 UTC.
+Savings are from the cost analysis completed Nov 16, 06:20 UTC.
+AWS Cost Explorer unblended cost after credits, by UTC day. Cost Explorer can take several days to finish a day; DevControl counts only finished days and lists the others as so far. If credits take a category below $0 on a day, that category counts as $0. Per-service figures are after credits and may not add up to the total.
+Security covers DevControl's own configuration checks, not AWS Security Hub. Savings are estimates, not confirmed billing savings.
+Lead time for changes and time to restore service: not tracked.
+Your active CloudWatch alarms are on Operational Health: https://app.example.test/admin/monitoring
+
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
+
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
+
+DevControl, Inc.
+Questions? Email support@getdevcontrol.com.
+
+© 2026 DevControl. All rights reserved.
