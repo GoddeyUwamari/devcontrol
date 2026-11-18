@@ -1,5 +1,6 @@
-Your DevControl Weekly Summary
-Example Org (synthetic) · Visibility plan · Nov 9 – Nov 15, 2026 (UTC)
+DEVCONTROL WEEKLY SUMMARY
+Nov 9 – 15, 2026
+Example Org (synthetic) · Visibility plan
 
 Hi Alex,
 
@@ -18,17 +19,16 @@ Not connected. DevControl's security checks run after you connect AWS.
 ESTIMATED SAVINGS
 Not connected. Savings checks run after you connect AWS.
 
-ALERTS
-Alert history (Coming soon)
-Active CloudWatch alarms appear on Operational Health once AWS is connected.
-
 DELIVERY
-No deployments have been recorded in DevControl yet.
+No deployments recorded in DevControl this week.
 Record a deployment on the Deployments page: https://app.example.test/deployments
 
-View Full Dashboard: https://app.example.test/dashboard
+Open DevControl: https://app.example.test/dashboard
 
 ---
+Lead time for changes and time to restore service: not tracked.
+Active CloudWatch alarms appear on Operational Health once AWS is connected.
+
 This is your weekly automated summary from DevControl.
 Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
 Email Preferences: https://app.example.test/settings/notifications

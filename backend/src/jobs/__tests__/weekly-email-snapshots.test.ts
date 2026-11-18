@@ -1,29 +1,23 @@
 /**
- * The weekly summary email as rendered for the synthetic fixtures C1-C5
- * (weekly-email-fixtures.ts), HTML and plain text, pinned byte for byte in
- * __fixtures__/weekly-email/. A wording change shows up as a diff of these
- * files. To regenerate after an approved change:
+ * The weekly summary email (executive brief) as rendered for the synthetic
+ * fixtures A-E (weekly-email-fixtures.ts), HTML and plain text, pinned byte
+ * for byte in __fixtures__/weekly-email/. A wording or layout change shows up
+ * as a diff of these files. To regenerate after an approved change:
  *   WEEKLY_EMAIL_FIXTURES=write npx jest weekly-email-snapshots
+ * The preview script (backend/scripts/weekly-email-preview.js) sets
+ * WEEKLY_EMAIL_PREVIEW_DIR to also write each fixture's HTML there.
  * Nothing is sent: Resend is never configured here.
  */
-jest.mock('../../services/aws-cost.service', () => ({
-  ...jest.requireActual('../../services/aws-cost.service'),
-  __esModule: true,
-  default: {
-    fetchCostTrend: jest.fn(),
-    getCostTrendFetchedAt: jest.fn(async () => '2026-11-16T09:00:00.000Z'),
-  },
-}));
-
 import * as fs from 'fs';
 import * as path from 'path';
 import { Pool } from 'pg';
-import { composeWeeklySummary } from '../../services/weekly-summary-content';
+import { composeWeeklyBrief } from '../../services/weekly-brief/rules';
 import { WeeklyAISummaryJob } from '../weekly-ai-summary.job';
-import { FIXTURE_IDS, FIXTURE_ORG_NAME, FIXTURE_URLS, FIXTURES, fixtureEvidence, type FixtureId } from './weekly-email-fixtures';
+import { FIXTURE_IDS, FIXTURE_ORG_NAME, FIXTURE_URLS, FIXTURES, fixtureFacts, type FixtureId } from './weekly-email-fixtures';
 
 const DIR = path.join(__dirname, '__fixtures__', 'weekly-email');
 const WRITE = process.env.WEEKLY_EMAIL_FIXTURES === 'write';
+const PREVIEW_DIR = process.env.WEEKLY_EMAIL_PREVIEW_DIR;
 const originalResendKey = process.env.RESEND_API_KEY;
 let job: WeeklyAISummaryJob;
 
@@ -34,35 +28,32 @@ beforeAll(() => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   job = new WeeklyAISummaryJob({} as Pool);
   if (WRITE) fs.mkdirSync(DIR, { recursive: true });
+  if (PREVIEW_DIR) fs.mkdirSync(PREVIEW_DIR, { recursive: true });
 });
 
 afterAll(() => {
   if (originalResendKey) process.env.RESEND_API_KEY = originalResendKey;
 });
 
-async function renderFixture(id: FixtureId): Promise<{ html: string; text: string }> {
-  const e = await fixtureEvidence(id);
+export function templateDataFor(id: FixtureId) {
   const data = job.buildTemplateData({
     userName: 'Alex',
-    content: composeWeeklySummary(e, { organizationName: FIXTURE_ORG_NAME, planName: FIXTURES[id].plan }),
+    brief: composeWeeklyBrief(fixtureFacts(id), { organizationName: FIXTURE_ORG_NAME, planName: FIXTURES[id].plan }),
+    organizationName: FIXTURE_ORG_NAME,
     ...FIXTURE_URLS,
   });
   data.year = 2026;
-  return job.renderEmail(data);
+  return data;
 }
 
-describe('weekly summary email fixtures C1-C5', () => {
-  // The subject has no file of its own: every fixture covers the same cost window.
-  it.each(FIXTURE_IDS)('%s: the subject carries the cost window (WE-D12)', async (id) => {
-    expect(job.buildTemplateData({
-      userName: 'Alex',
-      content: composeWeeklySummary(await fixtureEvidence(id), { organizationName: FIXTURE_ORG_NAME, planName: FIXTURES[id].plan }),
-      ...FIXTURE_URLS,
-    }).subject).toBe('Your DevControl weekly summary · Nov 9 – 15, 2026');
+describe('weekly summary email fixtures A-E', () => {
+  it.each(FIXTURE_IDS)('%s: the subject carries the cost window (WE-D12)', (id) => {
+    expect(templateDataFor(id).subject).toBe('Your DevControl weekly summary · Nov 9 – 15, 2026');
   });
 
-  it.each(FIXTURE_IDS)('%s renders exactly as pinned', async (id) => {
-    const { html, text } = await renderFixture(id);
+  it.each(FIXTURE_IDS)('%s renders exactly as pinned', (id) => {
+    const { html, text } = job.renderEmail(templateDataFor(id));
+    if (PREVIEW_DIR) fs.writeFileSync(path.join(PREVIEW_DIR, `${id}.html`), html);
     for (const [ext, body] of [['html', html], ['txt', text]] as const) {
       const file = path.join(DIR, `${id}.${ext}`);
       if (WRITE) fs.writeFileSync(file, body);

@@ -1,14 +1,14 @@
 /**
- * Weekly Summary cost evidence: WeeklySummaryRepository.getWeeklySpendSections()
- * against a mocked Cost Explorer trend (AWSCostService.fetchCostTrend) and a
- * fake DB client for the inventory estimate. The property under test is the
- * evidence state -- actual vs estimated vs unavailable vs error, complete vs
- * partial -- and the complete-day windows, not Cost Explorer itself.
+ * Weekly Summary reads for the executive brief (brief-build.md), against
+ * mocked sources: the Cost Explorer trend (AWSCostService.fetchCostTrend),
+ * the Cost Optimization page's hidden-findings read, the security sources and
+ * the connection-checks row. The property under test is what each read
+ * passes on -- the trend points' own report states and per-service amounts,
+ * the page's still-detected numbers, the Security page's open count, the
+ * last successful check -- and that a failure stays a failure, never 0.
  *
- * `now` is fixed at Monday 2026-09-28 09:00 UTC (the cron's slot), so:
- *   current window  = 2026-09-21 .. 2026-09-27 (7 complete UTC days)
- *   previous window = 2026-09-14 .. 2026-09-20
- *   today (2026-09-28) is still being billed and must never be counted.
+ * `now` is fixed at Monday 2026-09-28 09:00 UTC (the cron's slot), so the cost
+ * window is 2026-09-21 .. 2026-09-27 and today is never counted.
  */
 jest.mock('../../services/aws-cost.service', () => ({
   ...jest.requireActual('../../services/aws-cost.service'),
@@ -19,37 +19,21 @@ jest.mock('../../services/aws-cost.service', () => ({
   },
 }));
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { Pool } from 'pg';
 import awsCostService from '../../services/aws-cost.service';
 import { WeeklySummaryRepository, weeklySummaryPeriod } from '../weekly-summary.repository';
-import { ALERT_HISTORY_NOT_BUILT_REASON } from '../../services/ai/evidence/providers/not-built';
+import { CostRecommendationsRepository, type HiddenFinding } from '../cost-recommendations.repository';
+import { AccountSecurityFindingsRepository } from '../account-security-findings.repository';
+import { RiskTrackingService } from '../../services/risk-tracking.service';
+import * as subscription from '../../middleware/subscription.middleware';
 
 const fetchCostTrend = awsCostService.fetchCostTrend as jest.Mock;
 const NOW = new Date('2026-09-28T09:00:00.000Z');
 const ORG = '11111111-1111-4111-8111-111111111111';
 
-/** One trend point per day from 2026-08-29 through today, `total` per day from `amountFor`. */
-function trend(amountFor: (day: string) => number | undefined) {
-  const points = [];
-  for (let t = Date.parse('2026-08-29T00:00:00Z'); t <= Date.parse('2026-09-28T00:00:00Z'); t += 86_400_000) {
-    const day = new Date(t).toISOString().slice(0, 10);
-    const total = amountFor(day);
-    if (total === undefined) continue;
-    points.push({ date: day, compute: total, storage: 0, database: 0, network: 0, other: 0, total });
-  }
-  return points;
-}
-
-function fakeClient(inventoryRow: Record<string, string> | Error) {
-  const query = jest.fn(async () => {
-    if (inventoryRow instanceof Error) throw inventoryRow;
-    return { rows: [inventoryRow] };
-  });
-  return { query } as any;
-}
-
 const repository = new WeeklySummaryRepository({} as Pool);
-const period = weeklySummaryPeriod(NOW);
 
 beforeEach(() => {
   fetchCostTrend.mockReset();
@@ -57,162 +41,128 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  (console.error as jest.Mock).mockRestore?.();
+  jest.restoreAllMocks();
 });
 
 describe('weeklySummaryPeriod', () => {
   it('uses the last 7 complete UTC days and excludes the current, still-billing day', () => {
-    expect(period.cost).toEqual({ start: '2026-09-21', endExclusive: '2026-09-28' });
-    expect(period.previousCost).toEqual({ start: '2026-09-14', endExclusive: '2026-09-21' });
+    const p = weeklySummaryPeriod(NOW);
+    expect(p.cost).toEqual({ start: '2026-09-21', endExclusive: '2026-09-28' });
+    expect(p.previousCost).toEqual({ start: '2026-09-14', endExclusive: '2026-09-21' });
   });
 
   it('never produces a future date', () => {
-    const late = weeklySummaryPeriod(new Date('2026-09-28T23:59:59.000Z'));
-    expect(late.cost.endExclusive).toBe('2026-09-28');
-    expect(Date.parse(late.delivery.end)).toBeLessThanOrEqual(Date.parse('2026-09-28T23:59:59.000Z'));
+    const p = weeklySummaryPeriod(new Date('2026-09-28T23:59:59.999Z'));
+    expect(p.cost.endExclusive <= '2026-09-28').toBe(true);
   });
 });
 
-describe('WeeklySummaryRepository.getWeeklySpendSections', () => {
-  it('A/F: actual non-zero spend stays actual and sums only complete days -- today is never counted', async () => {
-    // $10/day everywhere, but today (partial) carries a huge value that must be excluded.
-    fetchCostTrend.mockResolvedValue(trend(day => (day === '2026-09-28' ? 9999 : day >= '2026-09-21' ? 20 : 10)));
-    const client = fakeClient({});
+describe('WeeklySummaryRepository.getCostTrendSection', () => {
+  const point = (date: string, total: number, extra: Record<string, unknown> = {}) =>
+    ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, ...extra });
 
-    const s = await repository.getWeeklySpendSections(ORG, period, client);
-
-    expect(s.currentWeekSpend.state).toBe('available');
-    expect(s.currentWeekSpend.provenance).toBe('actual');
-    expect(s.currentWeekSpend.data).toEqual({ amount: 140, basis: 'unblended_after_credits_category_floored' });
-    expect(s.currentWeekSpend.period).toEqual({ kind: 'range', start: '2026-09-21', endExclusive: '2026-09-28' });
-    expect(s.previousWeekSpend.data?.amount).toBe(70);
-    expect(s.weekOverWeek.state).toBe('available');
-    expect(s.weekOverWeek.provenance).toBe('derived');
-    expect(s.weekOverWeek.data).toEqual({ currentTotal: 140, previousTotal: 70, changeAmount: 70, changePercent: 100 });
-    // Cost Explorer had evidence: the inventory estimate is never consulted.
-    expect(s.inventoryEstimate).toBeNull();
-    expect(client.query).not.toHaveBeenCalled();
-  });
-
-  it('trend-lag-build.md: a day Cost Explorer has not reported yet (reportState not_reported) is missing, never $0', async () => {
-    // Sep 25-27 not reported (the lag); every other day $10, final.
-    const lagged = trend(() => 10).map(p => (p.date >= '2026-09-25'
-      ? { ...p, compute: 0, total: 0, reportState: 'not_reported' }
-      : { ...p, reportState: 'final' }));
-    fetchCostTrend.mockResolvedValue(lagged);
-
-    const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({}));
-
-    expect(s.currentWeekSpend.data?.amount).toBe(40);
-    expect(s.currentWeekSpend.completeness).toMatchObject({ expected: 7, received: 4, missing: ['2026-09-25', '2026-09-26', '2026-09-27'] });
-    expect(s.previousWeekSpend.completeness).toMatchObject({ expected: 7, received: 7, missing: null });
-  });
-
-  it('B: a real $0 Cost Explorer week stays actual $0 -- not unavailable, not an inventory estimate', async () => {
-    fetchCostTrend.mockResolvedValue(trend(() => 0));
-    const client = fakeClient({ total_resources: '5', priced_resources: '5', total_cost: '300' });
-
-    const s = await repository.getWeeklySpendSections(ORG, period, client);
-
-    expect(s.currentWeekSpend.state).toBe('available');
-    expect(s.currentWeekSpend.provenance).toBe('actual');
-    expect(s.currentWeekSpend.data?.amount).toBe(0);
-    expect(s.inventoryEstimate).toBeNull();
-    expect(client.query).not.toHaveBeenCalled();
-    // previous week is $0 too: a percentage is undefined, never "0%".
-    expect(s.weekOverWeek.data?.changePercent).toBeNull();
-  });
-
-  it('C: weekly figures carry the after-credits, category-floored basis of the trend series (WE-D2)', async () => {
-    fetchCostTrend.mockResolvedValue(trend(() => 3));
-    const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({}));
-    expect(s.currentWeekSpend.data?.basis).toBe('unblended_after_credits_category_floored');
-    expect(s.weekOverWeek.coverage).toMatch(/UnblendedCost by service after credits and refunds, each category floored at \$0 per day/);
-    expect(s.weekOverWeek.coverage).not.toMatch(/gross|before credits/);
-  });
-
-  it('D: a Cost Explorer failure with no inventory estimate is error/unavailable -- never $0', async () => {
-    fetchCostTrend.mockRejectedValue(new Error('ThrottlingException: rate exceeded'));
-    const client = fakeClient({ total_resources: '0', priced_resources: '0', total_cost: '0' });
-
-    const s = await repository.getWeeklySpendSections(ORG, period, client);
-
-    expect(s.currentWeekSpend.state).toBe('error');
-    expect(s.currentWeekSpend.data).toBeNull();
-    expect(s.weekOverWeek.state).toBe('error');
-    expect(s.weekOverWeek.data).toBeNull();
-    expect(s.inventoryEstimate?.state).toBe('unavailable');
-    expect(s.inventoryEstimate?.data).toBeNull();
-    // The raw AWS error never reaches the customer-facing reason.
-    expect(s.currentWeekSpend.reason).not.toMatch(/Throttling/);
-  });
-
-  it('D: no AWS connection is not_connected (not an error, not $0) and reads no inventory estimate', async () => {
-    fetchCostTrend.mockRejectedValue(new Error(`AWS_NOT_CONNECTED: org ${ORG} has not connected an AWS account`));
-    const client = fakeClient({ total_resources: '9', priced_resources: '9', total_cost: '99' });
-    const s = await repository.getWeeklySpendSections(ORG, period, client);
-    expect(s.currentWeekSpend.state).toBe('not_connected');
-    expect(s.currentWeekSpend.reason).toBe('no AWS account is connected');
-    expect(s.currentWeekSpend.data).toBeNull();
-    expect(s.weekOverWeek.data).toBeNull();
-    expect(s.inventoryEstimate).toBeNull();
-    expect(client.query).not.toHaveBeenCalled();
-  });
-
-  it('D: an empty Cost Explorer response is unavailable with 0 of 7 days, never a $0 week', async () => {
-    fetchCostTrend.mockResolvedValue([]);
-    const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({ total_resources: '0', priced_resources: '0', total_cost: '0' }));
-    expect(s.currentWeekSpend.state).toBe('unavailable');
-    expect(s.currentWeekSpend.completeness).toMatchObject({ expected: 7, received: 0 });
-    expect(s.currentWeekSpend.data).toBeNull();
-  });
-
-  it('E: the inventory fallback is an estimated, point-in-time run-rate -- never actual spend for the week', async () => {
-    fetchCostTrend.mockRejectedValue(new Error('ThrottlingException'));
-    const client = fakeClient({ total_resources: '10', priced_resources: '8', total_cost: '412.5' });
-
-    const s = await repository.getWeeklySpendSections(ORG, period, client);
-
-    expect(s.inventoryEstimate?.provenance).toBe('estimated');
-    expect(s.inventoryEstimate?.period).toEqual({ kind: 'point_in_time' });
-    expect(s.inventoryEstimate?.state).toBe('partial'); // 8 of 10 resources priced
-    expect(s.inventoryEstimate?.data).toEqual({ monthlyRunRate: 412.5, pricedResources: 8, totalResources: 10 });
-    // No week-over-week from an estimate.
-    expect(s.weekOverWeek.data).toBeNull();
-  });
-
-  it('F: missing Cost Explorer days make the week partial, name the missing days, and qualify the comparison', async () => {
-    fetchCostTrend.mockResolvedValue(trend(day => (day === '2026-09-25' || day === '2026-09-26' ? undefined : 10)));
-    const s = await repository.getWeeklySpendSections(ORG, period, fakeClient({}));
-
-    expect(s.currentWeekSpend.state).toBe('partial');
-    expect(s.currentWeekSpend.completeness).toEqual({
-      unit: 'days of daily Cost Explorer data',
-      expected: 7,
-      received: 5,
-      missing: ['2026-09-25', '2026-09-26'],
-    });
-    expect(s.currentWeekSpend.data?.amount).toBe(50); // no synthetic fill for the missing days
-    expect(s.weekOverWeek.state).toBe('partial');
-  });
-
-  it('P: queries only the requesting organization', async () => {
-    fetchCostTrend.mockRejectedValue(new Error('ThrottlingException'));
-    const client = fakeClient({ total_resources: '1', priced_resources: '1', total_cost: '5' });
-
-    await repository.getWeeklySpendSections(ORG, period, client);
-
+  it("passes each point's own reportState and per-service amounts on, unchanged and unclassified", async () => {
+    fetchCostTrend.mockResolvedValue([
+      point('2026-09-26', 5, { reportState: 'final', byService: [{ service: 'AmazonCloudWatch', amount: 5 }] }),
+      point('2026-09-27', 1, { reportState: 'updating', byService: [{ service: 'AmazonCloudWatch', amount: 1 }] }),
+      point('2026-09-28', 0, { reportState: 'not_reported', byService: [] }),
+    ]);
+    const s = await repository.getCostTrendSection(ORG);
     expect(fetchCostTrend).toHaveBeenCalledWith(ORG, '30d');
-    expect(client.query).toHaveBeenCalledWith(expect.stringContaining('organization_id = $1'), [ORG]);
+    expect(s.state).toBe('available');
+    expect(s.asOf).toBe('2026-09-28T08:55:00.000Z');
+    expect(s.data!.days).toEqual([
+      { date: '2026-09-26', total: 5, reportState: 'final', byService: [{ service: 'AmazonCloudWatch', amount: 5 }] },
+      { date: '2026-09-27', total: 1, reportState: 'updating', byService: [{ service: 'AmazonCloudWatch', amount: 1 }] },
+      { date: '2026-09-28', total: 0, reportState: 'not_reported', byService: [] },
+    ]);
+  });
+
+  it('a point with no state or no per-service data (an older cached shape) says so: null, never a guess', async () => {
+    fetchCostTrend.mockResolvedValue([point('2026-09-27T00:00:00Z', 3)]);
+    const s = await repository.getCostTrendSection(ORG);
+    expect(s.data!.days).toEqual([{ date: '2026-09-27', total: 3, reportState: null, byService: null }]);
+  });
+
+  it('a Cost Explorer failure is an error section -- never $0', async () => {
+    fetchCostTrend.mockRejectedValue(new Error('AccessDeniedException'));
+    const s = await repository.getCostTrendSection(ORG);
+    expect(s.state).toBe('error');
+    expect(s.data).toBeNull();
+  });
+
+  it('no AWS connection is not_connected; an empty response is unavailable', async () => {
+    fetchCostTrend.mockRejectedValue(new Error('AWS_NOT_CONNECTED: none'));
+    expect((await repository.getCostTrendSection(ORG)).state).toBe('not_connected');
+    fetchCostTrend.mockResolvedValue([]);
+    expect((await repository.getCostTrendSection(ORG)).state).toBe('unavailable');
   });
 });
 
-describe('WeeklySummaryRepository.getWeeklyAlerts', () => {
-  it('J: alert history comes from the registry\'s alerts.history provider: not_built, never a count of 0', async () => {
-    const alerts = await repository.getWeeklyAlerts(ORG, weeklySummaryPeriod(new Date('2026-09-28T09:00:00.000Z')));
-    expect(alerts.state).toBe('not_built');
-    expect(alerts.data).toBeNull();
-    expect(alerts.reason).toBe(ALERT_HISTORY_NOT_BUILT_REASON);
-    expect(alerts.reason).not.toMatch(/alert sync|associate alerts with an organization/);
+describe('WeeklySummaryRepository.getStillDetectedSection', () => {
+  const item = (over: Partial<HiddenFinding> & { state: 'still_detected' | 'not_confirmed'; savings: number | null }): HiddenFinding => ({
+    id: 'x', decision: 'RESOLVED', decidedAt: '2026-09-20T00:00:00.000Z', decidedBy: null, decisionCount: 1,
+    issue: 'Unattached EBS Volume', issueLabel: 'Unattached EBS volume', resourceId: 'vol-0abc', resourceName: null,
+    resourceType: 'EBS', awsRegion: 'us-east-1',
+    detection: { state: over.state, reason: null, lastDetectedAt: null, potentialSavings: over.savings, savingsBasis: null, priceSource: null, severity: null, description: null },
+    ...over,
+  });
+
+  it("reads the Cost Optimization page's own getHiddenFindings() summary, and names the largest still-detected one", async () => {
+    const spy = jest.spyOn(CostRecommendationsRepository.prototype, 'getHiddenFindings').mockResolvedValue({
+      latestRun: null,
+      summary: { resolved: 3, dismissed: 1, stillDetected: { count: 2, estimatedMonthlySavings: 7.5, ceilingMonthlySavings: 12, ceilingByResourceType: { S3: 12 } }, notConfirmed: 1 },
+      items: [
+        item({ id: 'a', state: 'still_detected', savings: 2.5, resourceName: 'small', decidedAt: '2026-09-25T00:00:00.000Z' }),
+        item({ id: 'b', state: 'still_detected', savings: 5, resourceName: 'large', awsRegion: null }),
+        item({ id: 'c', state: 'not_confirmed', savings: 100, resourceName: 'unconfirmed' }),
+        item({ id: 'd', state: 'still_detected', savings: 900, resourceName: 'dismissed', decision: 'DISMISSED' }),
+      ],
+    });
+    const s = await repository.getStillDetectedSection(ORG);
+    expect(spy).toHaveBeenCalledWith(ORG);
+    expect(s.data).toEqual({
+      count: 2,
+      estimatedMonthlySavings: 7.5,
+      ceilingMonthlySavings: 12,
+      example: { check: 'Unattached EBS volume', resource: 'large', region: null, resolvedAt: '2026-09-20T00:00:00.000Z' },
+    });
+  });
+
+  it('a failed read is an error section, never 0 still detected', async () => {
+    jest.spyOn(CostRecommendationsRepository.prototype, 'getHiddenFindings').mockRejectedValue(new Error('boom'));
+    const s = await repository.getStillDetectedSection(ORG);
+    expect(s.state).toBe('error');
+    expect(s.data).toBeNull();
+  });
+
+  it('the email never re-implements "still detected": nothing in it imports the freshness rule', () => {
+    const files = [
+      path.join(__dirname, '../weekly-summary.repository.ts'),
+      ...fs.readdirSync(path.join(__dirname, '../../services/weekly-brief')).filter(f => f.endsWith('.ts')).map(f => path.join(__dirname, '../../services/weekly-brief', f)),
+    ];
+    for (const file of files) {
+      const source = fs.readFileSync(file, 'utf8');
+      expect(source).not.toMatch(/cost-finding-freshness|judgeFreshness/);
+    }
+  });
+});
+
+describe('security: open = the Security page definition (founder Q5)', () => {
+  const finding = (derived: string) => ({ derived_status: derived } as never);
+
+  it('account-level open = active or acknowledged; dismissed and accepted risk are not open; the resource count is unchanged', async () => {
+    jest.spyOn(RiskTrackingService.prototype, 'getCurrentRiskScore').mockResolvedValue({
+      score: 80, isPreliminary: false, complianceIssueCounts: { critical: 1, high: 3, medium: 4, low: 2 },
+    } as never);
+    jest.spyOn(AccountSecurityFindingsRepository.prototype, 'getActive').mockResolvedValue(
+      [finding('active'), finding('acknowledged'), finding('dismissed'), finding('accepted_risk')]
+    );
+    jest.spyOn(subscription, 'organizationHasEntitlement').mockResolvedValue(true);
+    jest.spyOn(repository, 'getAwsConnection').mockResolvedValue('connected');
+    const client = { query: jest.fn(async () => ({ rows: [] })) } as never;
+    const e = await repository.gatherWeeklyEvidence(ORG, NOW, client);
+    // 10 combined = 4 status-active account rows + 6 resource issues.
+    expect(e.security.data).toEqual({ score: 80, accountLevelFindings: 2, resourceComplianceIssues: 6 });
   });
 });

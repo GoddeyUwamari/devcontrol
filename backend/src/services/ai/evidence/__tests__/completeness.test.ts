@@ -138,7 +138,8 @@ describe('no stale "not supported" constant remains (step1 §1.3)', () => {
     'backend/src/services/ai-summary.service.ts',
     'backend/src/controllers/ai-summary.controller.ts',
     'backend/src/repositories/weekly-summary.repository.ts',
-    'backend/src/services/weekly-summary-content.ts',
+    'backend/src/services/weekly-brief/rules.ts',
+    'backend/src/services/weekly-brief/facts.ts',
     'backend/src/services/nl-query-guard.ts',
     'app/(app)/observability/alerts/page.tsx',
   ];

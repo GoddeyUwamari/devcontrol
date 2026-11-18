@@ -50,7 +50,7 @@ import { WeeklySummaryRepository } from '../../repositories/weekly-summary.repos
 import { RiskTrackingService } from '../../services/risk-tracking.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from '../../repositories/account-security-findings.repository';
-import type { WeeklySummaryContent } from '../../services/weekly-summary-content';
+import type { WeeklyBrief } from '../../services/weekly-brief/rules';
 import { RoleGateOrg, createRoleGateHarness } from './role-gate-harness';
 
 // Forced plan lookup failures, as in plan-gates-pr1a.test.ts.
@@ -167,6 +167,10 @@ beforeEach(() => {
   jest.spyOn(CostRecommendationsRepository.prototype, 'getActiveSavingsBreakdown').mockResolvedValue({
     active: 2, estimatedMonthlySavings: 120, estimatedFindings: 2, ceilingByResourceType: {}, unestimatedFindings: 0,
   });
+  jest.spyOn(CostRecommendationsRepository.prototype, 'getHiddenFindings').mockResolvedValue({
+    latestRun: null, items: [],
+    summary: { resolved: 0, dismissed: 0, stillDetected: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }, notConfirmed: 0 },
+  });
   jest.spyOn(WeeklySummaryRepository.prototype, 'getAwsConnection').mockResolvedValue('connected');
   jest.spyOn(WeeklySummaryRepository.prototype, 'getRecipients').mockResolvedValue([{
     userId: org.owner,
@@ -245,35 +249,26 @@ describe('A1: effectiveTier on the organization responses the UI loads', () => {
 });
 
 // ─── A2: weekly summary ──────────────────────────────────────────────────────
+// The executive brief (brief-build.md, founder Q9): below Pro the delivery
+// line is the counts only, with no rate and no upsell line.
 
-/** DORA figures -- not the plan line that names the metrics (WE-1). */
-const DORA_TEXT = /Deployment frequency \(successful|Change failure rate:|lead time/i;
-const DORA_KEYS = /deploymentFrequency|changeFailureRate/;
-const COUNTS = { deploymentCount: 4, successfulDeployments: 3, failedDeployments: 1 };
-const COUNTS_LINE = '4 deployments recorded in DevControl in the 7 days before this summary: 3 succeeded, 1 failed.';
-const DORA_PLAN_LINE = 'Deployment frequency and change failure rate are DORA metrics, included in Optimization Engine.';
-/** The delivery section's words (links left out). */
-const deliveryOf = (content: any): string[] =>
-  content.sections.find((s: any) => s.id === 'delivery').lines.map((l: any) => l.text).filter((t: string) => t !== '');
-/** The posture score is plan-gated too (riskScore, Optimization Engine): on the plan its line, below it the line naming the plan. */
-const SCORE_LINE = 'Security posture score: 82/100.';
-const SCORE_PLAN_LINE = 'Security posture score and its trend are included in Optimization Engine.';
-const securityOf = (content: any): string[] =>
-  content.sections.find((s: any) => s.id === 'security').lines.map((l: any) => l.text).filter((t: string) => t !== '');
-/** Every section but delivery, with the posture score's line (or its plan line) left out of security. */
-// The header names the plan (WE-2, WE-D12), so it differs by plan by design; asserted on its own.
-const withoutPlanGated = (content: any) => ({
-  ...content,
-  header: undefined,
-  sections: content.sections
-    .filter((s: any) => s.id !== 'delivery')
-    .map((s: any) => (s.id === 'security'
-      ? { ...s, lines: s.lines.filter((l: any) => l.text !== SCORE_LINE && l.text !== SCORE_PLAN_LINE) }
-      : s)),
+/** DORA figures and names. "Lead time ... not tracked" is a footer line on every plan, so it is not one. */
+const DORA_TEXT = /change failure rate|Deployment frequency|DORA/i;
+const DORA_KEYS = /deploymentFrequency|changeFailureRate|"rate"/;
+const PRO_LINE = '4 deployments · 1 failed · 25% change failure rate';
+const COUNTS_LINE = '4 deployments · 1 failed';
+/** The posture score is plan-gated too (riskScore, Optimization Engine): a tile line on the plan, nothing below it. */
+const SCORE_LINE = 'Posture score 82/100';
+/** The brief with what differs by plan by design left out: the delivery line, the posture score line and the plan name. */
+const withoutPlanGated = (brief: WeeklyBrief) => ({
+  ...brief,
+  orgLine: undefined,
+  delivery: undefined,
+  tiles: brief.tiles.map(t => ({ ...t, lines: t.lines.filter(l => l !== SCORE_LINE) })),
 });
 
-/** The weekly email for the org, through the job's own send path, with the content it was built from. */
-async function sendWeeklyEmail(): Promise<{ content: WeeklySummaryContent; html: string; text: string }> {
+/** The weekly email for the org, through the job's own send path, with the brief it was rendered from. */
+async function sendWeeklyEmail(): Promise<{ brief: WeeklyBrief; html: string; text: string }> {
   const job = new WeeklyAISummaryJob(appPool);
   const send = jest.fn(async (_message: { html: string; text: string }) => ({ data: { id: 'email-id' }, error: null }));
   (job as any).resend = { emails: { send } };
@@ -282,7 +277,7 @@ async function sendWeeklyEmail(): Promise<{ content: WeeklySummaryContent; html:
   expect(outcome).toEqual({ sent: 1, skipped: 0, errors: 0 });
   expect(send).toHaveBeenCalledTimes(1);
   const message = send.mock.calls[0][0];
-  return { content: buildTemplateData.mock.calls[0][0].content, html: message.html, text: message.text };
+  return { brief: buildTemplateData.mock.calls[0][0].brief, html: message.html, text: message.text };
 }
 
 async function preview(): Promise<any> {
@@ -295,47 +290,42 @@ describe('A2: the weekly email leaves the DORA metrics out below Pro', () => {
   it.each(RECOGNISED)('%s', async (name) => {
     const state = STATES[name];
     await setPlan(state);
-    const { content, html, text } = await sendWeeklyEmail();
+    const { brief, html, text } = await sendWeeklyEmail();
     if (atLeast(state, 'pro')) {
-      expect(deliveryOf(content)).toContain('Deployment frequency (successful deployments): 0.43 per day.');
-      expect(deliveryOf(content)).toContain('Change failure rate: 25% (1 of 4 finished deployments failed).');
-      expect(deliveryOf(content)).not.toContain(DORA_PLAN_LINE);
-      expect(text).toMatch(/Change failure rate: 25%/);
-      expect(html).toMatch(/Change failure rate: 25%/);
+      expect(brief.delivery.line).toBe(PRO_LINE);
+      expect(text).toContain(PRO_LINE);
+      expect(html).toContain(PRO_LINE);
     } else {
-      // Below the plan the figures are replaced by the line naming the plan -- never silently dropped.
-      expect(deliveryOf(content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
+      // Below the plan: the counts only, no rate and no line naming the plan (founder Q9).
+      expect(brief.delivery.line).toBe(COUNTS_LINE);
       expect(text).not.toMatch(DORA_TEXT);
       expect(html).not.toMatch(DORA_TEXT);
       expect(text).toContain(COUNTS_LINE);
-      expect(text).toContain(DORA_PLAN_LINE);
+      expect(text).not.toMatch(/included in Optimization Engine|Compare plans/);
     }
   });
 
-  it('every other section is the same below Pro as on Pro, and the counts line is Pro\'s first line', async () => {
+  it('everything else is the same below Pro as on Pro', async () => {
     await setPlan(STATES.pro);
-    const proContent = (await sendWeeklyEmail()).content;
+    const pro = (await sendWeeklyEmail()).brief;
     await setPlan(STATES.free);
-    const freeContent = (await sendWeeklyEmail()).content;
-    expect(withoutPlanGated(freeContent)).toEqual(withoutPlanGated(proContent));
-    expect(proContent.header).toMatch(/ · Optimization Engine plan · /);
-    expect(freeContent.header).toMatch(/ · Visibility plan · /);
-    expect(deliveryOf(proContent)[0]).toBe(deliveryOf(freeContent)[0]);
-    // The security section differs only by the posture score's plan gate.
-    expect(securityOf(proContent)).toContain(SCORE_LINE);
-    expect(securityOf(proContent)).not.toContain(SCORE_PLAN_LINE);
-    expect(securityOf(freeContent)).toContain(SCORE_PLAN_LINE);
-    expect(securityOf(freeContent)).not.toContain(SCORE_LINE);
+    const free = (await sendWeeklyEmail()).brief;
+    expect(withoutPlanGated(free)).toEqual(withoutPlanGated(pro));
+    expect(pro.orgLine).toMatch(/ · Optimization Engine plan$/);
+    expect(free.orgLine).toMatch(/ · Visibility plan$/);
+    // The security tile differs only by the posture score's plan gate.
+    expect(pro.tiles[0].lines).toContain(SCORE_LINE);
+    expect(free.tiles[0].lines).not.toContain(SCORE_LINE);
   });
 
-  it('the plan cannot be read: the DORA metrics are left out, the plan line is shown, and the email is still sent', async () => {
+  it('the plan cannot be read: the DORA metrics are left out, and the email is still sent', async () => {
     await setPlan(STATES.enterprise);
     failWhen = (sql) => sql.includes(PLAN_LOOKUP);
-    const { content, text } = await sendWeeklyEmail();
-    expect(deliveryOf(content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
+    const { brief, text } = await sendWeeklyEmail();
+    expect(brief.delivery.line).toBe(COUNTS_LINE);
     expect(text).not.toMatch(DORA_TEXT);
-    // WE-2: an unreadable plan is not named in the header (no guessed plan, no tier id).
-    expect(content.header).not.toMatch(/ plan · /);
+    // WE-2: an unreadable plan is not named (no guessed plan, no tier id).
+    expect(brief.orgLine ?? '').not.toMatch(/ plan$/);
   });
 });
 
@@ -344,37 +334,36 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     const state = STATES[name];
     await setPlan(state);
     const body = await preview();
-    const delivery = body.evidence.delivery;
+    const delivery = body.facts.delivery;
     expect(delivery.state).toBe('available');
     if (atLeast(state, 'pro')) {
-      expect(delivery.data).toEqual({ ...COUNTS, deploymentFrequency: '0.43 per day', changeFailureRate: 25 });
-      expect(deliveryOf(body.content)).toContain('Change failure rate: 25% (1 of 4 finished deployments failed).');
+      expect(delivery).toMatchObject({ count: 4, failed: 1, finished: 4, rate: 25 });
+      expect(body.brief.delivery.line).toBe(PRO_LINE);
     } else {
-      expect(delivery.data).toEqual(COUNTS);
-      expect(deliveryOf(body.content)).toEqual([COUNTS_LINE, DORA_PLAN_LINE]);
+      expect(delivery).toEqual({ state: 'available', count: 4, failed: 1, finished: 4, everRecorded: true });
+      expect(body.brief.delivery.line).toBe(COUNTS_LINE);
       expect(JSON.stringify(body)).not.toMatch(DORA_KEYS);
       expect(JSON.stringify(body)).not.toMatch(DORA_TEXT);
     }
   });
 
-  it('non-DORA evidence and content are the same below Pro as on Pro', async () => {
+  it('non-DORA facts and wording are the same below Pro as on Pro', async () => {
     await setPlan(STATES.pro);
     const pro = await preview();
     await setPlan(STATES['pro, restricted']);
     const restricted = await preview();
-    // Everything but the delivery section and the posture score (and the
-    // generation time, and each section's per-call retrievedAt).
+    // Everything but delivery and the posture score (and the generation time).
     const strip = (b: any) => {
-      const evidence = JSON.parse(JSON.stringify(b.evidence, (key, value) => (key === 'retrievedAt' ? undefined : value)));
-      const content = withoutPlanGated(b.content);
-      delete evidence.delivery;
-      delete evidence.period;
-      delete evidence.security.data.score;
-      return { evidence, content };
+      const facts = JSON.parse(JSON.stringify(b.facts));
+      delete facts.delivery;
+      delete facts.period;
+      delete facts.generatedAt;
+      delete facts.security.score;
+      return { facts, brief: withoutPlanGated(b.brief) };
     };
     expect(strip(restricted)).toEqual(strip(pro));
-    expect(pro.content.header).toMatch(/ · Optimization Engine plan · /);
-    expect(restricted.content.header).toMatch(/ · Visibility plan · /);
+    expect(pro.brief.orgLine).toMatch(/ · Optimization Engine plan$/);
+    expect(restricted.brief.orgLine).toMatch(/ · Visibility plan$/);
   });
 
   // WE-1 review L-3: the score is left out of the preview JSON below the plan, even with a completed scan.
@@ -382,15 +371,13 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     const state = STATES[name];
     await setPlan(state);
     const body = await preview();
-    const security = body.evidence.security;
+    const security = body.facts.security;
     expect(security.state).toBe('available'); // not preliminary: the scan completed
     if (atLeast(state, 'pro')) {
-      expect(security.data).toEqual({ score: 82, accountLevelFindings: 0, resourceComplianceIssues: 1 });
-      expect(securityOf(body.content)).toContain(SCORE_LINE);
-      expect(securityOf(body.content)).not.toContain(SCORE_PLAN_LINE);
+      expect(security).toEqual({ state: 'available', account: 0, resource: 1, open: 1, score: 82 });
+      expect(body.brief.tiles[0].lines).toContain(SCORE_LINE);
     } else {
-      expect(security.data).toEqual({ accountLevelFindings: 0, resourceComplianceIssues: 1 });
-      expect(securityOf(body.content)).toContain(SCORE_PLAN_LINE);
+      expect(security).toEqual({ state: 'available', account: 0, resource: 1, open: 1 });
       expect(JSON.stringify(body)).not.toMatch(/"score"|82\/100/);
     }
   });
@@ -399,7 +386,7 @@ describe('A2: the weekly summary preview applies the same rule', () => {
     await setPlan(STATES.enterprise);
     failWhen = (sql) => sql.includes(PLAN_LOOKUP);
     const body = await preview();
-    expect(body.evidence.delivery.data).toEqual(COUNTS);
+    expect(body.facts.delivery).toMatchObject({ count: 4, failed: 1, finished: 4 });
     expect(JSON.stringify(body)).not.toMatch(DORA_KEYS);
   });
 });

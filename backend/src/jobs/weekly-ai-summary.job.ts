@@ -3,7 +3,8 @@
  * Sends the evidence-grounded weekly summary email every Monday at 09:00 UTC
  * to every eligible owner of every eligible organization.
  * The email contains no model-written content: every line comes from
- * composeWeeklySummary() (weekly-summary-content.ts).
+ * composeWeeklyBrief() (services/weekly-brief/rules.ts) over the facts
+ * WeeklySummaryRepository.buildWeeklyFacts() reads.
  * Log lines keep the "[Weekly AI Summary]" prefix: weeklyEmailJobMonitor.ts
  * matches its START/COMPLETE/ERROR markers on it.
  */
@@ -20,24 +21,17 @@ import {
   type UserInfo,
 } from '../repositories/weekly-summary.repository';
 import { requireOrganizationId } from '../services/ai-context-contract';
-import {
-  composeWeeklySummary,
-  SUPPORT_EMAIL,
-  WEEKLY_EMAIL_PATHS,
-  type EmailLine,
-  type EmailLink,
-  type EmailSectionId,
-  type WeeklySummaryContent,
-} from '../services/weekly-summary-content';
+import { composeWeeklyBrief, type BriefCostSection, type BriefLink, type BriefTile, type WeeklyBrief } from '../services/weekly-brief/rules';
+import { SUPPORT_EMAIL, WEEKLY_EMAIL_PATHS } from '../config/weekly-email-paths';
 import { signUnsubscribeToken } from '../services/unsubscribe-token';
 import { RELEASE_SHA } from '../version';
 import { safeErrorFields } from '../utils/safe-error-log';
 
 /**
- * The subject is content.subject: "Your DevControl weekly summary · Nov 9 – 15, 2026"
+ * The subject is brief.subject: "Your DevControl weekly summary · Nov 9 – 15, 2026"
  * (WE-D12), with no "AI" claim -- the email contains no model-written content.
  */
-export { WEEKLY_SUMMARY_SUBJECT_PREFIX } from '../services/weekly-summary-content';
+export { WEEKLY_SUMMARY_SUBJECT_PREFIX } from '../services/weekly-brief/rules';
 
 /** Mondays at 09:00 (minute hour day-of-month month day-of-week). */
 export const WEEKLY_SUMMARY_CRON = '0 9 * * 1';
@@ -64,29 +58,28 @@ export interface WeeklySummaryRunCounts {
 /** Replies go to the support mailbox, whatever EMAIL_FROM is (WE-D11). */
 export const WEEKLY_SUMMARY_REPLY_TO = SUPPORT_EMAIL;
 
-/** One rendered line: the text split around its bold part, with absolute link URLs. */
-export interface TemplateLine {
-  text: string;
-  before: string;
-  strong: string;
-  after: string;
-  hasText: boolean;
-  isNote: boolean;
-  isUpsell: boolean;
-  chip: string;
-  link: { label: string; href: string } | null;
+interface TemplateLink {
+  label: string;
+  href: string;
 }
 
+/** Everything the template renders: the composed brief with absolute link URLs, the greeting and the fixed footer fields. */
 export interface WeeklyEmailTemplateData {
   subject: string;
-  /** The line under the title: organization · plan · cost window (UTC). */
-  header: string;
+  eyebrow: string;
+  title: string;
+  orgLine: string | null;
   userName: string;
+  summary: { bold: string; plain: string };
+  tiles: BriefTile[];
+  attention: Array<{ number: number; title: string; body: string[]; time: string | null; link: TemplateLink; tint: string; border: string; ink: string }>;
+  notConnected: { status: string[]; action: TemplateLink; sections: Array<{ title: string; line: string }> } | null;
+  /** Each cost line split around its bold part. */
+  cost: { lines: Array<{ text: string; before: string; strong: string; after: string }>; services: BriefCostSection['services']; link: TemplateLink } | null;
+  delivery: { line: string; link: TemplateLink };
+  button: TemplateLink & { isButton: boolean };
+  footer: { lines: string[]; alarms: { text: string; link: TemplateLink | null } };
   organizationName: string;
-  intro: string;
-  status: { lines: TemplateLine[]; action: { label: string; href: string } | null } | null;
-  sections: Array<{ id: EmailSectionId; title: string; cssClass: string; lines: TemplateLine[] }>;
-  cta: { label: string; href: string; isButton: boolean };
   dashboardUrl: string;
   unsubscribeUrl: string;
   preferencesUrl: string;
@@ -95,13 +88,10 @@ export interface WeeklyEmailTemplateData {
   year: number;
 }
 
-/** The template's colour per section (classes kept from the previous layout). */
-const SECTION_CSS: Record<EmailSectionId, string> = {
-  costs: 'cost',
-  security: 'security',
-  savings: 'recommendation',
-  alerts: 'alert',
-  delivery: 'dora',
+/** The attention box colours per tone (mock: security orange, cost blue). */
+const TONE_COLOURS: Record<'warning' | 'info', { tint: string; border: string; ink: string }> = {
+  warning: { tint: '#FFF7ED', border: '#FED7AA', ink: '#C2410C' },
+  info: { tint: '#EFF6FF', border: '#BFDBFE', ink: '#1D4ED8' },
 };
 
 export class WeeklyAISummaryJob {
@@ -315,18 +305,18 @@ export class WeeklyAISummaryJob {
         return { recipients: 0, sent: 0, failed: 0 };
       }
 
-      const [evidence, organizationName, planName] = await Promise.all([
-        this.repository.gatherWeeklyEvidence(organizationId, new Date(), client),
+      const [facts, organizationName, planName] = await Promise.all([
+        this.repository.buildWeeklyFacts(organizationId, new Date(), client),
         this.repository.getOrganizationName(organizationId, client),
         this.repository.getPlanName(organizationId, client),
       ]);
-      const content = composeWeeklySummary(evidence, { organizationName, planName });
+      const brief = composeWeeklyBrief(facts, { organizationName, planName });
 
       let sent = 0;
       let failed = 0;
       for (const recipient of recipients) {
         try {
-          await this.sendToRecipient(recipient, content);
+          await this.sendToRecipient(recipient, brief, organizationName);
           sent++;
         } catch (error: unknown) {
           // No recipient address and no provider message id in the logs.
@@ -338,8 +328,8 @@ export class WeeklyAISummaryJob {
     });
   }
 
-  /** Render and send the composed summary to one owner, with that owner's own unsubscribe link. */
-  private async sendToRecipient(recipient: UserInfo, content: WeeklySummaryContent): Promise<void> {
+  /** Render and send the composed brief to one owner, with that owner's own unsubscribe link. */
+  private async sendToRecipient(recipient: UserInfo, brief: WeeklyBrief, organizationName: string | null): Promise<void> {
     const userName = recipient.fullName?.split(' ')[0] || recipient.email.split('@')[0];
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3010';
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
@@ -352,7 +342,8 @@ export class WeeklyAISummaryJob {
 
     const templateData = this.buildTemplateData({
       userName,
-      content,
+      brief,
+      organizationName,
       frontendUrl,
       unsubscribeUrl: `${backendUrl}/api/user/preferences/unsubscribe?token=${unsubscribeToken}`,
     });
@@ -385,90 +376,100 @@ export class WeeklyAISummaryJob {
     }
   }
 
-  /** Template and text-version fields from the composed content; link paths become absolute URLs. */
+  /** Template and text-version fields from the composed brief; link paths become absolute URLs. Decides no wording. */
   buildTemplateData(input: {
     userName: string;
-    content: WeeklySummaryContent;
+    brief: WeeklyBrief;
+    organizationName: string | null;
     frontendUrl: string;
     unsubscribeUrl: string;
   }): WeeklyEmailTemplateData {
-    const { content, frontendUrl } = input;
-    const href = (link: EmailLink) => (link.path.startsWith('mailto:') ? link.path : `${frontendUrl}${link.path}`);
-    const line = (l: EmailLine): TemplateLine => {
-      const at = l.strong ? l.text.indexOf(l.strong) : -1;
-      return {
-        text: l.text,
-        before: at === -1 ? l.text : l.text.slice(0, at),
-        strong: at === -1 ? '' : l.strong!,
-        after: at === -1 ? '' : l.text.slice(at + l.strong!.length),
-        hasText: l.text !== '',
-        isNote: l.style === 'note',
-        isUpsell: l.style === 'upsell',
-        chip: l.chip ?? '',
-        link: l.link ? { label: l.link.label, href: href(l.link) } : null,
-      };
-    };
+    const { brief, frontendUrl } = input;
+    const link = (l: BriefLink): TemplateLink => ({ label: l.label, href: `${frontendUrl}${l.path}` });
     return {
-      subject: content.subject,
-      header: content.header,
+      subject: brief.subject,
+      eyebrow: brief.eyebrow,
+      title: brief.title,
+      orgLine: brief.orgLine,
       userName: input.userName,
-      // Named in the footer only; when the name couldn't be read, no name is invented.
-      organizationName: content.organizationNameKnown ? content.organizationName : 'your organization',
-      intro: content.intro,
-      status: content.status
+      summary: brief.summary,
+      tiles: brief.tiles,
+      attention: brief.attention.map(item => ({
+        number: item.number,
+        title: item.title,
+        body: item.body,
+        time: item.time,
+        link: link(item.link),
+        ...TONE_COLOURS[item.tone],
+      })),
+      notConnected: brief.notConnected
+        ? { status: brief.notConnected.status, action: link(brief.notConnected.action), sections: brief.notConnected.sections }
+        : null,
+      cost: brief.cost
         ? {
-            lines: content.status.lines.map(line),
-            action: content.status.action ? { label: content.status.action.label, href: href(content.status.action) } : null,
+            lines: brief.cost.lines.map(l => {
+              const at = l.strong ? l.text.indexOf(l.strong) : -1;
+              return at === -1
+                ? { text: l.text, before: l.text, strong: '', after: '' }
+                : { text: l.text, before: l.text.slice(0, at), strong: l.strong!, after: l.text.slice(at + l.strong!.length) };
+            }),
+            services: brief.cost.services,
+            link: link(brief.cost.link),
           }
         : null,
-      sections: content.sections.map(s => ({ id: s.id, title: s.title, cssClass: SECTION_CSS[s.id], lines: s.lines.map(line) })),
-      cta: { label: content.cta.link.label, href: href(content.cta.link), isButton: content.cta.style === 'button' },
+      delivery: { line: brief.delivery.line, link: link(brief.delivery.link) },
+      button: { ...link(brief.button), isButton: brief.button.style === 'button' },
+      footer: { lines: brief.footer.lines, alarms: { text: brief.footer.alarms.text, link: brief.footer.alarms.link ? link(brief.footer.alarms.link) : null } },
+      // Named in the footer only; when the name couldn't be read, no name is invented.
+      organizationName: input.organizationName || 'your organization',
       dashboardUrl: `${frontendUrl}${WEEKLY_EMAIL_PATHS.dashboard}`,
       unsubscribeUrl: input.unsubscribeUrl,
       preferencesUrl: `${frontendUrl}${WEEKLY_EMAIL_PATHS.preferences}`,
       privacyUrl: `${frontendUrl}${WEEKLY_EMAIL_PATHS.privacy}`,
       supportEmail: SUPPORT_EMAIL,
-      year: new Date().getFullYear(),
+      year: new Date().getUTCFullYear(),
     };
   }
 
-  /** The full rendered email for already-gathered evidence -- no send. */
+  /** The full rendered email for an already-composed brief -- no send. */
   renderEmail(templateData: WeeklyEmailTemplateData): { html: string; text: string } {
     if (!this.emailTemplate) throw new Error('Email template not loaded');
     return { html: this.emailTemplate(templateData), text: this.generateTextVersion(templateData) };
   }
 
   /**
-   * The plain-text part: the same lines as the HTML, a link written as
-   * "Label: URL" (arrow dropped) and a chip as "(Coming soon)".
+   * The plain-text part: the same strings as the HTML, in the same order. A
+   * link is written as "Label: URL" (arrow dropped).
    */
   private generateTextVersion(data: WeeklyEmailTemplateData): string {
-    const lineText = (l: TemplateLine) => {
-      let out = l.text;
-      if (l.chip) out += ` (${l.chip})`;
-      if (l.link) out += `${l.hasText ? ' ' : ''}${l.link.label.replace(/ →$/, '')}: ${l.link.href}`;
-      return out;
-    };
-    const parts: string[] = [
-      'Your DevControl Weekly Summary',
-      data.header,
-      '',
-      `Hi ${data.userName},`,
-      '',
-      data.intro,
-    ];
-    if (data.status) {
-      parts.push('', ...data.status.lines.map(lineText));
-      if (data.status.action) parts.push(`${data.status.action.label.replace(/ →$/, '')}: ${data.status.action.href}`);
+    const linkText = (l: TemplateLink) => `${l.label.replace(/ →$/, '')}: ${l.href}`;
+    const parts: string[] = [data.eyebrow, data.title];
+    if (data.orgLine) parts.push(data.orgLine);
+    parts.push('', `Hi ${data.userName},`, '', [data.summary.bold, data.summary.plain].filter(Boolean).join(' '));
+    if (data.notConnected) {
+      parts.push('', ...data.notConnected.status, linkText(data.notConnected.action));
+      for (const section of data.notConnected.sections) parts.push('', section.title, section.line);
     }
-    for (const section of data.sections) {
-      parts.push('', section.title, ...section.lines.map(lineText));
+    for (const tile of data.tiles) {
+      parts.push('', tile.label, ...(tile.sublabel ? [tile.sublabel] : []), tile.value, ...tile.lines);
     }
+    if (data.attention.length > 0) {
+      parts.push('', 'NEEDS YOUR ATTENTION');
+      for (const item of data.attention) {
+        parts.push(`${item.number}. ${item.title}`, ...item.body, ...(item.time ? [item.time] : []), linkText(item.link));
+      }
+    }
+    if (data.cost) {
+      parts.push('', 'COST', ...data.cost.lines.map(l => l.text));
+      if (data.cost.services) parts.push('', data.cost.services.heading, ...data.cost.services.rows.map(r => `${r.service}  ${r.amount}`));
+      parts.push(linkText(data.cost.link));
+    }
+    parts.push('', 'DELIVERY', data.delivery.line, linkText(data.delivery.link));
+    parts.push('', linkText(data.button));
+    parts.push('', '---', ...data.footer.lines);
+    parts.push(data.footer.alarms.link ? linkText(data.footer.alarms.link) : data.footer.alarms.text);
     parts.push(
       '',
-      `${data.cta.label.replace(/ →$/, '')}: ${data.cta.href}`,
-      '',
-      '---',
       'This is your weekly automated summary from DevControl.',
       `Unsubscribe: ${data.unsubscribeUrl}`,
       `Email Preferences: ${data.preferencesUrl}`,

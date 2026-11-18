@@ -6,10 +6,12 @@
  * non-BYPASSRLS role, so aws_resources' and deployments' tenant policies
  * apply: a read sees rows only through a connection tagged for their
  * organization. Authentication is stubbed (role and org from test headers);
- * Cost Explorer is stubbed to fail, so the inventory estimate is read.
+ * Cost Explorer is stubbed to fail.
  *
- *   1. The preview shows the caller's own org's inventory estimate and
- *      deployments, and nothing of another org's.
+ *   1. The preview's facts show the caller's own org's deployments (this
+ *      week's counts and whether any was ever recorded), and nothing of
+ *      another org's. (The inventory estimate this used to compare was
+ *      dropped from the email with the executive brief, founder F4.)
  *   2. The preview and the scheduled send's read agree.
  *   3. The repository's own fallback (no client passed) reads under the
  *      org's tag too, never on the bare pool.
@@ -55,6 +57,7 @@ import { Pool, PoolClient } from 'pg';
 import * as database from '../../config/database';
 import aiInsightsRoutes from '../ai-insights.routes';
 import { WeeklySummaryRepository, weeklySummaryPeriod } from '../../repositories/weekly-summary.repository';
+import type { WeeklyFacts } from '../../services/weekly-brief/facts';
 
 const { role: READER_ROLE, pool: readerPool } = (database as unknown as { mockReader: { role: string; pool: Pool } }).mockReader;
 
@@ -153,7 +156,7 @@ afterAll(async () => {
   await admin.end();
 });
 
-async function preview(org: string): Promise<{ evidence: TenantSections }> {
+async function preview(org: string): Promise<{ facts: WeeklyFacts }> {
   const res = await fetch(`${baseUrl}/api/ai-insights/preview-weekly-summary`, {
     headers: { 'x-test-org': org, 'x-test-role': 'owner' },
   });
@@ -161,30 +164,13 @@ async function preview(org: string): Promise<{ evidence: TenantSections }> {
   return res.json();
 }
 
-/** The two sections read from RLS-protected tables (as gathered, or as the preview's JSON carries them). */
-interface TenantSections {
-  inventoryEstimate: { state: string; data?: unknown } | null;
-  delivery: { state: string; data?: { deploymentCount: number; successfulDeployments: number; failedDeployments: number } | null };
-}
-const tenantRead = (evidence: TenantSections) => ({
-  inventory: evidence.inventoryEstimate?.state === 'available' ? evidence.inventoryEstimate.data : evidence.inventoryEstimate?.state,
-  delivery: evidence.delivery.state === 'available'
-    ? {
-        deploymentCount: evidence.delivery.data!.deploymentCount,
-        successfulDeployments: evidence.delivery.data!.successfulDeployments,
-        failedDeployments: evidence.delivery.data!.failedDeployments,
-      }
-    : evidence.delivery.state,
-});
+/** What the facts carry from the RLS-protected deployments table. */
+const tenantRead = (facts: WeeklyFacts) => (facts.delivery.state === 'available'
+  ? { count: facts.delivery.count, failed: facts.delivery.failed, finished: facts.delivery.finished, everRecorded: facts.delivery.everRecorded }
+  : facts.delivery.state);
 
-const A_ROWS = {
-  inventory: { monthlyRunRate: 30, pricedResources: 2, totalResources: 2 },
-  delivery: { deploymentCount: 2, successfulDeployments: 2, failedDeployments: 0 },
-};
-const B_ROWS = {
-  inventory: { monthlyRunRate: 999, pricedResources: 1, totalResources: 1 },
-  delivery: { deploymentCount: 5, successfulDeployments: 0, failedDeployments: 5 },
-};
+const A_ROWS = { count: 2, failed: 0, finished: 2, everRecorded: true };
+const B_ROWS = { count: 5, failed: 5, finished: 5, everRecorded: true };
 
 describe('preview-weekly-summary reads under the caller org tenant context (WE-3a)', () => {
   it('control: the test role is subject to row level security -- an untagged read sees none of the rows', async () => {
@@ -199,25 +185,25 @@ describe('preview-weekly-summary reads under the caller org tenant context (WE-3
     expect(asAdmin.rows[0].n).toBe(2);
   });
 
-  it("each owner's preview shows their own org's inventory estimate and deployments, and nothing of the other org's", async () => {
+  it("each owner's preview shows their own org's deployments, and nothing of the other org's", async () => {
     const a = await preview(A);
     const b = await preview(B);
-    expect(tenantRead(a.evidence)).toEqual(A_ROWS);
-    expect(tenantRead(b.evidence)).toEqual(B_ROWS);
+    expect(tenantRead(a.facts)).toEqual(A_ROWS);
+    expect(tenantRead(b.facts)).toEqual(B_ROWS);
   });
 
   it("the preview and the scheduled send's read agree", async () => {
-    const previewed = tenantRead((await preview(A)).evidence);
+    const previewed = tenantRead((await preview(A)).facts);
     const repository = new WeeklySummaryRepository(readerPool);
-    const sent = await repository.withOrganizationClient(A, client => repository.gatherWeeklyEvidence(A, new Date(), client));
+    const sent = await repository.withOrganizationClient(A, client => repository.buildWeeklyFacts(A, new Date(), client));
     expect(tenantRead(sent)).toEqual(previewed);
     expect(previewed).toEqual(A_ROWS);
   });
 
   it('with no client passed, the repository still reads under the org tag -- never the bare pool', async () => {
     const repository = new WeeklySummaryRepository(readerPool);
-    expect(tenantRead(await repository.gatherWeeklyEvidence(A, new Date()))).toEqual(A_ROWS);
-    expect(tenantRead(await repository.gatherWeeklyEvidence(B, new Date()))).toEqual(B_ROWS);
+    expect(tenantRead(await repository.buildWeeklyFacts(A, new Date()))).toEqual(A_ROWS);
+    expect(tenantRead(await repository.buildWeeklyFacts(B, new Date()))).toEqual(B_ROWS);
   });
 
   it("control: a connection tagged for the other org sees nothing of this org's rows", async () => {
@@ -228,9 +214,9 @@ describe('preview-weekly-summary reads under the caller org tenant context (WE-3
         { organizationId: A, startDate: new Date(period.delivery.start), endDate: new Date(period.delivery.end) },
         clientB
       ),
-      evidence: await repository.gatherWeeklyEvidence(A, new Date(), clientB),
+      facts: await repository.buildWeeklyFacts(A, new Date(), clientB),
     }));
     expect(crossed.dora.deploymentCount).toBe(0);
-    expect(tenantRead(crossed.evidence).inventory).toBe('unavailable');
+    expect(tenantRead(crossed.facts)).toEqual({ count: 0, failed: 0, finished: 0, everRecorded: false });
   });
 });

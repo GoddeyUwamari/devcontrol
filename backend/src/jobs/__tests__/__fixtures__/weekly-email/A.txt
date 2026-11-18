@@ -1,0 +1,72 @@
+DEVCONTROL WEEKLY SUMMARY
+Nov 9 – 15, 2026
+Example Org (synthetic) · Optimization Engine plan
+
+Hi Alex,
+
+4 account-level security findings and 10 resource compliance issues are open. 1 cost finding you marked resolved was detected again. 3 cost opportunities are open in Cost Optimization. Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 2 days are still updating. 21 deployments, none failed.
+
+SECURITY
+14 open
+4 account · 10 compliance
+Posture score 72/100
+
+AWS SPEND · 5 FINISHED DAYS
+Nov 9–13
+$2.31
+Down 26% on the same days
++ 2 days still updating
+
+ESTIMATED SAVINGS
+Open opportunities
+$42/mo
+1 still detected · about $4/mo estimated
+
+NEEDS YOUR ATTENTION
+1. Security · 14 open findings
+4 account-level (security groups, IAM) · 10 resource compliance (encryption, backups, tagging).
+Latest scan Nov 16, 06:14 UTC
+Review findings: https://app.example.test/security
+2. Cost · 1 resolved finding detected again · 3 open opportunities
+Unattached EBS volume on build-cache-volume (us-east-1). You resolved it Nov 12; the latest analysis still sees it. About $4/mo, estimated.
+3 open opportunities, about $42/mo estimated; 1 has no dollar estimate yet.
+Plus up to $18/mo in estimated ceilings, not expected savings.
+Review in Cost Optimization: https://app.example.test/cost-optimization
+
+COST
+Finished days, Nov 9–13: $2.31. Same 5 days last week (Nov 2–6): $3.12. Down 26%.
+Still updating, Nov 14: $0.26 so far. Not included in the comparison.
+Not reported by Cost Explorer yet, Nov 15.
+
+Change in spend vs the same days last week
+RDS  −$0.60
+EC2  −$0.46
+CloudWatch  +$0.25
+See costs: https://app.example.test/costs
+
+DELIVERY
+21 deployments · 0 failed · 0% change failure rate
+See deployments: https://app.example.test/deployments
+
+Open DevControl: https://app.example.test/dashboard
+
+---
+AWS connection: OK · checked Nov 16, 06:02 UTC.
+Security figures are from the latest scan, completed Nov 16, 06:14 UTC.
+Savings are from the cost analysis completed Nov 16, 06:20 UTC.
+AWS Cost Explorer unblended cost after credits, by UTC day. Cost Explorer can take several days to finish a day; DevControl counts only finished days and lists the others as so far. If credits take a category below $0 on a day, that category counts as $0. Per-service figures are after credits and may not add up to the total.
+Security covers DevControl's own configuration checks, not AWS Security Hub. Savings are estimates, not confirmed billing savings.
+Lead time for changes and time to restore service: not tracked.
+Your active CloudWatch alarms are on Operational Health: https://app.example.test/admin/monitoring
+
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
+
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
+
+DevControl, Inc.
+Questions? Email support@getdevcontrol.com.
+
+© 2026 DevControl. All rights reserved.
