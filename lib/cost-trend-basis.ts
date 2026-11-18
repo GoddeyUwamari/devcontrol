@@ -51,6 +51,20 @@ export function stillUpdatingTooltip(amountSoFar: string): string {
   return `Still updating · ${amountSoFar} so far. AWS Cost Explorer may still add charges.`
 }
 
+/**
+ * Today's tooltips (today-bar T2/T3/TB-D2). Today is never shown as a finished
+ * day: still updating, not reported yet, or (when the backend calls it final,
+ * an account with no charges in 30 days) an amount "so far". Only the wording
+ * follows the date: the report state is the backend's, never recomputed.
+ */
+export function todayUpdatingTooltip(amountSoFar: string): string {
+  return `Today · ${amountSoFar} so far · still updating`
+}
+export const TODAY_NOT_REPORTED_TOOLTIP = 'Today · not reported yet'
+export function todaySoFarTooltip(amountSoFar: string): string {
+  return `Today · ${amountSoFar} so far`
+}
+
 /** The legend entry for the lighter, still-updating bars (DAY1-D7's string, capitalized). */
 export const STILL_UPDATING_LEGEND = 'Latest days still updating'
 
@@ -62,6 +76,13 @@ export const NOT_REPORTED_LEGEND = 'Not reported yet'
 
 /** Shown under the Dashboard's daily trend, which draws those days as a hatched placeholder (round 2). */
 export const NOT_REPORTED_PLACEHOLDER_NOTE = "Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)"
+
+/**
+ * Shown under the Dashboard's daily trend when every drawn day is a reported
+ * $0 (final, or still updating at $0.00): never with a hatched day, which keeps
+ * NOT_REPORTED_PLACEHOLDER_NOTE, and never with any amount (founder, today-bar §16).
+ */
+export const NO_CHARGES_NOTE = 'AWS Cost Explorer reported no charges for these days.'
 
 const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 

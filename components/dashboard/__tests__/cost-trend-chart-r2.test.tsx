@@ -3,10 +3,10 @@
  * output for production's data one day later
  * (backend/src/controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-17.new.json,
  * pinned by trend-lag-real-evidence.test.ts; today = 2026-11-17 UTC):
- *   - the 7-day view is exactly 7 bars, the full UTC days ending yesterday
- *     (Nov 10-16), every label shown as a date ("Nov 10"), today (Nov 17) not drawn;
+ *   - the 7-day view is exactly 7 bars, the UTC days ending TODAY (Nov 11-17,
+ *     today-bar T1), every label a date ("Nov 11") and the last one "Today";
  *   - Nov 13 (the last day with line items, still updating) is drawn lighter, not final;
- *   - Nov 14-16 (not reported) are a light hatched placeholder from the
+ *   - Nov 14-16 and today (not reported) are a light hatched placeholder from the
  *     --app-chart-placeholder-* tokens, with the "Not reported yet by AWS Cost
  *     Explorer" tooltip and no amount.
  * Recharts runs for real: ResponsiveContainer gets a size, the Tooltip opens on
@@ -42,14 +42,16 @@ vi.mock('recharts', async (importOriginal) => {
 })
 
 import { CostTrendChart, UPDATING_BAR_OPACITY } from '../cost-trend-chart'
-import { sevenDayPoints, sevenFullUtcDays, trendDateLabel, xAxisInterval } from '../cost-trend-window'
+import { sevenDayPoints, sevenUtcDaysEndingToday, trendDateLabel, xAxisInterval } from '../cost-trend-window'
 
 const NOV17_BODY = JSON.parse(fs.readFileSync(
   path.resolve(__dirname, '../../../backend/src/controllers/__tests__/__fixtures__/trend-lag/trend-7d-2026-11-17.new.json'), 'utf8',
 ))
 const NOV17 = NOV17_BODY.data as Array<{ date: string; reportState: string; total: number }>
 const NOW = new Date('2026-11-17T03:00:00.000Z')
-const DAYS = ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16']
+const DAYS = ['2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16', '2026-11-17']
+/** The 7-day axis: dates, today's bar "Today" (today-bar T1). */
+const LABELS = ['Nov 11', 'Nov 12', 'Nov 13', 'Nov 14', 'Nov 15', 'Nov 16', 'Today']
 
 const show = (index = -1, range: '7d' | '30d' | '90d' | '6mo' | '1yr' = '7d', data: unknown[] = NOV17) => {
   open.index = index
@@ -67,19 +69,19 @@ describe('the fixture is the backend at Nov 17 for production\'s data', () => {
   })
 })
 
-describe('7-day view: exactly the 7 full UTC days ending yesterday', () => {
-  it('7 bars Nov 10-16, every label shown as a date, today (Nov 17) not drawn', async () => {
+describe('7-day view: exactly the 7 UTC days ending today (today-bar T1)', () => {
+  it('7 bars Nov 11-17, every earlier label a date, the last one "Today"; Nov 10 (today-7) not drawn', async () => {
     const { container } = show()
-    await screen.findByText('Nov 10')
-    expect(tickLabels(container)).toEqual(['Nov 10', 'Nov 11', 'Nov 12', 'Nov 13', 'Nov 14', 'Nov 15', 'Nov 16'])
-    expect(container.textContent).not.toMatch(/Nov 17|\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/)
+    await screen.findByText('Nov 11')
+    expect(tickLabels(container)).toEqual(LABELS)
+    expect(container.textContent).not.toMatch(/Nov 10|Nov 17|\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/)
   })
 
-  it('the window helper: today-7 .. today-1 in UTC, also across a month boundary and at 23:59 / 00:00 UTC', () => {
-    expect(sevenFullUtcDays(NOW)).toEqual(DAYS)
-    expect(sevenFullUtcDays(new Date('2026-11-17T23:59:59.999Z'))).toEqual(DAYS)
-    expect(sevenFullUtcDays(new Date('2026-11-18T00:00:00.000Z'))[6]).toBe('2026-11-17')
-    expect(sevenFullUtcDays(new Date('2026-12-02T12:00:00.000Z'))).toEqual(['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01'])
+  it('the window helper: today-6 .. today in UTC, also across a month boundary and at 23:59 / 00:00 UTC', () => {
+    expect(sevenUtcDaysEndingToday(NOW)).toEqual(DAYS)
+    expect(sevenUtcDaysEndingToday(new Date('2026-11-17T23:59:59.999Z'))).toEqual(DAYS)
+    expect(sevenUtcDaysEndingToday(new Date('2026-11-18T00:00:00.000Z'))[6]).toBe('2026-11-18')
+    expect(sevenUtcDaysEndingToday(new Date('2026-12-01T12:00:00.000Z'))).toEqual(['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30', '2026-12-01'])
     expect(sevenDayPoints(NOV17, NOW).map((p) => p.date)).toEqual(DAYS)
   })
 
@@ -97,17 +99,19 @@ describe('7-day view: exactly the 7 full UTC days ending yesterday', () => {
 })
 
 describe('7 days on a phone: two-line dates instead of overlapping or skipped labels', () => {
-  it('a 310 px chart (390 px phone): every date shown as "Nov" over "10"; a 600 px chart: one line', async () => {
+  it('a 310 px chart (390 px phone): every date shown as "Nov" over "11", "Today" on one line (TB-D4); a 600 px chart: one line', async () => {
     size.width = 310
     const { container, unmount } = show()
-    await screen.findByText('10')
+    await screen.findByText('11')
     const ticks = [...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value')]
-    expect(ticks.map((t) => [...t.querySelectorAll('tspan')].map((x) => x.textContent))).toEqual(DAYS.map((d) => ['Nov', String(Number(d.slice(8)))]))
+    expect(ticks.map((t) => [...t.querySelectorAll('tspan')].map((x) => x.textContent))).toEqual([
+      ...DAYS.slice(0, 6).map((d) => ['Nov', String(Number(d.slice(8)))]), ['Today'],
+    ])
     unmount()
     size.width = 600
     const wide = show()
-    await screen.findByText('Nov 10')
-    expect(tickLabels(wide.container)).toEqual(DAYS.map((d) => trendDateLabel(d, false)))
+    await screen.findByText('Nov 11')
+    expect(tickLabels(wide.container)).toEqual(LABELS)
   })
 })
 
@@ -128,12 +132,12 @@ describe('Nov 13 (last day with line items, today-4): still updating, not final'
   })
 })
 
-describe('Nov 14-16 (not reported): a light hatched placeholder', () => {
-  it('three placeholders, one per not-reported day, filled with the token hatch', async () => {
+describe('Nov 14-16 and today (not reported): a light hatched placeholder', () => {
+  it('four placeholders, one per not-reported day (today included, T3), filled with the token hatch', async () => {
     const { container } = show()
-    await screen.findByText('Nov 10')
+    await screen.findByText('Nov 11')
     const placeholders = screen.getAllByTestId('cost-trend-not-reported-placeholder')
-    expect(placeholders).toHaveLength(3)
+    expect(placeholders).toHaveLength(4)
     const fill = placeholders[0].getAttribute('fill')!
     expect(fill).toMatch(/^url\(#cost-trend-hatch-[A-Za-z0-9_-]+\)$/)
     expect(placeholders.every((p) => p.getAttribute('fill') === fill && Number(p.getAttribute('height')) > 0)).toBe(true)
@@ -143,14 +147,19 @@ describe('Nov 14-16 (not reported): a light hatched placeholder', () => {
     expect(pattern.innerHTML).toContain('var(--app-chart-placeholder-hatch)')
   })
 
-  it('the placeholders sit over Nov 14, 15 and 16, right of every drawn bar', async () => {
+  it('the placeholders sit over Nov 14, 15, 16 and Today, right of every drawn bar', async () => {
     const { container } = show()
-    await screen.findByText('Nov 10')
+    await screen.findByText('Nov 11')
     const ticks = [...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value')]
     const tickX = Object.fromEntries(ticks.map((t) => [t.textContent, Number(t.getAttribute('x'))]))
     const centres = screen.getAllByTestId('cost-trend-not-reported-placeholder')
       .map((p) => Number(p.getAttribute('x')) + Number(p.getAttribute('width')) / 2)
-    expect(centres.map((c) => Math.round(c))).toEqual(['Nov 14', 'Nov 15', 'Nov 16'].map((d) => Math.round(tickX[d])))
+    expect(centres.map((c) => Math.round(c))).toEqual(['Nov 14', 'Nov 15', 'Nov 16', 'Today'].map((d) => Math.round(tickX[d])))
+  })
+
+  it('today (Nov 17) tooltip: "Today · not reported yet", no amount (T3)', async () => {
+    show(DAYS.indexOf('2026-11-17'))
+    expect((await screen.findByTestId('cost-trend-today-tooltip')).textContent).toBe('Today · not reported yet')
   })
 
   it.each(['2026-11-14', '2026-11-15', '2026-11-16'])('%s tooltip: "Not reported yet by AWS Cost Explorer", no amount', async (date) => {
@@ -167,7 +176,7 @@ describe('Nov 14-16 (not reported): a light hatched placeholder', () => {
 
   it('no placeholder and no legend entry when every day is reported', async () => {
     show(-1, '7d', NOV17.map((p) => ({ ...p, reportState: 'final', lineItems: 8 })))
-    await screen.findByText('Nov 10')
+    await screen.findByText('Nov 11')
     expect(screen.queryByTestId('cost-trend-not-reported-placeholder')).toBeNull()
     expect(screen.queryByTestId('cost-trend-not-reported-legend')).toBeNull()
   })

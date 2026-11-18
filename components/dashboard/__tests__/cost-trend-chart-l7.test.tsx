@@ -25,7 +25,7 @@ vi.mock('recharts', async (importOriginal) => {
 
 import { CostTrendChart } from '../cost-trend-chart'
 
-// The 7-day view draws the 7 full UTC days ending yesterday: Nov 25 .. Dec 1 at this clock.
+// The 7-day view draws the 7 UTC days ending today: Nov 26 .. Dec 2 at this clock (today-bar T1).
 const DEC2 = new Date('2026-12-02T12:00:00Z')
 
 const point = (date: string, compute: number, lineItems: number, provisional: boolean) =>

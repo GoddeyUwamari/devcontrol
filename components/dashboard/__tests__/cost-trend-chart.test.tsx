@@ -61,7 +61,7 @@ describe('periods AWS Cost Explorer has not reported yet (DAY1-D14)', () => {
   const point = (date: string, total: number, lineItems: number, provisional: boolean) =>
     ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, lineItems, provisional })
 
-  // The 7-day view draws the 7 full UTC days ending yesterday: Nov 25 .. Dec 1 at this clock.
+  // The 7-day view draws the 7 UTC days ending today: Nov 26 .. Dec 2 at this clock (today-bar T1).
   const DEC2 = new Date('2026-12-02T12:00:00Z')
 
   it('daily: says unreported days are hatched, with no amount (round 2: drawn as a placeholder, never $0)', () => {
