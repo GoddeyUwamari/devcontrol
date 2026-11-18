@@ -20,7 +20,7 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { isNotReportedYet, isStillUpdating, NOT_REPORTED_LEGEND, NOT_REPORTED_PLACEHOLDER_NOTE, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TODAY_NOT_REPORTED_TOOLTIP, todaySoFarTooltip, todayUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
+import { isNotReportedYet, isStillUpdating, NO_CHARGES_NOTE, NOT_REPORTED_LEGEND, NOT_REPORTED_PLACEHOLDER_NOTE, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, stillUpdatingTooltip, TODAY_NOT_REPORTED_TOOLTIP, todaySoFarTooltip, todayUpdatingTooltip, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis';
 import { isUtcToday, sevenDayPoints, TODAY_LABEL, trendDateLabel, xAxisInterval } from './cost-trend-window';
 import { KEEP_CLEAR_OF_FLOATING } from '@/lib/floating-keep-clear';
 
@@ -339,6 +339,13 @@ export function CostTrendChart({
   // Not-reported periods are drawn as a light hatched placeholder (round 2): never a $0 bar.
   const notReportedDates = shown.filter((d) => isNotReportedYet(d)).map((d) => d.date);
   const notReportedNote = notReportedDates.length === 0 ? null : monthly ? unreportedTrendNote(shown, 'month') : NOT_REPORTED_PLACEHOLDER_NOTE;
+  // Every drawn day a reported $0 (the backend's final, or updating at $0.00): say so, as the
+  // chart is otherwise an empty grid. Never with a hatched day or any amount; daily views only;
+  // a point without a reportState (an older backend) is not "reported" here.
+  const noChargesNote =
+    !monthly && shown.length > 0 && !hasAmount && shown.every((d) => d.reportState === 'final' || d.reportState === 'updating')
+      ? NO_CHARGES_NOTE
+      : null;
 
   // 7 days on a phone: "Nov 10" (~40 px at 12 px) does not fit a ~35 px band, so
   // each date takes two lines ("Nov" over "10") instead of overlapping or being
@@ -564,6 +571,10 @@ export function CostTrendChart({
         {/* Anomaly Indicators */}
         {notReportedNote && (
           <p className="text-meta text-ink-muted mt-2 mb-0" data-testid="cost-trend-not-reported">{notReportedNote}</p>
+        )}
+        {noChargesNote && (
+          // Nothing above it (no series legend, no report-state row): the legend row's spacing.
+          <p className="text-meta text-ink-muted mt-4 mb-0 text-center" data-testid="cost-trend-no-charges">{noChargesNote}</p>
         )}
         </div>
         {hasSpike && (

@@ -77,6 +77,13 @@ export const NOT_REPORTED_LEGEND = 'Not reported yet'
 /** Shown under the Dashboard's daily trend, which draws those days as a hatched placeholder (round 2). */
 export const NOT_REPORTED_PLACEHOLDER_NOTE = "Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)"
 
+/**
+ * Shown under the Dashboard's daily trend when every drawn day is a reported
+ * $0 (final, or still updating at $0.00): never with a hatched day, which keeps
+ * NOT_REPORTED_PLACEHOLDER_NOTE, and never with any amount (founder, today-bar §16).
+ */
+export const NO_CHARGES_NOTE = 'AWS Cost Explorer reported no charges for these days.'
+
 const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 /**

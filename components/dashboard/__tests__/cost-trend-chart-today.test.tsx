@@ -230,6 +230,62 @@ describe('no drawn day has an amount: no dollar scale, no series legend (founder
   })
 })
 
+describe('"AWS Cost Explorer reported no charges for these days.": only when every drawn day is a reported $0 (founder)', () => {
+  const NO_CHARGES = 'AWS Cost Explorer reported no charges for these days.'
+  const HATCHED = "Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)"
+  const noCharges = () => screen.queryByTestId('cost-trend-no-charges')
+  const withToday = (name: string, today: Partial<Point>) => fixture(name).map((p) => (p.date === '2026-11-18' ? { ...p, ...today } : p))
+
+  describe('shown', () => {
+    it('quiet: every day final $0', async () => {
+      show(fixture('quiet'))
+      await screen.findByText('Today')
+      expect(noCharges()).toHaveTextContent(NO_CHARGES)
+      expect(screen.queryByTestId('cost-trend-not-reported')).toBeNull()
+    })
+
+    it('every day final $0 and today still updating at $0.00', async () => {
+      show(withToday('quiet', { reportState: 'updating', lineItems: 3 }))
+      await screen.findByText('Today')
+      expect(noCharges()).toHaveTextContent(NO_CHARGES)
+    })
+  })
+
+  describe('not shown', () => {
+    it('stopped10: every day hatched; the hatched note instead', async () => {
+      show(fixture('stopped10'))
+      await screen.findByText('Today')
+      expect(noCharges()).toBeNull()
+      expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent(HATCHED)
+    })
+
+    it('reported $0 days and one hatched day (today not reported): the hatched note only', async () => {
+      show(withToday('quiet', { reportState: 'not_reported' }))
+      await screen.findByText('Today')
+      expect(noCharges()).toBeNull()
+      expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent(HATCHED)
+    })
+
+    it('reported $0 days and one day with an amount', async () => {
+      show(withToday('quiet', { reportState: 'updating', compute: 0.5, total: 0.5, lineItems: 1 }))
+      await screen.findByText('Today')
+      expect(noCharges()).toBeNull()
+    })
+
+    it.each(['partial', 'zero', 'absent', 'stopped3'])('%s (some day has an amount)', async (name) => {
+      show(fixture(name))
+      await screen.findByText('Today')
+      expect(noCharges()).toBeNull()
+    })
+
+    it('$0 points without a reportState (an older backend): not known to be reported', async () => {
+      show(fixture('quiet').map((p) => ({ ...p, reportState: undefined })))
+      await screen.findByText('Today')
+      expect(noCharges()).toBeNull()
+    })
+  })
+})
+
 describe('390 px phone: every date kept, "Today" on one line (T6, TB-D4)', () => {
   it('Nov 12-17 as "Nov" over the day, then "Today"', async () => {
     size.width = 310
