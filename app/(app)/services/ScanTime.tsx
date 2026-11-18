@@ -10,8 +10,9 @@ import { formatExact, formatWhen, type Rich } from './regionCoverage'
  * isn't reliably read on <time>). `exactLine` also prints the exact time
  * below it (the phone layout, where a tooltip can't be tapped open).
  */
-export function ScanTime({ iso, now, exactLine = false }: { iso: string; now: number; exactLine?: boolean }) {
-  const text = formatWhen(iso, now)
+export function ScanTime({ iso, now, exactLine = false, text: shown }: { iso: string; now: number; exactLine?: boolean; text?: string }) {
+  // `text` (PR 3d-1): the time as the surrounding line prints it; formatWhen otherwise (unchanged).
+  const text = shown ?? formatWhen(iso, now)
   const exact = formatExact(iso)
   return (
     <>
@@ -34,7 +35,7 @@ export function ScanTime({ iso, now, exactLine = false }: { iso: string; now: nu
 export function RichText({ parts, now }: { parts: Rich; now: number }) {
   return (
     <>
-      {parts.map((part, i) => (typeof part === 'string' ? part : <ScanTime key={i} iso={part.iso} now={now} />))}
+      {parts.map((part, i) => (typeof part === 'string' ? part : <ScanTime key={i} iso={part.iso} now={now} text={part.text} />))}
     </>
   )
 }

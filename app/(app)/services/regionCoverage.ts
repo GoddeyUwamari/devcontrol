@@ -128,12 +128,16 @@ export function formatExact(iso: string, timeZone?: string): string {
   return clean(new Intl.DateTimeFormat('en-US', { timeZone, dateStyle: 'full', timeStyle: 'long' }).format(Date.parse(iso)))
 }
 
-/** Text with times in it; each time is rendered with its exact value on hover and focus. */
-export type RichPart = string | { iso: string }
+/**
+ * Text with times in it; each time is rendered with its exact value on hover and focus. `text`
+ * (PR 3d-1) is the time as another line already prints it (servicesTruth scanStateTime); without
+ * it the time reads formatWhen, as before.
+ */
+export type RichPart = string | { iso: string; text?: string }
 export type Rich = RichPart[]
 
 export function richText(parts: Rich, now: number, timeZone?: string): string {
-  return parts.map((p) => (typeof p === 'string' ? p : formatWhen(p.iso, now, timeZone))).join('')
+  return parts.map((p) => (typeof p === 'string' ? p : p.text ?? formatWhen(p.iso, now, timeZone))).join('')
 }
 
 // ── Copy ──

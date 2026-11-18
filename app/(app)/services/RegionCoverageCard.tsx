@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { AlertTriangle, Info, OctagonAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CardNote, CoverageCardView, GlobalRow, PanelRow, RowStatus } from './redesignModel'
@@ -168,8 +168,15 @@ export function RegionCoverageCard({ view, now, onChangeHomeRegion }: {
   onChangeHomeRegion?: (() => void) | null
 }) {
   const global = view.global ? globalAsRow(view.global) : null
+  // PR 3d-1 (D7): a link to /services#region-coverage (Infrastructure, Security) lands here. The card
+  // renders only after coverage loads, so the browser's own jump on load finds nothing: scroll once,
+  // when the card first renders, as Security's #findings does (FindingsList). No visual change.
+  const section = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (window.location.hash === `#${REGION_COVERAGE_CARD_ID}`) section.current?.scrollIntoView?.()
+  }, [])
   return (
-    <section id={REGION_COVERAGE_CARD_ID} aria-labelledby="region-coverage-heading" className={cn(TONE.card, 'mb-6 scroll-mt-4')}>
+    <section ref={section} id={REGION_COVERAGE_CARD_ID} aria-labelledby="region-coverage-heading" className={cn(TONE.card, 'mb-6 scroll-mt-4')}>
       <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-3', TONE.divider)}>
         <h2 id="region-coverage-heading" className={cn('m-0 text-section', TONE.ink, TONE.accentHeading)}>{REDESIGN_COPY.coverageHeading}</h2>
         <span className={cn('inline-flex items-center gap-1.5 text-meta', TONE.muted)}>

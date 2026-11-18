@@ -10,18 +10,16 @@
 import type { CostSummary, SystemHealth } from '@/lib/types'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
 import { formatLocalWhen } from '@/lib/utils/localTime'
-import { lastCompletedScanIso } from '@/lib/scan-time'
-import { scanLine } from '../security/overview/securityModel'
-import { latestAttempt } from '../services/regionCoverage'
+import { lastScanFinishedPhrase, scanState } from '../services/servicesTruth'
 import { billedThroughInPeriod, NO_BILLED_DAYS_YET, shortDay } from '../costs/cost-display'
 
 // ── Header ──
 
 /**
- * "Last scan: today, 6:02 PM · Last login: yesterday, 9:14 AM". The scan part
- * is Security's own header line (scanLine: running, failed, finished or none),
- * from the same coverage response; it is left out while coverage loads or
- * failed. The login part is the previous sign-in only (/me previousLoginAt):
+ * "Last scan finished today, 6:02 PM · Last login: yesterday, 9:14 AM". The
+ * scan part is the Services page's header line (servicesTruth scanState, PR
+ * 3d-1 D3: running, failed or didn't finish, finished, none), from the same
+ * coverage response; it is left out while coverage loads or failed. The login part is the previous sign-in only (/me previousLoginAt):
  * null or absent leaves it out, and the current sign-in is never used.
  */
 export function headerStatusLine(i: {
@@ -30,7 +28,7 @@ export function headerStatusLine(i: {
   now: number
 }): string | null {
   const parts: string[] = []
-  const scan = i.coverage ? scanLine({ status: 'ready', data: i.coverage }, i.now) : null
+  const scan = i.coverage ? scanState(i.coverage, i.now) : null
   if (scan) parts.push(scan.text)
   const login = typeof i.previousLoginAt === 'string' ? formatLocalWhen(i.previousLoginAt, i.now) : null
   if (login) parts.push(`Last login: ${login}`)
@@ -95,8 +93,9 @@ export const SCAN_CADENCE = 'every 6 hours'
  *   any other missing evidence leaves the part out (F-1, as the Services
  *   tile). "refreshed" is the Cost Explorer read (asOf). No cadence: the
  *   4-hour cache is not a schedule.
- * - Resources and security: the last finished scan, plus "every 6 hours"
- *   unless the region list is stale or the latest attempt didn't finish (DB-D10).
+ * - Resources and security: "last scan finished {when}" (PR 3d-1, D3), plus
+ *   "every 6 hours" unless the region list is stale or the latest attempt
+ *   didn't finish (DB-D10; the shared scan state's failed / didn't finish).
  * - Alerts: Resource checks' CloudWatch capturedAt, once that section has loaded (DB-D9).
  * - DevControl service: the last /health check.
  */
@@ -132,10 +131,10 @@ export function dataFreshnessSegments(i: {
     }
   }
 
-  const scanned = i.coverage ? formatLocalWhen(lastCompletedScanIso(i.coverage), i.now) : null
+  const scanned = i.coverage ? lastScanFinishedPhrase(i.coverage, i.now) : null
   if (i.coverage && scanned) {
-    const onSchedule = !i.coverage.scope.enabled_regions.stale && latestAttempt(i.coverage) !== 'unfinished'
-    segments.push({ key: 'resources', label: 'Resources and security', text: `last scan ${scanned}${onSchedule ? ` · ${SCAN_CADENCE}` : ''}` })
+    const onSchedule = !i.coverage.scope.enabled_regions.stale && scanState(i.coverage, i.now).state !== 'failed'
+    segments.push({ key: 'resources', label: 'Resources and security', text: `${scanned}${onSchedule ? ` · ${SCAN_CADENCE}` : ''}` })
   }
 
   const alerts = i.cloudwatchCapturedAt === null ? null : formatLocalWhen(i.cloudwatchCapturedAt, i.now)
