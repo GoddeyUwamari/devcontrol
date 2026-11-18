@@ -336,6 +336,9 @@ export function CostTrendChart({
   const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
   const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
   const hasAmount = shown.some((d) => d.total > 0);
+  // The y-axis labels: dollars, or none at all when no drawn day has an amount (the fixed
+  // [0, 1] scale only draws the hatched columns; founder screenshot review).
+  const yTickLabel = hasAmount ? formatCurrency : () => '';
   // Not-reported periods are drawn as a light hatched placeholder (round 2): never a $0 bar.
   const notReportedDates = shown.filter((d) => isNotReportedYet(d)).map((d) => d.date);
   const notReportedNote = notReportedDates.length === 0 ? null : monthly ? unreportedTrendNote(shown, 'month') : NOT_REPORTED_PLACEHOLDER_NOTE;
@@ -476,11 +479,11 @@ export function CostTrendChart({
               // stack gives none; [0, 1] is then the scale as given.
               domain={hasAmount ? [0, 'auto'] : [0, 1]}
               allowDataOverflow={!hasAmount}
-              tickFormatter={formatCurrency}
-              stroke="#9ca3af"
               // No dollar scale then (founder review): [0, 1] is only there to draw the hatched
               // columns, and labels would make a full-height gap read as "$1.00/day".
-              tick={hasAmount ? CHART_TICK : false}
+              tickFormatter={yTickLabel}
+              stroke="#9ca3af"
+              tick={CHART_TICK}
               tickLine={hasAmount}
             />
             <Tooltip content={<CustomTooltip />} />
