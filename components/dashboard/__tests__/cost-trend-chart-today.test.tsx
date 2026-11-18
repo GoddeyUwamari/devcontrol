@@ -203,6 +203,9 @@ const yLabels = (container: HTMLElement) =>
   [...container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value')].map((t) => t.textContent).filter((t) => t !== '')
 /** The y-axis tick marks. */
 const yTickLines = (container: HTMLElement) => container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-line').length
+/** The grid's horizontal and vertical lines. */
+const gridLines = (container: HTMLElement, dir: 'horizontal' | 'vertical') =>
+  container.querySelectorAll(`.recharts-cartesian-grid-${dir} line`).length
 const SERIES_NAMES = /^(EC2|S3|CloudWatch|Compute|Storage|Database|Network|Other)$/
 
 describe('no drawn day has an amount: no dollar scale, no series legend (founder screenshot review)', () => {
@@ -214,6 +217,9 @@ describe('no drawn day has an amount: no dollar scale, no series legend (founder
     expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)")
     expect(yLabels(container)).toEqual([])
     expect(yTickLines(container)).toBe(0)
+    // No horizontal gridlines (no dollar scale to mark); the day columns' vertical lines stay.
+    expect(gridLines(container, 'horizontal')).toBe(0)
+    expect(gridLines(container, 'vertical')).toBeGreaterThan(0)
     expect(container.textContent).not.toMatch(/\$1\.00|\$0\.\d\d/)
     expect(screen.queryByTestId('cost-trend-series-legend')).toBeNull()
     expect(screen.queryAllByRole('button').filter((b) => SERIES_NAMES.test(b.textContent ?? ''))).toHaveLength(0)
@@ -224,6 +230,8 @@ describe('no drawn day has an amount: no dollar scale, no series legend (founder
     expect(await todayTooltip()).toBe('Today · $0.00 so far')
     expect(yLabels(container)).toEqual([])
     expect(yTickLines(container)).toBe(0)
+    expect(gridLines(container, 'horizontal')).toBe(0)
+    expect(gridLines(container, 'vertical')).toBeGreaterThan(0)
     expect(screen.queryByTestId('cost-trend-series-legend')).toBeNull()
   })
 
@@ -234,6 +242,7 @@ describe('no drawn day has an amount: no dollar scale, no series legend (founder
     expect(yLabels(container)[0]).toBe('$0')
     expect(yLabels(container)).not.toContain('$1.00')
     expect(yTickLines(container)).toBeGreaterThan(1)
+    expect(gridLines(container, 'horizontal')).toBeGreaterThan(1)
     const legend = screen.getByTestId('cost-trend-series-legend')
     expect([...legend.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['EC2', 'S3', 'CloudWatch'])
   })

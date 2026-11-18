@@ -462,7 +462,8 @@ export function CostTrendChart({
                 <line x1={0} y1={0} x2={0} y2={6} style={{ stroke: 'var(--app-chart-placeholder-hatch)' }} strokeWidth={2} />
               </pattern>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            {/* No drawn amount: no horizontal gridlines either, as there is no dollar scale (founder review). */}
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={hasAmount} />
             <XAxis
               dataKey="date"
               tickFormatter={tickLabel}
