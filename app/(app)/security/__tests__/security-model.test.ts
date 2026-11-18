@@ -599,9 +599,9 @@ describe('header scan line (answer 12)', () => {
 describe('"Not checked yet" (banner, right)', () => {
   const regions = (n: number) => Array.from({ length: n }, (_, k) => ({ region: k === 0 ? 'us-east-1' : `xx-test-${k}`, home: k === 0, status: k === 0 ? 'ok' : 'never_scanned', last_scan_finished_at: k === 0 ? iso(DAY / 4) : null, last_success_at: null, last_error_code: null }) as never)
   it('regions and IAM roles, with the singular for one region (answer 11)', () => {
-    expect(notCheckedText(ready(coverage()), NOW)).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
+    expect(notCheckedText(ready(coverage()), NOW)).toBe('Not scanned yet: 16 regions · IAM roles and policies')
     const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } }, home_only_coverage: { regions_total: 2, regions_checked: 1 } })
-    expect(notCheckedText(ready(two), NOW)).toBe('Not checked yet: 1 region not scanned yet · IAM roles and policies')
+    expect(notCheckedText(ready(two), NOW)).toBe('Not scanned yet: 1 region · IAM roles and policies')
   })
   it('no region list yet', () => {
     expect(notCheckedText(ready(coverage({ region_status: [] })), NOW)).toBe('Not checked yet: other regions (region list not read yet) · IAM roles and policies')

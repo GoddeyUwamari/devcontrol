@@ -25,7 +25,7 @@ import { tab12Coverage } from '../(app)/services/__tests__/home-region-fixtures'
 import { organisingLine, redesignScanLine } from '../(app)/services/redesignModel'
 import { richText } from '../(app)/services/regionCoverage'
 import { describeCoverage } from '../(app)/services/coverage'
-import { regionGaps, scanIsRunning, scanState } from '../(app)/services/servicesTruth'
+import { homeRegionCheck, regionGaps, scanIsRunning, scanState } from '../(app)/services/servicesTruth'
 import { describeOverview } from '../(app)/infrastructure/overview/overviewModel'
 import { attentionPage, inputs, ready } from '../(app)/infrastructure/__tests__/overview-fixtures'
 import { headerScanLine, notCheckedText, securityCheckedLines } from '../(app)/security/overview/securityModel'
@@ -61,8 +61,10 @@ interface Expected {
   scan: { state: string; text: string }
   /** The Services coverage card's organising line. */
   line: string
-  /** "Not checked yet: …" on Infrastructure and Security. */
+  /** The "what isn't checked" line on Infrastructure and Security (founder ruling Nov 18: "Not scanned yet: …"). */
   notChecked: string
+  /** Connect's home row "Last scan" cell, after "{count} · home · " (N1: never "complete" unless the home was checked). */
+  connectHome: string
   /** The other-regions lines ("What we checked" on Infrastructure and Security). */
   otherRegions: string[]
   /** Infrastructure's inventory line's ending (the home region's result). */
@@ -79,42 +81,42 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab5('ok'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not checked yet: 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'complete',
     },
   },
   'home failed': {
     coverage: () => tab5('failed'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
-      notChecked: `Not checked yet: us-east-1 couldn't be checked · 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: scan error",
+      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: scan error", connectHome: "couldn't check: scan error",
     },
   },
   'home denied': {
     coverage: () => homeStatus('denied'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
-      notChecked: `Not checked yet: us-east-1 couldn't be checked · 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: access denied",
+      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: access denied", connectHome: "couldn't check: access denied",
     },
   },
   'home timed out': {
     coverage: () => homeStatus('timed_out'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
-      notChecked: `Not checked yet: us-east-1 couldn't be checked · 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: AWS didn't respond",
+      notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: AWS didn't respond", connectHome: "couldn't check: AWS didn't respond",
     },
   },
   'home partial': {
     coverage: () => homeStatus('partial'),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not checked yet: 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Partly checked',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Partly checked', connectHome: 'partial',
     },
   },
   'former home with an old ok': {
     coverage: () => tab12Coverage(),
     expected: {
       scan: { state: 'finished', text: FINISHED }, line: '1 of 4 regions checked · us-west-2',
-      notChecked: `Not checked yet: us-east-1 since Nov 14 · 2 regions not scanned yet · ${IAM}`,
+      notChecked: `Not scanned yet: us-east-1 since Nov 14 · 2 regions · ${IAM}`, connectHome: 'complete',
       otherRegions: ["us-east-1 hasn't been scanned since Nov 14, except for S3 buckets.", '2 regions not scanned yet'], inventory: 'us-west-2: Checked',
     },
   },
@@ -122,21 +124,21 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab8(),
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 10:21 AM · didn't finish" }, line: 'Last scan failed after checking 1 of 2 regions · 1 with resources',
-      notChecked: `Not checked yet: 1 region couldn't be checked · ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM',
+      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'last scan failed',
     },
   },
   'abandoned job': {
     coverage: abandoned,
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 12:00 PM · didn't finish" }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not checked yet: 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'last scan failed',
     },
   },
   'in progress past 60 minutes, lease held': {
     coverage: longRunning,
     expected: {
       scan: { state: 'running', text: 'Scan in progress since 1:00 PM · showing results from today, 10:20 AM' }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not checked yet: 3 regions not scanned yet · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'scan in progress',
     },
   },
   'flagged in progress (dormant region progress, item 7)': {
@@ -144,7 +146,7 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     expected: {
       scan: { state: 'running', text: 'Scan in progress since 10:00 AM · 1 of 4 regions done' },
       line: 'Scanning: 1 of 4 regions checked so far · 1 with resources · 3 still running or waiting',
-      notChecked: `Not checked yet: 3 regions still running or waiting · ${IAM}`, otherRegions: ['3 regions still running or waiting'], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM',
+      notChecked: `3 regions still running or waiting · Not checked yet: ${IAM}`, otherRegions: ['3 regions still running or waiting'], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'scan in progress',
     },
   },
 }
@@ -190,10 +192,17 @@ describe.each(Object.entries(CASES))('%s', (_name, { coverage, expected }) => {
   })
 
   it('Connect AWS: the Discovery line is the Services scan line; running and failed follow the same state', () => {
-    const v = describeCoverage(c, NOW, [], scanState(c, NOW))
+    const v = describeCoverage(c, NOW, [], { ...scanState(c, NOW), home: homeRegionCheck(c) })
     expect(v.lastScan).toBe(expected.scan.text)
     expect(v.lastScanFailed).toBe(expected.scan.state === 'failed')
     expect(v.chips[0].state === 'scanning').toBe(expected.scan.state === 'running')
+  })
+
+  // N1 (founder ruling, Nov 18): the home row's "Last scan" cell follows the shared scan state and home-region check.
+  it('Connect AWS: the home row\'s Last scan cell; "complete" only when the home region was checked', () => {
+    const v = describeCoverage(c, NOW, [], { ...scanState(c, NOW), home: homeRegionCheck(c) })
+    expect(v.chips[0].note).toBe(`${c.scope.home_region!.count} · home · ${expected.connectHome}`)
+    if (expected.connectHome === 'complete') expect(homeRegionCheck(c)?.kind).toBe('checked')
   })
 })
 

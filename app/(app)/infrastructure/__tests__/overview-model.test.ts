@@ -290,7 +290,7 @@ describe('O-S status line', () => {
   it('O-S5 nothing found: says so with its scope', () => {
     const s = view(STATES['no-findings']).status
     expect(s.headline).toBe('No critical or high-severity findings from the last scan.')
-    expect(s.notChecked).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
+    expect(s.notChecked).toBe('Not scanned yet: 16 regions · IAM roles and policies')
     expect(s.reason).toBeNull()
   })
   it('O-S6 never scanned', () => {
@@ -298,7 +298,7 @@ describe('O-S status line', () => {
   })
   it('O-S3 the not-checked line stays when there are findings; the top item is the first row', () => {
     const s = view().status
-    expect(s.notChecked).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
+    expect(s.notChecked).toBe('Not scanned yet: 16 regions · IAM roles and policies')
     expect(s.reason).toBe('Top: RDS instance is publicly accessible')
   })
   describe('"Top:" matches the headline', () => {
@@ -434,7 +434,7 @@ describe('O-R regions and what we checked', () => {
     c.scope.enabled_regions.count = 20
     c.home_only_coverage = { regions_total: 20, regions_checked: 1 }
     expect(view({ coverage: ready(c) }).account!.items[3].value).toBe('1 of 20 regions checked · us-east-1')
-    expect(view({ coverage: ready(c) }).status.notChecked).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
+    expect(view({ coverage: ready(c) }).status.notChecked).toBe('Not scanned yet: 16 regions · IAM roles and policies')
   })
   it('O-R1 unknown list and older backend: no "N of M" anywhere in the strip', () => {
     for (const state of ['unknown-list', 'older-backend']) {

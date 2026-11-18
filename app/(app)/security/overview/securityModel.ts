@@ -24,7 +24,7 @@ import type { ComplianceFramework, ComplianceScan } from '@/lib/services/complia
 import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type FindingWhere } from '@/lib/security/findingDisplay'
 import { typeLabel } from '../../services/AttentionTable'
-import { notCheckedRegionParts, regionGaps, scanState } from '../../services/servicesTruth'
+import { notCheckedLine, regionGaps, scanState } from '../../services/servicesTruth'
 import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
@@ -639,12 +639,12 @@ export function scanLine(coverage: SecLoadable<ServicesCoverage>, now: number): 
 }
 
 /**
- * "Not checked yet: <regions> · IAM roles and policies" (Infra's rule, PLAN §9.3); the region parts are
- * the Services page's (PR 3d-1, D6). Null unless coverage loaded for a connected account.
+ * "Not scanned yet: 16 regions · IAM roles and policies" (Infra's rule, PLAN §9.3): the shared line of
+ * PR 3d-1 (D6, founder ruling Nov 18). Null unless coverage loaded for a connected account.
  */
 export function notCheckedText(coverage: SecLoadable<ServicesCoverage>, now: number): string | null {
   if (coverage.status !== 'ready' || !coverage.data.account.connected) return null
-  return `Not checked yet: ${[...notCheckedRegionParts(coverage.data, now), SECURITY_COPY.iamRoles].join(' · ')}`
+  return notCheckedLine(coverage.data, now, SECURITY_COPY.iamRoles)
 }
 
 // ── Labels and empty lines for the findings list (founder answers 9, 10; e2 13, 14, 16) ──

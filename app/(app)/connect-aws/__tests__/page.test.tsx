@@ -44,7 +44,7 @@ import {
   permissionFixText,
 } from '../connectAwsCopy'
 import { HOME_REGION_ONLY_NOTE, describeCoverage } from '../../services/coverage'
-import { scanState } from '../../services/servicesTruth'
+import { homeRegionCheck, scanState } from '../../services/servicesTruth'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
 import { toast } from 'sonner'
 import { REMOVED_STRINGS, expectNoRemovedText } from './removedText'
@@ -425,7 +425,7 @@ describe('Connect AWS page: checking and connected', () => {
     renderPage()
     const headline = await screen.findByTestId('coverage-headline')
     const now = Date.now()
-    const expected = describeCoverage(COVERAGE, now, [], scanState(COVERAGE, now))
+    const expected = describeCoverage(COVERAGE, now, [], { ...scanState(COVERAGE, now), home: homeRegionCheck(COVERAGE) })
     expect(headline.textContent).toBe(expected.headline)
     expect(expected.lastScan).toBe(scanState(COVERAGE, now).text)
     expect(expected.lastScan).toMatch(/^Last scan finished /)
@@ -439,6 +439,29 @@ describe('Connect AWS page: checking and connected', () => {
     ])
     expect(document.body.textContent).toContain(HOME_REGION_ONLY_NOTE.title)
     expect(document.body.textContent).toContain(HOME_REGION_ONLY_NOTE.body)
+  })
+
+  // PR 3d-1 N1 (founder ruling, Nov 18): the home row's "Last scan" cell follows the shared scan state and
+  // home-region check, so a home region that couldn't be checked, or a scan that didn't finish, never reads "complete".
+  it.each([
+    ['home failed', {
+      scope: { ...COVERAGE.scope, enabled_regions: { known: true, count: 17 } },
+      region_status: [{ region: 'us-east-1', home: true, status: 'failed', last_scan_finished_at: COVERAGE.last_successful_scan_at, last_success_at: null, last_error_code: null }],
+      home_only_coverage: { regions_total: 17, regions_checked: 0 },
+    }, "7 · home · couldn't check: scan error"],
+    ['abandoned job', {
+      last_scan: { status: 'running', started_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), completed_at: null, warnings: [] },
+      scan_in_progress: null,
+    }, '7 · home · last scan failed'],
+  ] as const)('T13 N1 %s: the home row\'s Last scan cell is never "complete"', async (_name, patch, cell) => {
+    mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+    mockGetCoverage.mockResolvedValue({ ...COVERAGE, ...patch } as unknown as ServicesCoverage)
+    renderPage()
+    await screen.findByTestId('coverage-headline')
+    const home = [...screen.getByTestId('coverage-table').querySelectorAll('tbody tr')][1]
+    const cells = [...home.querySelectorAll('td')].map((td) => td.textContent)
+    expect(cells).toEqual(['Home region (us-east-1)', '7', cell])
+    expect(cells[2]).not.toMatch(/complete/)
   })
 
   it('T13 coverage loading, then an error with Try again that refetches', async () => {

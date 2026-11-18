@@ -183,10 +183,17 @@ export function warningNotes(persisted: readonly string[], inTab: readonly strin
  * - complete: the last scan finished with no warning;
  * - off: no scan yet.
  */
-function homeChip(home: { region: string; count: number }, last: LastScan, inProgress: boolean, lastFailed: boolean, warnings: readonly string[]): CoverageChip {
+function homeChip(
+  home: { region: string; count: number }, last: LastScan, inProgress: boolean, lastFailed: boolean, warnings: readonly string[],
+  // PR 3d-1 (N1): the shared home-region check; undefined keeps the Phase 1 rule (the Services strip).
+  check?: { kind: 'checked' | 'partial' | 'couldnt'; label: string } | null,
+): CoverageChip {
   const chip = (state: CoverageChip['state'], note: string): CoverageChip => ({ key: 'home', state, region: home.region, note })
   if (inProgress) return chip('scanning', `${home.count} · home · scan in progress`)
   if (lastFailed) return chip('failed', `${home.count} · home · last scan failed`)
+  // The Services card's failure label, e.g. "couldn't check: scan error"; "partial" as the Services card's Partial.
+  if (check?.kind === 'couldnt') return chip('failed', `${home.count} · home · ${check.label.charAt(0).toLowerCase()}${check.label.slice(1)}`)
+  if (check?.kind === 'partial') return chip('partial', `${home.count} · home · partial`)
   if (last?.status === 'completed') {
     return warnings.length > 0
       ? chip('partial', `${home.count} · home · partial`)
@@ -203,11 +210,13 @@ export function isScanAbandoned(lastScan: LastScan, now: number): boolean {
 /**
  * `scan` (PR 3d-1, Connect AWS): the shared scan state (servicesTruth scanState). With it, in progress
  * and failed come from that state (the lease and the server's status, no 60-minute rule) and the
- * last-scan line is its text. Without it (the Services page's Phase 1 strip) nothing changes.
+ * last-scan line is its text; `scan.home` (servicesTruth homeRegionCheck) decides the home chip after a
+ * finished scan, so a home region that couldn't be checked never reads "complete" (founder ruling N1).
+ * Without it (the Services page's Phase 1 strip) nothing changes.
  */
 export function describeCoverage(
   coverage: ServicesCoverage, now: number, inTabWarnings: readonly string[] = [],
-  scan?: { state: 'finished' | 'running' | 'failed' | 'none'; text: string },
+  scan?: { state: 'finished' | 'running' | 'failed' | 'none'; text: string; home?: { kind: 'checked' | 'partial' | 'couldnt'; label: string } | null },
 ): CoverageView {
   const home = coverage.account.connected ? coverage.scope.home_region : null
   if (!home) {
@@ -240,7 +249,7 @@ export function describeCoverage(
   }
 
   const warnings = shownWarnings(last?.warnings ?? [])
-  const chips: CoverageChip[] = [homeChip(home, last, inProgress, lastFailed, warnings)]
+  const chips: CoverageChip[] = [homeChip(home, last, inProgress, lastFailed, warnings, scan ? scan.home ?? null : undefined)]
   // Stored counts are always shown; the scope (in or not in the last scan) only from a completed one.
   const { cloudfront, s3 } = coverage.scope
   const completed = scopeIsCompleted(coverage)

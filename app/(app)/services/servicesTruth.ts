@@ -108,10 +108,12 @@ export type RegionGapKey =
 
 /**
  * One kind of region the last results don't count as checked, in Services'
- * words. `short` is the item form ("Not checked yet: …"); `long` is the line
- * form ("What we checked"). `home`: it is about the home region.
+ * words. `short` is the item form; `long` is the line form ("What we
+ * checked"). `notScanned` (3d-1 founder ruling, Nov 18): its item under
+ * "Not scanned yet: …" ("16 regions", "us-east-1 since Nov 14"), only for a
+ * region that hasn't been scanned. `home`: it is about the home region.
  */
-export interface RegionGap { key: RegionGapKey; short: string; long: string; home: boolean }
+export interface RegionGap { key: RegionGapKey; short: string; long: string; home: boolean; notScanned?: string }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 const num = (n: number) => n.toLocaleString('en-US')
@@ -153,17 +155,17 @@ function homeOnlyGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
   const homeRow = list.find((r) => r.home)
   if (h.regions_checked === 0 && homeRow) {
     if (['failed', 'denied', 'timed_out'].includes(homeRow.status)) gaps.push(same('home-couldnt', `${home} couldn't be checked`, true))
-    else if (homeRow.status === 'never_scanned') gaps.push(same('home-not-scanned', `${home} not scanned yet`, true))
+    else if (homeRow.status === 'never_scanned') gaps.push({ ...same('home-not-scanned', `${home} not scanned yet`, true), notScanned: home })
   }
   const former = formerHomeOf(c)
   const others = list.filter((r) => !r.home)
   if (former && others.some((r) => r.region === former.region)) {
     const day = dayText(former.changedAt, now)
-    gaps.push({ key: 'former-home', short: `${former.region} since ${day}`, long: `${former.region} hasn't been scanned since ${day}, except for S3 buckets.`, home: false })
+    gaps.push({ key: 'former-home', short: `${former.region} since ${day}`, long: `${former.region} hasn't been scanned since ${day}, except for S3 buckets.`, home: false, notScanned: `${former.region} since ${day}` })
   }
   const rest = others.filter((r) => r.region !== former?.region)
   const notScanned = rest.filter((r) => r.status === 'never_scanned').length
-  if (notScanned > 0) gaps.push(same('not-scanned', `${num(notScanned)} ${regionsWord(notScanned)} not scanned yet`))
+  if (notScanned > 0) gaps.push({ ...same('not-scanned', `${num(notScanned)} ${regionsWord(notScanned)} not scanned yet`), notScanned: `${num(notScanned)} ${regionsWord(notScanned)}` })
   const earlier = rest.length - notScanned
   if (earlier > 0) gaps.push(same('earlier', `${num(earlier)} ${regionsWord(earlier)} from an earlier scan`))
   return gaps
@@ -175,7 +177,7 @@ function flaggedGaps(mr: MultiRegionCoverage): RegionGap[] | null {
   const gaps: RegionGap[] = []
   if (!s || mr.coverage_status === 'unavailable') {
     const n = mr.regions.filter((r) => r.state === 'not_started' && r.scan_state !== 'waiting').length
-    if (n > 0) gaps.push(same('not-scanned', `${num(n)} ${regionsWord(n)} not scanned yet`))
+    if (n > 0) gaps.push({ ...same('not-scanned', `${num(n)} ${regionsWord(n)} not scanned yet`), notScanned: `${num(n)} ${regionsWord(n)}` })
     return gaps
   }
   if (mr.coverage_status === 'in_progress') {
@@ -194,10 +196,24 @@ function flaggedGaps(mr: MultiRegionCoverage): RegionGap[] | null {
   return gaps
 }
 
-/** The region items of a "Not checked yet: …" line: each gap's short form, or the region-list-not-read part. */
-export function notCheckedRegionParts(c: ServicesCoverage, now: number): string[] {
+/**
+ * The "what isn't checked" line on Infrastructure and Security (3d-1 founder ruling, Nov 18), `last`
+ * being the page's own last item ("IAM roles and policies"):
+ * - "Not scanned yet: 16 regions · IAM roles and policies";
+ * - with the home region not counted as checked, Services' segment first:
+ *   "us-east-1 couldn't be checked · Not scanned yet: 16 regions · IAM roles and policies";
+ * - any other region that is neither checked nor unscanned (an earlier scan's result; flagged:
+ *   couldn't be checked, still running or waiting) is a segment before it, in Services' words;
+ * - with no unscanned region the clause keeps the existing "Not checked yet: {last}";
+ * - with no region list: "Not checked yet: other regions (region list not read yet) · {last}" (unchanged).
+ */
+export function notCheckedLine(c: ServicesCoverage, now: number, last: string): string {
   const gaps = regionGaps(c, now)
-  return gaps ? gaps.map((g) => g.short) : [REGION_LIST_NOT_READ_PART]
+  if (!gaps) return `Not checked yet: ${[REGION_LIST_NOT_READ_PART, last].join(' · ')}`
+  const before = gaps.filter((g) => g.notScanned === undefined).map((g) => g.short)
+  const unscanned = gaps.filter((g) => g.notScanned !== undefined).map((g) => g.notScanned!)
+  const clause = unscanned.length > 0 ? `Not scanned yet: ${[...unscanned, last].join(' · ')}` : `Not checked yet: ${last}`
+  return [...before, clause].join(' · ')
 }
 
 // ── The home region's last check ──

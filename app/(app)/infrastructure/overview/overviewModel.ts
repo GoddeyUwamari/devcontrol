@@ -37,7 +37,7 @@ import { footerText, type Rich } from '../../services/regionCoverage'
 import { inventoryGap, scopeIsCompleted, warningNotes } from '../../services/coverage'
 import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { NOT_CHECKED_COPY, unknownTagsText } from '../../services/notChecked'
-import { coverageLine, homeRegionCheck, homeRegionOf, notCheckedRegionParts, regionGaps, scanIsRunning, scanState, scanStateParts } from '../../services/servicesTruth'
+import { coverageLine, homeRegionCheck, homeRegionOf, notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts } from '../../services/servicesTruth'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T }
 
@@ -358,9 +358,9 @@ function accountStrip(c: ServicesCoverage, regionsLinkAvailable: boolean): NonNu
   }
 }
 
-/** "Not checked yet: …", built from parts (§6.2, §17.1); the region parts are Services' (PR 3d-1, D6). */
+/** "Not scanned yet: 16 regions · IAM roles and policies" (§6.2, §17.1); the shared line of PR 3d-1 (D6, founder ruling Nov 18). */
 function notCheckedText(c: ServicesCoverage, now: number): string {
-  return `Not checked yet: ${[...notCheckedRegionParts(c, now), OVERVIEW_COPY.iamNotChecked].join(' · ')}`
+  return notCheckedLine(c, now, OVERVIEW_COPY.iamNotChecked)
 }
 
 function sourceFragment(counts: SeverityCounts | null, severity: 'critical' | 'high', label: string, errorLabel: string): string {

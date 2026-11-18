@@ -140,7 +140,7 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
     await show()
     const banner = screen.getByTestId('security-banner')
     expect(banner).toHaveTextContent('1 critical and 1 high-severity findings need review')
-    expect(screen.getByTestId('security-not-checked')).toHaveTextContent('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
+    expect(screen.getByTestId('security-not-checked')).toHaveTextContent('Not scanned yet: 16 regions · IAM roles and policies')
   })
   it('what we checked uses the mock wording', async () => {
     await show()
