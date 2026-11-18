@@ -7,7 +7,9 @@
     "dev": "node scripts/generate-version.js && ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "node scripts/generate-version.js && tsc",
     "start": "node dist/server.js",
-    "test": "jest"
+    "test": "npm run test:parallel && npm run test:serial",
+    "test:parallel": "jest --config jest.parallel.config.js",
+    "test:serial": "jest --config jest.serial.config.js --runInBand"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
