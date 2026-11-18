@@ -2,7 +2,7 @@
  * The brief's formatting (UTC dates, day ranges, money) and the retained,
  * unused recommendation guard (WE-D9; moved from weekly-summary-content.ts).
  */
-import { formatDays, formatMoney, formatOpenSavings, formatSignedMoney, formatSubjectWindow, formatTime } from '../format';
+import { displayResource, formatDays, formatMoney, formatOpenSavings, formatSignedMoney, formatSubjectWindow, formatTime } from '../format';
 import { buildRecommendationPrompt, checkRecommendationText } from '../recommendation-guard';
 import { composeWeeklyBrief } from '../rules';
 import { notSupported } from '../../ai-context-contract';
@@ -71,5 +71,23 @@ describe('retained recommendation guard', () => {
     const s = notSupported({ source: 'x' }, 'why');
     expect(s.state).toBe('not_supported');
     expect(s.data).toBeNull();
+  });
+});
+
+describe('displayResource: no full ARN or account ID (brief review H-1)', () => {
+  it.each([
+    ['arn:aws:rds:us-east-1:123456789012:db:orders-replica', 'orders-replica'],
+    ['arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/idle-alb/50dc6c495c0c9188', '50dc6c495c0c9188'],
+    ['arn:aws:s3:::build-artifacts', 'build-artifacts'],
+    ['arn:aws-us-gov:ec2:us-gov-west-1:123456789012:natgateway/nat-0123456789abcdef0', 'nat-0123456789abcdef0'],
+    ['arn:aws:iam::123456789012:root', 'root'],
+    ['arn:aws:iam::123456789012:', ''],
+    ['arn:aws:iam', ''],
+    ['Idle load balancer arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/idle-alb/50dc6c495c0c9188 (x)', 'Idle load balancer 50dc6c495c0c9188 (x)'],
+    ['i-1234567890abcdef0', 'i-1234567890abcdef0'],
+    ['build-cache-volume', 'build-cache-volume'],
+  ])('%s → %s', (value, expected) => {
+    expect(displayResource(value)).toBe(expected);
+    expect(displayResource(value)).not.toMatch(/arn:|123456789012/);
   });
 });

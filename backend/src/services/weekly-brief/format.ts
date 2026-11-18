@@ -99,6 +99,34 @@ export function formatOpenSavings(estimate: number, estimatedFindings: number): 
   return estimate === 0 ? '<$0.01/mo' : `${formatSavings(estimate)}/mo`;
 }
 
+/**
+ * The last segment of an ARN's resource part (brief review H-1; the same rule
+ * as the Security page's shortArn in lib/security/findingDisplay.ts):
+ * `arn:aws:rds:us-east-1:123456789012:db:orders` → `orders`,
+ * `…:loadbalancer/app/name/50dc6c49` → `50dc6c49`, `arn:aws:s3:::bucket` → `bucket`.
+ * The account field is never returned. An ARN with no resource part gives ''.
+ */
+function arnTail(arn: string): string {
+  // arn:partition:service:region:account:resource (the resource part may itself contain ':').
+  const parts = arn.split(':');
+  if (parts.length < 6) return '';
+  const segments = parts.slice(5).join(':').split(/[/:]/).filter(s => s.length > 0);
+  return segments.length > 0 ? segments[segments.length - 1] : '';
+}
+
+const ARN_TOKEN = /arn:aws[\w-]*:[^\s"'()<>,]*/g;
+
+/**
+ * A resource identifier (or any text that may carry one) as the email prints
+ * it: a value that is an ARN becomes its final resource segment, and any ARN
+ * inside other text is shortened the same way. No full ARN and no account ID
+ * reaches the email.
+ */
+export function displayResource(value: string): string {
+  if (value.startsWith('arn:')) return arnTail(value);
+  return value.replace(ARN_TOKEN, token => arnTail(token));
+}
+
 export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }

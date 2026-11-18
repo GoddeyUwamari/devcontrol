@@ -27,6 +27,7 @@ import { weeklyFacts, type WeeklyFacts } from '../facts';
 import { formatSavingsCurrency } from '../../../utils/formatSavingsCurrency';
 import { normalizeServiceName } from '../../aws-cost.service';
 import { WeeklyAISummaryJob } from '../../../jobs/weekly-ai-summary.job';
+import { WEEKLY_EMAIL_PATHS } from '../../../config/weekly-email-paths';
 import type {
   WeeklyConnectionHealth,
   WeeklyDORAMetrics,
@@ -70,15 +71,22 @@ beforeAll(() => {
   job = new WeeklyAISummaryJob({} as Pool);
 });
 
-function render(f: WeeklyFacts, plan = 'Optimization Engine') {
+function render(f: WeeklyFacts, plan = 'Optimization Engine', organizationName: string | null = FIXTURE_ORG_NAME) {
   const data = job.buildTemplateData({
     userName: 'Alex',
-    brief: composeWeeklyBrief(f, { organizationName: FIXTURE_ORG_NAME, planName: plan }),
-    organizationName: FIXTURE_ORG_NAME,
+    brief: composeWeeklyBrief(f, { organizationName, planName: plan }),
+    organizationName,
     ...FIXTURE_URLS,
   });
   data.year = 2026;
-  return job.renderEmail(data);
+  const { html, text } = job.renderEmail(data);
+  // The HTML as a reader sees it: no style block, no tags, entities decoded.
+  const htmlText = html
+    .replace(/<style[\s\S]*?<\/style>/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x3D;/g, '=').replace(/&rarr;/g, '→').replace(/&copy;/g, '©')
+    .replace(/\s+/g, ' ');
+  return { html, text, htmlText, subject: data.subject };
 }
 
 /** Every string the rules generated, names (organization, person, AWS service) left out (founder Q14). */
@@ -94,6 +102,20 @@ function generatedStrings(b: WeeklyBrief): string[] {
   out.push(...b.footer.lines, b.footer.alarms.text, b.footer.alarms.link?.label ?? '');
   return out.filter(Boolean);
 }
+
+/** Raw AWS error text with every identifier the email must never carry. */
+const RAW_AWS_ERROR = 'AccessDenied: User arn:aws:sts::123456789012:assumed-role/DevControlRole/x is not authorized (External ID mismatch); Throttling; Error';
+const ARN_EXAMPLE = {
+  check: 'Idle RDS instance',
+  resource: 'arn:aws:rds:us-east-1:123456789012:db:orders-replica',
+  region: 'us-east-1',
+  resolvedAt: '2026-11-10T00:00:00.000Z',
+};
+/** Every day final at $1, except Nov 13 ($100) with no reportState and Nov 15 not reported; Nov 6 ($50) is Nov 13's weekday a week earlier. */
+const UNDETERMINED_TREND = trend(day => ({
+  state: day === '2026-11-13' ? null : day >= '2026-11-15' ? 'not_reported' : 'final',
+  services: day === '2026-11-13' ? { EC2: 100 } : day === '2026-11-06' ? { EC2: 50 } : day >= '2026-11-15' ? {} : { EC2: 1 },
+}));
 
 /** Variants that reach every branch of the rules at least once. */
 const VARIANTS: Record<string, WeeklyFacts> = {
@@ -114,6 +136,31 @@ const VARIANTS: Record<string, WeeklyFacts> = {
   stillOnlyMany: facts({ stillDetected: still({ count: 3, estimatedMonthlySavings: 0, ceilingMonthlySavings: 40, example: { check: 'Idle Instance', resource: 'i-1234567890abcdef0', region: null, resolvedAt: '2026-11-10T00:00:00.000Z' } }) }),
   subCent: facts({ recommendations: recs({ active: 1, estimatedMonthlySavings: 0, estimatedFindings: 1 }) }),
   emptyCost: facts({ costTrend: noData(SOURCES.trend, 'unavailable', 'AWS Cost Explorer returned no daily data') }),
+  // H-1: every source failed with raw AWS error text carrying an ARN, an account ID and "External ID".
+  failedWithIdentifiers: facts({
+    connectionHealth: noData(SOURCES.health, 'error', RAW_AWS_ERROR),
+    scan: noData(SOURCES.scan, 'error', RAW_AWS_ERROR),
+    costAnalysis: noData(SOURCES.analysis, 'error', RAW_AWS_ERROR),
+    deploymentHistory: noData(SOURCES.history, 'error', RAW_AWS_ERROR),
+    costTrend: noData(SOURCES.trend, 'error', RAW_AWS_ERROR),
+    delivery: noData(SOURCES.delivery, 'error', RAW_AWS_ERROR),
+    security: noData(SOURCES.security, 'error', RAW_AWS_ERROR),
+    recommendations: noData(SOURCES.recommendations, 'error', RAW_AWS_ERROR),
+    stillDetected: noData(SOURCES.still, 'error', RAW_AWS_ERROR),
+  }),
+  unavailableWithIdentifiers: facts({ costTrend: noData(SOURCES.trend, 'unavailable', RAW_AWS_ERROR) }),
+  // H-1: the still-detected example's resource is an ARN; only its final segment may print.
+  stillDetectedArn: facts({ stillDetected: still({ count: 1, estimatedMonthlySavings: 7, example: ARN_EXAMPLE }) }),
+  stillDetectedArnMany: facts({ stillDetected: still({ count: 2, estimatedMonthlySavings: 0, example: ARN_EXAMPLE }) }),
+  // M-1: the cost-analysis read failed and nothing is open.
+  analysisUnreadable: facts({ costAnalysis: noData(SOURCES.analysis, 'error', 'x') }),
+  // L-1: Nov 13's point carries no reportState.
+  undeterminedDay: facts({ costTrend: available(SOURCES.trend, { days: UNDETERMINED_TREND }) }),
+  // L-2: the connection is broken and the security read failed.
+  brokenSecurityFailed: facts({
+    connectionHealth: health({ state: 'failing', lastResult: 'failing', lastOkAt: '2026-11-15T06:00:00.000Z' }),
+    security: noData(SOURCES.security, 'error', 'x'),
+  }),
 };
 
 // ── R1 ───────────────────────────────────────────────────────────────────────
@@ -162,6 +209,21 @@ describe('R1: the summary sentence', () => {
         "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC)."],
     ] as Array<[string, Partial<WeeklyEvidence>, string]>)('%s', (_name, over, expected) => {
       expect(clause(over)).toBe(expected);
+    });
+    it('L-2: security read failed or preliminary: the no-security-figures variant, never "security figures below are from the last completed scan"', () => {
+      expect(clause({ connectionHealth: failing('2026-11-15T06:00:00.000Z'), security: noData(SOURCES.security, 'error', 'x') })).toBe(
+        "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so there are no security figures this week and savings below are from the last completed cost analysis (Nov 16, 06:20 UTC)."
+      );
+      expect(clause({ connectionHealth: failing(null), security: noData(SOURCES.security, 'unavailable', 'the security posture score is still preliminary'), costAnalysis: noAnalysis })).toBe(
+        "DevControl couldn't reach your AWS account, so there are no security or savings figures this week."
+      );
+      const f = VARIANTS.brokenSecurityFailed;
+      expect(tiles(f)[0]).toMatchObject({ value: '—', lines: ["Couldn't retrieve this week"] });
+      const { htmlText, text } = render(f);
+      for (const out of [summarySentence(f).bold, htmlText, text]) {
+        expect(out).not.toContain('security figures below are from the last completed scan');
+        expect(out).toContain('there are no security figures this week');
+      }
     });
     it('the old single "from the last completed scan" wording for both is gone', () => {
       for (const name of Object.keys(VARIANTS)) expect(summarySentence(VARIANTS[name]).bold).not.toMatch(/security and savings below/);
@@ -296,6 +358,7 @@ describe('R3: the clean state, one condition at a time', () => {
     '1 failed deployment': { delivery: delivery({ deploymentCount: 3, successfulDeployments: 2, failedDeployments: 1 }) },
     'deployments unreadable': { delivery: noData(SOURCES.delivery, 'error', 'x') },
     'Cost Explorer unreadable': { costTrend: noData(SOURCES.trend, 'error', 'x') },
+    'cost analysis unreadable (M-1)': { costAnalysis: noData(SOURCES.analysis, 'error', 'x') },
   };
 
   it.each(Object.keys(breakers))('%s alone breaks it', (name) => {
@@ -303,6 +366,30 @@ describe('R3: the clean state, one condition at a time', () => {
     expect(isClean(f)).toBe(false);
     expect(summarySentence(f).bold).not.toContain(CLEAN_SENTENCE);
     expect(render(f).html).not.toContain(CLEAN_SENTENCE);
+  });
+
+  it('M-1: a failed cost-analysis read with nothing open is "couldn\'t be retrieved", never measured or "Nothing to review"', () => {
+    const f = VARIANTS.analysisUnreadable;
+    expect(f.analysis).toEqual({ kind: 'unreadable' });
+    expect(f.savings).toEqual({ state: 'error' });
+    expect(isClean(f)).toBe(false);
+    expect(tiles(f)[2]).toEqual({ label: 'ESTIMATED SAVINGS', sublabel: null, value: '—', lines: ["Couldn't retrieve this week"] });
+    expect(summarySentence(f).plain).toContain(SOME_FIGURES_MISSING);
+    expect(summarySentence(f).bold).toBe('');
+    const { htmlText, text } = render(f);
+    for (const out of [htmlText, text]) {
+      expect(out).not.toContain('Nothing to review');
+      expect(out).not.toContain(CLEAN_SENTENCE);
+      expect(out).toContain("Couldn't retrieve this week");
+      expect(out).toContain(SOME_FIGURES_MISSING);
+    }
+  });
+
+  it('M-1: with something open, a failed cost-analysis read still shows what is open (the counts are read, only the date is not)', () => {
+    const f = facts({ costAnalysis: noData(SOURCES.analysis, 'error', 'x'), recommendations: recs({ active: 2, estimatedMonthlySavings: 30, estimatedFindings: 2 }) });
+    expect(f.savings).toMatchObject({ state: 'available', open: { count: 2 }, measured: true });
+    expect(tiles(f)[2]).toMatchObject({ sublabel: 'Open opportunities', value: '$30/mo' });
+    expect(footer(f).lines[2]).toBe("The date of the last cost analysis couldn't be retrieved.");
   });
 });
 
@@ -392,6 +479,37 @@ describe('R4: spend is finished days only', () => {
     // A point with no state (an older cached shape) is never counted as finished.
     const noState = trend(() => ({ state: null, services: { EC2: 1 } }));
     expect(facts({ costTrend: available(SOURCES.trend, { days: noState }) }).cost).toMatchObject({ finished: { days: [] } });
+  });
+
+  it('L-1: a point with no reportState is "Not determined yet": out of every total and comparison, dates only, no amount, no %', () => {
+    const f = VARIANTS.undeterminedDay;
+    expect(f.cost).toMatchObject({
+      finished: { days: ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-14'], total: 5 },
+      updating: { days: [] },
+      notReported: ['2026-11-15'],
+      undetermined: ['2026-11-13'],
+      // Nov 13 ($100) and its weekday a week earlier, Nov 6 ($50), are in neither total.
+      comparison: { kind: 'percent', previousDays: ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-07'], previousTotal: 5, changePercent: 0 },
+    });
+    const lines = costSection(f).lines.map(l => l.text);
+    expect(lines).toEqual([
+      'Finished days, Nov 9–12, Nov 14: $5.00. Same 5 days last week (Nov 2–5, Nov 7): $5.00. Unchanged.',
+      'Not reported by Cost Explorer yet, Nov 15.',
+      'Not determined yet, Nov 13.',
+    ]);
+    // Never called "not reported", never given an amount or a percentage.
+    expect(lines.filter(l => l.includes('Nov 13'))).toEqual(['Not determined yet, Nov 13.']);
+    expect(lines[2]).not.toMatch(/\$|%/);
+    const { htmlText, text } = render(f);
+    for (const out of [htmlText, text]) {
+      expect(out).toContain('Not determined yet, Nov 13.');
+      expect(out).not.toMatch(/\$100|\$105|\$50\b|\$55/);
+    }
+    // Every point without a state: no finished day, and the tile says not determined, not "not reported".
+    const allNull = facts({ costTrend: available(SOURCES.trend, { days: trend(() => ({ state: null, services: { EC2: 1 } })) }) });
+    expect(allNull.cost).toMatchObject({ finished: { days: [] }, notReported: [], undetermined: expect.arrayContaining(['2026-11-09', '2026-11-15']) });
+    expect(tiles(allNull)[1]).toMatchObject({ value: 'No finished days yet', lines: ['Not determined yet'] });
+    expect(costSection(allNull).lines.map(l => l.text)).toEqual(['No finished days yet this week.', 'Not determined yet, Nov 9–15.']);
   });
 
   it('a $0 finished total adds the credits note (F5); otherwise it is not shown', () => {
@@ -610,5 +728,102 @@ describe('header', () => {
   it('never prints a tier id or an unknown plan, nor an unread organization name', () => {
     expect(composeWeeklyBrief(fixtureFacts('A'), { organizationName: null, planName: 'pro' }).orgLine).toBeNull();
     expect(composeWeeklyBrief(fixtureFacts('A'), { organizationName: null, planName: 'Optimization Engine' }).orgLine).toBe('Optimization Engine plan');
+  });
+});
+
+// ── Guards ported from weekly-email-truth.test.ts (brief review H-1, M-2) ─────
+//
+// Each runs over fixtures A-E and every VARIANTS entry, on the rendered HTML
+// and the plain-text part.
+
+describe('guards over every fixture and variant, HTML and text (brief review H-1)', () => {
+  const NAMES = Object.keys(VARIANTS);
+  const planOf = (name: string) => (name in FIXTURES ? FIXTURES[name as FixtureId].plan : 'Optimization Engine');
+
+  it('the variants include the sources that fail with identifiers and the ARN example', () => {
+    expect(NAMES).toEqual(expect.arrayContaining([...FIXTURE_IDS, 'failedWithIdentifiers', 'unavailableWithIdentifiers', 'stillDetectedArn', 'stillDetectedArnMany']));
+  });
+
+  describe('output privacy: no identifiers or raw errors reach the email', () => {
+    it.each(NAMES)('%s: no ARN, 12-digit account ID, "External ID" or raw error text, even when a source failed with them', (name) => {
+      const { html, text, subject } = render(VARIANTS[name], planOf(name));
+      for (const out of [html, text, subject]) {
+        expect({ name, arn: /arn:aws/i.test(out), digits: /\d{12}/.test(out), ext: /external.?id/i.test(out), err: /AccessDenied|Throttling|Error\b|not authorized|assumed-role/.test(out) })
+          .toEqual({ name, arn: false, digits: false, ext: false, err: false });
+      }
+    });
+
+    it('an ARN-shaped still-detected resource prints as its final resource segment only', () => {
+      expect(attentionItems(VARIANTS.stillDetectedArn)[0].body[0])
+        .toBe('Idle RDS instance on orders-replica (us-east-1). You resolved it Nov 10; the latest analysis still sees it. About $7/mo, estimated.');
+      expect(attentionItems(VARIANTS.stillDetectedArnMany)[0].body[0])
+        .toBe('Idle RDS instance on orders-replica (us-east-1) and 1 more. You resolved them; the latest analysis still sees them.');
+      for (const name of ['stillDetectedArn', 'stillDetectedArnMany']) {
+        const { htmlText, text } = render(VARIANTS[name]);
+        for (const out of [htmlText, text]) {
+          expect(out).toContain('Idle RDS instance on orders-replica (us-east-1)');
+          expect(out).not.toMatch(/arn:|123456789012|db:orders-replica|rds:us-east-1/);
+        }
+      }
+    });
+  });
+
+  describe('claim scan: no banned phrase, internal plan id or invented claim in any email', () => {
+    const BANNED = /\bAI\b|AI-powered|artificial intelligence|anomal|personali[sz]ed|guarantee|you (can|will) save|\bStarter\b|\bPro\b|\bEnterprise\b|Free plan|gross charges|before credits|Reply to this email|contact support|\$0\/month|Alert history/i;
+    const PLAN_NAMES = ['Visibility', 'Cost Control', 'Optimization Engine', 'Revenue Protection'];
+
+    it.each(NAMES)('%s: subject, HTML and text', (name) => {
+      const plan = planOf(name);
+      const { htmlText, text, subject } = render(VARIANTS[name], plan);
+      for (const out of [subject, htmlText, text]) {
+        expect({ name, hit: out.match(BANNED)?.[0] ?? null }).toEqual({ name, hit: null });
+      }
+      // The only plan name printed is the organization's own, in the header.
+      for (const out of [htmlText, text]) {
+        expect({ name, named: PLAN_NAMES.filter(p => out.includes(p)) }).toEqual({ name, named: [plan] });
+      }
+    });
+  });
+
+  describe('the organization name could not be read: "your organization", never an invented name', () => {
+    const FOOTER = "You're receiving this because you're an owner of your organization and weekly summaries are on in your notification settings.";
+    it.each(NAMES)('%s: footer (and the not-connected summary) in HTML and text, for null and ""', (name) => {
+      for (const unknown of [null, '']) {
+        const { htmlText, text } = render(VARIANTS[name], planOf(name), unknown);
+        for (const out of [htmlText, text]) {
+          expect(out).toContain(FOOTER);
+          expect(out).not.toMatch(/Your Organization|\bnull\b|\bundefined\b/);
+          expect(out).not.toContain(FIXTURE_ORG_NAME);
+          if (VARIANTS[name].connection.state === 'not_connected') {
+            expect(out).toContain('No AWS account is connected to your organization yet, so this week has no spend, security or savings data.');
+          }
+        }
+        // The header line carries the plan alone.
+        expect(composeWeeklyBrief(VARIANTS[name], { organizationName: unknown, planName: planOf(name) }).orgLine).toBe(`${planOf(name)} plan`);
+      }
+    });
+  });
+
+  describe('links: an allowlist of pages that exist (M-2)', () => {
+    const ALLOWED = new Set<string>(Object.values(WEEKLY_EMAIL_PATHS));
+    const UNSUBSCRIBE = FIXTURE_URLS.unsubscribeUrl.replace(/=/g, '&#x3D;');
+
+    it.each(NAMES)('%s: every href is an allowed DevControl page, the unsubscribe link or the support address', (name) => {
+      const { html, text } = render(VARIANTS[name], planOf(name));
+      const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map(m => m[1]);
+      expect(hrefs.length).toBeGreaterThan(4);
+      for (const href of hrefs) {
+        if (href === 'mailto:support@getdevcontrol.com' || href === UNSUBSCRIBE || href === FIXTURE_URLS.unsubscribeUrl) continue;
+        const path = href.startsWith(FIXTURE_URLS.frontendUrl) ? href.slice(FIXTURE_URLS.frontendUrl.length) : href;
+        expect({ name, href, allowed: ALLOWED.has(path) }).toEqual({ name, href, allowed: true });
+      }
+      // The same in the text part: every URL is the frontend's allowed pages or the unsubscribe link.
+      for (const url of text.match(/https?:\/\/\S+/g) ?? []) {
+        if (url === FIXTURE_URLS.unsubscribeUrl) continue;
+        const path = url.startsWith(FIXTURE_URLS.frontendUrl) ? url.slice(FIXTURE_URLS.frontendUrl.length) : url;
+        expect({ name, url, allowed: ALLOWED.has(path) }).toEqual({ name, url, allowed: true });
+      }
+      expect(`${html}\n${text}`).not.toMatch(/example\.test\/privacy\b/);
+    });
   });
 });

@@ -170,8 +170,15 @@ export type CostFacts =
       window: DayWindow;
       finished: { days: string[]; total: number };
       updating: { days: string[]; total: number };
-      /** Days after the last reported one, plus any day with no state or no point at all: no amount is stated for them. */
+      /** Days with no point at all, or a point Cost Explorer marks not reported: no amount is stated for them. */
       notReported: string[];
+      /**
+       * Days whose point exists but carries no reportState (an older cached
+       * shape; brief review L-1): reported, but whether finished is not
+       * determined. Left out of every total and comparison, listed by date
+       * only, with no amount and no percentage.
+       */
+      undetermined: string[];
       comparison: CostComparison;
       services: ServiceLines;
     }
@@ -233,10 +240,13 @@ export function costFacts(section: WeeklyEvidence['costTrend'], window: DayWindo
   const finishedDays: string[] = [];
   const updatingDays: string[] = [];
   const notReported: string[] = [];
+  const undetermined: string[] = [];
   for (const day of daysOf(window)) {
-    const state = byDay.get(day)?.reportState ?? null;
+    const point = byDay.get(day);
+    const state = point?.reportState ?? null;
     if (state === 'final') finishedDays.push(day);
     else if (state === 'updating') updatingDays.push(day);
+    else if (point && state === null) undetermined.push(day);
     else notReported.push(day);
   }
   const sumOf = (days: string[]) => roundCents(days.reduce((sum, day) => sum + byDay.get(day)!.total, 0));
@@ -280,6 +290,7 @@ export function costFacts(section: WeeklyEvidence['costTrend'], window: DayWindo
     finished: { days: finishedDays, total: finishedTotal },
     updating: { days: updatingDays, total: sumOf(updatingDays) },
     notReported,
+    undetermined,
     comparison,
     services,
   };
@@ -305,6 +316,11 @@ export type SavingsFacts =
       /** False only while no cost analysis has ever completed and nothing is open: then "nothing to review" is not a measurement. */
       measured: boolean;
     }
+  /**
+   * `error` also covers a cost-analysis read that failed while nothing is open
+   * (brief review M-1): with no run date, "nothing to review" is not a
+   * measurement, so the savings figure couldn't be retrieved (as D-5, Q4).
+   */
   | { state: 'not_connected' }
   | { state: 'error' };
 
@@ -315,6 +331,8 @@ function savingsFacts(e: WeeklyEvidence, analysis: AnalysisFacts): SavingsFacts 
   if (!hasEvidence(r) || !hasEvidence(s)) return { state: 'error' };
   const ceiling = roundCents(Object.values(r.data.ceilingByResourceType).reduce((sum, v) => sum + v, 0));
   const neverAnalysed = analysis.kind === 'never' || analysis.kind === 'did_not_finish' || analysis.kind === 'in_progress';
+  const nothingOpen = r.data.active === 0 && s.data.count === 0;
+  if (analysis.kind === 'unreadable' && nothingOpen) return { state: 'error' };
   return {
     state: 'available',
     open: {
@@ -330,7 +348,7 @@ function savingsFacts(e: WeeklyEvidence, analysis: AnalysisFacts): SavingsFacts 
       ceiling: s.data.ceilingMonthlySavings,
       example: s.data.example,
     },
-    measured: !(neverAnalysed && r.data.active === 0 && s.data.count === 0),
+    measured: !(neverAnalysed && nothingOpen),
   };
 }
 

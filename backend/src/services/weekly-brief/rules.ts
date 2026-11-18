@@ -31,6 +31,7 @@ import {
   type WeeklyFacts,
 } from './facts';
 import {
+  displayResource,
   formatDate,
   formatDays,
   formatMoney,
@@ -240,12 +241,16 @@ function completedAnalysisAt(a: AnalysisFacts): string | null | undefined {
 /**
  * The connection-broken clause (founder Q2, as changed in D-10): security
  * figures name the last completed scan and savings the last completed cost
- * analysis, each with its own time. A source with nothing completed says
- * there are no figures; one whose dates couldn't be read is left out.
+ * analysis, each with its own time. A source with nothing completed, or
+ * security with no figures this week, says there are no figures; one whose
+ * dates couldn't be read is left out.
  */
 function brokenClause(f: WeeklyFacts, lastOkAt: string | null): string {
   const lead = `DevControl couldn't reach your AWS account${lastOkAt ? ` (last successful check ${formatTime(lastOkAt)})` : ''}`;
-  const scan = f.scan === null ? undefined : completedScan(f.scan);
+  // A scan date names where security figures come from only when there are
+  // security figures; with the security read failed or preliminary the tile
+  // shows none, so the clause says so (brief review L-2).
+  const scan = f.security.state !== 'available' ? null : f.scan === null ? undefined : completedScan(f.scan);
   const analysisAt = completedAnalysisAt(f.analysis);
   if (scan === undefined && analysisAt === undefined) return `${lead}.`;
   if (scan === null && analysisAt === null) return `${lead}, so there are no security or savings figures this week.`;
@@ -358,7 +363,11 @@ function spendTile(f: WeeklyFacts): BriefTile {
       label,
       sublabel: null,
       value: 'No finished days yet',
-      lines: [c.updating.days.length > 0 ? `${formatMoney(c.updating.total)} so far, still updating` : 'Not reported by Cost Explorer yet'],
+      lines: [
+        c.updating.days.length > 0 ? `${formatMoney(c.updating.total)} so far, still updating`
+          : c.notReported.length > 0 ? 'Not reported by Cost Explorer yet'
+          : 'Not determined yet',
+      ],
     };
   }
   const lines = [c.comparison.kind === 'percent' ? `${changeWords(c.comparison.changePercent)} on the same days` : 'No comparison yet (see Cost)'];
@@ -419,6 +428,16 @@ function analysisNote(a: AnalysisFacts): string | null {
   return null;
 }
 
+/**
+ * "Idle Instance on build-cache (us-east-1)". The check and resource come from
+ * stored findings, so any ARN in them is printed as its final resource
+ * segment only, never the full ARN or its account ID (brief review H-1).
+ */
+function stillDetectedWhere(check: string, resource: string, region: string | null): string {
+  const name = displayResource(resource);
+  return `${displayResource(check)}${name ? ` on ${name}` : ''}${region ? ` (${region})` : ''}`;
+}
+
 function costItem(f: WeeklyFacts): Omit<BriefAttentionItem, 'number'> | null {
   if (f.savings.state !== 'available') return null;
   const { open, stillDetected } = f.savings;
@@ -430,7 +449,7 @@ function costItem(f: WeeklyFacts): Omit<BriefAttentionItem, 'number'> | null {
     const n = stillDetected.count;
     titleParts.push(`${plural(n, 'resolved finding')} detected again`);
     const ex = stillDetected.example;
-    const where = ex ? `${ex.check} on ${ex.resource}${ex.region ? ` (${ex.region})` : ''}` : null;
+    const where = ex ? stillDetectedWhere(ex.check, ex.resource, ex.region) : null;
     const money = stillDetectedHasAmount(stillDetected.estimate) ? ` About ${formatSavings(stillDetected.estimate)}/mo, estimated.` : '';
     if (n === 1 && ex) {
       body.push(`${where}. You resolved it ${formatDate(ex.resolvedAt)}; the latest analysis still sees it.${money}`);
@@ -548,6 +567,10 @@ export function costSection(f: WeeklyFacts): BriefCostSection {
     }
     if (c.notReported.length > 0) {
       lines.push(line(`Not reported by Cost Explorer yet, ${formatDays(c.notReported)}.`));
+    }
+    // A point with no reportState: reported, but not determined as finished (brief review L-1). Dates only.
+    if (c.undetermined.length > 0) {
+      lines.push(line(`Not determined yet, ${formatDays(c.undetermined)}.`));
     }
     if (c.services) {
       services = c.services.kind === 'change'
