@@ -130,6 +130,12 @@ jobs:
   # has its own Postgres service, bootstrapped exactly as the old single job
   # did. fail-fast: false lets the other shard finish, so one run reports
   # every failing test; the gate fails if either shard fails.
+  #
+  # Within a shard, two runs on the same database: first every file except
+  # the schema-changing ones in parallel workers, then those (listed in
+  # backend/jest.serial-files.js) one file at a time, so their DDL never
+  # deadlocks with another file's writes. Both runs take the same --shard,
+  # so the two shards together still run every test file exactly once.
   backend-tests:
     name: backend-tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
@@ -177,10 +183,25 @@ jobs:
           DB_PASSWORD: postgres
 
       - name: Generate backend version module
+        id: version
         run: node backend/scripts/generate-version.js
 
       - name: Run backend tests
-        run: npm test --workspace=backend -- --shard=${{ matrix.shard }}/2
+        run: npm run test:parallel --workspace=backend -- --shard=${{ matrix.shard }}/2
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: platform_portal
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          JWT_SECRET: ci-test-jwt-secret-not-a-real-secret-32c
+          ENCRYPTION_KEY: ci-test-encryption-key-32-chars.
+
+      # Runs even when the parallel run failed, so one run reports every
+      # failing test; the job still fails if either run failed.
+      - name: Run schema-changing backend tests (serial)
+        if: ${{ !cancelled() && steps.version.outcome == 'success' }}
+        run: npm run test:serial --workspace=backend -- --shard=${{ matrix.shard }}/2
         env:
           DB_HOST: localhost
           DB_PORT: 5432
