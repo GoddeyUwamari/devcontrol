@@ -194,6 +194,42 @@ describe('the spike average leaves today out (never a finished day)', () => {
   })
 })
 
+/** The y-axis labels ("$0", "$0.40", …). */
+const yLabels = (container: HTMLElement) =>
+  [...container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value')].map((t) => t.textContent)
+const SERIES_NAMES = /^(EC2|S3|CloudWatch|Compute|Storage|Database|Network|Other)$/
+
+describe('no drawn day has an amount: no dollar scale, no series legend (founder screenshot review)', () => {
+  it('stopped10: hatched columns, "Not reported yet" and the hatched note stay; no y labels, no series legend', async () => {
+    const { container } = show(fixture('stopped10'))
+    await screen.findByText('Today')
+    expect(screen.getAllByTestId('cost-trend-not-reported-placeholder')).toHaveLength(7)
+    expect(screen.getByTestId('cost-trend-not-reported-legend')).toHaveTextContent('Not reported yet')
+    expect(screen.getByTestId('cost-trend-not-reported')).toHaveTextContent("Hatched days: AWS Cost Explorer hasn't reported them yet, so they have no amount (not $0)")
+    expect(yLabels(container)).toEqual([])
+    expect(container.textContent).not.toMatch(/\$1\.00|\$0\.\d\d/)
+    expect(screen.queryByTestId('cost-trend-series-legend')).toBeNull()
+    expect(screen.queryAllByRole('button').filter((b) => SERIES_NAMES.test(b.textContent ?? ''))).toHaveLength(0)
+  })
+
+  it('quiet (every day final $0): no y labels, no series legend; today still reachable ("Today · $0.00 so far")', async () => {
+    const { container } = show(fixture('quiet'), TODAY_INDEX)
+    expect(await todayTooltip()).toBe('Today · $0.00 so far')
+    expect(yLabels(container)).toEqual([])
+    expect(screen.queryByTestId('cost-trend-series-legend')).toBeNull()
+  })
+
+  it.each(['partial', 'stopped3', 'absent', 'zero'])('%s (some day has an amount): unchanged, y labels from $0 and the series legend', async (name) => {
+    const { container } = show(fixture(name))
+    await screen.findByText('Today')
+    await waitFor(() => expect(yLabels(container).length).toBeGreaterThan(1))
+    expect(yLabels(container)[0]).toBe('$0')
+    expect(yLabels(container)).not.toContain('$1.00')
+    const legend = screen.getByTestId('cost-trend-series-legend')
+    expect([...legend.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['EC2', 'S3', 'CloudWatch'])
+  })
+})
+
 describe('390 px phone: every date kept, "Today" on one line (T6, TB-D4)', () => {
   it('Nov 12-17 as "Nov" over the day, then "Today"', async () => {
     size.width = 310

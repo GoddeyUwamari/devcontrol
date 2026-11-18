@@ -471,7 +471,10 @@ export function CostTrendChart({
               allowDataOverflow={!hasAmount}
               tickFormatter={formatCurrency}
               stroke="#9ca3af"
-              tick={CHART_TICK}
+              // No dollar scale then (founder review): [0, 1] is only there to draw the hatched
+              // columns, and labels would make a full-height gap read as "$1.00/day".
+              tick={hasAmount ? CHART_TICK : false}
+              tickLine={hasAmount}
             />
             <Tooltip content={<CustomTooltip />} />
 
@@ -511,7 +514,9 @@ export function CostTrendChart({
             to 3/5 columns at lg — not just wide open-viewport widths. */}
         {/* The legend and its notes: the floating "Live updates" pill never covers them (round 2). */}
         <div {...{ [KEEP_CLEAR_OF_FLOATING]: '' }}>
-        <div className="flex items-center justify-center gap-1 md:gap-2 mt-4 flex-wrap md:flex-nowrap">
+        {/* No drawn day has an amount: no series to name or toggle, so no series legend (founder review). */}
+        {hasAmount && (
+        <div className="flex items-center justify-center gap-1 md:gap-2 mt-4 flex-wrap md:flex-nowrap" data-testid="cost-trend-series-legend">
           {series.map((s) => (
             <button
               key={s.key}
@@ -530,9 +535,10 @@ export function CostTrendChart({
             </button>
           ))}
         </div>
+        )}
         {(hasUpdating || notReportedDates.length > 0) && (
           // The report-state entries: their own row, so the series row keeps its one line at md and up.
-          <div className="flex items-center justify-center gap-1 md:gap-2 mt-1 flex-wrap">
+          <div className={`flex items-center justify-center gap-1 md:gap-2 ${hasAmount ? 'mt-1' : 'mt-4'} flex-wrap`}>
           {hasUpdating && (
             <span
               className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
