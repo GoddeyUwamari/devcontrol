@@ -417,6 +417,26 @@ describe('R3: the clean state, one condition at a time', () => {
     }
   });
 
+  it('RR-L1: a failed cost-analysis read with only a still-detected finding still shows it, never "Couldn\'t retrieve" and never clean', () => {
+    const f = facts({
+      costAnalysis: noData(SOURCES.analysis, 'error', 'x'),
+      stillDetected: still({ count: 1, estimatedMonthlySavings: 4, example: { check: 'Idle Instance', resource: 'i-1234567890abcdef0', region: 'us-east-1', resolvedAt: '2026-11-10T00:00:00.000Z' } }),
+    });
+    expect(f.savings).toMatchObject({ state: 'available', open: { count: 0 }, stillDetected: { count: 1 }, measured: true });
+    expect(isClean(f)).toBe(false);
+    expect(tiles(f)[2]).toEqual({ label: 'ESTIMATED SAVINGS', sublabel: 'Open opportunities', value: '$0/mo', lines: ['1 still detected · about $4/mo estimated'] });
+    expect(attentionItems(f).map(i => i.title)).toEqual(['Cost · 1 resolved finding detected again']);
+    expect(summarySentence(f).bold).toBe('1 cost finding you marked resolved was detected again.');
+    const { htmlText, text } = render(f);
+    for (const out of [htmlText, text]) {
+      expect(out).toContain('Idle Instance on i-1234567890abcdef0 (us-east-1). You resolved it Nov 10; the latest analysis still sees it.');
+      expect(out).toContain('1 still detected · about $4/mo estimated');
+      expect(out).not.toContain("Couldn't retrieve this week");
+      expect(out).not.toContain('Nothing to review');
+      expect(out).not.toContain(CLEAN_SENTENCE);
+    }
+  });
+
   it('M-1: with something open, a failed cost-analysis read still shows what is open (the counts are read, only the date is not)', () => {
     const f = facts({ costAnalysis: noData(SOURCES.analysis, 'error', 'x'), recommendations: recs({ active: 2, estimatedMonthlySavings: 30, estimatedFindings: 2 }) });
     expect(f.savings).toMatchObject({ state: 'available', open: { count: 2 }, measured: true });
