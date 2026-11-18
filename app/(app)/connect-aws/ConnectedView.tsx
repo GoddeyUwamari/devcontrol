@@ -6,6 +6,7 @@ import awsAccountsService, { type AwsAccount, type ConnectionChecks, type Permis
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { HOME_REGION_ONLY_NOTE, describeCoverage, formatScanTime } from '../services/coverage'
 import { useNowEachLocalDay } from '../services/useNowEachLocalDay'
+import { scanState } from '../services/servicesTruth'
 import {
   ATTENTION_BODY,
   ATTENTION_TITLE,
@@ -106,7 +107,9 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
   // Read at mount and after each local midnight, as on the Services page (no Date.now() during render).
   const now = useNowEachLocalDay(true)
   const coverage = coverageQuery.data
-  const view = coverage ? describeCoverage(coverage, now) : null
+  // PR 3d-1 (D3, R5): the scan line and the in-progress / failed states follow the Services page's
+  // scan state (the lease and the server's status), not the Phase 1 60-minute rule.
+  const view = coverage ? describeCoverage(coverage, now, [], scanState(coverage, now)) : null
   const home = coverage?.account.connected ? coverage.scope.home_region : null
 
   // The saved checks (PR D1). null: a server from before D1, or not loaded or failed (then nothing new

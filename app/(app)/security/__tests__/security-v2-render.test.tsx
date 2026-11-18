@@ -140,7 +140,7 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
     await show()
     const banner = screen.getByTestId('security-banner')
     expect(banner).toHaveTextContent('1 critical and 1 high-severity findings need review')
-    expect(screen.getByTestId('security-not-checked')).toHaveTextContent('Not checked yet: 16 regions · IAM roles and policies')
+    expect(screen.getByTestId('security-not-checked')).toHaveTextContent('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
   })
   it('what we checked uses the mock wording', async () => {
     await show()
@@ -155,21 +155,22 @@ describe('layout and copy (founder answers 1, 3; e2 1, 2, 19)', () => {
 
 describe('header scan line and Sync (answers 5, 6, 12; e2 4, 5; decision 3)', () => {
   const line = () => screen.getByTestId('security-scan-line')
-  it('finished: green, "Last scan: today, <time>"', async () => {
+  // PR 3d-1 (D3): the Services page's scan line (servicesTruth scanState), word for word.
+  it('finished: green, "Last scan finished today, <time>"', async () => {
     await show()
     expect(line()).toHaveAttribute('data-state', 'finished')
-    expect(line()).toHaveTextContent('Last scan: today, 9:00 AM')
+    expect(line()).toHaveTextContent('Last scan finished today, 9:00 AM')
     expect(line().querySelector('[aria-hidden="true"]')).not.toBeNull()
   })
-  it('running: "Scan running…", Sync disabled', async () => {
+  it('running: "Scan in progress since <time> · showing results from <time>", Sync disabled', async () => {
     await show({ 'GET /api/services/coverage': raw({ success: true, coverage: coverage({ scan_in_progress: { since: iso(60_000) } }) }) })
-    expect(line()).toHaveTextContent('Scan running…')
+    expect(line()).toHaveTextContent('Scan in progress since 2:59 PM · showing results from today, 9:00 AM')
     expect(screen.getByRole('button', { name: /Sync now/ })).toBeDisabled()
   })
-  it('failed: "Last scan failed: <time>"', async () => {
+  it('failed: "Last scan: <time> · didn\'t finish"', async () => {
     await show({ 'GET /api/services/coverage': raw({ success: true, coverage: coverage({ last_scan: { status: 'failed', started_at: iso(7_200_000), completed_at: iso(3_600_000), warnings: [] } }) }) })
     expect(line()).toHaveAttribute('data-state', 'failed')
-    expect(line()).toHaveTextContent('Last scan failed: today, 2:00 PM')
+    expect(line()).toHaveTextContent("Last scan: today, 2:00 PM · didn't finish")
   })
   it('none finished: "No scan has finished yet."', async () => {
     await show({ 'GET /api/services/coverage': raw({ success: true, coverage: coverage({ last_completed_scan: null, last_successful_scan_at: null, last_scan: null }) }) })

@@ -140,7 +140,14 @@ export const coverage = (over: Record<string, unknown> = {}) => ({
     cloudfront: { in_last_scan: false, count: 0 },
     enabled_regions: { known: true, count: 17 },
   },
-  region_status: [{ region: 'us-east-1', home: true, status: 'ok', last_scan_finished_at: iso(DAY / 4), last_success_at: iso(DAY / 4), last_error_code: null }],
+  // PR 3d-1: as the server sends it, every enabled region of the list (the home region plus 16 never
+  // scanned) and the PR 3a keys every organization has had since Nov 16 (doc §15).
+  region_status: [
+    { region: 'us-east-1', home: true, status: 'ok', last_scan_finished_at: iso(DAY / 4), last_success_at: iso(DAY / 4), last_error_code: null },
+    ...Array.from({ length: 16 }, (_, k) => ({ region: `xx-test-${k + 1}`, home: false, status: 'never_scanned', last_scan_finished_at: null, last_success_at: null, last_error_code: null })),
+  ],
+  not_enabled_regions: [],
+  home_only_coverage: { regions_total: 17, regions_checked: 1 },
   scan_in_progress: null,
   last_completed_scan: { started_at: iso(DAY / 4), completed_at: iso(DAY / 4), resource_types: ['ec2', 's3'], warnings: [] },
   last_successful_scan_at: iso(DAY / 4),

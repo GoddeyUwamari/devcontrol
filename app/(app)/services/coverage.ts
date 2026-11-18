@@ -200,17 +200,25 @@ export function isScanAbandoned(lastScan: LastScan, now: number): boolean {
   return !!lastScan && (lastScan.status === 'running' || lastScan.status === 'pending') && !isScanInProgress(lastScan, now)
 }
 
-export function describeCoverage(coverage: ServicesCoverage, now: number, inTabWarnings: readonly string[] = []): CoverageView {
+/**
+ * `scan` (PR 3d-1, Connect AWS): the shared scan state (servicesTruth scanState). With it, in progress
+ * and failed come from that state (the lease and the server's status, no 60-minute rule) and the
+ * last-scan line is its text. Without it (the Services page's Phase 1 strip) nothing changes.
+ */
+export function describeCoverage(
+  coverage: ServicesCoverage, now: number, inTabWarnings: readonly string[] = [],
+  scan?: { state: 'finished' | 'running' | 'failed' | 'none'; text: string },
+): CoverageView {
   const home = coverage.account.connected ? coverage.scope.home_region : null
   if (!home) {
     return { connected: false, headline: null, headlineSub: null, lastScan: null, lastScanFailed: false, chips: [], notes: warningNotes([], inTabWarnings) }
   }
 
   const last = coverage.last_scan
-  const inProgress = isScanInProgress(last, now)
+  const inProgress = scan ? scan.state === 'running' : isScanInProgress(last, now)
   const lastSuccess = coverage.last_successful_scan_at
-  const abandoned = isScanAbandoned(last, now)
-  const lastFailed = last?.status === 'failed' || abandoned
+  const abandoned = scan ? false : isScanAbandoned(last, now)
+  const lastFailed = scan ? scan.state === 'failed' : last?.status === 'failed' || abandoned
   // "scanned" only after a successful scan; S3/CloudFront only from a completed newest scan (scopeParts).
   const headline = lastSuccess
     ? `${home.region} scanned${plus(scopeParts(coverage, 'S3 buckets in every region', 'CloudFront (global)'))}`
@@ -219,7 +227,9 @@ export function describeCoverage(coverage: ServicesCoverage, now: number, inTabW
     : `${home.region}: not scanned yet`
 
   let lastScan: string
-  if (inProgress) {
+  if (scan) {
+    lastScan = scan.text
+  } else if (inProgress) {
     lastScan = `Scan in progress, started ${formatScanTime(last!.started_at!, now)}`
       + (lastSuccess ? ` · last successful scan ${formatScanTime(lastSuccess, now)}` : '')
   } else {

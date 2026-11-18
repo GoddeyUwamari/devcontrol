@@ -17,8 +17,32 @@ export const ready = <T,>(data: T): Loadable<T> => ({ status: 'ready', data })
 export const LOADING = { status: 'loading' } as const
 export const ERROR = { status: 'error' } as const
 
+/**
+ * PR 3d-1: production's response has carried the PR 3a keys for every organization since Nov 16
+ * (doc §15.1, §15.2), and the page now reads them. Added here by the server's own rule, unless the
+ * test sets them: not_enabled_regions [] and home_only_coverage = { enabled count, 1 only when the
+ * CURRENT home region's last status is ok or partial }, null with no known list.
+ */
+export function withPr3a(c: ServicesCoverage): ServicesCoverage {
+  const { known, count } = c.scope.enabled_regions
+  const home = (c.region_status ?? []).find((r) => r.home)
+  return {
+    ...c,
+    not_enabled_regions: c.not_enabled_regions ?? [],
+    home_only_coverage: 'home_only_coverage' in c ? c.home_only_coverage
+      : known && typeof count === 'number' ? { regions_total: count, regions_checked: home && (home.status === 'ok' || home.status === 'partial') ? 1 : 0 } : null,
+  }
+}
+
+/** A backend from before PR 3a: neither key. */
+export function withoutPr3a(c: ServicesCoverage): ServicesCoverage {
+  const { not_enabled_regions, home_only_coverage, ...rest } = c
+  void not_enabled_regions; void home_only_coverage
+  return rest as ServicesCoverage
+}
+
 export function coverage(o: Partial<ServicesCoverage> = {}): ServicesCoverage {
-  return prodCoverage(NOW, {}, o)
+  return withPr3a(prodCoverage(NOW, {}, o))
 }
 
 export function noAccountCoverage(): ServicesCoverage {

@@ -194,6 +194,9 @@ export function dayText(iso: string, now: number): string {
 
 // ── Header scan line (Services only; Security and the Dashboard keep scanLine) ──
 
+/** The finished-scan label (V2-82), shared with the other pages through servicesTruth.ts (PR 3d-1). */
+export const LAST_SCAN_FINISHED = 'Last scan finished'
+
 export type RedesignScanState = 'finished' | 'running' | 'failed' | 'none'
 export interface RedesignScanLine { state: RedesignScanState; text: string }
 
@@ -226,7 +229,7 @@ export function redesignScanLine(c: ServicesCoverage, now: number): RedesignScan
       if (at) return { state: 'failed', text: `Last scan: ${at} · didn't finish` }
     }
   }
-  return lastDone ? { state: 'finished', text: `Last scan finished ${lastDone}` } : { state: 'none', text: REDESIGN_COPY.noScanYet }
+  return lastDone ? { state: 'finished', text: `${LAST_SCAN_FINISHED} ${lastDone}` } : { state: 'none', text: REDESIGN_COPY.noScanYet }
 }
 
 /** "Scan now" is disabled while a scan holds the account's lease. */
@@ -509,8 +512,8 @@ function multiRegionRows(c: ServicesCoverage, mr: MultiRegionCoverage, now: numb
   return rows
 }
 
-/** A home-only (unflagged) region_status row's status, from its last recorded status. */
-function homeOnlyStatus(r: RegionCoverage, running: boolean): { status: RowStatus | null; code: FailureCode | null } {
+/** A home-only (unflagged) region_status row's status, from its last recorded status. Exported for servicesTruth.ts (PR 3d-1). */
+export function homeOnlyStatus(r: RegionCoverage, running: boolean): { status: RowStatus | null; code: FailureCode | null } {
   if (running && r.home) return { status: STATUS('scanning'), code: null }
   switch (r.status) {
     case 'ok': return { status: STATUS('complete'), code: null }

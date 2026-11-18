@@ -20,7 +20,10 @@
  * - The attention order uses the list's monthly_cost (a list-price estimate)
  *   for ordering only; it is never printed.
  * - Region counts, times and scope claims come from the Services modules
- *   (regionCoverage.ts, coverage.ts, notChecked.ts), which are imported, not copied.
+ *   (servicesTruth.ts, coverage.ts, notChecked.ts), which are imported, not copied.
+ *   PR 3d-1: the scan state, the coverage line, the regions not checked and the
+ *   home region's result come from servicesTruth.ts (the Services page's own
+ *   rules and words); nothing here counts region rows itself.
  */
 import type { AWSService, AWSServicesPage, AWSServicesStats, ServicesCoverage } from '@/lib/services/aws-services.service'
 import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/account-security-findings.service'
@@ -30,10 +33,11 @@ import { describeCeilings, describeCeilingsWithoutEstimate, NO_DOLLAR_ESTIMATE }
 import { formatUsd, NO_BILLED_DAYS_YET, spendDaysLabel } from '../../costs/cost-display'
 import { describeServicesSpend, SPEND_UNAVAILABLE_TEXT } from '../../services/SummaryTiles'
 import { SEVERITY_LABEL, STATUS_LABEL, typeLabel } from '../../services/AttentionTable'
-import { footerText, hasRegionCoverage, latestAttempt, regionCounts, type Rich } from '../../services/regionCoverage'
+import { footerText, type Rich } from '../../services/regionCoverage'
 import { inventoryGap, scopeIsCompleted, warningNotes } from '../../services/coverage'
 import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { NOT_CHECKED_COPY, unknownTagsText } from '../../services/notChecked'
+import { coverageLine, homeRegionCheck, homeRegionOf, notCheckedRegionParts, regionGaps, scanIsRunning, scanState, scanStateParts } from '../../services/servicesTruth'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T }
 
@@ -337,41 +341,26 @@ export interface OverviewView {
 
 /** Account strip: no Account ID (D1) and no "of M listed" (D2) in this phase. */
 function accountStrip(c: ServicesCoverage, regionsLinkAvailable: boolean): NonNullable<OverviewView['account']> {
-  const home = c.account.home_region ?? c.scope.home_region?.region ?? null
-  const homeText = home ?? '—'
-  const regionCoverage = hasRegionCoverage(c)
-  const counts = regionCoverage ? regionCounts(c) : null
-  const enabled = counts?.enabled ?? null
-  const scanned = !!lastCompletedIso(c)
-  let checked: string
-  if (!regionCoverage) checked = homeText
-  else if (enabled !== null) checked = `${counts!.checked} of ${enabled}${counts!.withGaps > 0 ? ` · ${counts!.withGaps} with gaps` : ''}`
-  else checked = `${homeText}${scanned ? ' checked' : ': not scanned yet'} · region list not read yet`
-  const { stale, listed_at: listedAt } = c.scope.enabled_regions
+  const homeText = homeRegionOf(c) ?? '—'
+  // The stored region list's enabled count (server field), read as it is.
+  const { known, count, stale, listed_at: listedAt } = c.scope.enabled_regions
+  const enabled = known && typeof count === 'number' ? count : null
   return {
     items: [
       { term: 'AWS account', value: 'Connected' },
       { term: 'Home region', value: homeText },
       { term: 'Enabled regions', value: enabled !== null ? String(enabled) : 'Not read yet' },
-      { term: 'Regions checked', value: checked },
+      // D6 (PR 3d-1): the Services page's organising line, from home_only_coverage / multi_region.scan.
+      { term: 'Regions checked', value: coverageLine(c) },
     ],
     regionsLink: regionsLinkAvailable,
     listNote: enabled !== null && stale === true && listedAt ? ['Region list last read ', { iso: listedAt }] : null,
   }
 }
 
-/** "Not checked yet: …", built from parts (§6.2, §17.1). */
-function notCheckedText(c: ServicesCoverage): string {
-  const counts = hasRegionCoverage(c) ? regionCounts(c) : null
-  const parts: string[] = []
-  if (counts && counts.enabled !== null) {
-    const n = Math.max(0, counts.enabled - counts.checked)
-    if (n > 0) parts.push(`${n} ${plural(n, 'region', 'regions')}`)
-  } else {
-    parts.push('other regions (region list not read yet)')
-  }
-  parts.push(OVERVIEW_COPY.iamNotChecked)
-  return `Not checked yet: ${parts.join(' · ')}`
+/** "Not checked yet: …", built from parts (§6.2, §17.1); the region parts are Services' (PR 3d-1, D6). */
+function notCheckedText(c: ServicesCoverage, now: number): string {
+  return `Not checked yet: ${[...notCheckedRegionParts(c, now), OVERVIEW_COPY.iamNotChecked].join(' · ')}`
 }
 
 function sourceFragment(counts: SeverityCounts | null, severity: 'critical' | 'high', label: string, errorLabel: string): string {
@@ -421,16 +410,17 @@ function statusHeadlineText(
   return lastCompletedIso(coverage) ? OVERVIEW_COPY.noCriticalHigh : `${OVERVIEW_COPY.noScanYet}.`
 }
 
-function statusNotes(c: ServicesCoverage): Rich[] {
+function statusNotes(c: ServicesCoverage, now: number): Rich[] {
   const notes: Rich[] = []
-  const attempt = latestAttempt(c)
+  // PR 3d-1 (D3): which note shows follows the shared scan state; the notes' words are unchanged.
+  const state = scanState(c, now).state
   const done = lastCompletedIso(c)
-  if (attempt === 'unfinished') {
+  if (state === 'failed') {
     notes.push(done
       ? ["The most recent scan attempt didn't finish; results are from the scan that finished ", { iso: done }, '.']
       : ["The most recent scan attempt didn't finish."])
   }
-  if (attempt === 'running' && c.scan_in_progress) notes.push(['Scan in progress since ', { iso: c.scan_in_progress.since }, '.'])
+  if (state === 'running' && c.scan_in_progress) notes.push(['Scan in progress since ', { iso: c.scan_in_progress.since }, '.'])
   const home = (c.region_status ?? []).find((r) => r.home)
   if (home?.stale && home.last_scan_finished_at) {
     notes.push(['Results may be out of date: ', `${home.region} was last scanned `, { iso: home.last_scan_finished_at }, '.'])
@@ -579,9 +569,9 @@ function attentionView(i: OverviewInputs, coverage: ServicesCoverage | null): At
     if (!page) empty = { text: OVERVIEW_COPY.attentionEmptyResourceError, scope: null }
     else if (accountTotal === null) empty = { text: OVERVIEW_COPY.attentionEmptyAccountError, scope: null }
     else {
-      const home = coverage ? coverage.account.home_region ?? coverage.scope.home_region?.region ?? '—' : null
-      const counts = coverage && hasRegionCoverage(coverage) ? regionCounts(coverage) : null
-      const scope = home === null ? null : counts && counts.enabled !== null ? `Checked: ${home} (${counts.checked} of ${counts.enabled} enabled regions).` : `Checked: ${home}.`
+      // PR 3d-1 (D6): the Services page's coverage line, ending in a full stop.
+      const line = coverage ? coverageLine(coverage) : null
+      const scope = line === null ? null : line.endsWith('.') ? line : `${line}.`
       empty = { text: OVERVIEW_COPY.attentionEmpty, scope }
     }
   }
@@ -599,35 +589,29 @@ function attentionView(i: OverviewInputs, coverage: ServicesCoverage | null): At
   }
 }
 
-/** The home region's gap sentence for "What we checked", from its written status. */
-function homeGap(c: ServicesCoverage): string | null {
-  const home = (c.region_status ?? []).find((r) => r.home)
-  switch (home?.status) {
-    case 'partial': return 'some listings were cut off'
-    case 'denied': return "some resource types couldn't be checked because of permissions"
-    case 'timed_out': return "some resource types couldn't be checked because AWS didn't respond in time"
-    case 'failed': return "some resource types couldn't be checked because the scan ran into an error"
-    default: return null
-  }
-}
-
-function checkedLines(c: ServicesCoverage, i: OverviewInputs): Line[] {
+function checkedLines(c: ServicesCoverage, i: OverviewInputs, now: number): Line[] {
   const lines: Line[] = []
-  const home = c.account.home_region ?? c.scope.home_region?.region ?? '—'
+  const home = homeRegionOf(c) ?? '—'
   const done = lastCompletedIso(c)
   const types = c.last_completed_scan?.resource_types ?? (scopeIsCompleted(c) ? c.resource_types ?? [] : [])
   const typeNames = types.map((t) => typeLabel(t)).join(', ')
   if (done) {
-    const gap = hasRegionCoverage(c) ? homeGap(c) : null
-    lines.push({ key: 'inventory', parts: [`Resource inventory${typeNames ? ` (${typeNames})` : ''} · ${home}: ${gap ? `Checked with gaps: ${gap}` : 'Checked'}`], tone: gap ? 'warn' : undefined })
+    // PR 3d-1 (D6, R3): the home region's last result in the Services card's words
+    // ("Partly checked", "Couldn't check: access denied", …); "Checked" otherwise.
+    const check = homeRegionCheck(c)
+    const gap = check && check.kind !== 'checked' ? check.label : null
+    lines.push({ key: 'inventory', parts: [`Resource inventory${typeNames ? ` (${typeNames})` : ''} · ${home}: ${gap ?? 'Checked'}`], tone: gap ? 'warn' : undefined })
   } else {
     lines.push({ key: 'inventory', parts: [`Resource inventory · ${home}: Not checked yet (no scan has finished)`] })
   }
-  const counts = hasRegionCoverage(c) ? regionCounts(c) : null
   const regionsLink = i.regionsLinkAvailable ? { text: 'View regions not checked →', href: OVERVIEW_COPY.regionsHref } : undefined
-  if (counts && counts.enabled !== null) {
-    const n = Math.max(0, counts.enabled - counts.checked)
-    if (n > 0) lines.push({ key: 'other-regions', parts: [`Other enabled regions: Not checked (${n})`], link: regionsLink })
+  // PR 3d-1 (D6): the other regions the Services card doesn't count as checked, one line each,
+  // in its words; the home region's own result is on the inventory line above.
+  const gaps = regionGaps(c, now)
+  if (gaps) {
+    gaps.filter((g) => !g.home).forEach((g, n) => {
+      lines.push({ key: n === 0 ? 'other-regions' : `other-regions-${g.key}`, parts: [g.long], link: n === 0 ? regionsLink : undefined })
+    })
   } else {
     lines.push({ key: 'other-regions', parts: ['Other regions: region list not read yet'], link: regionsLink })
   }
@@ -668,7 +652,6 @@ export function costByService(cost: Loadable<CostSummary>): CostByServiceView {
 }
 
 export function describeOverview(i: OverviewInputs, now: number): OverviewView {
-  void now
   const empty = { checked: [], costByService: null, ownership: null, footer: null }
   if (i.coverage.status === 'ready' && !i.coverage.data.account.connected) {
     return {
@@ -692,7 +675,7 @@ export function describeOverview(i: OverviewInputs, now: number): OverviewView {
   if (mode === 'loading') {
     status = { headline: 'Loading…', reason: null, notChecked: null, notes: [] }
   } else if (i.stats.status === 'loading' || i.accountFindings.status === 'loading') {
-    status = { headline: 'Loading findings…', reason: null, notChecked: coverage ? notCheckedText(coverage) : null, notes: coverage ? statusNotes(coverage) : [] }
+    status = { headline: 'Loading findings…', reason: null, notChecked: coverage ? notCheckedText(coverage, now) : null, notes: coverage ? statusNotes(coverage, now) : [] }
   } else {
     const { text: headline, kind } = statusHeadline(r, a, i.stats, coverage)
     // "Top:" names the first row of the kind the headline is about: a finding under a
@@ -704,21 +687,23 @@ export function describeOverview(i: OverviewInputs, now: number): OverviewView {
     status = {
       headline,
       reason: top ? `Top: ${top.issue}` : null,
-      notChecked: coverage ? notCheckedText(coverage) : null,
-      notes: coverage ? statusNotes(coverage) : headline === OVERVIEW_COPY.coverageError ? [] : [[OVERVIEW_COPY.coverageError]],
+      notChecked: coverage ? notCheckedText(coverage, now) : null,
+      notes: coverage ? statusNotes(coverage, now) : headline === OVERVIEW_COPY.coverageError ? [] : [[OVERVIEW_COPY.coverageError]],
     }
   }
 
-  const lastScan: Rich | null = coverage ? (lastCompletedIso(coverage) ? ['Last scan: ', { iso: lastCompletedIso(coverage)! }] : [OVERVIEW_COPY.noScanYet]) : null
+  // PR 3d-1 (D3): the Services header's scan line (scanState), word for word; its time keeps the
+  // focusable exact-time tooltip this header had (scanStateParts).
+  const lastScan: Rich | null = coverage ? scanStateParts(coverage, now) : null
   const ownershipStats = i.stats.status === 'ready' ? i.stats.data : null
   return {
     mode,
-    header: { lastScan, scanRunning: !!coverage && latestAttempt(coverage) === 'running', showSync: true },
+    header: { lastScan, scanRunning: !!coverage && scanIsRunning(coverage), showSync: true },
     account: coverage ? accountStrip(coverage, i.regionsLinkAvailable) : null,
     status,
     tiles: { spend: spendTile(i), findings: findingsTile(i, coverage), savings: savingsTile(i), ownership: ownershipTile(i, coverage) },
     attention,
-    checked: coverage ? checkedLines(coverage, i) : [],
+    checked: coverage ? checkedLines(coverage, i, now) : [],
     costByService: costByService(i.costSummary),
     ownership: i.stats.status === 'loading' ? { lines: ['Loading…'], note: null }
       : ownershipStats?.ownership ? {

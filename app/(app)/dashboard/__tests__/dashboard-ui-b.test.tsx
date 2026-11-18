@@ -120,20 +120,23 @@ const summary = (spend: Spend): CostSummary => ({ spend, monthOverMonth: NO_MOM 
 describe('header line (§F row 1, DB-D8)', () => {
   const line = (cov: ServicesCoverage | undefined, previousLoginAt?: string | null) => headerStatusLine({ coverage: cov, previousLoginAt, now: NOW })
 
-  it('finished scan and a previous sign-in, formatted like Security and Infrastructure', () => {
-    expect(line(COVERAGE.finished, PREVIOUS_LOGIN)).toBe('Last scan: today, 6:02 PM · Last login: yesterday, 9:14 AM')
+  // PR 3d-1 (D3): the scan part is the Services page's scan line (servicesTruth scanState), word for word.
+  it('finished scan and a previous sign-in, in the Services words', () => {
+    expect(line(COVERAGE.finished, PREVIOUS_LOGIN)).toBe('Last scan finished today, 6:02 PM · Last login: yesterday, 9:14 AM')
   })
 
-  it("running / failed / none reuse Security's own wording", () => {
-    expect(line(COVERAGE.running, PREVIOUS_LOGIN)).toBe('Scan running… · Last login: yesterday, 9:14 AM')
-    expect(line(COVERAGE.failed, PREVIOUS_LOGIN)).toBe('Last scan failed: today, 7:04 PM · Last login: yesterday, 9:14 AM')
+  it("running / failed / abandoned / none use the Services page's wording", () => {
+    expect(line(COVERAGE.running, PREVIOUS_LOGIN)).toBe('Scan in progress since 8:30 PM · showing results from today, 6:02 PM · Last login: yesterday, 9:14 AM')
+    expect(line(COVERAGE.failed, PREVIOUS_LOGIN)).toBe("Last scan: today, 7:04 PM · didn't finish · Last login: yesterday, 9:14 AM")
+    // A running job with no lease was abandoned: "didn't finish", never a plain finished line (R4).
+    expect(line(COVERAGE.abandoned, PREVIOUS_LOGIN)).toBe("Last scan: today, 6:30 PM · didn't finish · Last login: yesterday, 9:14 AM")
     expect(line(COVERAGE.none, PREVIOUS_LOGIN)).toBe('No scan has finished yet. · Last login: yesterday, 9:14 AM')
   })
 
   it('previousLoginAt null and absent both omit "Last login"', () => {
-    expect(line(COVERAGE.finished, null)).toBe('Last scan: today, 6:02 PM')
-    expect(line(COVERAGE.finished, undefined)).toBe('Last scan: today, 6:02 PM')
-    expect(line(COVERAGE.finished, 'not a date')).toBe('Last scan: today, 6:02 PM')
+    expect(line(COVERAGE.finished, null)).toBe('Last scan finished today, 6:02 PM')
+    expect(line(COVERAGE.finished, undefined)).toBe('Last scan finished today, 6:02 PM')
+    expect(line(COVERAGE.finished, 'not a date')).toBe('Last scan finished today, 6:02 PM')
   })
 
   it('coverage loading or failed omits "Last scan"; with neither part there is no line', () => {
@@ -156,7 +159,9 @@ describe('header line (§F row 1, DB-D8)', () => {
       expect(src).toContain("import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'")
       expect(src).not.toMatch(/last_completed_scan\?\.completed_at \?\? c\.last_successful_scan_at/)
     }
-    expect(fs.readFileSync(path.join(root, 'app/(app)/dashboard/dashboardFreshness.ts'), 'utf8')).toContain("from '@/lib/scan-time'")
+    // PR 3d-1: the Dashboard reads its scan times through the Services truth module, which uses the helper.
+    expect(fs.readFileSync(path.join(root, 'app/(app)/dashboard/dashboardFreshness.ts'), 'utf8')).toContain("from '../services/servicesTruth'")
+    expect(fs.readFileSync(path.join(root, 'app/(app)/services/servicesTruth.ts'), 'utf8')).toContain("import { lastCompletedScanIso } from '@/lib/scan-time'")
   })
 })
 
@@ -216,7 +221,7 @@ describe('data freshness segments', () => {
   it('every source: the four segments of the mock, each from real data', () => {
     expect(seg().map((s) => `${s.label}: ${s.text}`)).toEqual([
       'Costs: AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM',
-      'Resources and security: last scan today, 6:02 PM · every 6 hours',
+      'Resources and security: last scan finished today, 6:02 PM · every 6 hours',
       'Alerts: CloudWatch · checked today, 8:36 PM',
       'DevControl service: checked today, 8:37 PM',
     ])
@@ -230,9 +235,9 @@ describe('data freshness segments', () => {
 
   it('"every 6 hours" is omitted when coverage is stale, the last attempt failed, or it was abandoned', () => {
     for (const cov of [COVERAGE.stale, COVERAGE.failed, COVERAGE.abandoned]) {
-      expect(seg({ coverage: cov })[1]).toEqual({ key: 'resources', label: 'Resources and security', text: 'last scan today, 6:02 PM' })
+      expect(seg({ coverage: cov })[1]).toEqual({ key: 'resources', label: 'Resources and security', text: 'last scan finished today, 6:02 PM' })
     }
-    expect(seg({ coverage: COVERAGE.running })[1].text).toBe('last scan today, 6:02 PM · every 6 hours')
+    expect(seg({ coverage: COVERAGE.running })[1].text).toBe('last scan finished today, 6:02 PM · every 6 hours')
   })
 
   it('costs: only billed Cost Explorer spend; omitted for an estimate, an error, a failed request or no time', () => {
@@ -444,7 +449,7 @@ describe('page: header', () => {
     health.ok()
     renderDashboard()
     await settled()
-    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM · Last login: yesterday, 9:14 AM')
+    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM · Last login: yesterday, 9:14 AM')
   })
   it.each([
     ['null', { id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: null }],
@@ -454,7 +459,7 @@ describe('page: header', () => {
     health.ok()
     renderDashboard()
     await settled()
-    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM')
     expect(document.body.textContent).not.toContain('Last login')
     expect(document.body.textContent).not.toContain('8:30 PM')
   })
@@ -468,7 +473,7 @@ describe('page: "Last login" comes from a fresh /me on each Dashboard load, neve
     health.ok()
     renderDashboard()
     await settled()
-    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM · Last login: today, 5:41 PM'))
+    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM · Last login: today, 5:41 PM'))
     expect(document.body.textContent).not.toContain('yesterday, 9:14 AM')
     expect(authService.getCurrentUser).toHaveBeenCalledTimes(1)
   })
@@ -478,7 +483,7 @@ describe('page: "Last login" comes from a fresh /me on each Dashboard load, neve
     health.ok()
     renderDashboard()
     await settled()
-    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM')
     expect(document.body.textContent).not.toContain('Last login')
   })
 
@@ -488,7 +493,7 @@ describe('page: "Last login" comes from a fresh /me on each Dashboard load, neve
       health.ok()
       const { unmount } = renderDashboard()
       await settled()
-      expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+      expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM')
       unmount()
       vi.restoreAllMocks()
       vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -509,9 +514,9 @@ describe('page: "Last login" comes from a fresh /me on each Dashboard load, neve
     renderDashboard()
     await settled()
     expect(authService.getCurrentUser).toHaveBeenCalledTimes(2)
-    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM')
+    expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM')
     await act(async () => { answer({ id: 'u', lastLoginAt: CURRENT_LOGIN, previousLoginAt: OTHER_DEVICE }) })
-    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan: today, 6:02 PM · Last login: today, 5:41 PM'))
+    await waitFor(() => expect(screen.getByTestId('dashboard-header-status').textContent).toBe('Last scan finished today, 6:02 PM · Last login: today, 5:41 PM'))
   })
 })
 
@@ -527,7 +532,7 @@ describe('page: data freshness row', () => {
     expect(within(row).getByText('Data freshness')).toBeInTheDocument()
     expect(['costs', 'resources', 'alerts', 'service'].map((k) => within(row).getByTestId(`freshness-${k}`).textContent)).toEqual([
       'Costs: AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM',
-      'Resources and security: last scan today, 6:02 PM · every 6 hours',
+      'Resources and security: last scan finished today, 6:02 PM · every 6 hours',
       'Alerts: CloudWatch · checked today, 8:36 PM',
       'DevControl service: checked today, 8:37 PM',
     ])
@@ -538,7 +543,7 @@ describe('page: data freshness row', () => {
     renderDashboard()
     await settled()
     expect(screen.queryByTestId('freshness-costs')).toBeNull()
-    expect(screen.getByTestId('freshness-resources').textContent).toBe('Resources and security: last scan today, 6:02 PM')
+    expect(screen.getByTestId('freshness-resources').textContent).toBe('Resources and security: last scan finished today, 6:02 PM')
   })
 })
 
@@ -755,7 +760,7 @@ describe('PR-ICONS-b page: data freshness block', () => {
     expect(list.className).not.toMatch(/text-ink-muted/)
     expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
       'Costs: AWS Cost Explorer, billed through Nov 12 · refreshed today, 6:05 PM',
-      'Resources and security: last scan today, 6:02 PM · every 6 hours',
+      'Resources and security: last scan finished today, 6:02 PM · every 6 hours',
       'Alerts: CloudWatch · checked today, 8:36 PM',
       'DevControl service: checked today, 8:37 PM',
     ])

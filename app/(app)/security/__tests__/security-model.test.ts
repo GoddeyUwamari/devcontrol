@@ -82,7 +82,14 @@ const coverage = (over: Partial<ServicesCoverage> = {}, s3 = true): ServicesCove
     cloudfront: { in_last_scan: false, count: 0 },
     enabled_regions: { known: true, count: 17 },
   },
-  region_status: [{ region: 'us-east-1', home: true, status: 'ok', last_scan_finished_at: iso(DAY / 4), last_success_at: iso(DAY / 4), last_error_code: null } as never],
+  // PR 3d-1: as the server sends it, every enabled region of the list (the home region plus 16 never
+  // scanned) and the PR 3a keys every organization has had since Nov 16 (doc §15).
+  region_status: [
+    { region: 'us-east-1', home: true, status: 'ok', last_scan_finished_at: iso(DAY / 4), last_success_at: iso(DAY / 4), last_error_code: null } as never,
+    ...Array.from({ length: 16 }, (_, k) => ({ region: `xx-test-${k + 1}`, home: false, status: 'never_scanned', last_scan_finished_at: null, last_success_at: null, last_error_code: null }) as never),
+  ],
+  not_enabled_regions: [],
+  home_only_coverage: { regions_total: 17, regions_checked: 1 },
   scan_in_progress: null,
   last_completed_scan: { started_at: iso(DAY / 4), completed_at: iso(DAY / 4), resource_types: ['ec2', 's3'], warnings: [] },
   last_successful_scan_at: iso(DAY / 4),
@@ -537,26 +544,26 @@ describe('trend', () => {
 
 describe('checked lines', () => {
   it('after a finished scan with S3 in it', () => {
-    expect(securityCheckedLines(ready(coverage())).map((l) => [l.label, l.status])).toEqual([
+    expect(securityCheckedLines(ready(coverage()), NOW).map((l) => [l.label, l.status])).toEqual([
       ['Security groups (us-east-1)', 'checked'],
       ['S3 bucket policies (all regions)', 'checked'],
       ['IAM users: MFA, key age', 'checked'],
       ['IAM roles and policies', 'not_checked'],
-      ['Other 16 regions', 'not_checked'],
+      ['16 regions not scanned yet', 'not_checked'],
     ])
   })
   it('S3 "all regions" only when it was in the last scan', () => {
-    expect(securityCheckedLines(ready(coverage({}, false))).find((l) => l.key === 's3')?.status).toBe('not_checked')
+    expect(securityCheckedLines(ready(coverage({}, false)), NOW).find((l) => l.key === 's3')?.status).toBe('not_checked')
   })
   it('nothing claimed checked before a scan finishes', () => {
-    const lines = securityCheckedLines(ready(coverage({ last_completed_scan: null, last_successful_scan_at: null })))
+    const lines = securityCheckedLines(ready(coverage({ last_completed_scan: null, last_successful_scan_at: null })), NOW)
     expect(lines.filter((l) => l.status === 'checked')).toEqual([])
   })
   it('region list not read, no account, coverage error', () => {
-    expect(securityCheckedLines(ready(coverage({ region_status: undefined }))).at(-1)?.label).toBe('Other regions (region list not read yet)')
-    expect(securityCheckedLines(ready(coverage({ account: { connected: false, status: null, home_region: null } })))).toEqual([{ key: 'nothing', label: 'Nothing has been checked yet.', status: null }])
-    expect(securityCheckedLines(ERROR)[0].status).toBeNull()
-    expect(securityCheckedLines(LOADING)).toEqual([])
+    expect(securityCheckedLines(ready(coverage({ region_status: undefined })), NOW).at(-1)?.label).toBe('Other regions (region list not read yet)')
+    expect(securityCheckedLines(ready(coverage({ account: { connected: false, status: null, home_region: null } })), NOW)).toEqual([{ key: 'nothing', label: 'Nothing has been checked yet.', status: null }])
+    expect(securityCheckedLines(ERROR, NOW)[0].status).toBeNull()
+    expect(securityCheckedLines(LOADING, NOW)).toEqual([])
   })
 })
 
@@ -592,21 +599,21 @@ describe('header scan line (answer 12)', () => {
 describe('"Not checked yet" (banner, right)', () => {
   const regions = (n: number) => Array.from({ length: n }, (_, k) => ({ region: k === 0 ? 'us-east-1' : `xx-test-${k}`, home: k === 0, status: k === 0 ? 'ok' : 'never_scanned', last_scan_finished_at: k === 0 ? iso(DAY / 4) : null, last_success_at: null, last_error_code: null }) as never)
   it('regions and IAM roles, with the singular for one region (answer 11)', () => {
-    expect(notCheckedText(ready(coverage()))).toBe('Not checked yet: 16 regions · IAM roles and policies')
-    const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } } })
-    expect(notCheckedText(ready(two))).toBe('Not checked yet: 1 region · IAM roles and policies')
+    expect(notCheckedText(ready(coverage()), NOW)).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
+    const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } }, home_only_coverage: { regions_total: 2, regions_checked: 1 } })
+    expect(notCheckedText(ready(two), NOW)).toBe('Not checked yet: 1 region not scanned yet · IAM roles and policies')
   })
   it('no region list yet', () => {
-    expect(notCheckedText(ready(coverage({ region_status: [] })))).toBe('Not checked yet: other regions (region list not read yet) · IAM roles and policies')
+    expect(notCheckedText(ready(coverage({ region_status: [] })), NOW)).toBe('Not checked yet: other regions (region list not read yet) · IAM roles and policies')
   })
   it('nothing while loading, on error, or with no connected account', () => {
-    expect(notCheckedText(LOADING)).toBeNull()
-    expect(notCheckedText(ERROR)).toBeNull()
-    expect(notCheckedText(ready(coverage({ account: { connected: false, status: null, home_region: null } })))).toBeNull()
+    expect(notCheckedText(LOADING, NOW)).toBeNull()
+    expect(notCheckedText(ERROR, NOW)).toBeNull()
+    expect(notCheckedText(ready(coverage({ account: { connected: false, status: null, home_region: null } })), NOW)).toBeNull()
   })
-  it('the checked list says "Other 1 region" too', () => {
-    const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } } })
-    expect(securityCheckedLines(ready(two)).find((l) => l.key === 'other-regions')?.label).toBe('Other 1 region')
+  it('the checked list says "1 region not scanned yet" too (the Services group row, PR 3d-1)', () => {
+    const two = coverage({ region_status: regions(2), scope: { ...coverage().scope, enabled_regions: { known: true, count: 2 } }, home_only_coverage: { regions_total: 2, regions_checked: 1 } })
+    expect(securityCheckedLines(ready(two), NOW).find((l) => l.key === 'other-regions')?.label).toBe('1 region not scanned yet')
   })
 })
 

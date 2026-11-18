@@ -3,19 +3,19 @@
     "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
     "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
     "Acme Labs {class=text-meta text-ink-muted}",
-    "Last scan: today, 6:02 PM · Last login: yesterday, 9:14 AM {class=text-meta text-ink-muted}"
+    "Last scan finished today, 6:02 PM · Last login: yesterday, 9:14 AM {class=text-meta text-ink-muted}"
   ],
   "scan running, previousLoginAt null": [
     "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
     "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
     "Acme Labs {class=text-meta text-ink-muted}",
-    "Scan running… {class=text-meta text-ink-muted}"
+    "Scan in progress since 8:30 PM · showing results from today, 6:02 PM {class=text-meta text-ink-muted}"
   ],
   "last scan failed, previousLoginAt absent": [
     "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",
     "Operational visibility across cloud costs, security, observability, and infrastructure efficiency — so you can reduce waste, mitigate risk, and scale with confidence. {class=text-subtitle text-ink-muted}",
     "Acme Labs {class=text-meta text-ink-muted}",
-    "Last scan failed: today, 7:04 PM {class=text-meta text-ink-muted}"
+    "Last scan: today, 7:04 PM · didn't finish {class=text-meta text-ink-muted}"
   ],
   "no scan finished yet": [
     "AI-Powered Cloud Operations & Infrastructure Intelligence {class=text-title text-ink}",

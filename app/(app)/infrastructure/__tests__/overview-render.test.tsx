@@ -530,7 +530,7 @@ describe('the attention empty state, per source', () => {
   it('both loaded, nothing found: "Nothing needs review" with its scope', async () => {
     none()
     await renderSettled()
-    expect(screen.getByTestId('infra-attention-empty')).toHaveTextContent('Nothing needs review from the last scan.Checked: us-east-1 (1 of 17 enabled regions).')
+    expect(screen.getByTestId('infra-attention-empty')).toHaveTextContent('Nothing needs review from the last scan.1 of 17 regions checked · us-east-1.')
   })
   it('account findings failed: never "Nothing needs review"', async () => {
     none()

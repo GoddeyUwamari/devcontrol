@@ -44,6 +44,7 @@ import {
   permissionFixText,
 } from '../connectAwsCopy'
 import { HOME_REGION_ONLY_NOTE, describeCoverage } from '../../services/coverage'
+import { scanState } from '../../services/servicesTruth'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
 import { toast } from 'sonner'
 import { REMOVED_STRINGS, expectNoRemovedText } from './removedText'
@@ -417,12 +418,17 @@ describe('Connect AWS page: checking and connected', () => {
     expect(screen.queryByTestId('permission-warnings')).toBeNull()
   })
 
-  it('T13 coverage: the Discovery fact and headline are describeCoverage output; the table and the home-region note', async () => {
+  // PR 3d-1 (D3, R5): the Discovery fact is the Services page's scan line (scanState), and describeCoverage
+  // is given that state (no 60-minute rule).
+  it('T13 coverage: the Discovery fact is the Services scan line; the headline is describeCoverage output; the table and the home-region note', async () => {
     mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
     renderPage()
     const headline = await screen.findByTestId('coverage-headline')
-    const expected = describeCoverage(COVERAGE, Date.now())
+    const now = Date.now()
+    const expected = describeCoverage(COVERAGE, now, [], scanState(COVERAGE, now))
     expect(headline.textContent).toBe(expected.headline)
+    expect(expected.lastScan).toBe(scanState(COVERAGE, now).text)
+    expect(expected.lastScan).toMatch(/^Last scan finished /)
     expect(screen.getByTestId('fact-discovery').textContent).toBe(`Discovery${expected.lastScan}`)
     const rows = [...screen.getByTestId('coverage-table').querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
     expect(rows).toEqual([

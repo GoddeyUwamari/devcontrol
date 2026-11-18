@@ -16,7 +16,7 @@ import { footerText } from '../../services/regionCoverage'
 import { region, withoutM5c } from '../../services/__tests__/m6-fixtures'
 import { formatShare } from '../overview/CostByService'
 import {
-  NOW, hoursAgo, ready, LOADING, ERROR, coverage, noAccountCoverage, STATS, QUIET_STATS, service, ATTENTION_ROWS, attentionPage,
+  NOW, hoursAgo, ready, LOADING, ERROR, coverage, withoutPr3a, noAccountCoverage, STATS, QUIET_STATS, service, ATTENTION_ROWS, attentionPage,
   finding, ACCOUNT_FINDINGS, billedSummary, estimatedSummary, NO_SAVINGS, inputs,
 } from './overview-fixtures'
 
@@ -46,7 +46,7 @@ const STATES: Record<string, Partial<OverviewInputs>> = {
   'all-loading': { coverage: LOADING, stats: LOADING, attention: LOADING, accountFindings: LOADING, costSummary: LOADING, savings: LOADING },
   'all-error': { stats: ERROR, attention: ERROR, accountFindings: ERROR, costSummary: ERROR, savings: ERROR },
   'unknown-list': { coverage: ready(coverage({ scope: { ...coverage().scope, enabled_regions: { known: false, count: null } } })) },
-  'older-backend': { coverage: ready(withoutM5c(coverage())) },
+  'older-backend': { coverage: ready(withoutPr3a(withoutM5c(coverage()))) },
   'scan-running': { coverage: ready(coverage({ scan_in_progress: { since: hoursAgo(0.25) } })) },
   stale: { coverage: ready({ ...coverage(), region_status: coverage().region_status!.map((r) => (r.home ? { ...r, stale: true } : r)) }) },
   unfinished: { coverage: ready(coverage({ last_scan: { status: 'failed', started_at: hoursAgo(1.2), completed_at: hoursAgo(1), warnings: [] } })) },
@@ -217,7 +217,7 @@ describe('O-A attention rows', () => {
   })
   it('empty: the scope it covers, never "healthy"', () => {
     const a = view(STATES['no-findings']).attention
-    expect(a).toMatchObject({ status: 'ready', rows: [], empty: { text: 'Nothing needs review from the last scan.', scope: 'Checked: us-east-1 (1 of 17 enabled regions).' } })
+    expect(a).toMatchObject({ status: 'ready', rows: [], empty: { text: 'Nothing needs review from the last scan.', scope: '1 of 17 regions checked · us-east-1.' } })
   })
   describe('empty and partial states, per source (loaded / failed)', () => {
     const noRows = { attention: ready(attentionPage([])), accountFindings: ready([]) }
@@ -290,7 +290,7 @@ describe('O-S status line', () => {
   it('O-S5 nothing found: says so with its scope', () => {
     const s = view(STATES['no-findings']).status
     expect(s.headline).toBe('No critical or high-severity findings from the last scan.')
-    expect(s.notChecked).toBe('Not checked yet: 16 regions · IAM roles and policies')
+    expect(s.notChecked).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
     expect(s.reason).toBeNull()
   })
   it('O-S6 never scanned', () => {
@@ -298,7 +298,7 @@ describe('O-S status line', () => {
   })
   it('O-S3 the not-checked line stays when there are findings; the top item is the first row', () => {
     const s = view().status
-    expect(s.notChecked).toBe('Not checked yet: 16 regions · IAM roles and policies')
+    expect(s.notChecked).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
     expect(s.reason).toBe('Top: RDS instance is publicly accessible')
   })
   describe('"Top:" matches the headline', () => {
@@ -417,28 +417,32 @@ describe('O-C cost by AWS service', () => {
 // ── Regions and what we checked ──
 
 describe('O-R regions and what we checked', () => {
-  it('O-R1 the strip: regionCounts reused, "1 of 17", gaps when there are some', () => {
+  // PR 3d-1 (D6, R1): the strip says the Services page's coverage line, from home_only_coverage; a
+  // partial home region is checked (G8) and no "with gaps" segment is added (R1).
+  it('O-R1 the strip: the Services coverage line, "1 of 17 regions checked · us-east-1", never "with gaps"', () => {
     expect(view().account!.items).toEqual([
       { term: 'AWS account', value: 'Connected' }, { term: 'Home region', value: 'us-east-1' },
-      { term: 'Enabled regions', value: '17' }, { term: 'Regions checked', value: '1 of 17' },
+      { term: 'Enabled regions', value: '17' }, { term: 'Regions checked', value: '1 of 17 regions checked · us-east-1' },
     ])
-    const gaps = coverage({ region_status: [region('us-east-1', { home: true, status: 'partial', last_scan_finished_at: hoursAgo(2) }), region('eu-west-1')] })
-    gaps.scope.enabled_regions.count = 2
-    expect(view({ coverage: ready(gaps) }).account!.items[3].value).toBe('1 of 2 · 1 with gaps')
+    const partial = coverage({ region_status: [region('us-east-1', { home: true, status: 'partial', last_scan_finished_at: hoursAgo(2) }), region('eu-west-1')] })
+    partial.scope.enabled_regions.count = 2
+    partial.home_only_coverage = { regions_total: 2, regions_checked: 1 }
+    expect(view({ coverage: ready(partial) }).account!.items[3].value).toBe('1 of 2 regions checked · us-east-1')
   })
-  it('O-R1 the denominator is the enabled count, not the rows returned', () => {
+  it('O-R1 the denominator is the server\'s regions_total; the regions not scanned yet are the listed rows, as on Services', () => {
     const c = coverage()
     c.scope.enabled_regions.count = 20
-    expect(view({ coverage: ready(c) }).account!.items[3].value).toBe('1 of 20')
-    expect(view({ coverage: ready(c) }).status.notChecked).toBe('Not checked yet: 19 regions · IAM roles and policies')
+    c.home_only_coverage = { regions_total: 20, regions_checked: 1 }
+    expect(view({ coverage: ready(c) }).account!.items[3].value).toBe('1 of 20 regions checked · us-east-1')
+    expect(view({ coverage: ready(c) }).status.notChecked).toBe('Not checked yet: 16 regions not scanned yet · IAM roles and policies')
   })
   it('O-R1 unknown list and older backend: no "N of M" anywhere in the strip', () => {
     for (const state of ['unknown-list', 'older-backend']) {
       const strip = JSON.stringify(view(STATES[state]).account)
       expect(strip).not.toMatch(/\d+ of \d+/)
     }
-    expect(view(STATES['unknown-list']).account!.items[3].value).toBe('us-east-1 checked · region list not read yet')
-    expect(view(STATES['older-backend']).account!.items[3].value).toBe('us-east-1')
+    expect(view(STATES['unknown-list']).account!.items[3].value).toBe("We haven't read this account's region list yet. It's read during each scan.")
+    expect(view(STATES['older-backend']).account!.items[3].value).toBe("We haven't read this account's region list yet. It's read during each scan.")
   })
   it('O-R2 IAM and alarm lines exact; S3/CloudFront only from the last completed scan', () => {
     const lines = Object.fromEntries(view().checked.map((l) => [l.key, l]))

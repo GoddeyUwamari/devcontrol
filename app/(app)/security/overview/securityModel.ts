@@ -24,7 +24,7 @@ import type { ComplianceFramework, ComplianceScan } from '@/lib/services/complia
 import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type FindingWhere } from '@/lib/security/findingDisplay'
 import { typeLabel } from '../../services/AttentionTable'
-import { hasRegionCoverage, regionCounts } from '../../services/regionCoverage'
+import { notCheckedRegionParts, regionGaps, scanState } from '../../services/servicesTruth'
 import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
@@ -573,7 +573,7 @@ function trendView(i: SecurityInputs, now: number): TrendView | null {
 
 export interface CheckedLine { key: string; label: string; status: 'checked' | 'not_checked' | null }
 
-export function securityCheckedLines(coverage: SecLoadable<ServicesCoverage>): CheckedLine[] {
+export function securityCheckedLines(coverage: SecLoadable<ServicesCoverage>, now: number): CheckedLine[] {
   if (coverage.status === 'loading') return []
   if (coverage.status !== 'ready') return [{ key: 'error', label: OVERVIEW_COPY.coverageError, status: null }]
   const c = coverage.data
@@ -586,10 +586,13 @@ export function securityCheckedLines(coverage: SecLoadable<ServicesCoverage>): C
     { key: 'iam-users', label: SECURITY_COPY.iamUsers, status: done ? 'checked' : 'not_checked' },
     { key: 'iam-roles', label: SECURITY_COPY.iamRoles, status: 'not_checked' },
   ]
-  const counts = hasRegionCoverage(c) ? regionCounts(c) : null
-  if (counts && counts.enabled !== null) {
-    const n = Math.max(0, counts.enabled - counts.checked)
-    if (n > 0) lines.push({ key: 'other-regions', label: `Other ${n} ${plural(n, 'region', 'regions')}`, status: 'not_checked' })
+  // PR 3d-1 (D6): the other regions the Services card doesn't count as checked, in its words
+  // ("16 regions not scanned yet", the former home region, …); the home region is not "other".
+  const gaps = regionGaps(c, now)
+  if (gaps) {
+    gaps.filter((g) => !g.home).forEach((g, n) => {
+      lines.push({ key: n === 0 ? 'other-regions' : `other-regions-${g.key}`, label: g.long, status: 'not_checked' })
+    })
   } else {
     lines.push({ key: 'other-regions', label: 'Other regions (region list not read yet)', status: 'not_checked' })
   }
@@ -609,6 +612,16 @@ export function formatScanWhen(iso: string | null | undefined, now: number): str
 }
 
 /**
+ * The Security and Dashboard header's scan line since PR 3d-1 (D3): the Services page's own
+ * (servicesTruth scanState), word for word. Null while coverage loads or failed.
+ */
+export function headerScanLine(coverage: SecLoadable<ServicesCoverage>, now: number): ScanLine | null {
+  return coverage.status === 'ready' ? scanState(coverage.data, now) : null
+}
+
+/**
+ * The line before PR 3d-1, kept for the Services page's flag-off (non-redesign) header only
+ * (ServicesOverview), which must not change; Security and the Dashboard use headerScanLine.
  * Running → "Scan running…"; the latest attempt failed → "Last scan failed: <time>"; a finished scan →
  * "Last scan: <time>"; otherwise "No scan has finished yet.". A failed attempt with no time to print falls
  * back to the finished/none line rather than inventing one. Null while coverage loads or failed.
@@ -625,20 +638,13 @@ export function scanLine(coverage: SecLoadable<ServicesCoverage>, now: number): 
   return done ? { state: 'finished', text: `Last scan: ${done}` } : { state: 'none', text: SECURITY_COPY.noScanYet }
 }
 
-/** "Not checked yet: <n> regions · IAM roles and policies" (Infra's rule, PLAN §9.3); null unless coverage loaded for a connected account. */
-export function notCheckedText(coverage: SecLoadable<ServicesCoverage>): string | null {
+/**
+ * "Not checked yet: <regions> · IAM roles and policies" (Infra's rule, PLAN §9.3); the region parts are
+ * the Services page's (PR 3d-1, D6). Null unless coverage loaded for a connected account.
+ */
+export function notCheckedText(coverage: SecLoadable<ServicesCoverage>, now: number): string | null {
   if (coverage.status !== 'ready' || !coverage.data.account.connected) return null
-  const c = coverage.data
-  const counts = hasRegionCoverage(c) ? regionCounts(c) : null
-  const parts: string[] = []
-  if (counts && counts.enabled !== null) {
-    const n = Math.max(0, counts.enabled - counts.checked)
-    if (n > 0) parts.push(`${n} ${plural(n, 'region', 'regions')}`)
-  } else {
-    parts.push('other regions (region list not read yet)')
-  }
-  parts.push(SECURITY_COPY.iamRoles)
-  return `Not checked yet: ${parts.join(' · ')}`
+  return `Not checked yet: ${[...notCheckedRegionParts(coverage.data, now), SECURITY_COPY.iamRoles].join(' · ')}`
 }
 
 // ── Labels and empty lines for the findings list (founder answers 9, 10; e2 13, 14, 16) ──
@@ -736,9 +742,9 @@ export function describeSecurity(i: SecurityInputs, now: number, overlay?: Evalu
     filters,
     frameworks,
     trend: trendView(i, now),
-    checked: securityCheckedLines(i.coverage),
-    scan: scanLine(i.coverage, now),
-    notChecked: notCheckedText(i.coverage),
+    checked: securityCheckedLines(i.coverage, now),
+    scan: headerScanLine(i.coverage, now),
+    notChecked: notCheckedText(i.coverage, now),
     empty: emptyTexts(i),
   }
 }
