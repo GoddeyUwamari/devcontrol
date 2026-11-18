@@ -4,7 +4,7 @@ Example Org (synthetic) · Visibility plan
 
 Hi Alex,
 
-1 account-level security finding is open. 2 cost opportunities are open in Cost Optimization. Spend for the 3 finished days was $2.25; 4 days are still updating. No deployments recorded in DevControl this week.
+1 account-level security finding is open. 2 cost opportunities are open in Cost Optimization. Spend for the 3 finished days was $2.25; 1 day is still updating and 3 aren't reported yet. No deployments recorded in DevControl this week.
 
 SECURITY
 1 open
@@ -14,7 +14,7 @@ AWS SPEND · 3 FINISHED DAYS
 Nov 9–11
 $2.25
 No comparison yet (see Cost)
-+ 4 days still updating
++ 1 day still updating · 3 not reported yet
 
 ESTIMATED SAVINGS
 Open opportunities
@@ -22,7 +22,7 @@ Open opportunities
 
 NEEDS YOUR ATTENTION
 1. Security · 1 open finding
-1 account-level (security groups, IAM) · 0 resource compliance (encryption, backups, tagging).
+1 account-level (security groups, IAM).
 Latest scan Nov 16, 06:14 UTC
 Review findings: https://app.example.test/security
 2. Cost · 2 open opportunities

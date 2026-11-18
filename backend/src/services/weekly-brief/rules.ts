@@ -186,9 +186,38 @@ function changeWords(changePercent: number): string {
   return rounded === 0 ? `${direction} less than 1%` : `${direction} ${rounded}%`;
 }
 
-/** Days not finished this week: still updating plus not reported. */
-function unfinishedCount(c: Extract<CostFacts, { state: 'available' }>): number {
-  return c.updating.days.length + c.notReported.length;
+/**
+ * Founder D-2: the days not finished this week, updating and not reported
+ * counted and named separately; a part that is 0 is left out.
+ *   summary: "1 day is still updating and 3 aren't reported yet"
+ *   tile:    "+ 1 day still updating · 3 not reported yet"
+ * Null when every day is finished.
+ */
+function unfinishedSummary(c: Extract<CostFacts, { state: 'available' }>): string | null {
+  const u = c.updating.days.length;
+  const r = c.notReported.length;
+  const updating = `${days(u)} ${isAre(u)} still updating`;
+  if (u > 0 && r > 0) return `${updating} and ${r} ${r === 1 ? "isn't" : "aren't"} reported yet`;
+  if (u > 0) return updating;
+  if (r > 0) return `${days(r)} ${r === 1 ? "isn't" : "aren't"} reported yet`;
+  return null;
+}
+
+function unfinishedTile(c: Extract<CostFacts, { state: 'available' }>): string | null {
+  const u = c.updating.days.length;
+  const r = c.notReported.length;
+  if (u > 0 && r > 0) return `+ ${days(u)} still updating · ${r} not reported yet`;
+  if (u > 0) return `+ ${days(u)} still updating`;
+  if (r > 0) return `+ ${days(r)} not reported yet`;
+  return null;
+}
+
+/** "{n} account-level (security groups, IAM) · {r} resource compliance (…)."; a part that is 0 is left out (founder, Nov 18). */
+function securityBreakdown(account: number, resource: number): string {
+  const parts: string[] = [];
+  if (account > 0) parts.push(`${account} account-level (security groups, IAM)`);
+  if (resource > 0) parts.push(`${resource} resource compliance (encryption, backups, tagging)`);
+  return `${parts.join(' · ')}.`;
 }
 
 /** "{a} account-level security findings and {r} resource compliance issues are open." */
@@ -200,14 +229,32 @@ function securitySentence(account: number, resource: number): string {
   return `${plural(resource, 'resource compliance issue')} ${isAre(resource)} open.`;
 }
 
-/** The connection-broken clause (founder Q2). */
+/** The last completed cost analysis's time; null when none completed; undefined when unreadable. */
+function completedAnalysisAt(a: AnalysisFacts): string | null | undefined {
+  if (a.kind === 'completed') return a.at;
+  if (a.kind === 'from_last_completed') return a.lastAt;
+  if (a.kind === 'unreadable') return undefined;
+  return null;
+}
+
+/**
+ * The connection-broken clause (founder Q2, as changed in D-10): security
+ * figures name the last completed scan and savings the last completed cost
+ * analysis, each with its own time. A source with nothing completed says
+ * there are no figures; one whose dates couldn't be read is left out.
+ */
 function brokenClause(f: WeeklyFacts, lastOkAt: string | null): string {
   const lead = `DevControl couldn't reach your AWS account${lastOkAt ? ` (last successful check ${formatTime(lastOkAt)})` : ''}`;
-  if (f.scan === null) return `${lead}.`;
-  const scan = completedScan(f.scan);
-  return scan
-    ? `${lead}, so security and savings below are from the last completed scan, ${formatTime(scan.at)}.`
-    : `${lead}, so there are no security or savings figures this week.`;
+  const scan = f.scan === null ? undefined : completedScan(f.scan);
+  const analysisAt = completedAnalysisAt(f.analysis);
+  if (scan === undefined && analysisAt === undefined) return `${lead}.`;
+  if (scan === null && analysisAt === null) return `${lead}, so there are no security or savings figures this week.`;
+  const parts: string[] = [];
+  if (scan) parts.push(`security figures below are from the last completed scan (${formatTime(scan.at)})`);
+  else if (scan === null) parts.push('there are no security figures this week');
+  if (analysisAt) parts.push(`${scan ? 'savings' : 'savings below are'} from the last completed cost analysis (${formatTime(analysisAt)})`);
+  else if (analysisAt === null) parts.push('there are no savings figures this week');
+  return `${lead}, so ${parts.join(' and ')}.`;
 }
 
 /** The connection's state when it is neither OK nor broken, as a plain sentence; null otherwise. */
@@ -230,13 +277,13 @@ function spendSentence(c: CostFacts): string | null {
   if (c.state === 'unavailable') return 'AWS Cost Explorer returned no data for this week.';
   if (c.state !== 'available') return null;
   const n = c.finished.days.length;
-  const k = unfinishedCount(c);
+  const unfinished = unfinishedSummary(c);
   if (n === 0) return `${noFinishedDays(c)}.`;
   let sentence = `Spend for the ${n} finished ${n === 1 ? 'day' : 'days'} was ${formatMoney(c.finished.total)}`;
   if (c.comparison.kind === 'percent') {
     sentence += `, ${changeWords(c.comparison.changePercent).toLowerCase()} on the same ${days(n)} last week`;
   }
-  if (k > 0) sentence += `; ${days(k)} ${isAre(k)} still updating`;
+  if (unfinished) sentence += `; ${unfinished}`;
   return `${sentence}.`;
 }
 
@@ -315,8 +362,8 @@ function spendTile(f: WeeklyFacts): BriefTile {
     };
   }
   const lines = [c.comparison.kind === 'percent' ? `${changeWords(c.comparison.changePercent)} on the same days` : 'No comparison yet (see Cost)'];
-  const k = unfinishedCount(c);
-  if (k > 0) lines.push(`+ ${days(k)} still updating`);
+  const unfinished = unfinishedTile(c);
+  if (unfinished) lines.push(unfinished);
   return { label, sublabel: formatDays(c.finished.days), value: formatMoney(c.finished.total), lines };
 }
 
@@ -341,11 +388,20 @@ function savingsTile(f: WeeklyFacts): BriefTile {
   return tile('Open opportunities', value, lines);
 }
 
-/** "N still detected · about $Y/mo estimated" (Y = the page's C8 estimate). */
+/**
+ * Founder D-6: the page's still-detected estimate is cent-rounded, so $0.00
+ * may hide a sub-cent estimate. Then no amount is shown at all, never
+ * "no dollar estimate yet".
+ */
+function stillDetectedHasAmount(estimate: number): boolean {
+  return Math.round(estimate * 100) !== 0;
+}
+
+/** "N still detected · about $Y/mo estimated" (Y = the page's C8 estimate); "N still detected" when Y rounds to $0.00. */
 function stillDetectedLine(count: number, estimate: number): string {
-  return estimate > 0
+  return stillDetectedHasAmount(estimate)
     ? `${count} still detected · about ${formatSavings(estimate)}/mo estimated`
-    : `${count} still detected · no dollar estimate yet`;
+    : `${count} still detected`;
 }
 
 export function tiles(f: WeeklyFacts): BriefTile[] {
@@ -375,7 +431,7 @@ function costItem(f: WeeklyFacts): Omit<BriefAttentionItem, 'number'> | null {
     titleParts.push(`${plural(n, 'resolved finding')} detected again`);
     const ex = stillDetected.example;
     const where = ex ? `${ex.check} on ${ex.resource}${ex.region ? ` (${ex.region})` : ''}` : null;
-    const money = stillDetected.estimate > 0 ? ` About ${formatSavings(stillDetected.estimate)}/mo, estimated.` : ' No dollar estimate yet.';
+    const money = stillDetectedHasAmount(stillDetected.estimate) ? ` About ${formatSavings(stillDetected.estimate)}/mo, estimated.` : '';
     if (n === 1 && ex) {
       body.push(`${where}. You resolved it ${formatDate(ex.resolvedAt)}; the latest analysis still sees it.${money}`);
     } else {
@@ -431,7 +487,7 @@ export function attentionItems(f: WeeklyFacts): BriefAttentionItem[] {
     items.push({
       tone: 'warning',
       title: `Security · ${plural(s.open, 'open finding')}`,
-      body: [`${s.account} account-level (security groups, IAM) · ${s.resource} resource compliance (encryption, backups, tagging).`],
+      body: [securityBreakdown(s.account, s.resource)],
       time: scan ? `${scan.isLatest ? 'Latest scan' : 'Last completed scan'} ${formatTime(scan.at)}` : null,
       link: LINKS.security,
     });

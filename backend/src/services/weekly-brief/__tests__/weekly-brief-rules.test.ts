@@ -123,33 +123,52 @@ describe('R1: the summary sentence', () => {
     expect(summarySentence(fixtureFacts('A'))).toEqual({
       bold: '4 account-level security findings and 10 resource compliance issues are open. ' +
         '1 cost finding you marked resolved was detected again. 3 cost opportunities are open in Cost Optimization.',
-      plain: 'Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 2 days are still updating. 21 deployments, none failed.',
+      plain: "Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 1 day is still updating and 1 isn't reported yet. 21 deployments, none failed.",
     });
   });
 
   it('B (clean): the clean sentence in bold, then spend and delivery (mock example B)', () => {
     expect(summarySentence(fixtureFacts('B'))).toEqual({
       bold: CLEAN_SENTENCE,
-      plain: 'Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 2 days are still updating. 21 deployments, none failed.',
+      plain: "Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 1 day is still updating and 1 isn't reported yet. 21 deployments, none failed.",
     });
   });
 
-  it('C (connection broken): the approved Q2 clause first, failed deployments in bold, missing spend stated', () => {
+  it('C (connection broken): the D-10 clause first (scan and analysis, each with its time), failed deployments in bold, missing spend stated', () => {
     const s = summarySentence(fixtureFacts('C'));
     expect(s.bold).toBe(
-      "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so security and savings below are from the last completed scan, Nov 15, 06:10 UTC. " +
+      "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so security figures below are from the last completed scan (Nov 15, 06:10 UTC) " +
+      'and savings from the last completed cost analysis (Nov 15, 06:20 UTC). ' +
       '2 account-level security findings and 3 resource compliance issues are open. 2 cost opportunities are open in Cost Optimization. 4 deployments, 1 failed.'
     );
     expect(s.plain).toBe(SOME_FIGURES_MISSING);
   });
 
-  it('Q2 variants: never connected successfully, no completed scan, stale', () => {
-    expect(summarySentence(facts({ connectionHealth: health({ state: 'failing', lastResult: 'failing', lastOkAt: null }) })).bold)
-      .toMatch(/^DevControl couldn't reach your AWS account, so security and savings below are from the last completed scan, Nov 16, 06:14 UTC\./);
-    expect(summarySentence(facts({
-      connectionHealth: health({ state: 'failing', lastResult: 'failing', lastOkAt: '2026-11-15T06:00:00.000Z' }),
-      scan: available(SOURCES.scan, { latest: { state: 'did_not_finish', at: '2026-11-16T06:14:00.000Z', startedAt: '2026-11-16T06:00:00.000Z' }, lastCompleted: null }),
-    })).bold).toMatch(/^DevControl couldn't reach your AWS account \(last successful check Nov 15, 06:00 UTC\), so there are no security or savings figures this week\./);
+  describe('D-10: the connection-broken clause names the scan and the cost analysis separately', () => {
+    const failing = (lastOkAt: string | null) => health({ state: 'failing', lastResult: 'failing', lastOkAt });
+    const noScan = available(SOURCES.scan, { latest: { state: 'did_not_finish', at: '2026-11-16T06:14:00.000Z', startedAt: '2026-11-16T06:00:00.000Z' }, lastCompleted: null });
+    const noAnalysis = available(SOURCES.analysis, { latest: null, lastCompleted: null, latestChecks: null });
+    const clause = (over: Partial<WeeklyEvidence>) => summarySentence(facts(over)).bold.split('. ')[0].replace(/\.?$/, '.');
+    it.each([
+      ['both completed, never connected successfully', { connectionHealth: failing(null) },
+        "DevControl couldn't reach your AWS account, so security figures below are from the last completed scan (Nov 16, 06:14 UTC) and savings from the last completed cost analysis (Nov 16, 06:20 UTC)."],
+      ['no completed scan', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), scan: noScan },
+        "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so there are no security figures this week and savings below are from the last completed cost analysis (Nov 16, 06:20 UTC)."],
+      ['no completed cost analysis', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), costAnalysis: noAnalysis },
+        "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so security figures below are from the last completed scan (Nov 16, 06:14 UTC) and there are no savings figures this week."],
+      ['neither completed', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), scan: noScan, costAnalysis: noAnalysis },
+        "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC), so there are no security or savings figures this week."],
+      ['neither readable', { connectionHealth: failing('2026-11-15T06:00:00.000Z'), scan: noData(SOURCES.scan, 'error', 'x'), costAnalysis: noData(SOURCES.analysis, 'error', 'x') },
+        "DevControl couldn't reach your AWS account (last successful check Nov 15, 06:00 UTC)."],
+    ] as Array<[string, Partial<WeeklyEvidence>, string]>)('%s', (_name, over, expected) => {
+      expect(clause(over)).toBe(expected);
+    });
+    it('the old single "from the last completed scan" wording for both is gone', () => {
+      for (const name of Object.keys(VARIANTS)) expect(summarySentence(VARIANTS[name]).bold).not.toMatch(/security and savings below/);
+    });
+  });
+
+  it('stale connection: a plain sentence', () => {
     expect(summarySentence(VARIANTS.stale).plain).toMatch(/^DevControl hasn't checked your AWS connection since Nov 14\. /);
   });
 
@@ -206,9 +225,25 @@ describe('R2: attention items', () => {
 
   it('several still detected: the first named, "and N more", the ceiling in the page\'s words', () => {
     expect(attentionItems(VARIANTS.stillOnlyMany)[0].body).toEqual([
-      'Idle Instance on i-1234567890abcdef0 and 2 more. You resolved them; the latest analysis still sees them. No dollar estimate yet.',
+      'Idle Instance on i-1234567890abcdef0 and 2 more. You resolved them; the latest analysis still sees them.',
       'Plus up to $40/mo in estimated ceilings, not expected savings.',
     ]);
+  });
+
+  it('zero-segment rule: a security part that is 0 is left out of the item and the summary; the tile keeps both', () => {
+    const accountOnly = facts({ security: security({ score: 80, accountLevelFindings: 1, resourceComplianceIssues: 0 }) });
+    const resourceOnly = facts({ security: security({ score: 80, accountLevelFindings: 0, resourceComplianceIssues: 6 }) });
+    expect(attentionItems(accountOnly)[0]).toMatchObject({ title: 'Security · 1 open finding', body: ['1 account-level (security groups, IAM).'] });
+    expect(attentionItems(resourceOnly)[0]).toMatchObject({ title: 'Security · 6 open findings', body: ['6 resource compliance (encryption, backups, tagging).'] });
+    expect(summarySentence(accountOnly).bold).toBe('1 account-level security finding is open.');
+    expect(summarySentence(resourceOnly).bold).toBe('6 resource compliance issues are open.');
+    expect(tiles(accountOnly)[0].lines[0]).toBe('1 account · 0 compliance');
+    // No item body or summary sentence, in any variant, carries a "0 <part>" segment.
+    for (const name of Object.keys(VARIANTS)) {
+      const f = VARIANTS[name];
+      const text = [summarySentence(f).bold, summarySentence(f).plain, ...attentionItems(f).flatMap(i => [i.title, ...i.body])].join(' ');
+      expect([name, text]).not.toEqual([name, expect.stringMatching(/(^|[\s·(])0 [a-z]/)]);
+    }
   });
 
   it('an empty item never renders, and with none the section heading does not either (B)', () => {
@@ -283,7 +318,7 @@ describe('R4: spend is finished days only', () => {
       'Not reported by Cost Explorer yet, Nov 15.',
     ]);
     expect(costSection(f).lines[0].strong).toBe('$2.31');
-    expect(tiles(f)[1]).toEqual({ label: 'AWS SPEND · 5 FINISHED DAYS', sublabel: 'Nov 9–13', value: '$2.31', lines: ['Down 26% on the same days', '+ 2 days still updating'] });
+    expect(tiles(f)[1]).toEqual({ label: 'AWS SPEND · 5 FINISHED DAYS', sublabel: 'Nov 9–13', value: '$2.31', lines: ['Down 26% on the same days', '+ 1 day still updating · 1 not reported yet'] });
   });
 
   it('D: fewer finished days a week earlier -> no percentage, the approved reason', () => {
@@ -295,8 +330,42 @@ describe('R4: spend is finished days only', () => {
       'Still updating, Nov 12: $0.06 so far. Not included in the comparison.',
       'Not reported by Cost Explorer yet, Nov 13–15.',
     ]);
-    expect(tiles(f)[1].lines).toEqual(['No comparison yet (see Cost)', '+ 4 days still updating']);
-    expect(summarySentence(f).plain).toContain('Spend for the 3 finished days was $2.25; 4 days are still updating.');
+    expect(tiles(f)[1].lines).toEqual(['No comparison yet (see Cost)', '+ 1 day still updating · 3 not reported yet']);
+    expect(summarySentence(f).plain).toContain("Spend for the 3 finished days was $2.25; 1 day is still updating and 3 aren't reported yet.");
+  });
+
+  describe('D-2: updating and not-reported days are counted and named separately; a 0 part is left out', () => {
+    // Nov 9-15: `u` updating days then `r` not-reported days at the end of the week, the rest finished.
+    const split = (u: number, r: number) => {
+      const week = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15'];
+      const notReported = week.slice(7 - r);
+      const updating = week.slice(7 - r - u, 7 - r);
+      return facts({ costTrend: available(SOURCES.trend, { days: trend(day => ({
+        state: notReported.includes(day) ? 'not_reported' : updating.includes(day) ? 'updating' : 'final',
+        services: notReported.includes(day) ? {} : { EC2: 1 },
+      })) }) });
+    };
+    it.each([
+      [1, 3, "1 day is still updating and 3 aren't reported yet", '+ 1 day still updating · 3 not reported yet'],
+      [2, 1, "2 days are still updating and 1 isn't reported yet", '+ 2 days still updating · 1 not reported yet'],
+      [2, 0, '2 days are still updating', '+ 2 days still updating'],
+      [1, 0, '1 day is still updating', '+ 1 day still updating'],
+      [0, 1, "1 day isn't reported yet", '+ 1 day not reported yet'],
+      [0, 3, "3 days aren't reported yet", '+ 3 days not reported yet'],
+    ] as Array<[number, number, string, string]>)('%i updating, %i not reported', (u, r, sentence, tile) => {
+      const f = split(u, r);
+      expect(summarySentence(f).plain).toMatch(new RegExp(`; ${sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\. `));
+      expect(tiles(f)[1].lines[1]).toBe(tile);
+      // The Cost section names each kind on its own line, only when there is one.
+      const lines = costSection(f).lines.map(l => l.text);
+      expect(lines.some(l => l.startsWith('Still updating, '))).toBe(u > 0);
+      expect(lines.some(l => l.startsWith('Not reported by Cost Explorer yet, '))).toBe(r > 0);
+    });
+    it('every day finished: no unfinished part anywhere', () => {
+      const f = split(0, 0);
+      expect(tiles(f)[1].lines).toHaveLength(1);
+      expect(summarySentence(f).plain).not.toMatch(/updating|reported/);
+    });
   });
 
   it('a $0 previous week: no percentage, and the reason says so', () => {
@@ -408,6 +477,23 @@ describe("R6: savings use the Cost Optimization page's formatter", () => {
   it('$0/mo only when nothing is open (still-detected only)', () => {
     const f = facts({ stillDetected: still({ count: 2, estimatedMonthlySavings: 9 }) });
     expect(tiles(f)[2]).toMatchObject({ value: '$0/mo', lines: ['2 still detected · about $9/mo estimated'] });
+  });
+
+  it('D-6: a still-detected estimate of $0.00 after rounding shows "N still detected" with no amount, never "no dollar estimate yet"', () => {
+    for (const estimate of [0, 0.004]) {
+      const f = facts({ stillDetected: still({ count: 2, estimatedMonthlySavings: estimate, example: { check: 'Idle Instance', resource: 'i-1234567890abcdef0', region: null, resolvedAt: '2026-11-10T00:00:00.000Z' } }) });
+      expect(tiles(f)[2].lines).toEqual(['2 still detected']);
+      expect(attentionItems(f)[0].body).toEqual(['Idle Instance on i-1234567890abcdef0 and 1 more. You resolved them; the latest analysis still sees them.']);
+      const one = facts({ stillDetected: still({ count: 1, estimatedMonthlySavings: estimate, example: { check: 'Idle Instance', resource: 'i-1234567890abcdef0', region: null, resolvedAt: '2026-11-10T00:00:00.000Z' } }) });
+      expect(attentionItems(one)[0].body).toEqual(['Idle Instance on i-1234567890abcdef0. You resolved it Nov 10; the latest analysis still sees it.']);
+    }
+    // A cent or more keeps the amount.
+    expect(tiles(facts({ stillDetected: still({ count: 2, estimatedMonthlySavings: 0.01 }) }))[2].lines).toEqual(['2 still detected · about $0.01/mo estimated']);
+    for (const name of Object.keys(VARIANTS)) {
+      const b = brief(VARIANTS[name]);
+      const stillText = [...b.tiles.flatMap(t => t.lines), ...b.attention.flatMap(a => a.body)].filter(s => /still (detected|sees)/.test(s));
+      for (const s of stillText) expect(s).not.toMatch(/no dollar estimate yet/i);
+    }
   });
 });
 

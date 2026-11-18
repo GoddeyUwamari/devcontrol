@@ -4,7 +4,7 @@ Example Org (synthetic) · Optimization Engine plan
 
 Hi Alex,
 
-4 account-level security findings and 10 resource compliance issues are open. 1 cost finding you marked resolved was detected again. 3 cost opportunities are open in Cost Optimization. Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 2 days are still updating. 21 deployments, none failed.
+4 account-level security findings and 10 resource compliance issues are open. 1 cost finding you marked resolved was detected again. 3 cost opportunities are open in Cost Optimization. Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 1 day is still updating and 1 isn't reported yet. 21 deployments, none failed.
 
 SECURITY
 14 open
@@ -15,7 +15,7 @@ AWS SPEND · 5 FINISHED DAYS
 Nov 9–13
 $2.31
 Down 26% on the same days
-+ 2 days still updating
++ 1 day still updating · 1 not reported yet
 
 ESTIMATED SAVINGS
 Open opportunities
