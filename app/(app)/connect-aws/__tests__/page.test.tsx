@@ -184,7 +184,7 @@ describe('Connect AWS page: Cost Explorer billing note (CE1-D8, replaces DB-D16)
     renderPage()
     const note = await screen.findByTestId('cost-explorer-billing-note')
     expect(note.textContent).toBe(
-      'Cost Explorer bills USD 0.01 per request to your AWS account. DevControl reuses each result for up to 4 hours and fetches fresh data after 00:00 UTC, so a day of use by one or two people typically makes 2–8 requests (USD 0.02–0.08), plus about 2 after each DevControl update. Opening the 6-month or 1-year cost views, connecting an account and Check again each add one request.'
+      'Cost Explorer bills USD 0.01 per request to your AWS account. DevControl reuses each result for up to 4 hours and fetches fresh data after 00:00 UTC, so a day of use by one or two people typically makes 2–8 requests (USD 0.02–0.08), plus about 2 after each DevControl update. Opening Cost Optimization or the 6-month or 1-year cost views, and Check again, each add one request; connecting an account adds two or three.'
     )
     expect(screen.getAllByTestId('cost-explorer-billing-note')).toHaveLength(1)
   })
