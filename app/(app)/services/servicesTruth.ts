@@ -18,15 +18,19 @@
  * names a region that the response did not send.
  */
 import type { MultiRegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
+import type { HomeRegionAccountView } from '@/lib/services/aws-accounts.service'
 import { formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso } from '@/lib/scan-time'
 import {
   LAST_SCAN_FINISHED, dayText, formerHomeLine, formerHomeOf, homeCouldntBeChecked, homeOnlyRegionList, homeOnlyRows,
-  homeOnlyStatus, homeRegionOf, multiRegionOf, organisingLine, redesignScanLine, regionRow, scanIsRunning,
-  scanNotCheckedWho, scanSoFar, type RedesignScanLine, type RedesignScanState, type RowStatus,
+  homeOnlyStatus, homeRegionOf, multiRegionOf, organisingLine, redesignScanLine, redesignScanLineTime, regionRow, scanIsRunning,
+  scanNotCheckedWho, scanSoFar, type RedesignScanLine, type RedesignScanState, type RowStatus, type ScanLineTime,
 } from './redesignModel'
+import { homeRegionPromptShows } from './homeRegionModel'
 
 export { homeRegionOf, scanIsRunning }
+// PR 3d-2 (D4, D7): the shared needs-attention sentence and the links into Services.
+export { ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK } from './redesignModel'
 
 // ── Scan state (D3) ──
 
@@ -49,27 +53,17 @@ export function scanState(c: ServicesCoverage, now: number): ScanState {
 }
 
 /** The first time in a scan-state line: its instant and the words the line prints for it. */
-export interface ScanStateTime { iso: string; text: string }
+export type ScanStateTime = ScanLineTime
 
 /**
  * The time the scan-state line names first (finished: the last finished scan; didn't finish: that
  * attempt; running: when it started), with the exact words scanState printed for it, so a page can
- * keep its focusable exact-time tooltip (ScanTime) without changing the line. null when the line
- * names no time, or when the words aren't found in the line (never guessed).
+ * keep its focusable exact-time tooltip (ScanTime) without changing the line. Services' own export
+ * (redesignScanLineTime: the instant redesignScanLine formats; PR 3d-2, 3d-1 review RR-L1), never
+ * picked here. null when the line names no time.
  */
 export function scanStateTime(c: ServicesCoverage, now: number): ScanStateTime | null {
-  const s = scanState(c, now)
-  const mr = multiRegionOf(c)
-  const iso = s.state === 'finished' ? lastCompletedScanIso(c)
-    : s.state === 'failed' ? (mr ? mr.scan?.completed_at ?? mr.scan?.started_at : c.last_scan?.completed_at ?? c.last_scan?.started_at)
-    : s.state === 'running' ? (mr ? mr.scan?.started_at ?? mr.progress?.scan_started_at : c.scan_in_progress?.since)
-    : null
-  if (!iso) return null
-  const when = formatLocalWhen(iso, now)
-  if (!when) return null
-  // The running line prints a time started today without "today, " (redesignScanLine sinceText).
-  const text = s.state === 'running' && when.startsWith('today, ') ? when.slice('today, '.length) : when
-  return s.text.includes(text) ? { iso, text } : null
+  return redesignScanLineTime(c, now)
 }
 
 /** The scan-state line as text parts around its first time (for RichText); the plain line when it names none. */
@@ -78,6 +72,7 @@ export function scanStateParts(c: ServicesCoverage, now: number): (string | { is
   const time = scanStateTime(c, now)
   if (!time) return [text]
   const at = text.indexOf(time.text)
+  if (at < 0) return [text]
   return [text.slice(0, at), time, text.slice(at + time.text.length)].filter((p) => p !== '')
 }
 
@@ -92,7 +87,7 @@ export function lastScanFinishedPhrase(c: ServicesCoverage, now: number): string
 
 /**
  * Services' organising line: "1 of 17 regions checked · us-east-1",
- * "0 of 17 regions checked · us-east-1 · us-east-1 couldn't be checked",
+ * "0 of 17 regions checked · us-east-1 couldn't be checked" (PR 3d-2 N11: the region named once),
  * "Last scan failed after checking 3 of 4 regions · …" (RR-L2), and so on.
  */
 export function coverageLine(c: ServicesCoverage): string {
@@ -245,4 +240,24 @@ export function homeRegionCheck(c: ServicesCoverage): HomeRegionCheck | null {
   }
   const row = (c.region_status ?? []).find((r) => r.home)
   return row ? checkOf(homeOnlyStatus(row, false).status) : null
+}
+
+// ── Home region on Connect AWS (PR 3d-2, D8) ──
+
+/**
+ * What Connect AWS shows next to "Home region · {r}", from the same GET /api/aws/accounts keys and
+ * coverage response the Services page reads (useHomeRegion):
+ * - `change`: "Change in Services & Ownership →", for the owner only (`can_change_home_region`, G9);
+ * - `suggestion`: "DevControl has a home-region suggestion for this account. Review it in …", for the
+ *   owner only, and only when Services' own banner would show (founder ruling, Nov 19): Services'
+ *   visibility check (homeRegionPromptShows) on the server's `home_region_proposal` and the account's
+ *   home region, with Services' precondition (coverage read, account connected). Nothing is worked out here.
+ * Members, and an older server without the keys, get neither: the value only.
+ */
+export function connectHomeRegionLinks(
+  view: HomeRegionAccountView | null | undefined, coverage: ServicesCoverage | null | undefined,
+): { change: boolean; suggestion: boolean } {
+  const owner = view?.canChangeHomeRegion === true
+  const servicesShowsBanner = !!coverage?.account.connected && homeRegionPromptShows(view?.proposal, homeRegionOf(coverage))
+  return { change: owner, suggestion: owner && servicesShowsBanner }
 }

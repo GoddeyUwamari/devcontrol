@@ -132,6 +132,7 @@ export default function ConnectAwsPage() {
                 justConnected={justConnected}
                 orgId={orgId}
                 onGoToDashboard={() => router.push('/dashboard')}
+                homeRegion={accountsQuery.data?.homeRegion}
               />
             )}
 

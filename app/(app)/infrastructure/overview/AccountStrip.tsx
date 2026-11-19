@@ -37,7 +37,7 @@ export function AccountStrip({ account, now, coverageError, onRetry }: {
           {(account.regionsLink || account.listNote) && (
             <p className="m-0 flex flex-wrap gap-x-3 text-meta text-slate-600">
               {account.listNote && <span><RichText parts={account.listNote} now={now} /></span>}
-              {account.regionsLink && <Link href={OVERVIEW_COPY.regionsHref} className="font-semibold text-violet-700 hover:underline">View regions →</Link>}
+              {account.regionsLink && <Link href={OVERVIEW_COPY.regionsHref} className="font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.regionsLink}</Link>}
             </p>
           )}
         </div>

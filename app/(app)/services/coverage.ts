@@ -190,7 +190,9 @@ function homeChip(
 ): CoverageChip {
   const chip = (state: CoverageChip['state'], note: string): CoverageChip => ({ key: 'home', state, region: home.region, note })
   if (inProgress) return chip('scanning', `${home.count} · home · scan in progress`)
-  if (lastFailed) return chip('failed', `${home.count} · home · last scan failed`)
+  // PR 3d-2 (3d-1 leftover): with the shared scan state (Connect AWS), failed and abandoned are one state,
+  // which Services words "didn't finish" (D3). The Phase 1 strip (no check passed) keeps "last scan failed".
+  if (lastFailed) return chip('failed', `${home.count} · home · ${check === undefined ? 'last scan failed' : "last scan didn't finish"}`)
   // The Services card's failure label, e.g. "couldn't check: scan error"; "partial" as the Services card's Partial.
   if (check?.kind === 'couldnt') return chip('failed', `${home.count} · home · ${check.label.charAt(0).toLowerCase()}${check.label.slice(1)}`)
   if (check?.kind === 'partial') return chip('partial', `${home.count} · home · partial`)
@@ -238,9 +240,17 @@ export function describeCoverage(
   const homeCouldnt = !inProgress && !lastFailed && scan?.home?.kind === 'couldnt'
   // PR 3d-1 M-1: a home region never scanned (changed since the last successful scan) is never "scanned":
   // the headline takes the existing no-success variants ("{home}: not scanned yet", or "first scan in
-  // progress" / "last scan failed" while the cell below says "scan in progress" / "last scan failed").
+  // progress" while the cell below says "scan in progress"). A scan that didn't finish is the 3d-2 case
+  // below: with the shared scan state the headline says "{home}: last scan didn't finish", like the cell;
+  // only the Phase 1 strip (no shared state) still says "{home}: last scan failed".
   const homeScanned = !!lastSuccess && scan?.home?.kind !== 'not_scanned'
-  const headline = homeScanned
+  // PR 3d-2 (founder ruling, Nov 19): with the shared scan state, wherever the home cell says "last scan
+  // didn't finish" (a scan that didn't finish, and none running), the headline says
+  // "{home}: last scan didn't finish" (the existing "{home}: …" pattern). The Phase 1 strip is unchanged.
+  const didntFinish = !!scan && !inProgress && lastFailed
+  const headline = didntFinish
+    ? `${home.region}: last scan didn't finish`
+    : homeScanned
     ? `${home.region} ${homeCouldnt ? "couldn't be checked" : 'scanned'}${plus(scopeParts(coverage, 'S3 buckets in every region', 'CloudFront (global)'))}`
     : inProgress ? `${home.region}: first scan in progress`
     : lastFailed ? `${home.region}: last scan failed`

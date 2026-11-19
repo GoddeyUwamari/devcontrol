@@ -143,12 +143,12 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
         ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
         ...LEGACY_SYNC_KEYS.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       ])
-      toast.success(`Sync complete — ${result.discovered} resources discovered`)
+      toast.success(OVERVIEW_COPY.scanFinishedToast(result.discovered, result.updated))
       if (hasDeletionDetectionPaused(result.warnings)) toast.warning(DELETION_DETECTION_PAUSED_TEXT)
       setSync('complete')
     } catch (error) {
       if (is402(error)) setSyncLimit(true)
-      toast.error('Sync failed — check your AWS connection')
+      toast.error(OVERVIEW_COPY.scanFailedToast)
       setSync('idle')
     }
   }

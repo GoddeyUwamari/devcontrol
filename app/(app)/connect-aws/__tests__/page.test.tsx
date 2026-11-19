@@ -459,7 +459,7 @@ describe('Connect AWS page: checking and connected', () => {
     ['abandoned job', {
       last_scan: { status: 'running', started_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), completed_at: null, warnings: [] },
       scan_in_progress: null,
-    }, '7 · home · last scan failed', 'us-east-1 scanned'],
+    }, "7 · home · last scan didn't finish", "us-east-1: last scan didn't finish"],
   ] as const)('T13 N1/N12 %s: the home row\'s Last scan cell is never "complete"; the headline agrees with it', async (_name, patch, cell, headline) => {
     mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
     mockGetCoverage.mockResolvedValue({ ...COVERAGE, ...patch } as unknown as ServicesCoverage)

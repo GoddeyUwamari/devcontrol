@@ -305,7 +305,7 @@ describe('tab 5: single-region account (multi-region off for the organization)',
     await waitFor(() => expect(screen.getByTestId('scan-banner')).toHaveAttribute('data-tone', 'warning'))
     banner = screen.getByTestId('scan-banner')
     expect(text(banner.querySelector('p'))).toBe("Scan finished · 0 of 4 regions checked · us-east-1 couldn't be checked · 0 new · 0 updated")
-    expect(orgLine()).toBe("0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked")
+    expect(orgLine()).toBe("0 of 4 regions checked · us-east-1 couldn't be checked")
     expect(cells('region-us-east-1')).toEqual(['us-east-1Home', '9from an earlier scan', "Couldn't check: scan error", expect.stringMatching(/^yesterday, 10:20 AM/), 'The scan ran into an error. Try again with Scan now.'])
   })
 })

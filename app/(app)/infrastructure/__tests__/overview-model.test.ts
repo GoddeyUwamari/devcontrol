@@ -465,7 +465,7 @@ describe('O-R regions and what we checked', () => {
     expect(view().checked.find((l) => l.key === 'other-regions')!.link).toBeUndefined()
     const on = view({ regionsLinkAvailable: true })
     expect(on.account!.regionsLink).toBe(true)
-    expect(on.checked.find((l) => l.key === 'other-regions')!.link).toEqual({ text: 'View regions not checked →', href: '/services#region-coverage' })
+    expect(on.checked.find((l) => l.key === 'other-regions')!.link).toEqual({ text: 'Region coverage →', href: '/services#region-coverage' })
   })
 })
 

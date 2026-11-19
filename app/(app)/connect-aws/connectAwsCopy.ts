@@ -88,6 +88,10 @@ export const CONNECTED_TITLE = 'AWS account connected'
 export const LABEL_ACCOUNT = 'Account'
 export const LABEL_ROLE = 'Role'
 export const LABEL_HOME_REGION = 'Home region'
+// PR 3d-2 (D8, founder-approved strings): the owner's way to the home-region controls on Services.
+export const HOME_REGION_CHANGE = 'Change in Services & Ownership →'
+export const HOME_REGION_SUGGESTION = 'DevControl has a home-region suggestion for this account.'
+export const HOME_REGION_SUGGESTION_LINK = 'Review it in Services & Ownership →'
 export const FACT_CONNECTION = 'Connection'
 export const connectionValue = (date: string) => `Connected · ${date}`
 export const FACT_PERMISSIONS = 'Permission checks'

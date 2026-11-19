@@ -3,6 +3,7 @@
  * built from data live in operationalHealthModel.ts.
  */
 import type { MonitoringRange } from './observabilityTypes'
+import { REGION_COVERAGE_HREF, REGION_COVERAGE_LINK } from '../../../services/servicesTruth'
 
 export const PAGE_COPY = {
   title: 'Operational Health',
@@ -24,7 +25,12 @@ export const PAGE_COPY = {
   inAlarm: 'in ALARM',
   configured: 'configured',
   viewAlarms: 'View alarms in CloudWatch ↗',
-  regionCaption: "This page checks one AWS region. Resources in other regions aren't checked yet.",
+  // PR 3d-2 (D9): the tile's own region (the server's value, never a literal) named as the home region.
+  regionCaption: (region: string) => `This page checks your home region, ${region}. Resources in other regions aren't checked here yet.`,
+  // With no region to name (loading, or it couldn't be read), the caption is unchanged.
+  regionCaptionNoRegion: "This page checks one AWS region. Resources in other regions aren't checked yet.",
+  regionCoverage: REGION_COVERAGE_LINK,
+  regionCoverageHref: REGION_COVERAGE_HREF,
   noneMeasured: 'None measured yet',
 
   byTypeTitle: 'By resource type',
@@ -184,7 +190,8 @@ export const TABLE_COPY = {
   previous: 'Previous',
   next: 'Next',
   pages: 'Resource checks pages',
-  allServices: 'All services →',
+  // PR 3d-2 (audit O3): the page is called Services & Ownership.
+  allServices: 'Services & Ownership →',
   lastDatapoint: 'Last datapoint',
   lastStatusCheck: 'Last status check',
 } as const

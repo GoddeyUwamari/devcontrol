@@ -8,14 +8,17 @@ export const PAGE_COPY = {
   title: 'Security Overview',
   subtitle: "What's exposed, what to fix first, and what we checked in your AWS account.",
 
-  syncNow: 'Sync now',
-  syncing: 'Syncing…',
-  syncComplete: (discovered: number) => `Sync complete — ${discovered} resources discovered`,
-  syncFailed: 'Sync failed — check your AWS connection',
-  syncForbidden: "You don't have permission to start a sync.",
-  syncLimit: "Your plan's sync limit is reached.",
-  syncRateLimited: 'Too many syncs. Try again in a few minutes.',
-  viewerCantSync: "Viewers can't start a sync",
+  // PR 3d-2 (D2): the button starts the discovery scan (POST /api/services/discover), so it says "scan", as on
+  // Services. The 402 is the plan's AWS resource limit (checkDiscoveryLimit; plan catalog "AWS resources
+  // monitored"): the catalog has no scan limit (founder, Nov 19). The 403 line: verb only (founder, Nov 19).
+  syncNow: 'Scan now',
+  syncing: 'Scanning…',
+  syncComplete: (discovered: number, updated: number) => `Scan finished — ${discovered.toLocaleString('en-US')} new · ${updated.toLocaleString('en-US')} updated`,
+  syncFailed: 'Scan failed — check your AWS connection',
+  syncForbidden: "You don't have permission to start a scan.",
+  syncLimit: "Your plan's AWS resource limit is reached.",
+  syncRateLimited: 'Too many scans. Try again in a few minutes.',
+  viewerCantSync: "Viewers can't start a scan",
 
   tileScore: 'Security score',
   tileFindings: 'Open findings',

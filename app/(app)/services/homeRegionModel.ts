@@ -199,6 +199,22 @@ export function connectionAccountId(accounts: ReadonlyArray<{ account_id?: strin
 }
 
 /**
+ * Whether the proposal or split banner shows (PR 3d-2, founder ruling): from the server's
+ * `home_region_proposal` and the account's home region only. `proposed` needs its region, that region's
+ * share and the current home's share; `split` needs a home region. Every other state shows nothing.
+ * homeRegionBanner uses it, and so does Connect AWS's suggestion line, so the two can't disagree.
+ */
+export function homeRegionPromptShows(p: HomeRegionProposalView | null | undefined, home: string | null): boolean {
+  if (!p) return false
+  if (p.state === 'proposed') {
+    const r = p.region
+    return !!r && !!p.shares.find((s) => s.region === r) && !!(p.current?.region ?? home) && !!p.current
+  }
+  if (p.state === 'split') return !!(home ?? p.current?.region)
+  return false
+}
+
+/**
  * The banner for the server's state, or null. `home` is the account's current
  * home region (coverage). `multiRegion`: coverage carries `multi_region`.
  */
@@ -206,18 +222,18 @@ export function homeRegionBanner(
   p: HomeRegionProposalView | null | undefined,
   o: { canChange: boolean; scanRunning: boolean; home: string | null; multiRegion: boolean; accountId: string | null },
 ): HomeRegionBannerView | null {
-  if (!p) return null
+  if (!p || !homeRegionPromptShows(p, o.home)) return null
   const period = p.period ? periodText(p.period) : null
   if (p.state === 'proposed') {
-    const r = p.region
-    const lead = r ? p.shares.find((s) => s.region === r) : undefined
-    const h = p.current?.region ?? o.home
-    if (!r || !lead || !h || !p.current) return null
+    const r = p.region!
+    const lead = p.shares.find((s) => s.region === r)!
+    const h = (p.current?.region ?? o.home)!
+    const current = p.current!
     return {
       kind: 'proposal',
       title: HOME_REGION_COPY.proposalTitle(r),
       region: r,
-      body: HOME_REGION_COPY.proposalBody(percentText(lead.share), r, h, percentText(p.current.share), !o.multiRegion),
+      body: HOME_REGION_COPY.proposalBody(percentText(lead.share), r, h, percentText(current.share), !o.multiRegion),
       bars: spendBars(p),
       owner: o.canChange
         ? { primary: HOME_REGION_COPY.proposalUse(r), keep: HOME_REGION_COPY.keep(h), disabled: o.scanRunning, hint: o.scanRunning ? HOME_REGION_COPY.scanRunning : null }
@@ -228,8 +244,7 @@ export function homeRegionBanner(
     }
   }
   if (p.state === 'split') {
-    const home = o.home ?? p.current?.region ?? null
-    if (!home) return null
+    const home = (o.home ?? p.current?.region)!
     return {
       kind: 'split',
       title: HOME_REGION_COPY.splitTitle,

@@ -1,10 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { Num } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
 import type { CountTile, Segment, TilesView } from './operationalHealthModel'
 import { PAGE_COPY, alarmsHref } from './operationalHealthCopy'
 import { BAR, BUTTON, LINK } from './tones'
+import { isServicesV2Enabled } from '../../../services/servicesV2Flag'
+import { isServicesCoverageM6Enabled } from '../../../services/servicesCoverageM6Flag'
 
 function Tile({ testId, title, busy, children }: { testId: string; title: string; busy: boolean; children: React.ReactNode }) {
   return (
@@ -66,6 +69,8 @@ function CountBody({ tile, suffix, caption, onRetry }: { tile: CountTile; suffix
 /** Resource checks · Telemetry coverage · CloudWatch alarms · Region. */
 export function HealthTiles({ tiles, onRetry, onRetryAlarms }: { tiles: TilesView; onRetry: () => void; onRetryAlarms: () => void }) {
   const { checks, telemetry, alarms, region } = tiles
+  // PR 3d-2 (D9): to the Region coverage card, where it exists (the same flags as Security's and Infrastructure's link).
+  const regionLink = isServicesV2Enabled() && isServicesCoverageM6Enabled()
   return (
     <section aria-label="Key numbers" className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
       <Tile testId="tile-checks" title={PAGE_COPY.tileChecks} busy={checks.state === 'loading'}>
@@ -98,7 +103,8 @@ export function HealthTiles({ tiles, onRetry, onRetryAlarms }: { tiles: TilesVie
         {region.state === 'ok' ? <p className="m-0 font-mono text-section text-ink">{region.region}</p> : <Dash />}
         {region.state === 'unavailable' && <p className="m-0 text-body text-ink-body">{region.reason}</p>}
         {region.state === 'unavailable' && region.retry && <Retry onRetry={onRetry} />}
-        <p className="m-0 text-meta text-ink-body">{PAGE_COPY.regionCaption}</p>
+        <p data-testid="region-caption" className="m-0 text-meta text-ink-body">{region.state === 'ok' ? PAGE_COPY.regionCaption(region.region) : PAGE_COPY.regionCaptionNoRegion}</p>
+        {regionLink && <Link href={PAGE_COPY.regionCoverageHref} className={LINK}>{PAGE_COPY.regionCoverage}</Link>}
       </Tile>
     </section>
   )

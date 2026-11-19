@@ -9,7 +9,7 @@ import { TYPE_DISPLAY } from './resourceTypes'
 import { ownerDisplay } from './ownership'
 import { timeAgo } from './coverage'
 import { UnknownOwnerTip } from './UnknownOwnerTip'
-import { dayText, type FormerHome } from './redesignModel'
+import { ATTENTION_DEFINITION, dayText, type FormerHome } from './redesignModel'
 
 /** Redesign (PR 3b) phone layout: each row a stacked block with its labels, so the list never scrolls sideways. */
 const PHONE_TABLE = 'max-sm:block'
@@ -19,6 +19,7 @@ const PHONE_CELL = 'max-sm:flex max-sm:min-w-0 max-sm:gap-3 max-sm:whitespace-no
 /** Rows in the compact table (Q18): the server's order, severity then name. */
 export const ATTENTION_ROWS = 6
 
+/** The V2 page without the redesign keeps this text (flag-off unchanged); the redesign shows ATTENTION_DEFINITION (PR 3d-2, D4). */
 export const ATTENTION_DESCRIPTION = 'Critical and high findings, high-severity cost recommendations, stopped or failed resources'
 
 export type AttentionState =
@@ -247,7 +248,7 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
             {redesign.needsAttention.toLocaleString('en-US')} {redesign.needsAttention === 1 ? 'resource needs' : 'resources need'} attention
           </span>
         )}
-        <span className="text-ui text-slate-600">{ATTENTION_DESCRIPTION}</span>
+        <span className="text-ui text-slate-600">{redesign ? ATTENTION_DEFINITION : ATTENTION_DESCRIPTION}</span>
         {total !== null && total > 0 && (
           <button type="button" onClick={onViewAll} className="ml-auto text-ui font-semibold text-violet-700 hover:underline">
             View all {total} →
