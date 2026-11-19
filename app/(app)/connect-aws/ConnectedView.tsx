@@ -1,12 +1,15 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import awsAccountsService, { type AwsAccount, type ConnectionChecks, type PermissionCheckReport } from '@/lib/services/aws-accounts.service'
+import awsAccountsService, { type AwsAccount, type ConnectionChecks, type HomeRegionAccountView, type PermissionCheckReport } from '@/lib/services/aws-accounts.service'
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { HOME_REGION_ONLY_NOTE, describeCoverage, formatScanTime } from '../services/coverage'
 import { useNowEachLocalDay } from '../services/useNowEachLocalDay'
-import { homeRegionCheck, scanState } from '../services/servicesTruth'
+import { REGION_COVERAGE_HREF, connectHomeRegionLinks, homeRegionCheck, scanState } from '../services/servicesTruth'
+import { isServicesV2Enabled } from '../services/servicesV2Flag'
+import { isServicesRedesignEnabled } from '../services/servicesRedesignFlag'
 import {
   ATTENTION_BODY,
   ATTENTION_TITLE,
@@ -21,6 +24,9 @@ import {
   FACT_PERMISSIONS,
   FOUND_TITLE,
   GO_TO_DASHBOARD,
+  HOME_REGION_CHANGE,
+  HOME_REGION_SUGGESTION,
+  HOME_REGION_SUGGESTION_LINK,
   INLINE_JSON_SUMMARY,
   INLINE_POLICY_ACTIONS,
   LABEL_ACCOUNT,
@@ -80,6 +86,8 @@ interface Props {
   justConnected: JustConnected | null
   orgId: string | null
   onGoToDashboard: () => void
+  /** The home-region keys of the same GET /api/aws/accounts body (PR 3d-2, D8); absent from an older server. */
+  homeRegion?: HomeRegionAccountView
 }
 
 function Fact({ label, children, testId }: { label: string; children: ReactNode; testId: string }) {
@@ -96,7 +104,7 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
  * what a scan was refused, the saved permission check and the role's policies (after a reload too),
  * and, for the owner, Check again.
  */
-export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }: Props) {
+export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, homeRegion }: Props) {
   const coverageQuery = useQuery<ServicesCoverage>({
     queryKey: ['services-coverage', orgId],
     queryFn: () => awsServicesService.getCoverage(),
@@ -157,6 +165,9 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
     ? coverage.scope.s3.regions.filter((r) => r.region !== home.region).reduce((n, r) => n + r.count, 0)
     : 0
   const homeChip = view?.chips.find((chip) => chip.key === 'home')
+  // PR 3d-2 (D8): the owner's links to Services' home-region controls, only where they exist (the Services
+  // redesign: the Change button and the proposal banner); without it, nothing new shows.
+  const homeLinks = isServicesV2Enabled() && isServicesRedesignEnabled() ? connectHomeRegionLinks(homeRegion) : { change: false, suggestion: false }
 
   return (
     <div className="space-y-4" data-testid="connected-view">
@@ -169,8 +180,19 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard }
             <dt className="text-ink-muted">{LABEL_ROLE}</dt>
             <dd className="text-ink font-mono break-all">{account.role_arn}</dd>
             <dt className="text-ink-muted">{LABEL_HOME_REGION}</dt>
-            <dd className="text-ink">{account.region}</dd>
+            <dd className="text-ink">
+              {account.region}
+              {homeLinks.change && (
+                <Link href={REGION_COVERAGE_HREF} data-testid="home-region-change" className="ml-3 font-semibold text-ink-accent hover:underline">{HOME_REGION_CHANGE}</Link>
+              )}
+            </dd>
           </dl>
+        )}
+        {account && homeLinks.suggestion && (
+          <p data-testid="home-region-suggestion" className="-mt-2 mb-5 text-ui text-ink-body">
+            {HOME_REGION_SUGGESTION}{' '}
+            <Link href="/services" className="font-semibold text-ink-accent hover:underline">{HOME_REGION_SUGGESTION_LINK}</Link>
+          </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {account && (
