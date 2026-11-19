@@ -44,7 +44,8 @@ export default function OperationalHealthV2() {
     setTable({ page: 1 })
   }
   return (
-    <main className="mx-auto flex max-w-[1240px] flex-col gap-5 px-4 py-6 sm:px-6">
+    // The app's standard page width and gutters (as Infrastructure and Security), so the pages line up.
+    <main data-testid="health-page" className="mx-auto flex max-w-[1320px] flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10">
       <HealthHeader view={headerView(resources, alarms)} range={range} onRange={onRange} onRefresh={refresh} busy={busy} />
       <HealthBanner banner={bannerView(resources, alarms)} onRetry={refresh} />
       <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} onRetryAlarms={retryAlarms} />

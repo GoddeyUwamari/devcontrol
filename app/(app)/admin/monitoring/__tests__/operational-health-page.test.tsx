@@ -471,8 +471,8 @@ describe('rendering', () => {
     await settle()
     const rt = screen.getByTestId('monitor-type:load-balancer')
     const fiveXx = screen.getByTestId('monitor-type:load-balancer:5xx')
-    expect(rt).toHaveTextContent('Load balancer response time (average)')
-    expect(fiveXx).toHaveTextContent('Load balancer 5xx rate')
+    expect(rt).toHaveTextContent('Load balancers · response time (average)')
+    expect(fiveXx).toHaveTextContent('Load balancers · 5xx rate')
     expect(rt).toHaveAttribute('data-state', 'none_found')
     expect(fiveXx).toHaveAttribute('data-state', 'none_found')
     expect(rt).toHaveTextContent('No load balancers found')
@@ -535,5 +535,227 @@ describe('PR 3d-2 wording and links', () => {
     await settle()
     expect(screen.getByRole('link', { name: 'Services & Ownership →' })).toHaveAttribute('href', '/services')
     expect(screen.queryByRole('link', { name: 'All services →' })).toBeNull()
+  })
+})
+
+// ── Operational Health tidy (founder-approved mock): presentation only ──
+
+describe('tidy: header', () => {
+  const testIds = (el: Element) => [...el.querySelectorAll('[data-testid]')].map((x) => x.getAttribute('data-testid'))
+
+  it('title on its own line; row 1 description then one row of range, Refresh, console link; row 2 connection then the range note', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const header = screen.getByTestId('health-header')
+    expect([...header.children].map((c) => c.tagName + (c.getAttribute('data-testid') ? `#${c.getAttribute('data-testid')}` : ''))).toEqual(['H1', 'DIV#health-header-row1', 'DIV#health-header-row2'])
+    expect(header.children[0]).toHaveTextContent(/^Operational Health$/)
+
+    const row1 = screen.getByTestId('health-header-row1')
+    expect(row1.children[0]).toHaveTextContent(/^Which resources are healthy, which need attention, and what we can't see yet\.$/)
+    const controls = within(screen.getByTestId('health-controls'))
+    const range = screen.getByRole('group', { name: 'Time range' })
+    const names = ['Last 5m', 'Last 15m', 'Last 1h', 'Last 3h', 'Last 24h', 'Last 7d']
+    // Accessible names and phone text: "Last <range>"; from md one "Last" leads short ranges ("Last 5m · 15m · …").
+    expect(within(range).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(names)
+    expect(within(range).getAllByRole('button').map((b) => b.textContent)).toEqual(names)
+    for (const b of within(range).getAllByRole('button')) expect(b.firstElementChild!.className.split(/\s+/)).toEqual(['md:hidden'])
+    const lead = within(range).getByTestId('health-range-lead')
+    expect(lead).toHaveTextContent(/^Last$/)
+    expect(lead).toHaveAttribute('aria-hidden', 'true')
+    expect(lead.className.split(/\s+/)).toEqual(expect.arrayContaining(['hidden', 'md:flex']))
+    expect(range.firstElementChild).toBe(lead)
+    expect(within(range).getByRole('button', { name: 'Last 1h' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(range).getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true')).toHaveLength(1)
+    const order = [range, controls.getByRole('button', { name: 'Refresh' }), controls.getByRole('link', { name: 'Open in CloudWatch ↗' })]
+    for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The controls never wrap from md up (one row, the same height).
+    expect(screen.getByTestId('health-controls').className).toMatch(/(^|\s)md:flex-nowrap(\s|$)/)
+
+    const row2 = screen.getByTestId('health-header-row2')
+    expect(testIds(row2)).toEqual(['health-pill', 'health-last-check', 'health-range-note'])
+    expect(row2).toHaveTextContent(/^CloudWatch connectedLast successful check today, .+The range applies to metric checks\. Status checks and alarms show the current state\.$/)
+    expect(screen.getByTestId('health-range-note').className).toMatch(/(^|\s)lg:text-right(\s|$)/)
+    // Visual order is DOM order: no reversing or reordering classes anywhere in the header.
+    expect(header.outerHTML).not.toMatch(/(^|[\s"])(?:[\w-]+:)?(?:order-|flex-(?:row|col)-reverse)/)
+  })
+
+  it('a range button still changes the range (one new pair of requests) and moves the selection', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7d' }))
+    await flush()
+    expect(resourceCalls().at(-1)!.path).toContain('range=7d')
+    expect(screen.getByRole('button', { name: 'Last 7d' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Last 1h' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('the page uses the app\'s standard width and gutters (the same tokens as Infrastructure)', async () => {
+    const { readFileSync } = await import('fs')
+    const infra = readFileSync('app/(app)/infrastructure/page.tsx', 'utf8').match(/<div className="([^"]*max-w-\[1320px\][^"]*)"/)![1].split(/\s+/)
+    const widthTokens = (classes: string[]) => classes.filter((c) => /^(?:[a-z]+:)?(?:max-w-|mx-|px-|py-)/.test(c)).sort()
+    render(<OperationalHealthV2 />)
+    await flush()
+    expect(widthTokens(screen.getByTestId('health-page').className.split(/\s+/))).toEqual(widthTokens(infra))
+  })
+})
+
+describe('tidy: banner coverage', () => {
+  it('green: the measured-checks qualification, then "{m} of {t} resources have health checks."', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const banner = screen.getByTestId('health-banner')
+    expect(within(banner).getByRole('heading', { level: 2 })).toHaveTextContent('No issues detected in measured checks')
+    expect(within(banner).getByText(/^2 of 2 measured resources are passing, and no CloudWatch alarms are in ALARM\./)).toBeInTheDocument()
+    expect(within(banner).getByText('2 of 2 resources have health checks.')).toBeInTheDocument()
+    expect(banner.textContent).not.toContain('S3')
+  })
+
+  it('green with S3 buckets: "…; S3 buckets have no health metric.", and they are never counted as healthy', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    const s3 = { ...ZERO, count: 3, not_measured: 3 }
+    const fleet = { ...EC2, count: 5, not_measured: 3 }
+    await settle(resourcesOk('1h', { type_breakdown: { ec2: EC2, s3 }, fleet_summary: fleet }))
+    const banner = screen.getByTestId('health-banner')
+    expect(banner).toHaveAttribute('data-kind', 'green')
+    expect(within(banner).getByText('2 of 5 resources have health checks; S3 buckets have no health metric.')).toBeInTheDocument()
+    expect(banner).toHaveTextContent('2 of 2 measured resources are passing')
+  })
+
+  it('the issues banner is unchanged: no coverage sentence', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    const failing = { ...ZERO, count: 2, measured: 2, passing: 1, failing: 1, reporting: 2 }
+    await settle(resourcesOk('1h', { type_breakdown: { ec2: failing }, fleet_summary: failing }))
+    expect(screen.getByTestId('health-banner').textContent).not.toMatch(/health checks/)
+  })
+})
+
+describe('tidy: what we monitor', () => {
+  const monitor = () => screen.getByRole('region', { name: 'What we monitor' })
+
+  it('intro line and the three-chip legend', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    expect(within(monitor()).getByTestId('health-monitor-intro')).toHaveTextContent(/^Every check DevControl runs, and whether your account has that resource type\.$/)
+    const legend = within(monitor()).getByRole('list', { name: 'Status key' })
+    const items = within(legend).getAllByRole('listitem')
+    expect(items.map((li) => [within(li).getByTestId('monitor-chip').getAttribute('data-chip'), li.textContent])).toEqual([
+      ['monitored', 'Monitoredchecked now'],
+      ['none', 'None foundchecked, but you have none'],
+      ['not_measured', "Not measured yetDevControl doesn't check this yet"],
+    ])
+    expect(within(items[2]).getByTestId('monitor-chip').className).toMatch(/(^|\s)border-dashed(\s|$)/)
+  })
+
+  it('two columns from lg: Compute and Traffic left; Storage and databases, Alerting, Configuration right', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const columns = screen.getByTestId('health-monitor-columns')
+    expect(columns.className).toMatch(/(^|\s)grid-cols-1(\s|$)/)
+    expect(columns.className).toMatch(/(^|\s)lg:grid-cols-2(\s|$)/)
+    const headings = (id: string) => within(screen.getByTestId(id)).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+    expect(headings('health-monitor-column-1')).toEqual(['Compute', 'Traffic'])
+    expect(headings('health-monitor-column-2')).toEqual(['Storage and databases', 'Alerting', 'Configuration'])
+  })
+
+  it('each row: the service in bold, its signals muted after " · ", the status chip; unmeasured rows use the dashed chip', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const label = (key: string) => within(screen.getByTestId(`monitor-${key}`)).getByTestId('monitor-label')
+    const ec2 = label('type:ec2')
+    expect(ec2.children[0]).toHaveTextContent(/^EC2$/)
+    expect(ec2.children[0].className).toMatch(/(^|\s)font-semibold(\s|$)/)
+    expect(ec2.children[1].textContent).toBe(' · status checks, CPU')
+    expect(ec2.children[1].className).toMatch(/(^|\s)text-ink-muted(\s|$)/)
+    expect(label('type:load-balancer')).toHaveTextContent(/^Load balancers · response time \(average\)$/)
+    expect(label('type:load-balancer:5xx')).toHaveTextContent(/^Load balancers · 5xx rate$/)
+    expect(label('static:SQS').children).toHaveLength(1)
+    expect(within(screen.getByTestId('monitor-type:cloudfront')).getByTestId('monitor-chip')).toHaveTextContent(/^No distributions found$/)
+    for (const li of within(monitor()).getAllByRole('listitem').filter((x) => x.getAttribute('data-state'))) {
+      const chip = within(li).getByTestId('monitor-chip')
+      if (li.getAttribute('data-state') === 'not_measured') {
+        expect(chip.getAttribute('data-chip')).toBe('not_measured')
+        expect(chip.textContent).toMatch(/^(Not measured yet|No health metric)$/)
+      } else {
+        expect(chip.getAttribute('data-chip')).not.toBe('not_measured')
+      }
+      if (chip.getAttribute('data-chip') === 'monitored') expect(li.getAttribute('data-state')).toBe('monitored')
+    }
+  })
+
+  it('every row from before is still rendered, with its status (healthy, Pro)', async () => {
+    const { readFileSync } = await import('fs')
+    const before = JSON.parse(readFileSync('app/(app)/admin/monitoring/__tests__/__fixtures__/ophealth-tidy/monitor-rows-before.json', 'utf8'))['healthy-pro'] as Array<{ rows: Array<{ key: string; state: string; stateText: string }> }>
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const rendered = within(monitor()).getAllByRole('listitem').filter((x) => x.getAttribute('data-state'))
+    const rows = before.flatMap((g) => g.rows)
+    expect(rendered).toHaveLength(rows.length)
+    for (const row of rows) {
+      const li = screen.getByTestId(`monitor-${row.key}`)
+      expect(li).toHaveAttribute('data-state', row.state)
+      expect(within(li).getByTestId('monitor-chip')).toHaveTextContent(row.stateText === 'No CloudFront distributions found' ? 'No distributions found' : row.stateText)
+    }
+  })
+
+  it('"Set up SLOs →" stays under Configuration', async () => {
+    m.plan = { status: 'known', tier: 'enterprise' }
+    render(<OperationalHealthV2 />)
+    await flush()
+    await answer('/api/slos/evaluate', ok([]))
+    await settle()
+    const slos = screen.getByTestId('monitor-slos')
+    expect(within(slos).getByTestId('monitor-chip')).toHaveTextContent('None set')
+    expect(within(slos).getByRole('link', { name: 'Set up SLOs →' })).toHaveAttribute('href', '/monitoring/slos')
+    expect(screen.getByTestId('health-monitor-column-2').contains(slos)).toBe(true)
+  })
+})
+
+describe('tidy: 390 px (no page-level horizontal scroll; screenshots record scrollWidth)', () => {
+  const cls = (el: Element) => el.className.split(/\s+/)
+
+  it('phone: the range is a 3-per-row grid of 44 px buttons; Refresh and the console link share one row, 44 px tall', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    const range = screen.getByRole('group', { name: 'Time range' })
+    expect(cls(range)).toEqual(expect.arrayContaining(['grid', 'grid-cols-3', 'md:flex', 'md:flex-nowrap']))
+    for (const b of within(range).getAllByRole('button')) expect(cls(b)).toContain('min-h-11')
+    const refresh = screen.getByRole('button', { name: 'Refresh' })
+    const link = screen.getByRole('link', { name: 'Open in CloudWatch ↗' })
+    expect(refresh.parentElement).toBe(link.parentElement)
+    expect(cls(refresh.parentElement!)).toEqual(expect.arrayContaining(['flex', 'flex-nowrap']))
+    expect(cls(refresh)).toEqual(expect.arrayContaining(['min-h-11', 'w-11']))
+    expect(cls(link)).toContain('min-h-11')
+    // Stacked below md: description above the controls, the controls in a column.
+    expect(cls(screen.getByTestId('health-header-row1'))).toEqual(expect.arrayContaining(['flex', 'flex-col', 'xl:flex-row']))
+    expect(cls(screen.getByTestId('health-controls'))).toEqual(expect.arrayContaining(['flex', 'flex-col', 'md:flex-row']))
+  })
+
+  it('the table scroll boxes are the containing block for their cells\' sr-only text, so it scrolls with them and never widens the page', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle(resourcesOk('1h', { table: { query: { q: '', filter: 'all', page: 1, page_size: 25, order: 'status' }, rows: [{ resource_id: 'i-1', resource_type: 'ec2', name: 'api', region: 'us-east-1', check_status: 'passing', unknown_reason: null, telemetry: 'reporting', activity: 'active', status_detail: null, last_seen: '2026-10-29T14:58:00.000Z', last_seen_source: 'datapoint', metrics: [] }], total: 1, pages: 1, facets: { all: 1, attention: 0, types: { ec2: 1 } } } }), { ...ALARMS_OK, in_alarm: [{ name: 'a', type: 'metric', namespace: 'AWS/EC2', metric: 'CPUUtilization', comparison: 'GreaterThanThreshold', threshold: 90, state_since: '2026-10-29T14:40:00.000Z', resource: null }] })
+    for (const id of ['resource-table-scroll', 'alarms-table-scroll']) expect(cls(screen.getByTestId(id))).toEqual(expect.arrayContaining(['relative', 'overflow-x-auto']))
+  })
+
+  it('phone: each row\'s chip sits under its label (the 3d-2 overflow was a chip that could not shrink beside a long label)', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    for (const li of within(screen.getByRole('region', { name: 'What we monitor' })).getAllByRole('listitem').filter((x) => x.getAttribute('data-state'))) {
+      const line = within(li).getByTestId('monitor-label').parentElement!
+      expect(cls(line)).toEqual(expect.arrayContaining(['flex', 'flex-col', 'sm:flex-row']))
+      expect(cls(line)).not.toContain('flex-row')
+      expect(cls(within(li).getByTestId('monitor-chip'))).toContain('max-w-full')
+    }
   })
 })

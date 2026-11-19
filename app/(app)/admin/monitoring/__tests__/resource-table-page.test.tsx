@@ -246,7 +246,7 @@ describe('requests', () => {
     fireEvent.click(tableButton('Next'))
     await flush()
     await settle(res({ filter: 'ec2', total: 40, page: 2 }))
-    fireEvent.click(screen.getByText('Last 7d'))
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7d' }))
     await flush()
     expect(params(lastResourcePath())).toMatchObject({ range: '7d', filter: 'ec2', page: '1' })
     // Exactly one request for the change (not one for the range and one for the page).

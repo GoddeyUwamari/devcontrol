@@ -4,6 +4,8 @@
  * setting a tone, tile errors as "—" (never 0), "at least N", the by-type
  * cards, every "What we monitor" state (D8, D9, D12) and the SLO row (D13).
  */
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { describe, it, expect } from 'vitest'
 import {
   bannerView,
@@ -322,7 +324,7 @@ describe('what we monitor', () => {
   })
   it('monitored, none found (discovery complete), not measured, static not measured (D9)', () => {
     const v = monitorView(healthy(), okAlarms(), slo, known('pro'), SEE)
-    expect(rowOf(v, 'type:ec2')).toMatchObject({ state: 'monitored', label: 'EC2: status checks, CPU' })
+    expect(rowOf(v, 'type:ec2')).toMatchObject({ state: 'monitored', label: 'EC2 · status checks, CPU', service: 'EC2', signals: 'status checks, CPU' })
     expect(rowOf(v, 'type:lambda')).toMatchObject({ state: 'none_found', stateText: 'No functions found' })
     expect(rowOf(v, 'type:api-gateway').state).toBe('not_measured')
     for (const label of ['ElastiCache', 'SQS', 'SNS']) expect(rowOf(v, `static:${label}`)).toMatchObject({ state: 'not_measured', stateText: 'Not measured yet', reason: null })
@@ -331,10 +333,10 @@ describe('what we monitor', () => {
     const v = monitorView(healthy(), okAlarms(), slo, known('pro'), SEE)
     const traffic = v.groups.find((g) => g.title === 'Traffic')!
     expect(traffic.rows.map((r) => r.label)).toEqual([
-      'Load balancer response time (average)',
-      'Load balancer 5xx rate',
+      'Load balancers · response time (average)',
+      'Load balancers · 5xx rate',
       'Network and Gateway Load Balancers',
-      'CloudFront: error rates (total, 4xx, 5xx)',
+      'CloudFront · error rates (total, 4xx, 5xx)',
       'API Gateway',
       'SQS',
       'SNS',
@@ -367,9 +369,9 @@ describe('what we monitor', () => {
     const rt = rowOf(v, 'type:load-balancer')
     const fiveXx = rowOf(v, 'type:load-balancer:5xx')
     expect(rt.state).toBe(state)
-    expect({ ...fiveXx, key: rt.key, label: rt.label }).toEqual(rt)
-    expect(rt.label).toBe('Load balancer response time (average)')
-    expect(fiveXx.label).toBe('Load balancer 5xx rate')
+    expect({ ...fiveXx, key: rt.key, label: rt.label, signals: rt.signals }).toEqual(rt)
+    expect(rt).toMatchObject({ label: 'Load balancers · response time (average)', service: 'Load balancers', signals: 'response time (average)' })
+    expect(fiveXx).toMatchObject({ label: 'Load balancers · 5xx rate', service: 'Load balancers', signals: '5xx rate' })
   })
 
   it('D12: discovery not confirmed complete never says "No <type> found"', () => {
@@ -459,5 +461,117 @@ describe('SLO row (D13)', () => {
     const err = view({ state: 'error' })
     expect(err).toMatchObject({ stateText: "Couldn't check", retry: 'slo' })
     expect(`${err.stateText} ${err.reason}`).not.toMatch(/\b0\b/)
+  })
+})
+
+// ── Operational Health tidy (founder-approved mock): presentation only ──
+
+describe('tidy: the green banner names its coverage boundary', () => {
+  const OLD_LINE = (passing: number, measured: number) =>
+    `${passing} of ${measured} measured resources are passing, and no CloudWatch alarms are in ALARM. Some resource types and signals aren’t measured yet; see "What we monitor".`
+
+  it('keeps the measured-checks headline and sentence unchanged, then adds "{m} of {t} resources have health checks."', () => {
+    const b = bannerView(healthy(), okAlarms(0, 3))!
+    expect(b).toMatchObject({ kind: 'green', headline: 'No issues detected in measured checks' })
+    expect(b.lines).toEqual([OLD_LINE(3, 3), '3 of 3 resources have health checks.'])
+  })
+
+  it('with S3 buckets: the S3 clause, and the buckets count in the total, never in the measured', () => {
+    const b = bannerView(okResources({ ec2: bd({ passing: 2 }), s3: bd({ not_measured: 4 }) }), okAlarms())!
+    expect(b.kind).toBe('green')
+    expect(b.lines).toEqual([OLD_LINE(2, 2), '2 of 6 resources have health checks; S3 buckets have no health metric.'])
+  })
+
+  it('stopped, idle and outside-scope resources are in the total but never counted as having health checks', () => {
+    const b = bannerView(okResources({ ec2: bd({ passing: 1, stopped: 3 }), lambda: bd({ no_activity: 2 }), rds: bd({ outside_scope: 1 }) }), okAlarms())!
+    expect(b.kind).toBe('green')
+    expect(b.lines.at(-1)).toBe('1 of 7 resources have health checks.')
+  })
+
+  it('one resource: singular', () => {
+    expect(bannerView(okResources({ ec2: bd({ passing: 1 }) }), okAlarms())!.lines.at(-1)).toBe('1 of 1 resource has health checks.')
+  })
+
+  it.each<[string, Source<ResourcesData>, Source<AlarmsData>]>([
+    ['issues', okResources({ ec2: bd({ passing: 1, failing: 1 }), s3: bd({ not_measured: 1 }) }), okAlarms()],
+    ['alarm firing', okResources({ ec2: bd({ passing: 1 }) }), okAlarms(1)],
+    ['unconfirmed', okResources({ ec2: bd({ passing: 1 }) }, { inventory_capped: true }), okAlarms()],
+    ['nothing measured', okResources({ s3: bd({ not_measured: 2 }) }), okAlarms()],
+    ['telemetry missing', okResources({ rds: bd({ passing: 1, check_unknown: 1, reporting: 1, no_telemetry: 1 }) }), okAlarms()],
+  ])('other banners are unchanged: no coverage sentence (%s)', (_name, resources, alarms) => {
+    const b = bannerView(resources, alarms)!
+    expect(b.kind).not.toBe('green')
+    expect(b.lines.join(' ')).not.toMatch(/have health checks|has health checks/)
+  })
+})
+
+describe('tidy: "What we monitor" keeps every check and status from before', () => {
+  // Captured from the page's model before the tidy (c0f3d3a0): every group, row, state, text, reason, link and retry.
+  const BEFORE = JSON.parse(readFileSync(join(__dirname, '__fixtures__/ophealth-tidy/monitor-rows-before.json'), 'utf8')) as Record<string, Array<{ title: string; rows: Array<Record<string, unknown>> }>>
+  // The only text the tidy changes (mock §3): "Type: signals" becomes "Type · signals"; the load balancer rows read
+  // "Load balancers · …"; CloudFront's none-found says "No distributions found".
+  const LABEL_AFTER: Record<string, string> = {
+    'Load balancer response time (average)': 'Load balancers · response time (average)',
+    'Load balancer 5xx rate': 'Load balancers · 5xx rate',
+  }
+  const labelAfter = (label: string) => LABEL_AFTER[label] ?? label.replace(/^([^:]+): /, '$1 · ')
+  const textAfter = (text: string) => (text === 'No CloudFront distributions found' ? 'No distributions found' : text)
+
+  const ZERO_BD = bd({})
+  const res = (types: Record<string, Breakdown>, over: Record<string, unknown> = {}): Source<ResourcesData> =>
+    ({ state: 'ok', data: { status: 'ok', region: 'us-east-1', account_count: 1, multiple_accounts: false, range: '1h', collection: 'complete', checked_at: null, captured_at: '', inventory_capped: false, inventory_capped_reasons: [], type_breakdown: types, fleet_summary: ZERO_BD, ...over } as ResourcesData })
+  const raw = (o: Partial<Breakdown>): Breakdown => ({ ...ZERO_BD, ...o })
+  const ec2 = raw({ count: 2, measured: 2, passing: 2 })
+  const all = {
+    ec2, lambda: raw({ count: 1, no_activity: 1, neutral: 1 }), ecs: raw({ count: 1, measured: 1, passing: 1 }), eks: raw({ count: 1, measured: 1, check_unknown: 1, check_failed: 1 }),
+    ebs: raw({ count: 1, measured: 1, passing: 1 }), rds: raw({ count: 1, measured: 1, passing: 1 }), aurora: raw({ count: 1, stopped: 1, neutral: 1 }), dynamodb: raw({ count: 1, outside_scope: 1 }),
+    s3: raw({ count: 4, not_measured: 4 }), 'load-balancer': raw({ count: 1, measured: 1, passing: 1 }), cloudfront: raw({ count: 1, measured: 1, needs_attention: 1 }), 'api-gateway': raw({ count: 1, not_measured: 1 }),
+  }
+  const CASES: Record<string, [Source<ResourcesData>, Source<AlarmsData>, SloState, PlanInfo]> = {
+    'healthy-pro': [res({ ec2 }), okAlarms(0, 3), { state: 'plan_required' }, known('pro')],
+    'every-type-enterprise': [res(all), okAlarms(0, 0), { state: 'ok', count: 3, breached: 1, unevaluated: 1 }, known('enterprise')],
+    'enterprise-no-slos': [res({ ec2 }), okAlarms(0, 3), { state: 'none' }, known('enterprise')],
+    free: [res({ ec2 }), okAlarms(0, 3), { state: 'plan_required' }, known('free')],
+    'plan-loading': [res({ ec2 }), { state: 'loading' }, { state: 'loading' }, { status: 'loading', tier: 'free' }],
+    'plan-error': [res({ ec2 }), okAlarms(0, 3), { state: 'plan_error' }, { status: 'error', tier: 'free' }],
+    capped: [res({ ec2 }, { inventory_capped: true }), okAlarms(0, 3), { state: 'error' }, known('enterprise')],
+    'resources-failed': [{ state: 'error', kind: 'failed' }, { state: 'error', kind: 'failed' }, { state: 'plan_required' }, known('pro')],
+  }
+
+  it('the fixture covers every case here, and every state the rows can take', () => {
+    expect(Object.keys(BEFORE).sort()).toEqual(Object.keys(CASES).sort())
+    const states = new Set(Object.values(BEFORE).flatMap((gs) => gs.flatMap((g) => g.rows.map((r) => r.state))))
+    expect([...states].sort()).toEqual(['checking', 'couldnt_check', 'monitored', 'no_activity', 'none_found', 'none_set', 'not_in_plan', 'not_measured', 'on_plan'])
+  })
+
+  it.each(Object.keys(CASES))('%s: the same groups, rows, states, reasons, links and retries; only the agreed text changes', (name) => {
+    const [r, a, slo, plan] = CASES[name]
+    const after = monitorView(r, a, slo, plan, SEE).groups
+    const expected = BEFORE[name].map((g) => ({
+      title: g.title,
+      rows: g.rows.map((row) => ({ ...row, label: labelAfter(row.label as string), stateText: textAfter(row.stateText as string) })),
+    }))
+    expect(after.map((g) => ({ title: g.title, rows: g.rows.map((row) => ({ key: row.key, label: row.label, state: row.state, stateText: row.stateText, reason: row.reason, link: row.link, retry: row.retry })) }))).toEqual(expected)
+    // The two parts the page shows make up the label.
+    for (const row of after.flatMap((g) => g.rows)) expect(row.signals ? `${row.service} · ${row.signals}` : row.service).toBe(row.label)
+  })
+
+  it.each(Object.keys(CASES))('%s: no unmeasured category is ever monitored or passing', (name) => {
+    const [r, a, slo, plan] = CASES[name]
+    const rows = monitorView(r, a, slo, plan, SEE).groups.flatMap((g) => g.rows)
+    for (const key of ['type:s3', 'type:api-gateway', 'static:ElastiCache', 'static:Network and Gateway Load Balancers', 'static:SQS', 'static:SNS']) {
+      const row = rows.find((x) => x.key === key)!
+      expect(row.state).toBe('not_measured')
+      expect(['Not measured yet', 'No health metric']).toContain(row.stateText)
+    }
+    for (const row of rows.filter((x) => x.state === 'not_measured')) expect(row.stateText).not.toMatch(/Monitored|passing/i)
+  })
+
+  it('shorter labels (mock §3)', () => {
+    const rows = monitorView(healthy(), okAlarms(), { state: 'none' }, known('pro'), SEE).groups.flatMap((g) => g.rows)
+    const row = (key: string) => rows.find((x) => x.key === key)!
+    expect(row('type:load-balancer').label).toBe('Load balancers · response time (average)')
+    expect(row('type:load-balancer:5xx').label).toBe('Load balancers · 5xx rate')
+    expect(row('type:cloudfront').stateText).toBe('No distributions found')
   })
 })
