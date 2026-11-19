@@ -35,3 +35,15 @@ export const coverageLine = (active: number, total: number, services: number) =>
   `${active} of ${total} checks active across ${services} AWS service${plural(services, '', 's')}.`
 
 export const plannedToggle = (count: number) => `Planned / Coming soon (${count})`
+
+/**
+ * Multi-region flag-on prep N6 (founder, Nov 19): where the cost checks run, for an organization with
+ * multi-region scanning switched on (`multi_region` in the coverage response) only; null otherwise,
+ * so a switched-off page is unchanged. The region is the server's `multi_region.savings_regions`
+ * (the home region, docs/SERVICES_COVERAGE_MULTI_REGION.md §11), never a literal. S3 lifecycle reads
+ * each bucket in its own region (cost-optimization.service.ts detectS3LifecycleOptimization).
+ */
+export function costChecksRegionLine(multiRegion: { savings_regions: readonly string[] } | null | undefined): string | null {
+  const home = multiRegion?.savings_regions?.[0]
+  return home ? `Cost checks run in your home region, ${home}. S3 lifecycle checks cover buckets in every region.` : null
+}

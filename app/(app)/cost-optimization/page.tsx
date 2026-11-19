@@ -16,6 +16,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service';
 import awsAccountsService from '@/lib/services/aws-accounts.service';
+import awsServicesService from '@/lib/services/aws-services.service';
 import { awsResourcesService } from '@/lib/services/aws-resources.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
 import type { HiddenFindings, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
@@ -56,6 +57,7 @@ import {
   HOW_EACH_CHECK_WORKS,
   LEGACY_CHECKS_CAVEAT,
   activeChecksNote,
+  costChecksRegionLine,
   coverageLine,
   emptyAllChecks,
   plannedToggle,
@@ -179,6 +181,17 @@ export default function CostOptimizationPage() {
     refetchOnWindowFocus: false,
     enabled: !isDemoActive,
   });
+  // Multi-region flag-on prep (X6): the coverage response, only to know whether multi-region scanning is
+  // switched on for this organization (`multi_region`) and its savings region. Nothing renders without it.
+  const { data: servicesCoverage } = useQuery({
+    queryKey: ['services-coverage'],
+    queryFn: () => awsServicesService.getCoverage(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    enabled: !isDemoActive,
+  });
+  const checksRegionLine = costChecksRegionLine(servicesCoverage?.multi_region);
   const implementedRules = ruleCatalog.rules.filter((rule) => rule.status === 'implemented');
   const plannedRules = ruleCatalog.rules.filter((rule) => rule.status === 'planned');
 
@@ -679,6 +692,9 @@ export default function CostOptimizationPage() {
                         </li>
                       ))}
                     </ul>
+                    {checksRegionLine && (
+                      <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed" data-testid="checks-region-line">{checksRegionLine}</p>
+                    )}
                     <details className="mt-3" data-testid="how-checks-work">
                       <summary className="cursor-pointer text-label font-semibold text-violet-700">{HOW_EACH_CHECK_WORKS}</summary>
                       <div className="flex flex-col gap-3 mt-2">
