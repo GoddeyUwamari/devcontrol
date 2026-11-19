@@ -87,6 +87,7 @@ interface Expected {
   /** The other-regions lines ("What we checked" on Infrastructure and Security). */
   otherRegions: string[]
   /** Infrastructure's inventory line's ending (the home region's result). */
+  /** Infrastructure's inventory line ends with this. Flagged (flag-on prep I5): "· " + the Services coverage line. */
   inventory: string
   /** The last finished scan, as the Dashboard's freshness row prints it (default today, 10:20 AM). */
   finished?: string
@@ -152,7 +153,7 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab8(),
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 10:21 AM · didn't finish" }, line: 'Last scan failed after checking 1 of 2 regions · 1 with resources',
-      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: "last scan didn't finish", connectHeadline: "us-east-1: last scan didn't finish",
+      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: '· Last scan failed after checking 1 of 2 regions · 1 with resources', finished: 'today, 4:20 AM', connectHome: "last scan didn't finish", connectHeadline: "us-east-1: last scan didn't finish",
     },
   },
   'abandoned job': {
@@ -174,7 +175,7 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     expected: {
       scan: { state: 'running', text: 'Scan in progress since 10:00 AM · 1 of 4 regions done' },
       line: 'Scanning: 1 of 4 regions checked so far · 1 with resources · 3 still running or waiting',
-      notChecked: `3 regions still running or waiting · Not checked yet: ${IAM}`, otherRegions: ['3 regions still running or waiting'], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'scan in progress', connectHeadline: 'us-east-1 scanned',
+      notChecked: `3 regions still running or waiting · Not checked yet: ${IAM}`, otherRegions: ['3 regions still running or waiting'], inventory: '· Scanning: 1 of 4 regions checked so far · 1 with resources · 3 still running or waiting', finished: 'today, 4:20 AM', connectHome: 'scan in progress', connectHeadline: 'us-east-1 scanned',
     },
   },
 }

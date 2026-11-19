@@ -24,7 +24,7 @@ import type { ComplianceFramework, ComplianceScan } from '@/lib/services/complia
 import type { RiskScore, RiskScoreTrendResponse } from '@/lib/services/risk-score.service'
 import { findingWhere, maskText, resourceWhere, safeTitle, shortArn, type FindingWhere } from '@/lib/security/findingDisplay'
 import { typeLabel } from '../../services/AttentionTable'
-import { notCheckedLine, regionGaps, scanState } from '../../services/servicesTruth'
+import { multiRegionOf, notCheckedLine, regionGaps, scanState } from '../../services/servicesTruth'
 import { formatLocalDay, formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { OVERVIEW_COPY } from '../../infrastructure/overview/overviewModel'
@@ -387,6 +387,9 @@ export interface ScoreTile { value: number | null; caption: string | null; retry
 function coverageCaption(c: ServicesCoverage | null): string | null {
   const home = c ? c.account.home_region ?? c.scope.home_region?.region ?? null : null
   if (!c || !home || !lastCompletedIso(c)) return null
+  // Flag-on prep S6 (N2, founder Nov 19): switched on, resources and security groups are read in every region
+  // the scan checks; count-free, so it stays true while a newer scan runs.
+  if (multiRegionOf(c)) return `resources and security groups in each region it checked${c.scope.s3.in_last_scan ? ', S3 buckets in all regions' : ''}, IAM users.`
   return `resources in ${home}${c.scope.s3.in_last_scan ? ' and S3 buckets in all regions' : ''}, security groups in ${home}, IAM users.`
 }
 
@@ -581,7 +584,8 @@ export function securityCheckedLines(coverage: SecLoadable<ServicesCoverage>, no
   const home = c.account.home_region ?? c.scope.home_region?.region ?? '—'
   const done = !!lastCompletedIso(c)
   const lines: CheckedLine[] = [
-    { key: 'security-groups', label: `Security groups (${home})`, status: done ? 'checked' : 'not_checked' },
+    // Flag-on prep (N3): switched on, security groups are read in each region the scan checks.
+    { key: 'security-groups', label: multiRegionOf(c) ? 'Security groups (each region checked)' : `Security groups (${home})`, status: done ? 'checked' : 'not_checked' },
     { key: 's3', label: SECURITY_COPY.s3Policies, status: done && c.scope.s3.in_last_scan ? 'checked' : 'not_checked' },
     { key: 'iam-users', label: SECURITY_COPY.iamUsers, status: done ? 'checked' : 'not_checked' },
     { key: 'iam-roles', label: SECURITY_COPY.iamRoles, status: 'not_checked' },

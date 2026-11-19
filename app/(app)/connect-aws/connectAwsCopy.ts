@@ -169,6 +169,8 @@ export const TABLE_LAST_SCAN = 'Last scan'
 export const ROW_TOTAL = 'All scanned resources'
 export const rowHome = (region: string) => `Home region (${region})`
 export const ROW_S3_OTHER_REGIONS = 'S3 buckets in other regions'
+/** Flag-on prep N1 (founder, Nov 19): the row for every non-home region, switched-on organizations only. */
+export const ROW_OTHER_REGIONS = 'Other regions'
 export const ROW_CLOUDFRONT = 'CloudFront (global)'
 export const COVERAGE_LOADING = 'Loading scan coverage…'
 export const COVERAGE_ERROR = 'Scan coverage could not be loaded.'

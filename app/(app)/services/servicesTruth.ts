@@ -23,12 +23,13 @@ import { formatLocalWhen } from '@/lib/utils/localTime'
 import { lastCompletedScanIso } from '@/lib/scan-time'
 import {
   LAST_SCAN_FINISHED, dayText, formerHomeLine, formerHomeOf, homeCouldntBeChecked, homeOnlyRegionList, homeOnlyRows,
-  homeOnlyStatus, homeRegionOf, multiRegionOf, organisingLine, redesignScanLine, redesignScanLineTime, regionRow, scanIsRunning,
-  scanNotCheckedWho, scanSoFar, type RedesignScanLine, type RedesignScanState, type RowStatus, type ScanLineTime,
+  homeOnlyStatus, homeRegionOf, multiRegionOf, multiRegionRows, organisingLine, redesignScanLine, redesignScanLineTime, regionRow,
+  scanIsRunning, scanNotCheckedWho, scanSoFar, type RedesignScanLine, type RedesignScanState, type RowStatus, type ScanLineTime,
 } from './redesignModel'
 import { homeRegionPromptShows } from './homeRegionModel'
 
-export { homeRegionOf, scanIsRunning }
+// Flag-on prep (Nov 19): multiRegionOf tells a page the organization is switched on (`multi_region` present).
+export { homeRegionOf, multiRegionOf, scanIsRunning }
 // PR 3d-2 (D4, D7): the shared needs-attention sentence and the links into Services.
 export { ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK } from './redesignModel'
 
@@ -139,7 +140,7 @@ const same = (key: RegionGapKey, text: string, home = false): RegionGap => ({ ke
  */
 export function regionGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
   const mr = multiRegionOf(c)
-  return mr ? flaggedGaps(mr) : homeOnlyGaps(c, now)
+  return mr ? flaggedGaps(c, mr, now) : homeOnlyGaps(c, now)
 }
 
 function homeOnlyGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
@@ -164,23 +165,35 @@ function homeOnlyGaps(c: ServicesCoverage, now: number): RegionGap[] | null {
   return gaps
 }
 
-function flaggedGaps(mr: MultiRegionCoverage): RegionGap[] | null {
+/**
+ * Flagged. Flag-on prep (3d-1 review RR-L2): the never-scanned regions are the Services card's own
+ * rows (multiRegionRows, called, never copied): the home row when it is "Not scanned yet" is its own
+ * gap ("{home} not scanned yet", as homeOnlyGaps), and the "{n} regions not scanned yet" group is
+ * the card's group, so the home region is never counted in it. A finished scan's "couldn't be
+ * checked" leaves those never-scanned regions out (they were never tried: right after the switch,
+ * the newest job is the last home-only scan).
+ */
+function flaggedGaps(c: ServicesCoverage, mr: MultiRegionCoverage, now: number): RegionGap[] | null {
   if (mr.regions.length === 0) return null
   const s = mr.scan
   const gaps: RegionGap[] = []
-  if (!s || mr.coverage_status === 'unavailable') {
-    const n = mr.regions.filter((r) => r.state === 'not_started' && r.scan_state !== 'waiting').length
-    if (n > 0) gaps.push({ ...same('not-scanned', `${num(n)} ${regionsWord(n)} not scanned yet`), notScanned: `${num(n)} ${regionsWord(n)}` })
-    return gaps
-  }
-  if (mr.coverage_status === 'in_progress') {
+  if (s && mr.coverage_status === 'in_progress') {
     const { failedSoFar, left } = scanSoFar(mr.progress, s.regions_checked)
     if (failedSoFar > 0) gaps.push(same('not-checked-by-scan', `${num(failedSoFar)} ${regionsWord(failedSoFar)} couldn't be checked`))
     if (left > 0) gaps.push(same('still-running', `${num(left)} ${regionsWord(left)} still running or waiting`))
     return gaps
   }
-  const who = scanNotCheckedWho(mr, s)
-  if (who.k > 0) gaps.push(same('not-checked-by-scan', who.text))
+  const rows = multiRegionRows(c, mr, now)
+  const homeRow = rows.find((r) => r.kind === 'region' && r.home && r.status?.key === 'not_scanned')
+  const group = rows.find((r) => r.kind === 'group' && r.key === 'not-scanned')
+  const grouped = group?.regions?.length ?? 0
+  if (s && mr.coverage_status !== 'unavailable') {
+    const never = (homeRow ? 1 : 0) + grouped
+    const who = scanNotCheckedWho(mr, { regions_total: s.regions_total - never, regions_checked: s.regions_checked })
+    if (who.k > 0) gaps.push(same('not-checked-by-scan', who.text))
+  }
+  if (homeRow) gaps.push({ ...same('home-not-scanned', `${homeRow.label} not scanned yet`, true), notScanned: homeRow.label })
+  if (group && grouped > 0) gaps.push({ ...same('not-scanned', group.label), notScanned: `${num(grouped)} ${regionsWord(grouped)}` })
   return gaps
 }
 
