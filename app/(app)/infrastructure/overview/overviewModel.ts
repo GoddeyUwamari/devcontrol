@@ -39,7 +39,7 @@ import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { NOT_CHECKED_COPY, unknownTagsText } from '../../services/notChecked'
 import {
   ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK, coverageLine, homeRegionCheck, homeRegionOf,
-  notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts,
+  multiRegionOf, notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts,
 } from '../../services/servicesTruth'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T }
@@ -613,7 +613,15 @@ function checkedLines(c: ServicesCoverage, i: OverviewInputs, now: number): Line
   const done = lastCompletedIso(c)
   const types = c.last_completed_scan?.resource_types ?? (scopeIsCompleted(c) ? c.resource_types ?? [] : [])
   const typeNames = types.map((t) => typeLabel(t)).join(', ')
-  if (done) {
+  // Flag-on prep I5 (founder, Nov 19): switched on, the inventory spans every region the scan checks, so
+  // the line carries the Services coverage line (as the account strip does), never the home region alone.
+  const mr = multiRegionOf(c)
+  if (mr && done) {
+    const gapTone = mr.coverage_status === 'latest_scan_failed' || mr.coverage_status === 'completed_with_regions_not_checked'
+    lines.push({ key: 'inventory', parts: [`Resource inventory${typeNames ? ` (${typeNames})` : ''} · ${coverageLine(c)}`], tone: gapTone ? 'warn' : undefined })
+  } else if (mr) {
+    lines.push({ key: 'inventory', parts: ['Resource inventory: Not checked yet (no scan has finished)'] })
+  } else if (done) {
     // PR 3d-1 (D6, R3): the home region's last result in the Services card's words
     // ("Partly checked", "Couldn't check: access denied", …); "Checked" otherwise.
     const check = homeRegionCheck(c)
@@ -635,7 +643,8 @@ function checkedLines(c: ServicesCoverage, i: OverviewInputs, now: number): Line
   }
   const global = footerText(c)
   if (global) lines.push({ key: 'global', parts: [global] })
-  if (done) lines.push({ key: 'security-groups', parts: [`Security groups (${home}): checked during each scan`] })
+  // Flag-on prep (N5, founder Nov 19): switched on, security groups are read in each region the scan covers.
+  if (done) lines.push({ key: 'security-groups', parts: [mr ? 'Security groups: checked in each region the scan covers' : `Security groups (${home}): checked during each scan`] })
   lines.push({ key: 'iam', parts: [OVERVIEW_COPY.iam] })
   lines.push({ key: 'alarms', parts: [OVERVIEW_COPY.alarms], link: { text: OVERVIEW_COPY.alarmsLink, href: OVERVIEW_COPY.alarmsHref } })
   lines.push({ key: 'other-types', parts: [NOT_CHECKED_COPY.otherTypes] })

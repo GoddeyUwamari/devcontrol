@@ -7,7 +7,7 @@ import awsAccountsService, { type AwsAccount, type ConnectionChecks, type HomeRe
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { HOME_REGION_ONLY_NOTE, describeCoverage, formatScanTime } from '../services/coverage'
 import { useNowEachLocalDay } from '../services/useNowEachLocalDay'
-import { REGION_COVERAGE_HREF, connectHomeRegionLinks, homeRegionCheck, scanState } from '../services/servicesTruth'
+import { REGION_COVERAGE_HREF, REGION_COVERAGE_LINK, connectHomeRegionLinks, coverageLine, homeRegionCheck, multiRegionOf, scanState } from '../services/servicesTruth'
 import { isServicesV2Enabled } from '../services/servicesV2Flag'
 import { isServicesRedesignEnabled } from '../services/servicesRedesignFlag'
 import {
@@ -38,6 +38,7 @@ import {
   PERMISSION_CHECK_LABELS,
   ROLE_REPLACED,
   ROW_CLOUDFRONT,
+  ROW_OTHER_REGIONS,
   ROW_S3_OTHER_REGIONS,
   ROW_TOTAL,
   SCP_NOTE,
@@ -119,6 +120,10 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
   // cell follow the Services page's scan state and home-region check, not the Phase 1 rules.
   const view = coverage ? describeCoverage(coverage, now, [], { ...scanState(coverage, now), home: homeRegionCheck(coverage) }) : null
   const home = coverage?.account.connected ? coverage.scope.home_region : null
+  // Flag-on prep (R8 / A2, founder ruling Nov 19): switched on (`multi_region` present), the headline is the
+  // Services coverage line, the home-only note is hidden and an "Other regions" row points to Services.
+  const switchedOn = !!coverage && multiRegionOf(coverage) !== null
+  const headline = switchedOn && view?.headline ? coverageLine(coverage!) : view?.headline ?? null
 
   // The saved checks (PR D1). null: a server from before D1, or not loaded or failed (then nothing new
   // shows, never an error). NO_CONNECTION_CHECKS for a 409 NOT_CONNECTED.
@@ -167,7 +172,8 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
   const homeChip = view?.chips.find((chip) => chip.key === 'home')
   // PR 3d-2 (D8): the owner's links to Services' home-region controls, only where they exist (the Services
   // redesign: the Change button and the proposal banner); without it, nothing new shows.
-  const homeLinks = isServicesV2Enabled() && isServicesRedesignEnabled() ? connectHomeRegionLinks(homeRegion, coverage) : { change: false, suggestion: false }
+  const regionLinks = isServicesV2Enabled() && isServicesRedesignEnabled()
+  const homeLinks = regionLinks ? connectHomeRegionLinks(homeRegion, coverage) : { change: false, suggestion: false }
 
   return (
     <div className="space-y-4" data-testid="connected-view">
@@ -276,7 +282,7 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-9">
         <h2 className="text-section text-ink mb-2">{FOUND_TITLE}</h2>
-        {view?.headline && <p className="text-body text-ink-body mb-3" data-testid="coverage-headline">{view.headline}</p>}
+        {headline && <p className="text-body text-ink-body mb-3" data-testid="coverage-headline">{headline}</p>}
         {home && coverage && (
           <table className="w-full text-ui mb-4" data-testid="coverage-table">
             <thead>
@@ -289,13 +295,24 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
             <tbody className="text-ink-body">
               <tr className="border-b border-slate-100"><td className="py-2 pr-3">{ROW_TOTAL}</td><td className="py-2 pr-3 tabular-nums">{coverage.total}</td><td className="py-2">—</td></tr>
               <tr className="border-b border-slate-100"><td className="py-2 pr-3">{rowHome(home.region)}</td><td className="py-2 pr-3 tabular-nums">{home.count}</td><td className="py-2">{homeChip?.note ?? '—'}</td></tr>
+              {switchedOn && (
+                <tr className="border-b border-slate-100" data-testid="coverage-other-regions">
+                  <td className="py-2 pr-3">{ROW_OTHER_REGIONS}</td>
+                  <td className="py-2 pr-3 tabular-nums">—</td>
+                  <td className="py-2">
+                    {regionLinks
+                      ? <Link href={REGION_COVERAGE_HREF} className="font-semibold text-ink-accent hover:underline">{REGION_COVERAGE_LINK}</Link>
+                      : '—'}
+                  </td>
+                </tr>
+              )}
               <tr className="border-b border-slate-100"><td className="py-2 pr-3">{ROW_S3_OTHER_REGIONS}</td><td className="py-2 pr-3 tabular-nums">{s3OtherRegions}</td><td className="py-2">—</td></tr>
               <tr><td className="py-2 pr-3">{ROW_CLOUDFRONT}</td><td className="py-2 pr-3 tabular-nums">{coverage.scope.cloudfront.count}</td><td className="py-2">—</td></tr>
             </tbody>
           </table>
         )}
         <RefusedSources refused={saved?.refusedSources ?? null} now={now} />
-        {home && (
+        {home && !switchedOn && (
           <div role="note" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-ui text-blue-950 mb-4">
             <strong>{HOME_REGION_ONLY_NOTE.title} </strong>{HOME_REGION_ONLY_NOTE.body}
           </div>

@@ -547,7 +547,7 @@ export function regionRow(r: MultiRegionRegion): PanelRow {
 }
 
 /** The panel's rows for a flagged organization: individual rows, then the collapsed groups, then never-scanned rows, then not enabled. */
-function multiRegionRows(c: ServicesCoverage, mr: MultiRegionCoverage, now: number): PanelRow[] {
+export function multiRegionRows(c: ServicesCoverage, mr: MultiRegionCoverage, now: number): PanelRow[] {
   const own: MultiRegionRegion[] = []
   const neverScanned: MultiRegionRegion[] = []
   const empty: MultiRegionRegion[] = []

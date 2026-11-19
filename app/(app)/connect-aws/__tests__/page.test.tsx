@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ConnectAwsPage from '../page'
+import { tab8 } from '../../services/__tests__/redesign-fixtures'
 import {
   ACCOUNTS_ERROR,
   ALREADY_CONNECTED_TEXT,
@@ -470,6 +471,31 @@ describe('Connect AWS page: checking and connected', () => {
     const cells = [...home.querySelectorAll('td')].map((td) => td.textContent)
     expect(cells).toEqual(['Home region (us-east-1)', '7', cell])
     expect(cells[2]).not.toMatch(/complete/)
+  })
+
+  // Multi-region flag-on prep (R8 / A2, founder rulings Nov 19): switched on (`multi_region` present), the
+  // headline is the Services coverage line, the home-only note is gone and one "Other regions" row (N1) follows
+  // the home row. Switched off is T13 above (four rows and the note, unchanged).
+  it.each([
+    ['with the Services redesign', 'true', ['Other regions', '—', 'Region coverage →']],
+    ['without it', 'false', ['Other regions', '—', '—']],
+  ] as const)('flag-on R8/A2 %s: Services coverage line, no home-only note, an "Other regions" row', async (_n, flag, otherRow) => {
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', flag)
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_REDESIGN', flag)
+    try {
+      mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
+      mockGetCoverage.mockResolvedValue(tab8() as ServicesCoverage)
+      renderPage()
+      expect((await screen.findByTestId('coverage-headline')).textContent).toBe('Last scan failed after checking 1 of 2 regions · 1 with resources')
+      const rows = [...screen.getByTestId('coverage-table').querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
+      expect(rows.map((r) => r[0])).toEqual(['All scanned resources', 'Home region (us-east-1)', 'Other regions', 'S3 buckets in other regions', 'CloudFront (global)'])
+      expect(rows[2]).toEqual(otherRow)
+      if (flag === 'true') expect(within(screen.getByTestId('coverage-other-regions')).getByRole('link').getAttribute('href')).toBe('/services#region-coverage')
+      expect(document.body.textContent).not.toContain(HOME_REGION_ONLY_NOTE.title)
+      expect(document.body.textContent).not.toContain(HOME_REGION_ONLY_NOTE.body)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('T13 coverage loading, then an error with Try again that refetches', async () => {

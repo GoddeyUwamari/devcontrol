@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import Link from 'next/link'
 import { Rocket, ArrowRight, Layers, RefreshCw, Check, Scan, SearchX, Search, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -20,6 +21,7 @@ import { TYPE_DISPLAY, RESOURCE_TYPE_CHIPS } from './resourceTypes'
 import { isServicesV2Enabled } from './servicesV2Flag'
 import { isServicesRedesignEnabled } from './servicesRedesignFlag'
 import { ServicesOverview } from './ServicesOverview'
+import { SCAN_BUSY_TEXT, scanBusyAfter } from './scanBusy'
 import type { DiscoverOutcome } from './redesignModel'
 import { ResourceFocus } from './ResourceFocus'
 import { servicesDemoFixture } from '@/lib/demo/services-demo-fixture'
@@ -292,6 +294,13 @@ export default function ServicesPage() {
       queryClient.invalidateQueries({ queryKey: ['risk-score-trend'] })
       queryClient.invalidateQueries({ queryKey: ['risk-score-current'] })
     } catch (err: any) {
+      // Flag-on prep (item 4): a busy answer, or a request cut while the scan goes on, is not a failed
+      // load. Coverage is re-read: while a scan runs, the header shows it in progress and Scan now's own
+      // "A scan is already running for this AWS account." hint (ServicesHeader). A 409 busy with no scan
+      // running after the re-read still shows the server's busy message (flag-on review L-1).
+      const busy = await scanBusyAfter(err, queryClient, orgId)
+      if (busy === 'running') return
+      if (busy === 'busy') { toast.warning(SCAN_BUSY_TEXT); return }
       if (err.response?.status === 402) setShowUpgradePrompt(true)
       else setDiscoveryError(err.message || 'Discovery failed — check your AWS connection')
     } finally { setIsDiscovering(false) }
