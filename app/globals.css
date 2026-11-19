@@ -641,13 +641,6 @@ html {
   contain: layout;
 }
 
-/* Except the toaster's (sonner's <section aria-live>): contain: layout would make it the containing block of its
-   position: fixed list, so toasts would sit at the end of the document instead of the top of the screen
-   (Cost Optimization tidy, founder rule: every toast at the top). */
-[aria-live]:has(> [data-sonner-toaster]) {
-  contain: none;
-}
-
 /* Ensure text is selectable for assistive technologies */
 .user-select-text {
   user-select: text;

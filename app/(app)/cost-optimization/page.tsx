@@ -480,10 +480,10 @@ export default function CostOptimizationPage() {
           {/* The latest scheduled discovery's warnings: unchanged, and not scan status. */}
           <DiscoveryWarningNotice warnings={discoveryJobs?.[0]?.warnings} className="mb-6" />
 
-          {/* ── ~70/30: findings on the left, what DevControl checks and coverage on the right ── */}
+          {/* ── OPPORTUNITIES / EMPTY STATE ── */}
+          {/* ~70/30: findings on the left, what DevControl checks and coverage on the right. */}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] gap-6 items-start">
             <div className="flex flex-col gap-6 min-w-0" data-testid="findings-column">
-              {/* ── OPPORTUNITIES / EMPTY STATE ── */}
               {isLoading ? (
                 <div className="flex items-center justify-center h-64">
                   <Loader2 size={24} className="animate-spin text-violet-600" />

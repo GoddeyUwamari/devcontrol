@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { TOAST_MOBILE_OFFSET, TOAST_OFFSET, TOAST_POSITION } from "@/lib/toast-position";
 import { GaPageViews } from "@/components/analytics/ga-page-views";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -35,7 +34,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
-        <Toaster position={TOAST_POSITION} offset={TOAST_OFFSET} mobileOffset={TOAST_MOBILE_OFFSET} />
+        <Toaster />
         <GaPageViews />
       </body>
     </html>

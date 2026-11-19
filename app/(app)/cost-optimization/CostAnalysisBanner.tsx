@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SCAN_BANNER_TONE_CLASSES, type ScanBannerTone } from '@/components/ui/scan-status-banner';
-import { TOAST_CLEAR_ATTR } from '@/lib/toast-clearance';
 import { DISMISS_BANNER, REVIEW_IT, TRY_AGAIN, type BannerContent } from './costScanBanner';
 
 /**
@@ -57,7 +56,6 @@ export function CostAnalysisBanner({
     <section
       aria-label="Latest analysis"
       data-testid="scan-status-banner"
-      {...{ [TOAST_CLEAR_ATTR]: '' }}
       data-tone={content.tone}
       className={cn('flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border px-4 py-3', SCAN_BANNER_TONE_CLASSES[content.tone], className)}
     >
