@@ -190,7 +190,9 @@ function homeChip(
 ): CoverageChip {
   const chip = (state: CoverageChip['state'], note: string): CoverageChip => ({ key: 'home', state, region: home.region, note })
   if (inProgress) return chip('scanning', `${home.count} · home · scan in progress`)
-  if (lastFailed) return chip('failed', `${home.count} · home · last scan failed`)
+  // PR 3d-2 (3d-1 leftover): with the shared scan state (Connect AWS), failed and abandoned are one state,
+  // which Services words "didn't finish" (D3). The Phase 1 strip (no check passed) keeps "last scan failed".
+  if (lastFailed) return chip('failed', `${home.count} · home · ${check === undefined ? 'last scan failed' : "last scan didn't finish"}`)
   // The Services card's failure label, e.g. "couldn't check: scan error"; "partial" as the Services card's Partial.
   if (check?.kind === 'couldnt') return chip('failed', `${home.count} · home · ${check.label.charAt(0).toLowerCase()}${check.label.slice(1)}`)
   if (check?.kind === 'partial') return chip('partial', `${home.count} · home · partial`)

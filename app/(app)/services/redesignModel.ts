@@ -64,6 +64,22 @@ export const REDESIGN_COPY = {
   dismiss: 'Dismiss',
 } as const
 
+// ── Shared with the other pages (PR 3d-2: wording and links), through servicesTruth.ts ──
+
+/**
+ * D4 (founder, Nov 18): what "needs attention" counts, one sentence for the Services redesign's
+ * What needs attention and Infrastructure's. The rule itself is the server's (attentionOf).
+ */
+export const ATTENTION_DEFINITION = 'Critical and high findings, cost recommendations estimated at $100/mo or more, and stopped, degraded or failed resources.'
+
+/** D7: the one URL parameter Services reads; `?show=needs_attention` opens it with Needs attention selected. */
+export const SHOW_PARAM = 'show'
+export const NEEDS_ATTENTION_HREF = '/services?show=needs_attention'
+
+/** D7/D8/D9: the Region coverage card (its id, RegionCoverageCard.tsx) and the one label for links to it. */
+export const REGION_COVERAGE_HREF = '/services#region-coverage'
+export const REGION_COVERAGE_LINK = 'Region coverage →'
+
 /** The failure codes a region row can show (doc §5: one per state + error_code). */
 export type FailureCode =
   | 'access_denied' | 'access_denied_scp' | 'throttled' | 'call_timeout' | 'error'
@@ -200,6 +216,9 @@ export const LAST_SCAN_FINISHED = 'Last scan finished'
 export type RedesignScanState = 'finished' | 'running' | 'failed' | 'none'
 export interface RedesignScanLine { state: RedesignScanState; text: string }
 
+/** The instant a scan line names first, and the exact words the line prints for it. */
+export interface ScanLineTime { iso: string; text: string }
+
 /** "4:31 PM" when it started today; otherwise the full local time ("yesterday, 11:58 PM"). */
 function sinceText(iso: string, now: number): string {
   const when = formatLocalWhen(iso, now)
@@ -207,29 +226,50 @@ function sinceText(iso: string, now: number): string {
   return when.startsWith('today, ') ? when.slice('today, '.length) : when
 }
 
-export function redesignScanLine(c: ServicesCoverage, now: number): RedesignScanLine {
+/** The header line and the time it names (null when it names none, or the time couldn't be formatted). */
+function scanLineAndTime(c: ServicesCoverage, now: number): RedesignScanLine & { time: ScanLineTime | null } {
   const mr = multiRegionOf(c)
-  const lastDone = formatLocalWhen(lastCompletedScanIso(c), now)
+  const lastIso = lastCompletedScanIso(c)
+  const lastDone = formatLocalWhen(lastIso, now)
+  const since = (iso: string): ScanLineTime | null => (formatLocalWhen(iso, now) ? { iso, text: sinceText(iso, now) } : null)
   if (mr) {
     if (mr.coverage_status === 'in_progress' && mr.progress) {
       const started = mr.scan?.started_at ?? mr.progress.scan_started_at
-      return { state: 'running', text: `Scan in progress since ${sinceText(started, now)} · ${num(mr.progress.regions_done)} of ${num(mr.progress.regions_total)} ${regionsWord(mr.progress.regions_total)} done` }
+      return { state: 'running', text: `Scan in progress since ${sinceText(started, now)} · ${num(mr.progress.regions_done)} of ${num(mr.progress.regions_total)} ${regionsWord(mr.progress.regions_total)} done`, time: since(started) }
     }
     if (mr.coverage_status === 'latest_scan_failed' && mr.scan) {
-      const at = formatLocalWhen(mr.scan.completed_at ?? mr.scan.started_at, now)
-      if (at) return { state: 'failed', text: `Last scan: ${at} · didn't finish` }
+      const atIso = mr.scan.completed_at ?? mr.scan.started_at
+      const at = formatLocalWhen(atIso, now)
+      if (at) return { state: 'failed', text: `Last scan: ${at} · didn't finish`, time: { iso: atIso!, text: at } }
     }
   } else {
     const attempt = latestAttempt(c)
     if (attempt === 'running' && c.scan_in_progress) {
-      return { state: 'running', text: `Scan in progress since ${sinceText(c.scan_in_progress.since, now)}${lastDone ? ` · showing results from ${lastDone}` : ' · no scan has finished yet'}` }
+      return { state: 'running', text: `Scan in progress since ${sinceText(c.scan_in_progress.since, now)}${lastDone ? ` · showing results from ${lastDone}` : ' · no scan has finished yet'}`, time: since(c.scan_in_progress.since) }
     }
     if (attempt === 'unfinished' && c.last_scan) {
-      const at = formatLocalWhen(c.last_scan.completed_at ?? c.last_scan.started_at, now)
-      if (at) return { state: 'failed', text: `Last scan: ${at} · didn't finish` }
+      const atIso = c.last_scan.completed_at ?? c.last_scan.started_at
+      const at = formatLocalWhen(atIso, now)
+      if (at) return { state: 'failed', text: `Last scan: ${at} · didn't finish`, time: { iso: atIso!, text: at } }
     }
   }
-  return lastDone ? { state: 'finished', text: `${LAST_SCAN_FINISHED} ${lastDone}` } : { state: 'none', text: REDESIGN_COPY.noScanYet }
+  return lastDone
+    ? { state: 'finished', text: `${LAST_SCAN_FINISHED} ${lastDone}`, time: { iso: lastIso!, text: lastDone } }
+    : { state: 'none', text: REDESIGN_COPY.noScanYet, time: null }
+}
+
+export function redesignScanLine(c: ServicesCoverage, now: number): RedesignScanLine {
+  const { state, text } = scanLineAndTime(c, now)
+  return { state, text }
+}
+
+/**
+ * The time the header line names first (finished: the last finished scan; didn't finish: that attempt;
+ * running: when it started), with the exact words the line prints for it: the same instant
+ * redesignScanLine formats, never picked again (PR 3d-2, 3d-1 review RR-L1). null when the line names none.
+ */
+export function redesignScanLineTime(c: ServicesCoverage, now: number): ScanLineTime | null {
+  return scanLineAndTime(c, now).time
 }
 
 /** "Scan now" is disabled while a scan holds the account's lease. */
@@ -359,8 +399,9 @@ export function organisingLine(c: ServicesCoverage): OrganisingLine {
     return { text: c.scope.enabled_regions.known ? REDESIGN_COPY.noScanYet : REDESIGN_COPY.regionListUnread, failed: false }
   }
   if (!c.last_scan && !c.last_successful_scan_at) return { text: REDESIGN_COPY.noScanYet, failed: false }
+  // PR 3d-2 (N11): the home region is named once: "0 of 17 regions checked · us-east-1 couldn't be checked".
   const couldnt = homeCouldntBeChecked(c)
-  return { text: seg([`${num(h.regions_checked)} of ${num(h.regions_total)} ${regionsWord(h.regions_total)} checked`, home, couldnt && `${home} couldn't be checked`]), failed: false }
+  return { text: seg([`${num(h.regions_checked)} of ${num(h.regions_total)} ${regionsWord(h.regions_total)} checked`, couldnt ? `${home} couldn't be checked` : home]), failed: false }
 }
 
 // ── Coverage card: notes, panel rows, legend, footer ──

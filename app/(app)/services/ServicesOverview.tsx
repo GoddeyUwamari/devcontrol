@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import awsServicesService, { type AWSServicesPage, type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
@@ -22,8 +23,8 @@ import { RegionCoveragePanel } from './RegionCoveragePanel'
 import { useNowEachLocalDay } from './useNowEachLocalDay'
 import { isServicesRedesignEnabled } from './servicesRedesignFlag'
 import {
-  attentionScopeCaption, describeCoverageCard, describeNotChecked, formerHomeOf, redesignScanLine, resourcesCaptions, scanBanner, scanIsRunning,
-  type DiscoverOutcome,
+  SHOW_PARAM, attentionScopeCaption, describeCoverageCard, describeNotChecked, formerHomeOf, redesignScanLine, resourcesCaptions, scanBanner,
+  scanIsRunning, type DiscoverOutcome,
 } from './redesignModel'
 import { RedesignHeader } from './RedesignHeader'
 import { ScanBanner } from './ScanBanner'
@@ -41,6 +42,22 @@ function LoadErrorBanner() {
       <p className="text-ui text-ink-danger m-0">Failed to load resources.</p>
     </div>
   )
+}
+
+/**
+ * PR 3d-2 (D7): `/services?show=needs_attention` (Infrastructure's "View all {n} in Services & Ownership →")
+ * opens the page with Needs attention selected. Read once per mount; any other value, or none, is ignored.
+ * Its own component, in a Suspense boundary, as ResourceFocus (useSearchParams).
+ */
+function ShowFromUrl({ onNeedsAttention }: { onNeedsAttention: () => void }) {
+  const show = useSearchParams()?.get(SHOW_PARAM) ?? null
+  const done = useRef(false)
+  useEffect(() => {
+    if (done.current) return
+    done.current = true
+    if (show === 'needs_attention') onNeedsAttention()
+  }, [show, onNeedsAttention])
+  return null
 }
 
 /**
@@ -216,6 +233,8 @@ export function ServicesOverview({
     const captions = resourcesCaptions(coverage)
     return (
       <div data-services-redesign="">
+        {/* PR 3d-2 (D7): ?show=needs_attention selects Needs attention; renders nothing. */}
+        <Suspense fallback={null}><ShowFromUrl onNeedsAttention={() => applyFilters({ ...DEFAULT_FILTERS, show: 'needs_attention' })} /></Suspense>
         {demo && (
           <div role="note" className="mb-4 rounded-lg border border-[var(--border-warning)] bg-[var(--bg-warning)] px-4 py-2 text-meta text-ink-warning-strong dark:text-amber-300">
             <strong>{SAMPLE_DATA_BANNER}</strong> Placeholder names only.

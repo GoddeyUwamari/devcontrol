@@ -106,21 +106,21 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
   'home failed': {
     coverage: () => tab5('failed'),
     expected: {
-      scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
+      scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 couldn't be checked",
       notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: scan error", connectHome: "couldn't check: scan error", connectHeadline: "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)",
     },
   },
   'home denied': {
     coverage: () => homeStatus('denied'),
     expected: {
-      scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
+      scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 couldn't be checked",
       notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: access denied", connectHome: "couldn't check: access denied", connectHeadline: "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)",
     },
   },
   'home timed out': {
     coverage: () => homeStatus('timed_out'),
     expected: {
-      scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 · us-east-1 couldn't be checked",
+      scan: { state: 'finished', text: FINISHED }, line: "0 of 4 regions checked · us-east-1 couldn't be checked",
       notChecked: `us-east-1 couldn't be checked · Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: "us-east-1: Couldn't check: AWS didn't respond", connectHome: "couldn't check: AWS didn't respond", connectHeadline: "us-east-1 couldn't be checked, plus S3 buckets in every region and CloudFront (global)",
     },
   },
@@ -152,14 +152,14 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab8(),
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 10:21 AM · didn't finish" }, line: 'Last scan failed after checking 1 of 2 regions · 1 with resources',
-      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: 'last scan failed', connectHeadline: 'us-east-1 scanned',
+      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: "last scan didn't finish", connectHeadline: 'us-east-1 scanned',
     },
   },
   'abandoned job': {
     coverage: abandoned,
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 12:00 PM · didn't finish" }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: 'last scan failed', connectHeadline: 'us-east-1 scanned',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: "last scan didn't finish", connectHeadline: 'us-east-1 scanned',
     },
   },
   'in progress past 60 minutes, lease held': {
@@ -301,11 +301,11 @@ describe('M-1: a new home region not scanned yet is never "checked", "complete" 
     expect(v.headline).toBe('us-west-2: first scan in progress')
   })
 
-  it('the scan after the change didn\'t finish: the cell says "last scan failed", the headline the existing "last scan failed"', () => {
+  it('the scan after the change didn\'t finish: the cell says "last scan didn\'t finish" (3d-2), the headline the existing "last scan failed"', () => {
     const c = newHomeNotScanned()
     c.last_scan = { status: 'failed', started_at: '2026-11-15T12:00:00.000Z', completed_at: '2026-11-15T12:05:00.000Z', warnings: [] }
     const v = describeIt(c)
-    expect(v.chips[0].note).toBe('5 · home · last scan failed')
+    expect(v.chips[0].note).toBe("5 · home · last scan didn't finish")
     expect(v.headline).toBe('us-west-2: last scan failed')
   })
 
