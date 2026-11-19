@@ -74,7 +74,8 @@ function FooterPager({ pager, loading, onPage }: { pager: PagerView; loading: bo
 function Table({ children, busy }: { children: React.ReactNode; busy?: boolean }) {
   return (
     // Scrolls inside its own box on narrow screens; the page itself never scrolls sideways.
-    <div data-testid="resource-table-scroll" className="overflow-x-auto">
+    // relative: the scroll box is the containing block for the cells' sr-only text, so it scrolls with them instead of widening the page.
+    <div data-testid="resource-table-scroll" className="relative overflow-x-auto">
       <table aria-busy={busy || undefined} className="w-full min-w-[640px] border-collapse">
         <caption className="sr-only">{TABLE_COPY.tableCaption}</caption>
         <thead>
