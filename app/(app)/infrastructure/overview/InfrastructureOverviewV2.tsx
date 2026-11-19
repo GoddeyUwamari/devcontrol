@@ -23,6 +23,7 @@ import { DELETION_DETECTION_PAUSED_TEXT, hasDeletionDetectionPaused } from '@/co
 import { isServicesV2Enabled } from '../../services/servicesV2Flag'
 import { isServicesCoverageM6Enabled } from '../../services/servicesCoverageM6Flag'
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay'
+import { SCAN_BUSY_TEXT, scanBusyAfter } from '../../services/scanBusy'
 import { describeOverview, OVERVIEW_COPY, type Loadable } from './overviewModel'
 import { OverviewHeader, type SyncState } from './OverviewHeader'
 import { PlanBanners } from './PlanBanners'
@@ -147,6 +148,12 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
       if (hasDeletionDetectionPaused(result.warnings)) toast.warning(DELETION_DETECTION_PAUSED_TEXT)
       setSync('complete')
     } catch (error) {
+      // Flag-on prep (item 4): a busy answer, or a request cut while the scan goes on, is never "Scan failed".
+      if (await scanBusyAfter(error, queryClient, orgId)) {
+        toast.warning(SCAN_BUSY_TEXT)
+        setSync('idle')
+        return
+      }
       if (is402(error)) setSyncLimit(true)
       toast.error(OVERVIEW_COPY.scanFailedToast)
       setSync('idle')

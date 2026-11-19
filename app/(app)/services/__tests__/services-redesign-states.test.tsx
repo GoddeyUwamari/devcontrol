@@ -659,3 +659,29 @@ describe('demo mode', () => {
     expect(mockGetStats).not.toHaveBeenCalled()
   })
 })
+
+// ── Multi-region flag-on prep, item 4 (founder ruling Nov 19, every organization) ──
+
+describe('Scan now busy or cut: never "Failed to load resources."', () => {
+  const BUSY = 'A scan is already running for this AWS account. Try again in a few minutes.'
+  const reject = (status: number | null, data?: unknown) => Object.assign(new Error('x'), status === null ? { request: {} } : { response: { status, data } })
+  it.each([
+    ['409 busy', reject(409, { success: false, error: BUSY })],
+    ['504 (nginx cut the request)', reject(504)],
+    ['no response', reject(null)],
+  ] as const)('%s while a scan runs: coverage re-read, the scan in progress shown, Scan now disabled', async (_n, error) => {
+    await show(tab1())
+    mockGetCoverage.mockResolvedValue(flaggedCoverage(docExample('in_progress')))
+    mockDiscover.mockRejectedValue(error)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Scan now' })) })
+    await waitFor(() => expect(orgLine()).toMatch(/^Scanning: /))
+    expect(screen.getByRole('button', { name: 'Scanning…' })).toBeDisabled()
+    expect(screen.queryByText('Failed to load resources.')).toBeNull()
+  })
+  it('a 504 with no scan running after it keeps the existing error state', async () => {
+    await show(tab1())
+    mockDiscover.mockRejectedValue(reject(504))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Scan now' })) })
+    expect(await screen.findByText('Failed to load resources.')).toBeInTheDocument()
+  })
+})

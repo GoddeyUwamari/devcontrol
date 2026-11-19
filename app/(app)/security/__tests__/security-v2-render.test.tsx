@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import SecurityOverviewV2, { FRAMEWORK_SCANS_LIMIT } from '../overview/SecurityOverviewV2'
 import {
-  ATTENTION_PATH, SCANS_PATH, connectedRoutes, coverage, fail, finding, installFetch, iso, newClient, ok, raw, renderWith, scan, settled,
+  ATTENTION_PATH, SCANS_PATH, connectedRoutes, coverage, fail, failWith, finding, installFetch, iso, newClient, ok, raw, renderWith, scan, settled,
   type Harness, type Route,
 } from './security-v2-fixtures'
 
@@ -226,6 +226,42 @@ describe('header scan line and Sync (answers 5, 6, 12; e2 4, 5; decision 3)', ()
     await waitFor(() => expect(m.toast.error).toHaveBeenCalledWith(text))
     expect(m.toast.success).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByRole('button', { name: /Scan now/ })).toBeEnabled())
+  })
+
+  // Multi-region flag-on prep, item 4 (founder ruling Nov 19, every organization): a busy answer, or a request
+  // cut while the scan goes on (nginx's 60 s → 504), is never "Scan failed"; coverage is re-read and decides.
+  const BUSY = 'A scan is already running for this AWS account. Try again in a few minutes.'
+  const RUNNING = { scan_in_progress: { since: iso(90_000) }, last_scan: { status: 'running', started_at: iso(90_000), completed_at: null, warnings: [] } }
+  it.each([
+    ['409 busy', failWith(409, BUSY)],
+    ['504 while the scan runs', fail(504)],
+  ] as const)('a %s: the busy message, coverage re-read, Scan now disabled while it runs', async (_n, route) => {
+    m.toast.warning.mockReset()
+    await show({ 'POST /api/services/discover': route })
+    // The scan starts elsewhere (or goes on behind the proxy) after the page loaded.
+    h.routes['GET /api/services/coverage'] = raw({ success: true, coverage: coverage(RUNNING) })
+    const reads = h.log.filter((l) => l === 'GET /api/services/coverage').length
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
+    await waitFor(() => expect(m.toast.warning).toHaveBeenCalledWith(BUSY))
+    expect(m.toast.error).not.toHaveBeenCalled()
+    expect(m.toast.success).not.toHaveBeenCalled()
+    expect(h.log.filter((l) => l === 'GET /api/services/coverage').length).toBeGreaterThan(reads)
+    await waitFor(() => expect(screen.getByTestId('security-scan-line').getAttribute('data-state')).toBe('running'))
+    expect(screen.getByRole('button', { name: /Scan now/ })).toBeDisabled()
+  })
+  it('a 504 with no scan running after it: the existing failure message (nothing claims a scan is running)', async () => {
+    m.toast.warning.mockReset()
+    await show({ 'POST /api/services/discover': fail(504) })
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
+    await waitFor(() => expect(m.toast.error).toHaveBeenCalledWith('Scan failed — check your AWS connection'))
+    expect(m.toast.warning).not.toHaveBeenCalled()
+  })
+  it('another 409 (not the busy body) keeps the existing failure message', async () => {
+    m.toast.warning.mockReset()
+    await show({ 'POST /api/services/discover': failWith(409, 'aws_not_connected') })
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
+    await waitFor(() => expect(m.toast.error).toHaveBeenCalledWith('Scan failed — check your AWS connection'))
+    expect(m.toast.warning).not.toHaveBeenCalled()
   })
 })
 

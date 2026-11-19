@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/contexts/auth-context'
 import { useCurrentRole } from '@/lib/hooks/use-current-role'
 import { FRAMEWORK_SCANS_LIMIT, useFrameworkEvaluations } from '@/lib/compliance/useFrameworkEvaluations'
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay'
+import { SCAN_BUSY_TEXT, scanBusyAfter } from '../../services/scanBusy'
 import { describeSecurity, type ResourceFindingsSource, type ResourceWithIssues, type SecLoadable } from './securityModel'
 import { PAGE_COPY } from './securityCopy'
 import { SecurityHeader } from './SecurityHeader'
@@ -105,6 +106,11 @@ export default function SecurityOverviewV2() {
       ].map((queryKey) => queryClient.invalidateQueries({ queryKey })))
       toast.success(PAGE_COPY.syncComplete(result.discovered, result.updated))
     } catch (error) {
+      // Flag-on prep (item 4): a busy answer, or a request cut while the scan goes on, is never "Scan failed".
+      if (await scanBusyAfter(error, queryClient, orgId)) {
+        toast.warning(SCAN_BUSY_TEXT)
+        return
+      }
       const status = statusOf(error)
       toast.error(status === 403 ? PAGE_COPY.syncForbidden
         : status === 402 ? PAGE_COPY.syncLimit

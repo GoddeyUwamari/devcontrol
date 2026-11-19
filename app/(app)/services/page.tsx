@@ -20,6 +20,7 @@ import { TYPE_DISPLAY, RESOURCE_TYPE_CHIPS } from './resourceTypes'
 import { isServicesV2Enabled } from './servicesV2Flag'
 import { isServicesRedesignEnabled } from './servicesRedesignFlag'
 import { ServicesOverview } from './ServicesOverview'
+import { scanBusyAfter } from './scanBusy'
 import type { DiscoverOutcome } from './redesignModel'
 import { ResourceFocus } from './ResourceFocus'
 import { servicesDemoFixture } from '@/lib/demo/services-demo-fixture'
@@ -292,6 +293,10 @@ export default function ServicesPage() {
       queryClient.invalidateQueries({ queryKey: ['risk-score-trend'] })
       queryClient.invalidateQueries({ queryKey: ['risk-score-current'] })
     } catch (err: any) {
+      // Flag-on prep (item 4): a busy answer, or a request cut while the scan goes on, is not a failed
+      // load. Coverage is re-read: the header shows the scan in progress and Scan now's own
+      // "A scan is already running for this AWS account." hint (ServicesHeader).
+      if (await scanBusyAfter(err, queryClient, orgId)) return
       if (err.response?.status === 402) setShowUpgradePrompt(true)
       else setDiscoveryError(err.message || 'Discovery failed — check your AWS connection')
     } finally { setIsDiscovering(false) }
