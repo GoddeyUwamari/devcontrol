@@ -1,4 +1,4 @@
-import { formatDistanceToNow } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
 import type { HiddenFinding, NotConfirmedReason } from '@/lib/services/cost-recommendations.service'
 
 /**
@@ -12,10 +12,29 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
 
 export const STILL_DETECTED_TITLE = 'Still detected' // C6 (also the item badge)
 
-/** C7 */
+/** The group's heading (tidy mock): "Still detected (2)". */
+export const stillDetectedHeading = (count: number) => `${STILL_DETECTED_TITLE} (${count})`
+
+/** C7, tidy mock wording (Nov 19). */
 export function stillDetectedSubtext(count: number): string {
   const one = count === 1
-  return `You marked ${one ? 'this' : 'these'} resolved, but the latest analysis still found ${one ? 'it' : 'them'}. ${one ? "It isn't" : "They aren't"} in the totals above until you reopen ${one ? 'it' : 'them'}.`
+  return `You marked ${one ? 'this' : 'these'} resolved, but the latest analysis found ${one ? 'it' : 'them'} again. ${one ? "It isn't" : "They aren't"} counted in the totals above until you reopen ${one ? 'it' : 'them'}.`
+}
+
+/** Under a still-detected item's amount (tidy mock). */
+export const NOT_COUNTED_WHILE_RESOLVED = 'Not counted while resolved'
+
+/**
+ * A still-detected item's decision line (tidy mock): "Resolved by {name} on
+ * Nov 18, 2026 · found again in the analysis 2 hours ago." The person is the
+ * recorded actor's name; /hidden carries no user id, so the page can't say
+ * "you" (founder note in tidy-build.md).
+ */
+export function stillDetectedMeta(item: Pick<HiddenFinding, 'decidedAt' | 'decidedBy'> & { detection: Pick<HiddenFinding['detection'], 'lastDetectedAt'> }): string {
+  const on = format(new Date(item.decidedAt), 'MMM d, yyyy')
+  const resolved = item.decidedBy ? `Resolved by ${item.decidedBy} on ${on}` : `Resolved on ${on} · person not recorded`
+  const again = item.detection.lastDetectedAt ? ` · found again in the analysis ${relative(item.detection.lastDetectedAt)}` : ''
+  return `${resolved}${again}.`
 }
 
 /** C8 */
@@ -69,6 +88,3 @@ export const HIDDEN_LOAD_FAILED = "Couldn't load resolved and dismissed findings
 export const DISMISS = 'Dismiss'
 export const DISMISSED_TOAST = 'Recommendation dismissed'
 export const DISMISS_FAILED_TOAST = 'Failed to dismiss recommendation'
-
-/** E1: the check names as one left-aligned line (replaces the centred bullet list). */
-export const checksLine = (names: readonly string[]) => `What DevControl checks: ${names.join(', ')}.`

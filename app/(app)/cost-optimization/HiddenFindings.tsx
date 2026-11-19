@@ -7,7 +7,9 @@ import { cn, formatSavingsCurrency } from '@/lib/utils';
 import { DEFAULT_PRICE_DISCLOSURE, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
 import { LOW_ACTIVITY_DISPLAY_LABEL, lowActivitySavingsHeadline } from '@/lib/finding-display';
 import { Button } from '@/components/ui/button';
+import { SeverityBadge } from '@/components/ui/severity-badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { SeverityLevel } from '@/lib/utils/severity-colors';
 import { TRY_AGAIN } from './costScanBanner';
 import {
   DISMISS,
@@ -16,6 +18,7 @@ import {
   HIDE,
   NOT_CONFIRMED,
   NOT_CONFIRMED_REASON,
+  NOT_COUNTED_WHILE_RESOLVED,
   REOPEN,
   REVIEW_EMPTY,
   SHOW,
@@ -27,8 +30,22 @@ import {
   estimatedIfAddressed,
   notRecheckedLine,
   reviewToggleLabel,
+  stillDetectedHeading,
+  stillDetectedMeta,
   stillDetectedSubtext,
 } from './hiddenFindingsCopy';
+
+/** The slot's id: the banner's "Review it" scrolls here. */
+export const STILL_DETECTED_ANCHOR = 'still-detected';
+
+/** "Review it": bring the Still detected group into view and move focus to its heading. */
+export function scrollToStillDetected(): void {
+  const slot = document.getElementById(STILL_DETECTED_ANCHOR);
+  if (!slot) return;
+  const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  slot.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  slot.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+}
 
 /**
  * Hidden findings on Cost Optimization (PR 3b): the "Still detected" group
@@ -78,6 +95,7 @@ function ItemSavings({ item }: { item: HiddenFinding }) {
       <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">
         {lowActivity ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency) : formatRecommendationSavings(rec, formatSavingsCurrency)}
       </p>
+      <p className="text-label text-ink-muted font-medium" data-testid="not-counted">{NOT_COUNTED_WHILE_RESOLVED}</p>
       {savingsBasisKind(rec) === 'ceiling' && (
         <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
       )}
@@ -86,6 +104,15 @@ function ItemSavings({ item }: { item: HiddenFinding }) {
       )}
     </div>
   );
+}
+
+const SEVERITIES: readonly SeverityLevel[] = ['high', 'medium', 'low'];
+
+/** The latest detection's severity as a chip; nothing for a value outside High/Medium/Low. */
+function ItemSeverity({ severity }: { severity: string | null }) {
+  const level = severity?.toLowerCase() as SeverityLevel | undefined;
+  if (!level || !SEVERITIES.includes(level)) return null;
+  return <SeverityBadge severity={level} label={level.charAt(0).toUpperCase() + level.slice(1)} />;
 }
 
 function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: ItemActions; inGroup: boolean }) {
@@ -102,6 +129,10 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="text-ui font-semibold text-slate-900 break-words">{item.issueLabel ?? item.issue}</span>
+            {inGroup && <ItemSeverity severity={item.detection.severity} />}
+            {inGroup && (
+              <span className="text-label font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200" data-testid="still-detected-chip">{STILL_DETECTED_TITLE}</span>
+            )}
             {!inGroup && item.decision === 'DISMISSED' && (
               <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{DISMISSED_BADGE}</span>
             )}
@@ -114,14 +145,15 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
           {!stillDetected && item.detection.reason && (
             <p className="text-meta text-ink-muted mb-2">{NOT_CONFIRMED_REASON[item.detection.reason]}</p>
           )}
-          <div className="flex flex-wrap gap-1.5 mb-2">
+          {inGroup && <p className="text-meta text-ink-muted mb-2" data-testid="still-detected-meta">{stillDetectedMeta(item)}</p>}
+          <div className={cn('flex flex-wrap gap-1.5', !inGroup && 'mb-2')}>
             <Chip>{item.resourceId}</Chip>
             {item.resourceName && <Chip>{item.resourceName}</Chip>}
             {item.resourceType && <Chip>{item.resourceType}</Chip>}
             {item.awsRegion && <Chip>{item.awsRegion}</Chip>}
           </div>
-          <p className="text-label font-normal text-ink-muted">{decisionMeta(item)}</p>
-          {history && <p className="text-label font-normal text-ink-muted">{history}</p>}
+          {!inGroup && <p className="text-label font-normal text-ink-muted">{decisionMeta(item)}</p>}
+          {history && <p className={cn('text-label font-normal text-ink-muted', inGroup && 'mt-2')}>{history}</p>}
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           {inGroup && <ItemSavings item={item} />}
@@ -181,11 +213,12 @@ export function StillDetectedSlot({ view, actions, onRetry, retrying = false }: 
 
   return (
     <section
+      id={STILL_DETECTED_ANCHOR}
       aria-labelledby={showGroup ? headingId : undefined}
       aria-label={showGroup ? undefined : STILL_DETECTED_TITLE}
       aria-busy={view.status === 'loading' || undefined}
       data-testid="still-detected-slot"
-      className="mb-6"
+      className="scroll-mt-24"
     >
       <div aria-live="polite" aria-atomic="true" data-testid="still-detected-live">
         {view.status === 'error' ? (
@@ -207,10 +240,9 @@ export function StillDetectedSlot({ view, actions, onRetry, retrying = false }: 
           </div>
         ) : showGroup ? (
           <div className="bg-white border border-slate-200 rounded-t-xl px-4 pt-4 pb-3 sm:px-5">
-            <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <h2 id={headingId} className="text-ui font-semibold text-slate-900">{STILL_DETECTED_TITLE}</h2>
-              <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 tabular-nums" data-testid="still-detected-count">{count}</span>
-            </div>
+            <h2 id={headingId} tabIndex={-1} className="text-ui font-semibold text-slate-900 mb-1.5 tabular-nums outline-none" data-testid="still-detected-heading">
+              {stillDetectedHeading(count)}
+            </h2>
             <p className="text-meta text-ink-muted mb-2">{stillDetectedSubtext(count)}</p>
             <p className={cn('text-ui font-semibold tabular-nums', estimate === 0 ? ZERO_CLASS : 'text-slate-900')}>{estimatedIfAddressed(formatSavingsCurrency(estimate))}</p>
             {ceiling > 0 && <p className="text-meta text-ink-muted mt-0.5">{ceilingLine(formatSavingsCurrency(ceiling))}</p>}
@@ -236,7 +268,7 @@ export function ReviewList({ data, actions }: { data: HiddenFindings; actions: I
   const total = data.summary.resolved + data.summary.dismissed;
 
   return (
-    <section className="mt-6" data-testid="review-list">
+    <section data-testid="review-list">
       <button
         type="button"
         aria-expanded={open}
