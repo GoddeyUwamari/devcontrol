@@ -16,7 +16,7 @@ import { checks, run } from './fixtures'
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
-vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => selector({ enabled: false }) }))
+vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: <T,>(selector: (state: { enabled: boolean }) => T) => selector({ enabled: false }) }))
 vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'member' }))
 
 const svc = vi.hoisted(() => ({
@@ -379,16 +379,19 @@ describe('money rule on the page', () => {
     expect(monthly.className).toMatch(/text-slate-500/)
   })
 
-  it('rounded-total edge: 0 with positive estimates behind it is "<$0.01", never "$0"', async () => {
+  it('rounded-total edge: 0 with positive estimates behind it is "<$0.01/mo" and "<$0.06/yr" (ruling 4), never "$0"', async () => {
     const { monthly, annual } = await show(0, 2)
     expect(monthly).toHaveTextContent(/^<\$0\.01\/mo$/)
-    expect(annual).toHaveTextContent(/^<\$0\.01\/yr$/)
+    expect(annual).toHaveTextContent(/^<\$0\.06\/yr$/)
+    expect(annual).not.toHaveTextContent(/<\$0\.01/)
     expect(monthly.className).not.toMatch(/text-slate-500/)
+    expect(annual.className).not.toMatch(/text-slate-500/)
   })
 
-  it('exactly $0.01: "$0.01"', async () => {
-    const { monthly } = await show(0.01, 1)
+  it('exactly $0.01: "$0.01/mo", "$0.12/yr"', async () => {
+    const { monthly, annual } = await show(0.01, 1)
     expect(monthly).toHaveTextContent(/^\$0\.01\/mo$/)
+    expect(annual).toHaveTextContent(/^\$0\.12\/yr$/)
   })
 
   it('$1 and above: whole dollars', async () => {

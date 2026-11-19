@@ -92,6 +92,24 @@ export function formatSavingsTotal(total: number | null | undefined, estimatedFi
   return formatSavingsCurrency(total)
 }
 
+/**
+ * What a positive monthly total that rounds to $0 annualizes to: under
+ * $0.005/mo is under $0.06/yr (founder ruling, Cost Optimization tidy), so
+ * "<$0.01/yr" would understate the bound.
+ */
+export const SUB_CENT_ANNUAL = '<$0.06'
+
+/**
+ * The annual figure of a cent-rounded monthly savings total (/stats
+ * total_potential_savings): annualizeMonthly() with formatSavingsCurrency(),
+ * except that a monthly total of 0 with positive estimates behind it is
+ * "<$0.06". No backend mirror: the weekly email shows no annual figure.
+ */
+export function formatAnnualSavingsTotal(monthlyTotal: number | null | undefined, estimatedFindings: number | null | undefined): string {
+  if (monthlyTotal === 0 && typeof estimatedFindings === 'number' && estimatedFindings > 0) return SUB_CENT_ANNUAL
+  return formatSavingsCurrency(monthlyTotal == null ? monthlyTotal : annualizeMonthly(monthlyTotal))
+}
+
 const USD_CENTS = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /**

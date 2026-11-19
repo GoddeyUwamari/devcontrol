@@ -194,14 +194,47 @@ describe('analyzeToast: from run state and counts, never recommendationsFound', 
     ['older backend', { runState: undefined, counts: undefined, unknownResourceCount: undefined }, 'info', 'Analysis complete.'],
     ['partial', { runState: 'partial' as const, counts: counts({ detected: 2, new: 2, persisted: 2 }), unknownResourceCount: 0 }, 'warning', PARTIAL_MESSAGE],
   ])('%s', (_label, result, kind, text) => {
-    expect(analyzeToast(result)).toEqual({ kind, text })
+    // /hidden agrees with the run here: its still-detected count equals the run's suppressedResolved.
+    expect(analyzeToast(result, result.counts?.suppressedResolved ?? 0)).toEqual({ kind, text })
   })
   it('green only for clean: never with hidden findings, unknowns or missing counts', () => {
-    expect(analyzeToast({ runState: 'completed', counts: counts({ detected: 1, suppressedDismissed: 1 }), unknownResourceCount: 0 }).kind).not.toBe('success')
-    expect(analyzeToast({ runState: 'completed', counts: counts({}), unknownResourceCount: null }).kind).not.toBe('success')
-    expect(analyzeToast({ runState: undefined, counts: counts({}), unknownResourceCount: 0 }).kind).not.toBe('success')
+    expect(analyzeToast({ runState: 'completed', counts: counts({ detected: 1, suppressedDismissed: 1 }), unknownResourceCount: 0 }, 0).kind).not.toBe('success')
+    expect(analyzeToast({ runState: 'completed', counts: counts({}), unknownResourceCount: null }, 0).kind).not.toBe('success')
+    expect(analyzeToast({ runState: undefined, counts: counts({}), unknownResourceCount: 0 }, 0).kind).not.toBe('success')
+    // A still-detected finding per /hidden is never "nothing flagged" in green.
+    expect(analyzeToast({ runState: 'completed', counts: counts({}), unknownResourceCount: 0 }, 1)).toEqual({ kind: 'info', text: 'Analysis complete: nothing new. 1 resolved found again.' })
   })
   it('never "0 found" when findings were detected but hidden', () => {
-    expect(analyzeToast({ runState: 'completed', counts: counts({ detected: 2, suppressedResolved: 2 }), unknownResourceCount: 0 }).text).not.toMatch(/\b0\b/)
+    expect(analyzeToast({ runState: 'completed', counts: counts({ detected: 2, suppressedResolved: 2 }), unknownResourceCount: 0 }, 2).text).not.toMatch(/\b0\b/)
+    expect(analyzeToast({ runState: 'completed', counts: counts({ detected: 2, suppressedResolved: 2 }), unknownResourceCount: 0 }, 0).text).not.toMatch(/\b0\b/)
+  })
+})
+
+describe('founder ruling 8: the toast uses the same still-detected count as the banner (/hidden)', () => {
+  const counts = (c: Partial<Record<'detected' | 'new' | 'refreshed' | 'suppressedResolved' | 'suppressedDismissed' | 'duplicate' | 'persisted', number>>) => ({
+    detected: 0, new: 0, refreshed: 0, suppressedResolved: 0, suppressedDismissed: 0, duplicate: 0, persisted: 0, ...c,
+  })
+  const ran = (c: Parameters<typeof counts>[0]) => ({ runState: 'completed' as const, counts: counts(c), unknownResourceCount: 0 })
+
+  it('the run counted 1 resolved found again, /hidden confirms none: no "resolved found again"', () => {
+    expect(analyzeToast(ran({ detected: 1, suppressedResolved: 1 }), 0)).toEqual({ kind: 'info', text: 'Analysis complete: nothing new.' })
+  })
+  it('/hidden did not answer (null): no "resolved found again", the dismissed part stays', () => {
+    expect(analyzeToast(ran({ detected: 1, suppressedResolved: 1 }), null)).toEqual({ kind: 'info', text: 'Analysis complete: nothing new.' })
+    expect(analyzeToast(ran({ detected: 2, suppressedResolved: 1, suppressedDismissed: 1 }), null)).toEqual({ kind: 'info', text: 'Analysis complete: nothing new. 1 dismissed found again.' })
+  })
+  it('the count is /hidden\'s, not the run\'s', () => {
+    expect(analyzeToast(ran({ detected: 3, suppressedResolved: 3 }), 2).text).toBe('Analysis complete: nothing new. 2 resolved found again.')
+  })
+  it('toast and banner give the same number for the same /hidden answer', () => {
+    for (const still of [0, 1, 2]) {
+      const r = run({ detected_count: 2, suppressed_resolved_count: 2 })
+      const b = bannerContent(stateOf(r), ready(still))
+      const t = analyzeToast(ran({ detected: 2, suppressedResolved: 2 }), still)
+      const inBanner = `${b.title} ${b.description ?? ''}`.match(/(\d+) findings? you resolved/)?.[1] ?? '0'
+      const inToast = t.text.match(/(\d+) resolved found again/)?.[1] ?? '0'
+      expect(inToast).toBe(inBanner)
+      expect(inToast).toBe(String(still))
+    }
   })
 })

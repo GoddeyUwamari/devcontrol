@@ -197,23 +197,33 @@ export function bannerContent(s: CostScanState, ctx: BannerContext = UNKNOWN_CON
 
 export type ToastKind = 'success' | 'info' | 'warning'
 
-/** The toast after a successful "Run cost analysis" response: from its run state and counts, never recommendationsFound. */
-export function analyzeToast(result: Pick<AnalysisResult, 'runState' | 'counts' | 'unknownResourceCount'>): { kind: ToastKind; text: string } {
+/**
+ * The toast after a successful "Run cost analysis" response: from its run state and counts, never recommendationsFound.
+ * `stillDetected` is /hidden's still-detected count after the run (null when /hidden didn't answer): the resolved part
+ * of C5 reads it, never the run's suppressedResolved, so the toast, the banner and the group can't disagree
+ * (founder ruling 8, Cost Optimization tidy).
+ */
+export function analyzeToast(
+  result: Pick<AnalysisResult, 'runState' | 'counts' | 'unknownResourceCount'>,
+  stillDetected: number | null,
+): { kind: ToastKind; text: string } {
   if (result.runState === 'partial') return { kind: 'warning', text: PARTIAL_MESSAGE }
   const c = result.counts
   if (!c) return { kind: 'info', text: 'Analysis complete.' }
-  const hidden = c.suppressedResolved + c.suppressedDismissed
+  const resolvedAgain = stillDetected ?? 0
   const unknown = result.unknownResourceCount
   if (c.new > 0) return { kind: 'info', text: `Analysis complete: ${c.new} new opportunit${plural(c.new, 'y', 'ies')}.` }
   if (c.persisted > 0) return { kind: 'info', text: 'Analysis complete: no new opportunities.' }
-  if (hidden > 0) {
+  if (resolvedAgain > 0 || c.suppressedDismissed > 0) {
     // C5: only the non-zero parts.
     const parts = [
-      c.suppressedResolved > 0 && `${c.suppressedResolved} resolved found again`,
+      resolvedAgain > 0 && `${resolvedAgain} resolved found again`,
       c.suppressedDismissed > 0 && `${c.suppressedDismissed} dismissed found again`,
     ].filter(Boolean)
     return { kind: 'info', text: `Analysis complete: nothing new. ${parts.join(', ')}.` }
   }
+  // The run counted resolved findings found again, but /hidden doesn't confirm any (or didn't answer): no claim.
+  if (c.suppressedResolved > 0) return { kind: 'info', text: 'Analysis complete: nothing new.' }
   if (c.detected === 0 && typeof unknown === 'number' && unknown > 0) {
     return { kind: 'info', text: `Analysis complete: nothing flagged, ${unknown} resource${plural(unknown, '', 's')} not fully checked.` }
   }

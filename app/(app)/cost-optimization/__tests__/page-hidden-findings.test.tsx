@@ -245,7 +245,7 @@ describe('Still detected group', () => {
     await loaded()
     const empty = screen.getByTestId('empty-state')
     expect(within(empty).getByTestId('empty-all-checks')).toHaveTextContent(
-      'The latest analysis ran all 9 active checks (listed on the right) and found nothing new. Findings you resolved or dismissed are below.'
+      'The latest analysis ran all 9 active checks (listed under What DevControl checks) and found nothing new. Findings you resolved or dismissed are below.'
     )
     expect(screen.queryByText(EMPTY_HEADLINE)).not.toBeInTheDocument()
     expect(empty.compareDocumentPosition(slot()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -447,7 +447,7 @@ describe('/hidden failed: C27, never empty', () => {
     renderPage()
     await waitFor(() => expect(screen.getByText(C27)).toBeInTheDocument())
     const card = await screen.findByTestId('empty-state')
-    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^The latest analysis ran all 9 active checks \(listed on the right\) and found nothing new\.$/)
+    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^The latest analysis ran all 9 active checks \(listed under What DevControl checks\) and found nothing new\.$/)
     expect(card.textContent).not.toMatch(/below/)
   })
 
@@ -479,7 +479,7 @@ describe('truly empty (no active, nothing still detected)', () => {
     renderPage()
     await loaded()
     const card = await screen.findByTestId('empty-state')
-    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^The latest analysis ran all 9 active checks \(listed on the right\) and found nothing new\.$/)
+    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^The latest analysis ran all 9 active checks \(listed under What DevControl checks\) and found nothing new\.$/)
     expect(within(card).queryByText(EMPTY_HEADLINE)).not.toBeInTheDocument()
     expect(card.className).not.toMatch(/text-center/)
     // The banner says it once.

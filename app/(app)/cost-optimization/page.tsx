@@ -18,11 +18,11 @@ import { costRecommendationsService } from '@/lib/services/cost-recommendations.
 import awsAccountsService from '@/lib/services/aws-accounts.service';
 import { awsResourcesService } from '@/lib/services/aws-resources.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
-import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
+import type { HiddenFindings, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
-import { annualizeMonthly, cn, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
+import { cn, formatAnnualSavingsTotal, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
 import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline } from '@/lib/finding-display';
@@ -283,7 +283,12 @@ export default function CostOptimizationPage() {
         // The run records which hidden findings it found again.
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
       ]);
-      const message = analyzeToast(result);
+      // The toast's "resolved found again" is /hidden's still-detected count, refetched above:
+      // the same number the banner and the Still detected group show (founder ruling 8).
+      // A failed refetch is unknown (null), never the previous answer.
+      const hiddenState = queryClient.getQueryState<HiddenFindings>(['cost-recommendations-hidden']);
+      const stillDetectedNow = hiddenState?.status === 'success' && hiddenState.data ? hiddenState.data.summary.stillDetected.count : null;
+      const message = analyzeToast(result, stillDetectedNow);
       toast[message.kind](message.text);
     } catch (err: unknown) {
       toast.error(analyzeFailureMessage(err));
@@ -323,9 +328,9 @@ export default function CostOptimizationPage() {
   // Upper bounds (S3 lifecycle, DynamoDB capacity), one line per type, never added to the total.
   // Rendered only when the monthly figure is available (below), so a failed stats fetch shows none.
   const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
-  const annualSavings = monthlySavings === null ? null : annualizeMonthly(monthlySavings);
   const monthlyLabel = monthlySavings === null ? null : formatSavingsTotal(monthlySavings, estimatedFindings);
-  const annualLabel = annualSavings === null ? null : formatSavingsTotal(annualSavings, estimatedFindings);
+  // A monthly total that rounds to $0 with estimates behind it is under $0.06/yr, never "<$0.01/yr" (founder ruling).
+  const annualLabel = monthlySavings === null ? null : formatAnnualSavingsTotal(monthlySavings, estimatedFindings);
   const bySeverity = statsAvailable ? stats.bySeverity : null;
 
   // The banner states a resolved finding "found again" only from /hidden's judgement, the

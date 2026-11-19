@@ -17,7 +17,8 @@ export const stillDetectedKpiNote = (count: number) => `+ ${count} still detecte
  * dismissed findings below to point to.
  */
 export function emptyAllChecks(checks: number, hasDecided: boolean): string {
-  const first = `The latest analysis ran all ${checks} active check${plural(checks, '', 's')} (listed on the right) and found nothing new.`
+  // "listed under What DevControl checks" (founder ruling 5): true on a phone, where the rail sits below.
+  const first = `The latest analysis ran all ${checks} active check${plural(checks, '', 's')} (listed under What DevControl checks) and found nothing new.`
   return hasDecided ? `${first} Findings you resolved or dismissed are below.` : first
 }
 

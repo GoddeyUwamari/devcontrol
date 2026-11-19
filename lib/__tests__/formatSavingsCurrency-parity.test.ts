@@ -7,7 +7,7 @@
  * whole dollars at $1 and above.
  */
 import { describe, expect, it } from 'vitest'
-import { formatSavingsCurrency, formatSavingsTotal, SUB_CENT } from '../utils'
+import { formatAnnualSavingsTotal, formatSavingsCurrency, formatSavingsTotal, SUB_CENT, SUB_CENT_ANNUAL } from '../utils'
 import {
   formatSavingsCurrency as backendFormatSavingsCurrency,
   formatSavingsTotal as backendFormatSavingsTotal,
@@ -64,6 +64,18 @@ describe('the money rule', () => {
     expect(formatSavingsTotal(0, 0)).toBe('$0')
     expect(formatSavingsTotal(0, null)).toBe('$0')
     expect(formatSavingsTotal(null, 2)).toBe('—')
+  })
+
+  it('annual (founder ruling 4): a positive monthly total that rounds to $0 is "<$0.06", the bound of 12 × under $0.005', () => {
+    expect(formatAnnualSavingsTotal(0, 1)).toBe('<$0.06')
+    expect(SUB_CENT_ANNUAL).toBe('<$0.06')
+    // The bound holds: the largest monthly amount that rounds to $0.00, times 12, is under $0.06.
+    expect(0.00499 * 12).toBeLessThan(0.06)
+    expect(formatAnnualSavingsTotal(0, 0)).toBe('$0')
+    expect(formatAnnualSavingsTotal(0, null)).toBe('$0')
+    expect(formatAnnualSavingsTotal(null, 2)).toBe('—')
+    expect(formatAnnualSavingsTotal(0.01, 1)).toBe('$0.12')
+    expect(formatAnnualSavingsTotal(12.34, 2)).toBe('$148')
   })
 
   it("the email's open-savings figure is the shared rule plus /mo", () => {
