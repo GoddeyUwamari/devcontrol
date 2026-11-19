@@ -331,6 +331,54 @@ export function sevenDayTrendFrom(series: ReadonlyArray<CostTrendPoint>): CostTr
 }
 
 /**
+ * The range the 30d trend is served from (CE-2, ce1-build.md A4 (ii)): the
+ * Dashboard already asks for the 90d series (month-over-month) whenever it
+ * asks for 30d, and 30d is a slice of it (same DAILY granularity, metric and
+ * SERVICE grouping), so 30d costs no Cost Explorer request of its own.
+ */
+export const THIRTY_DAY_TREND_SOURCE = '90d' satisfies CostTrendRange
+
+/**
+ * The 30d trend from the 90d series, exactly as a 30d request of its own
+ * would have returned it: the points of trendPeriodUtc('30d', now), as copies
+ * (the cached 90d points are never changed), with every amount the 90d
+ * point's own, and the two things that depend on the series around a day
+ * decided again over these 31 days:
+ *   - reportState / provisional (costReportStates over the slice), so a day
+ *     reads as it did when 30d was its own request. Decided over 90 days, an
+ *     account whose last charge was 31-90 days ago would read "not reported"
+ *     for its last 8 days instead of final $0 (ce1-build.md A4 (i));
+ *   - byServiceDisplay (the top services over these 31 days).
+ * `now` must be the time the 90d entry's key was computed from: the key ends
+ * tomorrow (UTC), so it is the UTC day the 90d states were decided for, and
+ * costReportStates reads only the UTC date. A daily point's last day is its
+ * own date (Cost Explorer's End is the next day, exclusive).
+ */
+export function thirtyDayTrendFrom(series: ReadonlyArray<CostTrendPoint>, now: Date): CostTrendPoint[] {
+  const { start, end } = trendPeriodUtc('30d', now)
+  const points = series
+    .filter((p) => p.date.slice(0, 10) >= start && p.date.slice(0, 10) < end)
+    .map((p) => ({ ...p }))
+  const states = costReportStates(
+    points.map((p) => ({ lastDay: p.date.slice(0, 10), lineItems: p.lineItems ?? 0, estimated: p.estimated ?? null })),
+    now
+  )
+  points.forEach((p, i) => {
+    p.reportState = states[i]
+    p.provisional = isProvisional(states[i])
+  })
+  attachServiceDisplayBreakdown(points)
+  return points
+}
+
+/** The range whose cache entry (and Cost Explorer request) serves `range`: 7d and 30d read the 90d entry. */
+export function trendCacheSource(range: CostTrendRange): CostTrendRange {
+  if (range === '7d') return trendCacheSource(SEVEN_DAY_TREND_SOURCE)
+  if (range === '30d') return THIRTY_DAY_TREND_SOURCE
+  return range
+}
+
+/**
  * Map a raw Cost Explorer SERVICE name to a short display name. Falls back to
  * stripping the "Amazon"/"AWS" prefix and truncating, so an unmapped service still
  * renders reasonably instead of showing the full Cost Explorer string.
@@ -494,17 +542,20 @@ class AWSCostService {
   // dispatches to a per-organization instance.
   private costExplorerClient: CostExplorerClient | null = null
 
-  // Per-org, per-connection cache for fetchMonthlyCosts (costCacheKey) — Cost Explorer is billed per API call and rate
-  // limited, and this same singleton is polled every ~2min by system-intelligence plus
-  // invalidated on every cost/alert/deployment WebSocket event, so uncached it re-runs
-  // STS AssumeRole + GetCostAndUsageCommand far more often than the data actually changes.
+  // Per-org, per-connection cache for fetchMonthlyCosts (costCacheKey) — Cost Explorer is billed per API call
+  // (USD 0.01 to the customer's account) and rate limited, and every Dashboard surface (stats,
+  // cost summary, AI summary, resource checks) reads the month to date, the AI summary on a
+  // 5-minute poll; uncached it would re-run STS AssumeRole + GetCostAndUsageCommand far more
+  // often than the data actually changes. (System Intelligence reads only the inventory
+  // run-rate, never Cost Explorer.) No background job reads Cost Explorer except the Monday
+  // weekly email (the trend). This cache lives in process memory: a restart empties it.
   // TTL matches the 4h staleTime already used for cost data on the frontend (dashboard/page.tsx).
   private monthlyCostCache: Map<string, MonthlyCostCacheEntry> = new Map()
   private static readonly MONTHLY_COST_CACHE_TTL = 4 * 60 * 60 * 1000
 
   // In-flight promise per org and connection, keyed the same as monthlyCostCache (costCacheKey). Several independent
-  // call sites (stats.controller, infrastructure.controller, aws.routes, system-intelligence)
-  // share this singleton and can all miss the cache within the same window — e.g. on
+  // call sites (stats.controller, infrastructure.controller, aws.routes, the cost context
+  // behind the cost summary, AI summary and chat, cloudwatch resource checks) share this singleton and can all miss the cache within the same window — e.g. on
   // dashboard mount or right after the 4h TTL expires. Without this, every concurrent miss
   // fires its own STS AssumeRole + GetCostAndUsageCommand (a cache stampede) even though
   // they're all asking for the exact same result. Callers that arrive while a fetch is
@@ -514,9 +565,14 @@ class AWSCostService {
   // Per-org+connection+range cache for fetchCostTrend (costCacheKey) — same rationale as monthlyCostCache above:
   // Cost Explorer is billed per API call, and this was being called uncached on every
   // dashboard load and time-range tab switch. TTL matches MONTHLY_COST_CACHE_TTL.
+  // 7d and 30d have no entry of their own: both are served from the 90d entry
+  // (trendCacheSource), so the Dashboard's 7d chart and its 90d month-over-month
+  // comparison share one Cost Explorer request (CE-2).
   private costTrendCache: Map<string, CostTrendCacheEntry> = new Map()
 
-  // In-flight promise per org+range, same stampede rationale as monthlyCostInFlight.
+  // In-flight promise per org+connection+range, same stampede rationale as monthlyCostInFlight.
+  // 7d, 30d and 90d asked together (the Dashboard's chart and summary mounting at once)
+  // all wait on the one 90d fetch.
   private costTrendInFlight: Map<string, Promise<CostTrendPoint[]>> = new Map()
 
   // Builds no AWS client: there is no cost data without an organization, and
@@ -766,8 +822,8 @@ class AWSCostService {
     } catch {
       return null
     }
-    // 7d is read from the 30d entry (fetchCostTrend).
-    const source = range === '7d' ? SEVEN_DAY_TREND_SOURCE : range
+    // 7d and 30d are read from the 90d entry (fetchCostTrend).
+    const source = trendCacheSource(range)
     const cached = this.costTrendCache.get(AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), source, trendPeriodUtc(source, new Date())))
     return cached ? new Date(cached.timestamp).toISOString() : null
   }
@@ -789,12 +845,29 @@ class AWSCostService {
     // the 30-day view's, never one decided over 8 days alone (round-2 L-2).
     if (range === '7d') return sevenDayTrendFrom(await this.fetchCostTrend(organizationId, SEVEN_DAY_TREND_SOURCE))
 
+    // One instant for the period, the key and the report states below.
+    const now = new Date()
+
+    // 30d is the 90d series' last 31 days (today-30 .. today), from the same
+    // request and cache entry (CE-2), with each day's reportState decided again
+    // over those 31 days: exactly what a 30d request of its own returned.
+    if (range === '30d') return thirtyDayTrendFrom(await this.cachedCostTrend(organizationId, THIRTY_DAY_TREND_SOURCE, now), now)
+
+    return this.cachedCostTrend(organizationId, range, now)
+  }
+
+  /**
+   * One trend range's series as Cost Explorer returns it for the period that
+   * range resolves to at `now`: from this org's cache entry for its current
+   * connection, or one fetch shared by every concurrent caller (in-flight).
+   */
+  private async cachedCostTrend(organizationId: string, range: CostTrendRange, now: Date): Promise<CostTrendPoint[]> {
     // The connection first (costCacheKey): none throws AWS_NOT_CONNECTED, as before.
     const account = await requireEligibleAwsAccount(this.dbPool || pool, organizationId)
     // The period is fixed here, once: the key and the query below both use it.
     // Its end is tomorrow (UTC), so each point's reportState (and `provisional`),
     // computed at fetch time, never outlives the day it was computed for.
-    const period = trendPeriodUtc(range, new Date())
+    const period = trendPeriodUtc(range, now)
     const cacheKey = AWSCostService.trendCacheKey(organizationId, awsConnectionIdentity(account), range, period)
     const cached = this.costTrendCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < AWSCostService.MONTHLY_COST_CACHE_TTL) {
@@ -806,7 +879,6 @@ class AWSCostService {
       return inFlight
     }
 
-    const now = new Date()
     const fetchPromise = (async () => {
       const orgService = await AWSCostService.createForOrg(organizationId, this.dbPool || pool, account)
       const result = await orgService.queryCostTrend(period, now)

@@ -34,13 +34,21 @@ const mockCostExplorerSend = jest.fn();
 jest.mock('@aws-sdk/client-sts', () => ({
   ...jest.requireActual('@aws-sdk/client-sts'),
   STSClient: class {
-    send = jest.fn(async () => ({ Credentials: { AccessKeyId: 'ASIATESTTEMP', SecretAccessKey: 'test-secret', SessionToken: 'test-session' } }));
+    // Each organization's role gets its own temporary key, so a Cost Explorer
+    // call can be traced to the role it ran on (tenant isolation tests).
+    send = jest.fn(async (command: { input: { RoleArn: string } }) => ({
+      Credentials: { AccessKeyId: `ASIATEST${command.input.RoleArn.endsWith('-b') ? 'ORGB' : 'ORGA'}`, SecretAccessKey: 'test-secret', SessionToken: 'test-session' },
+    }));
   },
 }));
 jest.mock('@aws-sdk/client-cost-explorer', () => ({
   ...jest.requireActual('@aws-sdk/client-cost-explorer'),
   CostExplorerClient: class {
-    send = (...args: unknown[]) => mockCostExplorerSend(...args);
+    private readonly accessKeyId: string | undefined;
+    constructor(config: { credentials?: { accessKeyId?: string } }) {
+      this.accessKeyId = config.credentials?.accessKeyId;
+    }
+    send = (command: unknown) => mockCostExplorerSend(command, this.accessKeyId);
   },
 }));
 jest.mock('../../config/database', () => ({ pool: { query: jest.fn() } }));
@@ -49,7 +57,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Pool } from 'pg';
-import awsCostService, { type CostTrendPoint, type CostTrendRange } from '../../services/aws-cost.service';
+import awsCostService, { thirtyDayTrendFrom, trendCacheSource, type CostTrendPoint, type CostTrendRange } from '../../services/aws-cost.service';
 import { StatsController } from '../stats.controller';
 import { WeeklySummaryRepository } from '../../repositories/weekly-summary.repository';
 import { ACCOUNT_ROW, type CeInput } from './dashboard-money-fixtures';
@@ -253,5 +261,167 @@ describe('the fixtures exercise the cases that matter', () => {
   it('round 2: Nov 13 is updating and Nov 14-17 not reported in 30d at 2026-11-17', () => {
     const byDay = Object.fromEntries(pinned('evidence-2026-11-17-through-13').trend30.data.map((p: CostTrendPoint) => [p.date, p.reportState]));
     expect([byDay['2026-11-13'], byDay['2026-11-14'], byDay['2026-11-17']]).toEqual(['updating', 'not_reported', 'not_reported']);
+  });
+});
+
+// --- CE-2 behaviour --------------------------------------------------------
+
+const sentPeriods = () => mockCostExplorerSend.mock.calls.map(([command]) => (command as { input: CeInput }).input.TimePeriod);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => (resolve = res));
+  return { promise, resolve };
+}
+
+describe('CE-2: one Cost Explorer request serves 7d, 30d, 90d and the weekly email', () => {
+  it('30d sends the 90d period (today-90 .. tomorrow) once; 7d, 90d and the weekly email reuse it', async () => {
+    useCase('partial');
+    await trendEndpoint('30d');
+    expect(sentPeriods()).toEqual([{ Start: '2026-08-20', End: '2026-11-19' }]);
+    await trendEndpoint('7d');
+    await trendEndpoint('90d');
+    await new WeeklySummaryRepository({} as Pool).getCostTrendSection(ORG);
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('7d, 30d and 90d asked at once (the Dashboard mounting) wait on one fetch: one request, the same answers as one by one', async () => {
+    useCase('stopped45');
+    const held = deferred<void>();
+    mockCostExplorerSend.mockImplementation(async (command: { input: CeInput }) => {
+      await held.promise;
+      return ceResponse(command.input, CASES.stopped45.ledger);
+    });
+    const together = Promise.all([trendEndpoint('7d'), trendEndpoint('30d'), trendEndpoint('90d'), trendEndpoint('30d')]);
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(1);
+    held.resolve();
+    const [seven, thirty, ninety, thirtyAgain] = await together;
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(1);
+
+    const pinned = JSON.parse(fs.readFileSync(path.join(DIR, 'stopped45.json'), 'utf8'));
+    expect(seven).toEqual(pinned.trend7);
+    expect(thirty).toEqual(pinned.trend30);
+    expect(thirtyAgain).toEqual(pinned.trend30);
+    expect(createHash('sha256').update(JSON.stringify(ninety)).digest('hex')).toBe(pinned.trend90.sha256);
+  });
+
+  it('serving 7d and 30d never changes the cached 90d points (copies)', async () => {
+    useCase('stopped45');
+    const before = JSON.stringify(await trendEndpoint('90d'));
+    await trendEndpoint('30d');
+    await trendEndpoint('7d');
+    expect(JSON.stringify(await trendEndpoint('90d'))).toBe(before);
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed 90d request is not stored: 30d fails as an error (never an empty series), and the next call asks again', async () => {
+    useCase('partial');
+    mockCostExplorerSend.mockRejectedValueOnce(new Error('ThrottlingException'));
+    const json = jest.fn();
+    const status = jest.fn(() => ({ json }));
+    await new StatsController({ query: ambientPool.query } as unknown as Pool)
+      .getCostTrend({ user: { organizationId: ORG }, query: { range: '30d' } } as never, { json, status } as never);
+    expect(status).toHaveBeenCalledWith(502);
+    expect(await awsCostService.getCostTrendFetchedAt(ORG, '30d')).toBeNull();
+    const retry = await trendEndpoint('30d');
+    expect(retry.success).toBe(true);
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(2);
+  });
+
+  it('trendCacheSource: 7d and 30d read the 90d entry; the others their own', () => {
+    expect((['7d', '30d', '90d', '6mo', '1yr'] as CostTrendRange[]).map(trendCacheSource)).toEqual(['90d', '90d', '90d', '6mo', '1yr']);
+  });
+});
+
+describe('CE-2: tenant isolation of the shared 90d entry', () => {
+  const ORG_B = '00000000-0000-4000-8000-0000000000b1';
+  const ROW_B = { ...ACCOUNT_ROW, id: 'acct-row-b', org_id: ORG_B, role_arn: 'arn:aws:iam::111122223333:role/devcontrol-readonly-b' };
+  // Org A is charged every day; org B only through today-45.
+  const ledgerFor = (accessKeyId: string | undefined) => (accessKeyId === 'ASIATESTORGB' ? CASES.stopped45.ledger : CASES.partial.ledger);
+
+  async function trendFor(org: string, range: CostTrendRange): Promise<CostTrendPoint[]> {
+    const json = jest.fn();
+    await new StatsController({ query: ambientPool.query } as unknown as Pool)
+      .getCostTrend({ user: { organizationId: org }, query: { range } } as never, { json, status: jest.fn(() => ({ json })) } as never);
+    return json.mock.calls[0][0].data;
+  }
+
+  let rowFor: Record<string, unknown>;
+  beforeEach(() => {
+    clearCostCaches();
+    jest.setSystemTime(new Date(BAR_NOW));
+    rowFor = { [ORG]: ACCOUNT_ROW, [ORG_B]: ROW_B };
+    ambientPool.query.mockImplementation(async (_sql: string, params: string[]) => ({ rows: rowFor[params[0]] ? [rowFor[params[0]]] : [] }));
+    mockCostExplorerSend.mockImplementation(async (command: { input: CeInput }, accessKeyId: string | undefined) => ceResponse(command.input, ledgerFor(accessKeyId)));
+  });
+
+  it("org B's 7d/30d are never served from org A's 90d entry: B makes its own request on B's role and sees B's data", async () => {
+    const a30 = await trendFor(ORG, '30d');
+    expect(await awsCostService.getCostTrendFetchedAt(ORG_B, '30d')).toBeNull();
+    expect(await awsCostService.getCostTrendFetchedAt(ORG_B, '7d')).toBeNull();
+    const b30 = await trendFor(ORG_B, '30d');
+    const b7 = await trendFor(ORG_B, '7d');
+    expect(mockCostExplorerSend.mock.calls.map(([, key]) => key)).toEqual(['ASIATESTORGA', 'ASIATESTORGB']);
+
+    const pinned = (name: string) => JSON.parse(fs.readFileSync(path.join(DIR, `${name}.json`), 'utf8'));
+    expect(a30).toEqual(pinned('partial').trend30.data);
+    expect(b30).toEqual(pinned('stopped45').trend30.data);
+    expect(b7).toEqual(pinned('stopped45').trend7.data);
+    // A again: its own entry, no third request.
+    expect(await trendFor(ORG, '7d')).toEqual(pinned('partial').trend7.data);
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(2);
+  });
+
+  it('the organization is in the key on its own: an identical connection identity under another org is still a miss', async () => {
+    // Not a state production can reach (a row belongs to one org); the org id
+    // in the key must isolate by itself, whatever the identity holds.
+    rowFor = { [ORG]: ACCOUNT_ROW, [ORG_B]: { ...ACCOUNT_ROW, org_id: ORG_B } };
+    await trendFor(ORG, '30d');
+    expect(await awsCostService.getCostTrendFetchedAt(ORG_B, '30d')).toBeNull();
+    await trendFor(ORG_B, '30d');
+    await trendFor(ORG_B, '7d');
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(2);
+  });
+
+  it("a connection change (reconnect: a new row) misses the old connection's 90d entry for 7d and 30d", async () => {
+    await trendFor(ORG, '30d');
+    rowFor = { [ORG]: { ...ACCOUNT_ROW, id: 'acct-row-reconnected' } };
+    expect(await awsCostService.getCostTrendFetchedAt(ORG, '30d')).toBeNull();
+    await trendFor(ORG, '7d');
+    expect(mockCostExplorerSend).toHaveBeenCalledTimes(2);
+  });
+
+  it('no eligible connection: 30d is the empty "not connected" answer and nothing is sent', async () => {
+    rowFor = {};
+    expect(await trendFor(ORG, '30d')).toEqual([]);
+    expect(mockCostExplorerSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('thirtyDayTrendFrom', () => {
+  const point = (date: string, lineItems: number, reportState: CostTrendPoint['reportState']): CostTrendPoint => ({
+    date, compute: 0, storage: 0, database: 0, network: 0, other: lineItems, total: lineItems,
+    byService: lineItems ? [{ service: 'AWS Glue', amount: 1 }] : [], lineItems, estimated: null, reportState, provisional: reportState !== 'final',
+  });
+
+  it("keeps today-30 .. today, decides each day's state over those days, and never changes the series it was given", () => {
+    const now = new Date('2026-11-18T15:00:00Z');
+    const series: CostTrendPoint[] = [];
+    // A charge on Oct 4 (today-45), nothing since: over 90 days the last week reads not reported.
+    for (let d = '2026-08-20'; d <= '2026-11-18'; d = addDays(d, 1)) {
+      series.push(point(d, d === '2026-10-04' ? 1 : 0, d >= '2026-11-11' ? 'not_reported' : 'final'));
+    }
+    const snapshot = JSON.stringify(series);
+    const thirty = thirtyDayTrendFrom(series, now);
+    expect(thirty.map((p) => p.date)).toEqual(series.slice(-31).map((p) => p.date));
+    expect(thirty[0].date).toBe('2026-10-19');
+    expect(new Set(thirty.map((p) => p.reportState))).toEqual(new Set(['final']));
+    expect(thirty.every((p) => p.provisional === false)).toBe(true);
+    expect(JSON.stringify(series)).toBe(snapshot);
+  });
+
+  it('empty in, empty out', () => {
+    expect(thirtyDayTrendFrom([], new Date('2026-11-18T15:00:00Z'))).toEqual([]);
   });
 });
