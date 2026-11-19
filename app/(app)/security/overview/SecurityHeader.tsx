@@ -14,7 +14,7 @@ const DOT: Record<ScanLineState, string> = {
   none: 'bg-slate-400',
 }
 
-/** Title and subtitle left; the scan line and Sync now right (founder answer 1). */
+/** Title and subtitle left; the scan line and Scan now right (founder answer 1; "Scan" since PR 3d-2 D2). */
 export function SecurityHeader({ scan, syncing, canSync, blockedReason, onSync }: {
   scan: ScanLine | null
   syncing: boolean

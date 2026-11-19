@@ -165,7 +165,7 @@ describe('header scan line and Sync (answers 5, 6, 12; e2 4, 5; decision 3)', ()
   it('running: "Scan in progress since <time> · showing results from <time>", Sync disabled', async () => {
     await show({ 'GET /api/services/coverage': raw({ success: true, coverage: coverage({ scan_in_progress: { since: iso(60_000) } }) }) })
     expect(line()).toHaveTextContent('Scan in progress since 2:59 PM · showing results from today, 9:00 AM')
-    expect(screen.getByRole('button', { name: /Sync now/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Scan now/ })).toBeDisabled()
   })
   it('failed: "Last scan: <time> · didn\'t finish"', async () => {
     await show({ 'GET /api/services/coverage': raw({ success: true, coverage: coverage({ last_scan: { status: 'failed', started_at: iso(7_200_000), completed_at: iso(3_600_000), warnings: [] } }) }) })
@@ -179,36 +179,36 @@ describe('header scan line and Sync (answers 5, 6, 12; e2 4, 5; decision 3)', ()
   it('viewer: Sync shown disabled with its reason, never hidden', async () => {
     m.role = 'viewer'
     await show()
-    const button = screen.getByRole('button', { name: /Sync now/ })
+    const button = screen.getByRole('button', { name: /Scan now/ })
     expect(button).toBeDisabled()
-    expect(button).toHaveAccessibleDescription("Viewers can't start a sync")
+    expect(button).toHaveAccessibleDescription("Viewers can't start a scan")
   })
   it('role not read yet: disabled, no reason; member: enabled', async () => {
     m.role = null
     const first = await show()
-    expect(screen.getByRole('button', { name: /Sync now/ })).toBeDisabled()
-    expect(screen.queryByText("Viewers can't start a sync")).toBeNull()
+    expect(screen.getByRole('button', { name: /Scan now/ })).toBeDisabled()
+    expect(screen.queryByText("Viewers can't start a scan")).toBeNull()
     first.unmount()
     m.role = 'member'
     await show()
-    expect(screen.getByRole('button', { name: /Sync now/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Scan now/ })).toBeEnabled()
   })
-  it('while the sync runs: "Syncing…", disabled', async () => {
+  it('while the scan runs: "Scanning…", disabled (3d-2 D2; was Syncing…)', async () => {
     await show({ 'POST /api/services/discover': 'pending' })
-    fireEvent.click(screen.getByRole('button', { name: /Sync now/ }))
-    expect(await screen.findByRole('button', { name: /Syncing…/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
+    expect(await screen.findByRole('button', { name: /Scanning…/ })).toBeDisabled()
   })
-  it('success: the approved toast, and the button reads "Sync now" again (no separate done label)', async () => {
+  it('success: the approved toast, and the button reads "Scan now" again (no separate done label)', async () => {
     await show()
-    fireEvent.click(screen.getByRole('button', { name: /Sync now/ }))
-    await waitFor(() => expect(m.toast.success).toHaveBeenCalledWith('Sync complete — 12 resources discovered'))
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sync now/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
+    await waitFor(() => expect(m.toast.success).toHaveBeenCalledWith('Scan finished — 12 new · 0 updated'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Scan now/ })).toBeEnabled())
     expect(m.toast.error).not.toHaveBeenCalled()
   })
   it('a sync refreshes no system-intelligence query (nothing that could request /api/observability/*)', async () => {
     const { client } = await show()
     const spy = vi.spyOn(client, 'invalidateQueries')
-    fireEvent.click(screen.getByRole('button', { name: /Sync now/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
     await waitFor(() => expect(m.toast.success).toHaveBeenCalled())
     const keys = spy.mock.calls.map(([filters]) => JSON.stringify((filters as { queryKey?: unknown }).queryKey))
     expect(keys.length).toBeGreaterThan(0)
@@ -216,16 +216,16 @@ describe('header scan line and Sync (answers 5, 6, 12; e2 4, 5; decision 3)', ()
     expect(h.log.filter((l) => l.includes('/api/observability/'))).toEqual([])
   })
   it.each([
-    [403, "You don't have permission to start a sync."],
-    [402, "Your plan's sync limit is reached."],
-    [429, 'Too many syncs. Try again in a few minutes.'],
-    [500, 'Sync failed — check your AWS connection'],
+    [403, "You don't have permission to start a scan."],
+    [402, "Your plan's AWS resource limit is reached."],
+    [429, 'Too many scans. Try again in a few minutes.'],
+    [500, 'Scan failed — check your AWS connection'],
   ])('a failed sync (%i): its own message, never a success', async (status, text) => {
     await show({ 'POST /api/services/discover': fail(status) })
-    fireEvent.click(screen.getByRole('button', { name: /Sync now/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Scan now/ }))
     await waitFor(() => expect(m.toast.error).toHaveBeenCalledWith(text))
     expect(m.toast.success).not.toHaveBeenCalled()
-    await waitFor(() => expect(screen.getByRole('button', { name: /Sync now/ })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: /Scan now/ })).toBeEnabled())
   })
 })
 

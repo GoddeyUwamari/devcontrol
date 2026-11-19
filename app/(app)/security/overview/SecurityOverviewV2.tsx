@@ -103,7 +103,7 @@ export default function SecurityOverviewV2() {
         // Not ['system-intelligence']: a refresh of that key could request /api/observability/intelligence.
         ['services-stats'], ['risk-score-current'], ['risk-score-trend'], ['anomaly-stats'],
       ].map((queryKey) => queryClient.invalidateQueries({ queryKey })))
-      toast.success(PAGE_COPY.syncComplete(result.discovered))
+      toast.success(PAGE_COPY.syncComplete(result.discovered, result.updated))
     } catch (error) {
       const status = statusOf(error)
       toast.error(status === 403 ? PAGE_COPY.syncForbidden
