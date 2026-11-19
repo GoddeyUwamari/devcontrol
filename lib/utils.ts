@@ -62,12 +62,34 @@ export function annualizeMonthly(monthlyValue: number): number {
  * this keeps that value visible at 2 decimal places instead, while still
  * rounding to a whole dollar once the amount is $1 or more, and keeping a
  * genuine (non-null) zero distinguishable from missing/unavailable data.
+ * A positive amount under one cent is "<$0.01", never "$0.00" (the weekly
+ * email's money rule). Backend mirror, kept identical (pinned by
+ * lib/__tests__/formatSavingsCurrency-parity.test.ts):
+ * backend/src/utils/formatSavingsCurrency.ts.
  */
 export function formatSavingsCurrency(value: number | null | undefined): string {
   if (value == null) return '—'
   if (value === 0) return '$0'
+  if (value > 0 && value < 0.01) return SUB_CENT
   if (Math.abs(value) < 1) return `$${value.toFixed(2)}`
   return `$${Math.round(value).toLocaleString()}`
+}
+
+/** What a positive saving under one cent reads as. */
+export const SUB_CENT = '<$0.01'
+
+/**
+ * A cent-rounded savings total (e.g. /stats total_potential_savings, or its
+ * annualized figure) with formatSavingsCurrency()'s rule, plus the weekly
+ * email's (backend/src/services/weekly-brief/format.ts formatOpenSavings):
+ * when findings with a positive estimate exist but the rounded total is 0,
+ * the total is "<$0.01", never "$0". `estimatedFindings` is the count of
+ * findings with a positive estimate (/stats estimated_findings); null or 0
+ * keeps the plain rule. Backend mirror: backend/src/utils/formatSavingsCurrency.ts.
+ */
+export function formatSavingsTotal(total: number | null | undefined, estimatedFindings: number | null | undefined): string {
+  if (total === 0 && typeof estimatedFindings === 'number' && estimatedFindings > 0) return SUB_CENT
+  return formatSavingsCurrency(total)
 }
 
 const USD_CENTS = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })

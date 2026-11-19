@@ -1,7 +1,7 @@
 /**
  * Formatting for the weekly summary email. Pure. Every date is a UTC date.
  */
-import { formatSavingsCurrency } from '../../utils/formatSavingsCurrency';
+import { formatSavingsCurrency, formatSavingsTotal } from '../../utils/formatSavingsCurrency';
 import type { DayWindow } from '../../repositories/weekly-summary.repository';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -96,7 +96,8 @@ export function formatSavings(amount: number): string {
  */
 export function formatOpenSavings(estimate: number, estimatedFindings: number): string | null {
   if (estimatedFindings <= 0) return null;
-  return estimate === 0 ? '<$0.01/mo' : `${formatSavings(estimate)}/mo`;
+  // The shared rule (formatSavingsTotal), so the page and the email agree.
+  return `${formatSavingsTotal(estimate, estimatedFindings)}/mo`;
 }
 
 /**
