@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { AuthGate } from '@/components/auth/auth-gate';
 import { TopNav } from '@/components/layout/top-nav';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -16,6 +16,7 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { SiteAnalytics } from '@/components/analytics/site-analytics';
+import { useToastClearance } from '@/lib/hooks/use-toast-clearance';
 
 // Every app route is signed-in only: the shell, and every hook in it, mounts
 // only once AuthGate has a signed-in user.
@@ -50,6 +51,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { enabled: salesDemo } = useSalesDemo();
   const { isPro } = usePlan();
   const showAIChat = isPro || isDemoActive || salesDemo;
+  // Top toasts sit just below this sticky header (and below a marked page banner under it).
+  const stickyHeader = useRef<HTMLDivElement>(null);
+  useToastClearance(stickyHeader);
 
   useEffect(() => {
     if (!isDemoActive) {
@@ -66,7 +70,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       <DemoBanner />
 
       {/* Sticky Header */}
-      <div className="sticky top-0 z-50 bg-white dark:bg-gray-950 shadow-sm">
+      <div ref={stickyHeader} className="sticky top-0 z-50 bg-white dark:bg-gray-950 shadow-sm">
         <header role="banner">
           <TopNav />
         </header>

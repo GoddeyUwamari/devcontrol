@@ -57,7 +57,7 @@ describe('Cost Optimization: connected comes from the server connection state on
     renderPage()
     await waitFor(() => expect(screen.getAllByText(NOT_CONNECTED).length).toBeGreaterThan(0))
     // The stored run's findings are not presented as this connection's result.
-    expect(banner()).not.toHaveAttribute('data-tone', 'findings')
+    expect(banner()).not.toHaveAttribute('data-tone', 'info')
   })
 
   it.each([
@@ -76,13 +76,13 @@ describe('Cost Optimization: connected comes from the server connection state on
     await waitFor(() => expect(banner()).toBeInTheDocument())
     await waitFor(() => expect(svc.getConnection).toHaveBeenCalled())
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
-    expect(banner()).not.toHaveAttribute('data-tone', 'findings')
+    expect(banner()).not.toHaveAttribute('data-tone', 'info')
   })
 
   it('connected: the stored run is shown', async () => {
     svc.getConnection.mockResolvedValue({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' })
     renderPage()
-    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'findings'))
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'info'))
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
   })
 })

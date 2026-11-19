@@ -88,15 +88,18 @@ function ItemSavings({ item }: { item: HiddenFinding }) {
   if (item.detection.potentialSavings === null) return null;
   const rec = { potentialSavings: item.detection.potentialSavings, metadata: { savings_basis: item.detection.savingsBasis, price_source: item.detection.priceSource ?? null } };
   // A still-detected low-activity finding (its latest detection carries the new rule's identity,
-  // which is what makes the backend label it): the C-3 "Up to ... if it's no longer needed" figure.
-  const lowActivity = item.detection.state === 'still_detected' && item.issueLabel === LOW_ACTIVITY_DISPLAY_LABEL;
+  // which is what makes the backend label it): the C-3 "Up to ... if it's no longer needed" figure,
+  // but never for an estimate (founder screenshot review, round 3): the group summary counts an
+  // estimate as "Estimated $X/mo", so its card shows the plain "$X/mo" (formatRecommendationSavings).
+  const kind = savingsBasisKind(rec);
+  const lowActivity = item.detection.state === 'still_detected' && item.issueLabel === LOW_ACTIVITY_DISPLAY_LABEL && kind !== 'estimate';
   return (
     <div className="sm:text-right">
       <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">
         {lowActivity ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency) : formatRecommendationSavings(rec, formatSavingsCurrency)}
       </p>
       <p className="text-label text-ink-muted font-medium" data-testid="not-counted">{NOT_COUNTED_WHILE_RESOLVED}</p>
-      {savingsBasisKind(rec) === 'ceiling' && (
+      {kind === 'ceiling' && (
         <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
       )}
       {isDefaultPriceEstimate(rec) && (
@@ -244,8 +247,12 @@ export function StillDetectedSlot({ view, actions, onRetry, retrying = false }: 
               {stillDetectedHeading(count)}
             </h2>
             <p className="text-meta text-ink-muted mb-2">{stillDetectedSubtext(count)}</p>
-            <p className={cn('text-ui font-semibold tabular-nums', estimate === 0 ? ZERO_CLASS : 'text-slate-900')}>{estimatedIfAddressed(formatSavingsCurrency(estimate))}</p>
-            {ceiling > 0 && <p className="text-meta text-ink-muted mt-0.5">{ceilingLine(formatSavingsCurrency(ceiling))}</p>}
+            {/* Each amount in its own kind's words (round 3): C8 "Estimated" only for estimates; a group of
+                ceilings only shows C9, never "Estimated $0/mo". With no amount at all, C8's muted $0/mo stays. */}
+            {(estimate > 0 || ceiling === 0) && (
+              <p className={cn('text-ui font-semibold tabular-nums', estimate === 0 ? ZERO_CLASS : 'text-slate-900')} data-testid="still-detected-estimate">{estimatedIfAddressed(formatSavingsCurrency(estimate))}</p>
+            )}
+            {ceiling > 0 && <p className="text-meta text-ink-muted mt-0.5" data-testid="still-detected-ceiling">{ceilingLine(formatSavingsCurrency(ceiling))}</p>}
           </div>
         ) : showNotRechecked ? (
           <p className="text-meta text-ink-muted" data-testid="not-rechecked">{notRecheckedLine(summary.notConfirmed)}</p>

@@ -269,14 +269,37 @@ describe('Still detected group', () => {
     expect(screen.queryByTestId('kpi-still-detected')).not.toBeInTheDocument()
   })
 
-  it('C8 is a muted "$0/mo" when only a ceiling exists (decision 5)', async () => {
+  it('round 3: a group of ceilings only shows C9, never "Estimated" (the card says "Up to")', async () => {
     svc.getHidden.mockResolvedValue(hidden([S3], { stillDetected: { count: 1, estimatedMonthlySavings: 0, ceilingMonthlySavings: 5, ceilingByResourceType: { S3: 5 } } }))
     renderPage()
     await loaded()
-    const c8 = within(slot()).getByText('Estimated $0/mo if addressed')
+    expect(within(slot()).queryByTestId('still-detected-estimate')).not.toBeInTheDocument()
+    expect(within(slot()).queryByText(/Estimated \$/)).not.toBeInTheDocument()
+    expect(within(slot()).getByTestId('still-detected-ceiling')).toHaveTextContent('Plus up to $5/mo in estimated ceilings, not expected savings.')
+    const card = within(slot()).getByTestId('hidden-item')
+    expect(within(card).getByText('Up to $5/mo')).toBeInTheDocument()
+    expect(within(card).getByText('Estimated ceiling, not an expected saving')).toBeInTheDocument()
+  })
+
+  it('round 3: a group of estimates says "Estimated", and no card says "Up to" (low-activity included)', async () => {
+    const lowActivity = item({ issueLabel: 'Low-activity instance', detection: { potentialSavings: 30.37, savingsBasis: 'estimated: compute cost from the list-price table' } })
+    svc.getHidden.mockResolvedValue(hidden([lowActivity], { stillDetected: { count: 1, estimatedMonthlySavings: 30.37, ceilingMonthlySavings: 0, ceilingByResourceType: {} } }))
+    renderPage()
+    await loaded()
+    expect(within(slot()).getByTestId('still-detected-estimate')).toHaveTextContent('Estimated $30/mo if addressed')
+    expect(within(slot()).queryByTestId('still-detected-ceiling')).not.toBeInTheDocument()
+    const card = within(slot()).getByTestId('hidden-item')
+    expect(within(card).getByText('$30/mo')).toBeInTheDocument()
+    expect(card.textContent).not.toMatch(/Up to/)
+  })
+
+  it('round 3: no amount at all keeps C8\'s muted "$0/mo" (decision 5)', async () => {
+    svc.getHidden.mockResolvedValue(hidden([item({ detection: { potentialSavings: null, savingsBasis: null } })], { stillDetected: { count: 1, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} } }))
+    renderPage()
+    await loaded()
+    const c8 = within(slot()).getByTestId('still-detected-estimate')
+    expect(c8).toHaveTextContent('Estimated $0/mo if addressed')
     expect(c8.className).toMatch(/text-slate-500/)
-    expect(c8.className).not.toMatch(/green|success/)
-    expect(within(slot()).getByText('Plus up to $5/mo in estimated ceilings, not expected savings.')).toBeInTheDocument()
   })
 
   it('renders only what /hidden says: never derives "still detected" itself', async () => {

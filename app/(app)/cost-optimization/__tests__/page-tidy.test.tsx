@@ -208,6 +208,23 @@ describe('top banner', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Still detected (1)' }))
   })
 
+  it('round 3: new or still-open opportunities are blue (something to look at), never purple', async () => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, totalPotentialSavings: 4, estimatedFindings: 1 }))
+    svc.getAll.mockResolvedValue([rec('open', 4)])
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', detected_count: 1, new_count: 1, persisted_count: 1 })])
+    const first = renderPage()
+    await loaded()
+    expect(banner()).toHaveAttribute('data-tone', 'info')
+    expect(banner().className).toMatch(/bg-blue-50/)
+    expect(banner().className).not.toMatch(/violet/)
+    expect(subline()).toHaveTextContent(/· 1 new opportunity found\.$/)
+    first.unmount()
+    svc.getAnalysisRuns.mockResolvedValue([run({ detected_count: 1, refreshed_count: 1, persisted_count: 1 })])
+    renderPage()
+    await loaded()
+    expect(banner()).toHaveAttribute('data-tone', 'info')
+  })
+
   it('× closes a dismissible result until the result changes', async () => {
     renderPage()
     await loaded()

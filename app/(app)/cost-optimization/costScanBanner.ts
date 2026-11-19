@@ -129,11 +129,13 @@ function completedBanner(c: CostScanCounts, ctx: BannerContext): BannerContent {
   const again = hidden?.stillDetected ?? 0
   const dismissedAgain = dismissedFoundAgain(c.hiddenDismissed)
   const review = again > 0 || undefined
+  // Something to look at is blue (founder screenshot review, round 3): new or still-open findings use the same
+  // attention style as a resolved finding found again. Green only when nothing needs review; amber/red unchanged.
   if (c.new > 0) {
-    return { tone: 'findings', title: 'Analysis complete', description: join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
+    return { tone: 'info', icon: Info, title: 'Analysis complete', description: join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
   }
   if (c.refreshed > 0) {
-    return { tone: 'findings', title: 'Analysis complete', description: join(`No new opportunities. ${stillOpen(c.refreshed)}`, hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
+    return { tone: 'info', icon: Info, title: 'Analysis complete', description: join(`No new opportunities. ${stillOpen(c.refreshed)}`, hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
   }
   if (again > 0) {
     return { tone: 'info', icon: Info, title: foundAgainTitle(again), description: parts(NOTHING_NEW_BESIDES, dismissedAgain), review: true, dismissible: true }

@@ -38,9 +38,10 @@ describe('banner content per state', () => {
   it('4 running (LIVE)', () => expect(bannerContent(bare('running'))).toMatchObject({ tone: 'neutral', busy: true, title: 'Analysis in progress', description: 'DevControl is currently checking your account.' }))
   it('1 loading', () => expect(bannerContent(bare('loading'))).toMatchObject({ tone: 'neutral', loading: true }))
 
-  it('5 new findings, with R and C4 (the resolved part from /hidden), Review it', () => {
+  it('5 new findings (blue, round 3), with R and C4 (the resolved part from /hidden), Review it', () => {
     expect(banner(run({ detected_count: 6, new_count: 2, refreshed_count: 3, persisted_count: 5, suppressed_resolved_count: 1 }), ready(1, 0, 5))).toEqual({
-      tone: 'findings',
+      tone: 'info',
+      icon: Info,
       title: 'Analysis complete',
       description: '2 new opportunities found. 3 found earlier are still open. 1 finding you resolved was found again.',
       review: true,
@@ -49,12 +50,12 @@ describe('banner content per state', () => {
   })
   it('5 singular, no R or H', () => {
     expect(banner(run({ detected_count: 1, new_count: 1, persisted_count: 1 }), ready(0, 0, 1))).toEqual({
-      tone: 'findings', title: 'Analysis complete', description: '1 new opportunity found.', dismissible: true,
+      tone: 'info', icon: Info, title: 'Analysis complete', description: '1 new opportunity found.', dismissible: true,
     })
   })
-  it('5b purple: none new, some still open', () => {
+  it('5b blue (round 3, was purple): none new, some still open', () => {
     expect(banner(run({ detected_count: 1, refreshed_count: 1, persisted_count: 1 }), ready(0, 0, 1))).toEqual({
-      tone: 'findings', title: 'Analysis complete', description: 'No new opportunities. 1 found earlier is still open.', dismissible: true,
+      tone: 'info', icon: Info, title: 'Analysis complete', description: 'No new opportunities. 1 found earlier is still open.', dismissible: true,
     })
     expect(banner(run({ detected_count: 4, refreshed_count: 2, persisted_count: 2, suppressed_dismissed_count: 2 }), ready(0, 0, 2)).description).toBe(
       'No new opportunities. 2 found earlier are still open. 2 findings you dismissed were found again and are still hidden.'

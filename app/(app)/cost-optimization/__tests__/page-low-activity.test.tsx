@@ -141,11 +141,14 @@ describe('the Hidden findings label', () => {
     await waitFor(() => expect(screen.getAllByText('Low-activity instance').length).toBeGreaterThan(2))
   })
 
-  it('a still-detected low-activity item\'s figure reads "Up to $X/mo if it\'s no longer needed"; a CPU-only one keeps "$X/mo"', async () => {
+  it('round 3: a still-detected low-activity estimate reads "$X/mo", never "Up to" (the group counts it as "Estimated"); a CPU-only one keeps "$X/mo"', async () => {
     svc.getAll.mockResolvedValue([])
     svc.getHidden.mockResolvedValue(hidden('Low-activity instance'))
     const first = renderPage()
-    expect(await screen.findByText("Up to $9/mo if it's no longer needed")).toBeInTheDocument()
+    const group = await screen.findByTestId('still-detected-slot')
+    await waitFor(() => expect(within(group).getAllByText('$9/mo').length).toBeGreaterThan(0))
+    expect(within(group).queryByText("Up to $9/mo if it's no longer needed")).not.toBeInTheDocument()
+    expect(within(group).queryByText(/^Up to /)).not.toBeInTheDocument()
     first.unmount()
 
     svc.getHidden.mockResolvedValue(hidden(undefined))
