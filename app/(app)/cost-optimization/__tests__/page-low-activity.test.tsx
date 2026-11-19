@@ -98,13 +98,14 @@ beforeEach(() => {
 })
 
 describe('a low-activity finding row (C-1, C-3)', () => {
-  it('is titled "Low-activity instance", with the "Up to" figure and the us-east-1 list-price basis', async () => {
+  it('is titled "Low-activity instance", with its estimate figure (round 4: no "Up to") and the us-east-1 list-price basis', async () => {
     renderPage()
     await screen.findByText('i-placeholder1')
     const row = within(card('i-placeholder1'))
     expect(row.getByText('Low-activity instance')).toBeInTheDocument()
     expect(row.queryByText('Idle Instance')).not.toBeInTheDocument()
-    expect(row.getByText("Up to $9/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.getByText("$9/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.queryByText(/Up to/)).not.toBeInTheDocument()
     expect(row.getByTestId('low-activity-savings-basis')).toHaveTextContent(`Estimated from list price for t2.micro in us-east-1. ${STORAGE}`)
     expect(row.queryByTestId('default-price-disclosure')).not.toBeInTheDocument()
     expect(row.queryByText('Estimated ceiling, not an expected saving')).not.toBeInTheDocument()
@@ -114,7 +115,8 @@ describe('a low-activity finding row (C-1, C-3)', () => {
     renderPage()
     await screen.findByText('i-placeholder2')
     const row = within(card('i-placeholder2'))
-    expect(row.getByText("Up to $50/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.getByText("$50/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.queryByText(/Up to/)).not.toBeInTheDocument()
     expect(row.getByTestId('default-price-disclosure')).toHaveTextContent(S1)
     expect(row.getByTestId('low-activity-savings-basis')).toHaveTextContent(STORAGE)
     expect(row.getByTestId('low-activity-savings-basis').textContent).toBe(STORAGE)
@@ -141,11 +143,14 @@ describe('the Hidden findings label', () => {
     await waitFor(() => expect(screen.getAllByText('Low-activity instance').length).toBeGreaterThan(2))
   })
 
-  it('a still-detected low-activity item\'s figure reads "Up to $X/mo if it\'s no longer needed"; a CPU-only one keeps "$X/mo"', async () => {
+  it('round 3: a still-detected low-activity estimate reads "$X/mo", never "Up to" (the group counts it as "Estimated"); a CPU-only one keeps "$X/mo"', async () => {
     svc.getAll.mockResolvedValue([])
     svc.getHidden.mockResolvedValue(hidden('Low-activity instance'))
     const first = renderPage()
-    expect(await screen.findByText("Up to $9/mo if it's no longer needed")).toBeInTheDocument()
+    const group = await screen.findByTestId('still-detected-slot')
+    await waitFor(() => expect(within(group).getAllByText('$9/mo').length).toBeGreaterThan(0))
+    expect(within(group).queryByText("Up to $9/mo if it's no longer needed")).not.toBeInTheDocument()
+    expect(within(group).queryByText(/^Up to /)).not.toBeInTheDocument()
     first.unmount()
 
     svc.getHidden.mockResolvedValue(hidden(undefined))

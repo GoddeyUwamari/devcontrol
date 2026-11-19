@@ -17,7 +17,8 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const source = readFileSync(join(__dirname, '../page.tsx'), 'utf-8')
+// The page and its tidy copy module (costOptimizationCopy.ts) together: strings moved there in the tidy.
+const source = readFileSync(join(__dirname, '../page.tsx'), 'utf-8') + readFileSync(join(__dirname, '../costOptimizationCopy.ts'), 'utf-8')
 const bannerCopy = readFileSync(join(__dirname, '../costScanBanner.ts'), 'utf-8')
 const scanState = readFileSync(join(__dirname, '../costScanState.ts'), 'utf-8')
 
@@ -66,7 +67,8 @@ describe('Cost Optimization page: required terminology', () => {
   })
 
   it('states the "What DevControl checks" list is not exhaustive', () => {
-    expect(source).toMatch(/not a complete list of every possible AWS cost optimization/)
+    // Tidy mock wording (Nov 19): "{n} active checks today — not every possible AWS cost optimization."
+    expect(source).toMatch(/today — not every possible AWS cost optimization\./)
   })
 
   it('carries a concise trust disclaimer distinguishing estimated from realized savings', () => {
@@ -88,9 +90,9 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   })
 
   it('renders each card\'s figure through formatRecommendationSavings ("Up to $X/mo" for a ceiling, "No dollar estimate" without a basis)', () => {
-    // FP PR 2b: a low-activity finding's figure reads "Up to $X/mo if it's no longer needed" (W3);
-    // every other card still goes through formatRecommendationSavings.
-    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(rec\.potentialSavings, formatSavingsCurrency\)\s*: formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
+    // FP PR 2b: a low-activity finding's figure reads "$X/mo if it's no longer needed" (W3), with "Up to" only
+    // when its basis isn't an estimate (round 4); every other card still goes through formatRecommendationSavings.
+    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(rec\.potentialSavings, formatSavingsCurrency, savingsBasisKind\(rec\)\)\s*: formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
     expect(source).not.toMatch(/formatSavings\(rec\.potentialSavings\)/)
   })
 

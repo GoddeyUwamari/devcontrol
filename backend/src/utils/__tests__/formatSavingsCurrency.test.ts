@@ -1,4 +1,4 @@
-import { formatSavingsCents, formatSavingsCurrency } from '../formatSavingsCurrency';
+import { formatSavingsCents, formatSavingsCurrency, formatSavingsTotal } from '../formatSavingsCurrency';
 
 describe('formatSavingsCurrency', () => {
   it('renders null as an em dash (missing/unavailable, never a fabricated zero)', () => {
@@ -17,6 +17,22 @@ describe('formatSavingsCurrency', () => {
     expect(formatSavingsCurrency(0.01)).toBe('$0.01');
     expect(formatSavingsCurrency(0.16)).toBe('$0.16');
     expect(formatSavingsCurrency(0.99)).toBe('$0.99');
+  });
+
+  it('renders a positive amount under one cent as "<$0.01", never "$0.00" (Cost Optimization tidy money rule)', () => {
+    expect(formatSavingsCurrency(0.004)).toBe('<$0.01');
+    expect(formatSavingsCurrency(0.0099)).toBe('<$0.01');
+    expect(formatSavingsCurrency('0.004')).toBe('<$0.01');
+    expect(formatSavingsCurrency(0.01)).toBe('$0.01');
+  });
+
+  it('formatSavingsTotal: a rounded total of 0 with positive estimates behind it is "<$0.01"', () => {
+    expect(formatSavingsTotal(0, 2)).toBe('<$0.01');
+    expect(formatSavingsTotal('0.00', 1)).toBe('<$0.01');
+    expect(formatSavingsTotal(0, 0)).toBe('$0');
+    expect(formatSavingsTotal(0, null)).toBe('$0');
+    expect(formatSavingsTotal(12.34, 2)).toBe('$12');
+    expect(formatSavingsTotal(null, 2)).toBe('—');
   });
 
   it('rounds to a whole dollar once the amount reaches $1', () => {

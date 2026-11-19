@@ -91,6 +91,7 @@ describe('used only on Cost Optimization in PR 2', () => {
       .filter((file) => /scan-status-banner/.test(readFileSync(file, 'utf8')))
       .map((file) => relative(root, file))
       .filter((file) => file !== join('components', 'ui', 'scan-status-banner.tsx'))
-    expect(importers.sort()).toEqual([join('app', '(app)', 'cost-optimization', 'costScanBanner.ts'), join('app', '(app)', 'cost-optimization', 'page.tsx')].sort())
+    // Cost Optimization tidy: the page's own CostAnalysisBanner lays the result out with this file's tone classes.
+    expect(importers.sort()).toEqual([join('app', '(app)', 'cost-optimization', 'costScanBanner.ts'), join('app', '(app)', 'cost-optimization', 'CostAnalysisBanner.tsx')].sort())
   })
 })

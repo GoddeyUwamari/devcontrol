@@ -12,6 +12,7 @@ import { NON_APP_CLOSURE, SOURCE_FILES, importsOf } from './surface-scope'
 // files in those route folders, so a new Costs page cannot land outside the guard.
 const COSTS_ROUTE_DIRS = ['app/(app)/costs/', 'app/(app)/forecast/', 'app/(app)/cost-optimization/']
 const COSTS = [
+  'app/(app)/cost-optimization/CostAnalysisBanner.tsx',
   'app/(app)/cost-optimization/HiddenFindings.tsx',
   'app/(app)/cost-optimization/controls/page.tsx',
   'app/(app)/cost-optimization/page.tsx',

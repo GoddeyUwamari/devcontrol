@@ -58,7 +58,8 @@ function orderedCeilings(ceilingByResourceType: Record<string, number>): [string
 /**
  * One "Plus up to $X/<period> ..." line per resource type with a positive
  * ceiling (S3, DynamoDB, then others A-Z). Mirror of describeCeilings in
- * backend/src/services/estimated-savings.ts (the weekly email's wording).
+ * backend/src/services/estimated-savings.ts. The weekly email no longer uses
+ * these lines (executive brief redesign, 53a791e1).
  */
 export function describeCeilings(ceilingByResourceType: Record<string, number>, format: (value: number) => string, period = 'mo'): string[] {
   return orderedCeilings(ceilingByResourceType)
@@ -79,10 +80,10 @@ export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<st
       : `Up to ${format(amount)}/${period} from ${type} upper-bound figures`)
 }
 
-// The weekly email's savings sentences (savingsLines in
-// backend/src/services/weekly-summary-content.ts), for the Dashboard's
-// Cost-Saving Opportunities header. Counts come from /stats
-// (countSavingsFindings, the email's own count).
+// The Dashboard's Cost-Saving Opportunities header sentences. They were the
+// weekly email's (savingsLines) until the executive brief redesign
+// (53a791e1); the email no longer uses them. Counts come from /stats
+// (countSavingsFindings, the same count the email's savings read uses).
 const openFindings = (count: number) => `${count} open finding${count === 1 ? '' : 's'}`
 
 /** "Estimated savings: $X/month across N open finding(s). This is a DevControl estimate, not realized savings." */

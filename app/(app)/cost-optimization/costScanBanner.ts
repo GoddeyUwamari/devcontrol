@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { AlertTriangle, CloudOff, Clock } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CloudOff, Clock, Info } from 'lucide-react'
 import type { AnalysisResult } from '@/lib/types'
 import type { ScanBannerTone } from '@/components/ui/scan-status-banner'
 import type { AnalysisSource } from './costOptimizationStatus'
@@ -51,34 +51,55 @@ export function dismissedFoundAgain(count: number): string | null {
   return `${count} finding${plural(count, '', 's')} you dismissed ${plural(count, 'was', 'were')} found again and ${plural(count, 'is', 'are')} still hidden.`
 }
 
-/** C4 (replaces sentence H): C2 and/or C3, each only when its count isn't 0. */
-export function hiddenFoundAgain(c: Pick<CostScanCounts, 'hiddenResolved' | 'hiddenDismissed'>): string | null {
-  return join(resolvedFoundAgain(c.hiddenResolved), dismissedFoundAgain(c.hiddenDismissed)) || null
+/**
+ * C4 (replaces sentence H): C2 and/or C3, each only when its count isn't 0.
+ * `resolved` is /hidden's still-detected count, never the run's own
+ * suppressed_resolved_count (the truth fix below).
+ */
+export function hiddenFoundAgain(resolved: number, dismissed: number): string | null {
+  return join(resolvedFoundAgain(resolved), dismissedFoundAgain(dismissed)) || null
 }
 
 function join(...sentences: (string | false | null | undefined)[]): string {
   return sentences.filter(Boolean).join(' ')
 }
 
-/** The sub-text a completed run's counts give. Shown once, in the banner only (founder fix, PR 3b). */
-function completedDescription(key: CostScanState['key'], c: CostScanCounts | null): string | null {
-  if (!c) return null
-  switch (key) {
-    case 'completed_new':
-      return join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), hiddenFoundAgain(c))
-    case 'completed_open':
-      return join(`No new opportunities. ${stillOpen(c.refreshed)}`, hiddenFoundAgain(c))
-    case 'completed_hidden':
-      // C1 (replaces PR 2 state 6 wording): past-tense run facts, split resolved/dismissed.
-      return join('Nothing new to review.', hiddenFoundAgain(c))
-    case 'completed_unchecked':
-      return `Nothing was flagged, but ${c.unknown} resource${plural(c.unknown, '', 's')} couldn't be fully checked.`
-    case 'completed_clean':
-      return `All ${c.checksTotal} checks ran and nothing was flagged. These checks don't cover every possible AWS saving.`
-    default:
-      return null
-  }
+/** Sub-line parts, GitHub-banner style: "a · b". */
+function parts(...items: (string | false | null | undefined)[]): string {
+  return items.filter(Boolean).join(' · ')
 }
+
+/**
+ * The banner's sub-line names the run this way (tidy mock): "Scheduled
+ * analysis, about 2 hours ago" or "Analysis you ran, 5 minutes ago". The Last
+ * analysis card keeps SOURCE_LABEL.
+ */
+export const BANNER_SOURCE_LABEL: Record<AnalysisSource, string> = {
+  scheduled: 'Scheduled analysis',
+  manual: 'Analysis you ran',
+}
+
+// Tidy mock (founder-approved, Nov 19).
+export const NOTHING_NEW_TITLE = 'Analysis complete · nothing new to review.'
+export const allChecksRan = (count: number) => `all ${count} active check${plural(count, '', 's')} ran`
+export const foundAgainTitle = (count: number) => `Analysis complete · ${resolvedFoundAgain(count)}`
+export const NOTHING_NEW_BESIDES = 'nothing new besides this'
+export const REVIEW_IT = 'Review it'
+export const DISMISS_BANNER = 'Dismiss'
+
+/**
+ * What the page knows beyond the run itself. A resolved finding "found again"
+ * is /hidden's judgement only (detection.state = still_detected, summed in
+ * summary.stillDetected.count): the same number the Still detected group
+ * shows, so the banner, the group and C12 never give one finding two states.
+ */
+export interface BannerContext {
+  hidden: { stillDetected: number; notConfirmed: number } | 'loading' | 'error'
+  /** Open (ACTIVE) findings, from /stats. */
+  open: number | 'loading' | 'error'
+}
+
+export const UNKNOWN_CONTEXT: BannerContext = { hidden: 'loading', open: 'loading' }
 
 export interface BannerContent {
   tone: ScanBannerTone
@@ -88,9 +109,55 @@ export interface BannerContent {
   busy?: boolean
   loading?: boolean
   retry?: boolean
+  /** A "Review it" action that scrolls to the Still detected group. */
+  review?: boolean
+  /** A × closes it until the result changes. Never for a warning, failure or unknown status. */
+  dismissible?: boolean
 }
 
-export function bannerContent(s: CostScanState): BannerContent {
+const UNCHECKED = (unknown: number) => `Nothing was flagged, but ${unknown} resource${plural(unknown, '', 's')} couldn't be fully checked.`
+const CLEAN_RUN = (checks: number) => `All ${checks} checks ran and nothing was flagged. These checks don't cover every possible AWS saving.`
+
+/**
+ * A completed run with recorded counts. Green only when the run finished every
+ * check with nothing unknown, nothing is open, nothing is still detected and
+ * no resolved finding is left unconfirmed; blue when a resolved finding was
+ * found again and nothing else is new.
+ */
+function completedBanner(c: CostScanCounts, ctx: BannerContext): BannerContent {
+  const hidden = typeof ctx.hidden === 'object' ? ctx.hidden : null
+  const again = hidden?.stillDetected ?? 0
+  const dismissedAgain = dismissedFoundAgain(c.hiddenDismissed)
+  const review = again > 0 || undefined
+  // Something to look at is blue (founder screenshot review, round 3): new or still-open findings use the same
+  // attention style as a resolved finding found again. Green only when nothing needs review; amber/red unchanged.
+  if (c.new > 0) {
+    return { tone: 'info', icon: Info, title: 'Analysis complete', description: join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
+  }
+  if (c.refreshed > 0) {
+    return { tone: 'info', icon: Info, title: 'Analysis complete', description: join(`No new opportunities. ${stillOpen(c.refreshed)}`, hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
+  }
+  if (again > 0) {
+    return { tone: 'info', icon: Info, title: foundAgainTitle(again), description: parts(NOTHING_NEW_BESIDES, dismissedAgain), review: true, dismissible: true }
+  }
+  // Nothing is claimed green or "nothing to review" until /hidden and /stats have answered.
+  if (ctx.hidden === 'loading' || ctx.open === 'loading') return { tone: 'neutral', title: '', loading: true }
+  if (hidden && hidden.notConfirmed === 0 && ctx.open === 0 && c.allChecksComplete && c.unknown === 0) {
+    return { tone: 'success', icon: CheckCircle2, title: NOTHING_NEW_TITLE, description: parts(allChecksRan(c.checksTotal), dismissedAgain), dismissible: true }
+  }
+  if (c.detected === 0 && c.unknown > 0) return { tone: 'info', title: 'Analysis complete', description: UNCHECKED(c.unknown), dismissible: true }
+  if (c.detected === 0 && c.unknown === 0 && c.allChecksComplete) {
+    // The run was clean, but the page can't say "nothing to review" (/hidden or /stats failed, something is open, or unconfirmed).
+    return { tone: 'info', title: 'Analysis complete', description: CLEAN_RUN(c.checksTotal), dismissible: true }
+  }
+  if (c.detected > 0) {
+    // Everything detected was hidden (or a duplicate). C1, with the resolved part only when /hidden confirms it (above).
+    return { tone: 'info', title: 'Analysis complete', description: join(typeof ctx.open === 'number' && ctx.open > 0 ? 'No new opportunities.' : 'Nothing new to review.', dismissedAgain), dismissible: true }
+  }
+  return { tone: 'neutral', title: 'Analysis complete', dismissible: true }
+}
+
+export function bannerContent(s: CostScanState, ctx: BannerContext = UNKNOWN_CONTEXT): BannerContent {
   const sourceLower = s.source ? SOURCE_LABEL[s.source].toLowerCase() : 'analysis'
   switch (s.key) {
     case 'loading':
@@ -105,22 +172,22 @@ export function bannerContent(s: CostScanState): BannerContent {
       return { tone: 'neutral', busy: true, title: 'Analysis in progress', description: 'DevControl is currently checking your account.' }
     case 'completed_new':
     case 'completed_open':
-      return { tone: 'findings', title: 'Analysis complete', description: completedDescription(s.key, s.counts) ?? undefined }
     case 'completed_hidden':
     case 'completed_unchecked':
-      return { tone: 'info', title: 'Analysis complete', description: completedDescription(s.key, s.counts) ?? undefined }
     case 'completed_clean':
-      return { tone: 'success', title: 'Analysis complete', description: completedDescription(s.key, s.counts) ?? undefined }
-    case 'completed_unrecorded':
-      return { tone: 'neutral', title: 'Analysis complete', description: 'Per-check results are not yet recorded.' }
+      return s.counts ? completedBanner(s.counts, ctx) : { tone: 'neutral', title: 'Analysis complete', dismissible: true }
     case 'completed_other':
-      return { tone: 'neutral', title: 'Analysis complete' }
+      return { tone: 'neutral', title: 'Analysis complete', dismissible: true }
+    case 'completed_unrecorded':
+      return { tone: 'neutral', title: 'Analysis complete', description: 'Per-check results are not yet recorded.', dismissible: true }
     case 'partial': {
       const c = s.counts
+      const again = typeof ctx.hidden === 'object' ? ctx.hidden.stillDetected : 0
       return {
         tone: 'warning',
         title: 'Analysis partly complete',
-        description: join(PARTIAL_MESSAGE, c && c.new > 0 && newFound(c.new), c && hiddenFoundAgain(c)),
+        description: join(PARTIAL_MESSAGE, c && c.new > 0 && newFound(c.new), hiddenFoundAgain(again, c ? c.hiddenDismissed : 0)),
+        review: again > 0 || undefined,
       }
     }
     case 'failed':
@@ -132,23 +199,33 @@ export function bannerContent(s: CostScanState): BannerContent {
 
 export type ToastKind = 'success' | 'info' | 'warning'
 
-/** The toast after a successful "Run cost analysis" response: from its run state and counts, never recommendationsFound. */
-export function analyzeToast(result: Pick<AnalysisResult, 'runState' | 'counts' | 'unknownResourceCount'>): { kind: ToastKind; text: string } {
+/**
+ * The toast after a successful "Run cost analysis" response: from its run state and counts, never recommendationsFound.
+ * `stillDetected` is /hidden's still-detected count after the run (null when /hidden didn't answer): the resolved part
+ * of C5 reads it, never the run's suppressedResolved, so the toast, the banner and the group can't disagree
+ * (founder ruling 8, Cost Optimization tidy).
+ */
+export function analyzeToast(
+  result: Pick<AnalysisResult, 'runState' | 'counts' | 'unknownResourceCount'>,
+  stillDetected: number | null,
+): { kind: ToastKind; text: string } {
   if (result.runState === 'partial') return { kind: 'warning', text: PARTIAL_MESSAGE }
   const c = result.counts
   if (!c) return { kind: 'info', text: 'Analysis complete.' }
-  const hidden = c.suppressedResolved + c.suppressedDismissed
+  const resolvedAgain = stillDetected ?? 0
   const unknown = result.unknownResourceCount
   if (c.new > 0) return { kind: 'info', text: `Analysis complete: ${c.new} new opportunit${plural(c.new, 'y', 'ies')}.` }
   if (c.persisted > 0) return { kind: 'info', text: 'Analysis complete: no new opportunities.' }
-  if (hidden > 0) {
+  if (resolvedAgain > 0 || c.suppressedDismissed > 0) {
     // C5: only the non-zero parts.
     const parts = [
-      c.suppressedResolved > 0 && `${c.suppressedResolved} resolved found again`,
+      resolvedAgain > 0 && `${resolvedAgain} resolved found again`,
       c.suppressedDismissed > 0 && `${c.suppressedDismissed} dismissed found again`,
     ].filter(Boolean)
     return { kind: 'info', text: `Analysis complete: nothing new. ${parts.join(', ')}.` }
   }
+  // The run counted resolved findings found again, but /hidden doesn't confirm any (or didn't answer): no claim.
+  if (c.suppressedResolved > 0) return { kind: 'info', text: 'Analysis complete: nothing new.' }
   if (c.detected === 0 && typeof unknown === 'number' && unknown > 0) {
     return { kind: 'info', text: `Analysis complete: nothing flagged, ${unknown} resource${plural(unknown, '', 's')} not fully checked.` }
   }

@@ -61,6 +61,13 @@ function renderPage() {
 }
 
 const banner = () => screen.getByTestId('scan-status-banner')
+const subline = () => within(banner()).getByTestId('scan-status-subline')
+/** /hidden with `count` resolved findings still detected (the items themselves don't matter to the banner). */
+const hiddenWith = (count: number) => ({
+  latestRun: null,
+  summary: { resolved: count, dismissed: 0, stillDetected: { count, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }, notConfirmed: 0 },
+  items: [],
+})
 const kpiCard = (label: string) => screen.getByText(label).parentElement as HTMLElement
 
 async function settled() {
@@ -117,7 +124,7 @@ describe('raw job text never reaches the page', () => {
     const { container } = renderPage()
     await settled()
     expect(within(banner()).getByText('Last scheduled analysis failed')).toBeInTheDocument()
-    expect(within(banner()).getByText('The most recent analysis did not complete.')).toBeInTheDocument()
+    expect(subline()).toHaveTextContent(/^Scheduled analysis, .+ · The most recent analysis did not complete\.$/)
     expect(container.textContent).not.toContain('arn:aws')
     expect(container.textContent).not.toContain('AccessDenied')
     expect(container.innerHTML).not.toContain('arn:aws')
@@ -127,20 +134,21 @@ describe('raw job text never reaches the page', () => {
     svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'failed', status: 'failed', error_message: 'Failed to analyze AWS resources: AccessDenied arn:aws:iam::123456789012:role/placeholder-role' })])
     const { container } = renderPage()
     await settled()
-    expect(within(banner()).getByText('The most recent analysis did not complete.')).toBeInTheDocument()
+    expect(subline()).toHaveTextContent(/· The most recent analysis did not complete\.$/)
     expect(container.innerHTML).not.toContain('arn:aws')
   })
 })
 
 describe('banner states', () => {
-  it('production today (2 hidden) is blue, never green', async () => {
+  it('production today (2 hidden, 1 still detected per /hidden) is blue, never green', async () => {
     svc.getAnalysisRuns.mockResolvedValue([PRODUCTION_HIDDEN])
+    svc.getHidden.mockResolvedValue(hiddenWith(1))
     renderPage()
     await settled()
     expect(banner()).toHaveAttribute('data-tone', 'info')
     expect(banner().className).not.toMatch(/green/)
-    expect(within(banner()).getByText('Nothing new to review. 1 finding you resolved was found again. 1 finding you dismissed was found again and is still hidden.')).toBeInTheDocument()
-    expect(within(banner()).getByText(/^Manual cost analysis, /)).toBeInTheDocument()
+    expect(within(banner()).getByText('Analysis complete · 1 finding you resolved was found again.')).toBeInTheDocument()
+    expect(subline()).toHaveTextContent(/^Analysis you ran, .+ · nothing new besides this · 1 finding you dismissed was found again and is still hidden\.$/)
   })
 
   it('a hidden count is not carried over from an older run', async () => {
@@ -288,6 +296,7 @@ describe('the toast after Run cost analysis', () => {
   }
 
   it('detected 2, persisted 0: never "0 found", and not green', async () => {
+    svc.getHidden.mockResolvedValue(hiddenWith(1))
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 2, suppressedResolved: 1, suppressedDismissed: 1 }) })
     await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new. 1 resolved found again, 1 dismissed found again.'))
     expect(toast.success).not.toHaveBeenCalled()
@@ -305,10 +314,33 @@ describe('the toast after Run cost analysis', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Analysis complete: nothing flagged.'))
   })
 
+  it('ruling 8: the run counted a resolved finding found again but /hidden (refetched) confirms none: the toast says nothing new, like the banner', async () => {
+    svc.getAnalysisRuns.mockResolvedValueOnce([run()]).mockResolvedValue([run({ detected_count: 1, suppressed_resolved_count: 1 })])
+    await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 1, suppressedResolved: 1 }) })
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new.'))
+    expect(JSON.stringify(toast.info.mock.calls)).not.toMatch(/found again/)
+    expect(banner().textContent).not.toMatch(/found again/)
+  })
+
+  it('ruling 8: the toast reads /hidden as refetched after the run, not the answer from before it', async () => {
+    svc.getHidden.mockResolvedValueOnce(hiddenWith(0)).mockResolvedValue(hiddenWith(2))
+    await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 3, suppressedResolved: 3 }) })
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new. 2 resolved found again.'))
+  })
+
+  it('ruling 8: /hidden fails on the refetch: the toast makes no "resolved found again" claim', async () => {
+    svc.getHidden.mockResolvedValueOnce(hiddenWith(1)).mockRejectedValue(new Error('x'))
+    await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 1, suppressedResolved: 1 }) })
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new.'))
+  })
+
   it('the banner shows the new run when the toast does', async () => {
     svc.getAnalysisRuns.mockResolvedValueOnce([run()]).mockResolvedValue([PRODUCTION_HIDDEN])
+    // /hidden, refetched with the runs after the scan, now has the resolved finding still detected.
+    svc.getHidden.mockResolvedValueOnce(hiddenWith(0)).mockResolvedValue(hiddenWith(1))
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 2, suppressedResolved: 2 }) })
     await waitFor(() => expect(toast.info).toHaveBeenCalled())
     expect(banner()).toHaveAttribute('data-tone', 'info')
+    expect(within(banner()).getByText('Analysis complete · 1 finding you resolved was found again.')).toBeInTheDocument()
   })
 })
