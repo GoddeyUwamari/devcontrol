@@ -1,0 +1,1598 @@
+{
+  "healthy-pro": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "none_found",
+          "stateText": "No functions found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "none_found",
+          "stateText": "No ECS services found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "none_found",
+          "stateText": "No EKS clusters found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "none_found",
+          "stateText": "No EBS volumes found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "none_found",
+          "stateText": "No RDS instances found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "none_found",
+          "stateText": "No Aurora clusters found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "none_found",
+          "stateText": "No DynamoDB tables found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "none_found",
+          "stateText": "No load balancers found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "none_found",
+          "stateText": "No load balancers found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "none_found",
+          "stateText": "No CloudFront distributions found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "on_plan",
+          "stateText": "On Revenue Protection",
+          "reason": null,
+          "link": {
+            "label": "See plans →",
+            "href": "/settings/billing/upgrade"
+          },
+          "retry": null
+        }
+      ]
+    }
+  ],
+  "every-type-enterprise": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "no_activity",
+          "stateText": "No activity",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "The checks failed or were denied.",
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Found only outside the checked account or region.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "none_set",
+          "stateText": "None set",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": "3 set · 1 at risk · 1 couldn't be evaluated",
+          "link": null,
+          "retry": null
+        }
+      ]
+    }
+  ],
+  "enterprise-no-slos": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "none_found",
+          "stateText": "No functions found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "none_found",
+          "stateText": "No ECS services found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "none_found",
+          "stateText": "No EKS clusters found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "none_found",
+          "stateText": "No EBS volumes found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "none_found",
+          "stateText": "No RDS instances found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "none_found",
+          "stateText": "No Aurora clusters found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "none_found",
+          "stateText": "No DynamoDB tables found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "none_found",
+          "stateText": "No load balancers found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "none_found",
+          "stateText": "No load balancers found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "none_found",
+          "stateText": "No CloudFront distributions found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "none_set",
+          "stateText": "None set",
+          "reason": null,
+          "link": {
+            "label": "Set up SLOs →",
+            "href": "/monitoring/slos"
+          },
+          "retry": null
+        }
+      ]
+    }
+  ],
+  "free": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "none_found",
+          "stateText": "No EBS volumes found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "none_found",
+          "stateText": "No RDS instances found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "not_in_plan",
+          "stateText": "Not included in your plan",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "on_plan",
+          "stateText": "On Revenue Protection",
+          "reason": null,
+          "link": {
+            "label": "See plans →",
+            "href": "/settings/billing/upgrade"
+          },
+          "retry": null
+        }
+      ]
+    }
+  ],
+  "plan-loading": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "none_found",
+          "stateText": "No EBS volumes found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "none_found",
+          "stateText": "No RDS instances found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "checking",
+          "stateText": "Checking…",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    }
+  ],
+  "plan-error": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "none_found",
+          "stateText": "No EBS volumes found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "none_found",
+          "stateText": "No RDS instances found",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Your plan couldn't be loaded.",
+          "link": null,
+          "retry": null
+        }
+      ]
+    }
+  ],
+  "capped": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Discovery didn't finish, so we can't say none exist.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "monitored",
+          "stateText": "Monitored",
+          "reason": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "SLOs couldn't be evaluated.",
+          "link": null,
+          "retry": "slo"
+        }
+      ]
+    }
+  ],
+  "resources-failed": [
+    {
+      "title": "Compute",
+      "rows": [
+        {
+          "key": "type:ec2",
+          "label": "EC2: status checks, CPU",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:lambda",
+          "label": "Lambda: errors, duration, throttles",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:ecs",
+          "label": "ECS: running and desired tasks",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:eks",
+          "label": "EKS: cluster status, health issues",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Storage and databases",
+      "rows": [
+        {
+          "key": "type:ebs",
+          "label": "EBS: volume status",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:rds",
+          "label": "RDS: instance status, CPU, connections, free storage",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:aurora",
+          "label": "Aurora: CPU, replica lag",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:dynamodb",
+          "label": "DynamoDB: system errors, throttled requests",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:s3",
+          "label": "S3",
+          "state": "not_measured",
+          "stateText": "No health metric",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:ElastiCache",
+          "label": "ElastiCache",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Traffic",
+      "rows": [
+        {
+          "key": "type:load-balancer",
+          "label": "Load balancer response time (average)",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:load-balancer:5xx",
+          "label": "Load balancer 5xx rate",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:Network and Gateway Load Balancers",
+          "label": "Network and Gateway Load Balancers",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:cloudfront",
+          "label": "CloudFront: error rates (total, 4xx, 5xx)",
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Resource checks couldn't load.",
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "type:api-gateway",
+          "label": "API Gateway",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SQS",
+          "label": "SQS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        },
+        {
+          "key": "static:SNS",
+          "label": "SNS",
+          "state": "not_measured",
+          "stateText": "Not measured yet",
+          "reason": null,
+          "link": null,
+          "retry": null
+        }
+      ]
+    },
+    {
+      "title": "Alerting",
+      "rows": [
+        {
+          "key": "alarms",
+          "label": "CloudWatch alarms",
+          "link": null,
+          "state": "couldnt_check",
+          "stateText": "Couldn't check",
+          "reason": "Alarms couldn't be read.",
+          "retry": "alarms"
+        }
+      ]
+    },
+    {
+      "title": "Configuration",
+      "rows": [
+        {
+          "key": "slos",
+          "label": "Service level objectives",
+          "state": "on_plan",
+          "stateText": "On Revenue Protection",
+          "reason": null,
+          "link": {
+            "label": "See plans →",
+            "href": "/settings/billing/upgrade"
+          },
+          "retry": null
+        }
+      ]
+    }
+  ]
+}
