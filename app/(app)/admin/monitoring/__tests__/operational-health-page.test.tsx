@@ -490,3 +490,50 @@ describe('rendering', () => {
     expect(within(banner).getByText("They're listed first below.")).toBeInTheDocument()
   })
 })
+
+// ── PR 3d-2: D9 region caption and link, O3 link label ──
+
+describe('PR 3d-2 wording and links', () => {
+  afterEach(() => { vi.unstubAllEnvs() })
+  const caption = () => within(screen.getByTestId('tile-region')).getByTestId('region-caption').textContent
+
+  it.each(['eu-west-2', 'us-east-1'])('D9: the caption names the server\'s region (%s), the same value as the tile', async (region) => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle(resourcesOk('1h', { region }), { ...ALARMS_OK, region })
+    expect(screen.getByTestId('tile-region')).toHaveTextContent(region)
+    expect(caption()).toBe(`This page checks your home region, ${region}. Resources in other regions aren't checked here yet.`)
+    if (region !== 'us-east-1') expect(screen.getByTestId('tile-region').textContent).not.toContain('us-east-1')
+  })
+
+  it('D9: no region to name (resources and alarms failed): the old caption, never a guessed region', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await answer('/api/observability/resources', httpError(503), true)
+    await answer('/api/observability/alarms', httpError(500), true)
+    expect(caption()).toBe("This page checks one AWS region. Resources in other regions aren't checked yet.")
+  })
+
+  it('D9: "Region coverage →" to the card with the Services V2 and M6 flags on; none without them (no card to land on)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')
+    const { unmount } = render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    expect(within(screen.getByTestId('tile-region')).getByRole('link', { name: 'Region coverage →' })).toHaveAttribute('href', '/services#region-coverage')
+    unmount()
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'false')
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    expect(within(screen.getByTestId('tile-region')).queryByRole('link')).toBeNull()
+  })
+
+  it('O3: "Services & Ownership →" to /services; "All services →" is gone', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle()
+    expect(screen.getByRole('link', { name: 'Services & Ownership →' })).toHaveAttribute('href', '/services')
+    expect(screen.queryByRole('link', { name: 'All services →' })).toBeNull()
+  })
+})
