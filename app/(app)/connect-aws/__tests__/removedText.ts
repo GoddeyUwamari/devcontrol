@@ -21,6 +21,8 @@ export const REMOVED_STRINGS = [
   'Connected and working',
   // PR D2: the old failed-stack help said to launch again without deleting the failed stack (S-2).
   'open its Events tab. A common cause',
+  // CE1-D8: the old billing note understated a day of use and said nothing about deploys.
+  'a typical account makes only a few requests per day',
 ]
 
 export function expectNoRemovedText() {

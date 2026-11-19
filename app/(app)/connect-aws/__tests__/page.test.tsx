@@ -178,12 +178,14 @@ beforeEach(() => {
   mockGetConnectionChecks.mockResolvedValue(null)
 })
 
-describe('Connect AWS page: Cost Explorer billing note (DB-D16)', () => {
+describe('Connect AWS page: Cost Explorer billing note (CE1-D8, replaces DB-D16)', () => {
   it.each([['connected', true], ['not connected', false]] as const)('%s: the sidebar states the founder-approved wording, once', async (_name, connected) => {
     if (connected) mockGetAccountsAndConnection.mockResolvedValue(CONNECTED)
     renderPage()
     const note = await screen.findByTestId('cost-explorer-billing-note')
-    expect(note.textContent).toBe('Cost Explorer requests are billed at USD 0.01 per request. Results are cached for 4 hours, so a typical account makes only a few requests per day.')
+    expect(note.textContent).toBe(
+      'Cost Explorer bills USD 0.01 per request to your AWS account. DevControl reuses each result for up to 4 hours and fetches fresh data after 00:00 UTC, so a day of use by one or two people typically makes 2–8 requests (USD 0.02–0.08), plus about 2 after each DevControl update. Opening the 6-month or 1-year cost views, connecting an account and Check again each add one request.'
+    )
     expect(screen.getAllByTestId('cost-explorer-billing-note')).toHaveLength(1)
   })
 })
@@ -210,7 +212,12 @@ describe('Connect AWS page: which view opens', () => {
     await waitFor(() => expect(mockGetConnectionChecks).toHaveBeenCalled())
     expect(screen.queryByTestId('fact-permissions')).toBeNull()
     expect(screen.queryByTestId('fact-health')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/Health|Check again|Your role's policies/)
+    // The sidebar's billing note (CE1-D8) is static copy in every state and names Check again as a
+    // cost; the scan is for the Health and Check again features, so it reads the page without it.
+    const billingNote = screen.getByTestId('cost-explorer-billing-note').textContent ?? ''
+    expect(billingNote).toContain('Check again')
+    expect((document.body.textContent ?? '').replace(billingNote, '')).not.toMatch(/Health|Check again|Your role's policies/)
+    expect(screen.queryByRole('button', { name: /check again/i })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     expectNoRemovedText()
   })
