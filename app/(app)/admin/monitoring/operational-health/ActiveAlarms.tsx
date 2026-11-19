@@ -59,7 +59,8 @@ function Row({ row }: { row: AlarmRowView }) {
 function Table({ children, busy }: { children: React.ReactNode; busy?: boolean }) {
   return (
     // Scrolls inside its own box on narrow screens; the page itself never scrolls sideways.
-    <div data-testid="alarms-table-scroll" className="overflow-x-auto">
+    // relative: the scroll box is the containing block for the cells' sr-only text, so it scrolls with them instead of widening the page.
+    <div data-testid="alarms-table-scroll" className="relative overflow-x-auto">
       <table aria-busy={busy || undefined} className="w-full min-w-[560px] border-collapse">
         <caption className="sr-only">{ALARMS_COPY.tableCaption}</caption>
         <thead>

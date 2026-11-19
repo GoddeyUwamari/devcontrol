@@ -233,6 +233,8 @@ export function bannerView(resources: Source<ResourcesData>, alarms: Source<Alar
       ]
         .filter(Boolean)
         .join(' '),
+      // The coverage boundary (tidy mock): how many resources have checks at all, so the unmeasured are never read as healthy.
+      PAGE_COPY.coverage(fleet.measured, fleet.count, (r!.type_breakdown.s3?.count ?? 0) > 0),
     ],
     action: null,
   }
@@ -413,7 +415,10 @@ export type MonitorState =
 
 export interface MonitorRow {
   key: string
+  /** The whole row label, "<service> · <signals>" (or the service alone); the page shows the two parts. */
   label: string
+  service: string
+  signals: string | null
   state: MonitorState
   stateText: string
   reason: string | null
@@ -426,11 +431,14 @@ export interface MonitorGroup {
   rows: MonitorRow[]
 }
 
-function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo, signal?: { label?: string; key?: string }): MonitorRow {
+const rowLabel = (service: string, signals: string | null) => (signals ? `${service} · ${signals}` : service)
+
+function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo, signal?: { signals?: string; key?: string }): MonitorRow {
   const key = signal?.key ?? `type:${type}`
-  const signals = MEASURED_BY[type]
-  const label = signal?.label ?? (signals ? `${TYPE_LABEL[type]}: ${signals}` : TYPE_LABEL[type])
-  const row = (state: MonitorState, stateText: string, reason: string | null = null): MonitorRow => ({ key, label, state, stateText, reason, link: null, retry: null })
+  const service = TYPE_LABEL[type] ?? type
+  const signals = signal?.signals ?? MEASURED_BY[type] ?? null
+  const label = rowLabel(service, signals)
+  const row = (state: MonitorState, stateText: string, reason: string | null = null): MonitorRow => ({ key, label, service, signals, state, stateText, reason, link: null, retry: null })
 
   if (NOT_MEASURED_TYPES.has(type)) return row('not_measured', notMeasuredLabel(type))
   // F2: a type the Free plan doesn't discover depends on the plan; until it's known, never "No … found".
@@ -470,7 +478,7 @@ function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo,
 }
 
 function alarmsRow(alarms: Source<AlarmsData>): MonitorRow {
-  const base = { key: 'alarms', label: 'CloudWatch alarms', link: null }
+  const base = { key: 'alarms', label: 'CloudWatch alarms', service: 'CloudWatch alarms', signals: null, link: null }
   if (alarms.state === 'loading') return { ...base, state: 'checking', stateText: STATE_LABEL.checking, reason: null, retry: null }
   if (alarms.state === 'error') return { ...base, state: 'couldnt_check', stateText: STATE_LABEL.couldnt_check, reason: "Alarms couldn't be read.", retry: 'alarms' }
   const d = alarms.data
@@ -493,7 +501,7 @@ function alarmsRow(alarms: Source<AlarmsData>): MonitorRow {
 }
 
 export function sloRow(slo: SloState, seePlans: { label: string; href: string }): MonitorRow {
-  const base = { key: 'slos', label: 'Service level objectives' }
+  const base = { key: 'slos', label: 'Service level objectives', service: 'Service level objectives', signals: null }
   switch (slo.state) {
     case 'loading':
       return { ...base, state: 'checking', stateText: STATE_LABEL.checking, reason: null, link: null, retry: null }
@@ -514,7 +522,7 @@ export function sloRow(slo: SloState, seePlans: { label: string; href: string })
 }
 
 function staticNotMeasured(label: string): MonitorRow {
-  return { key: `static:${label}`, label, state: 'not_measured', stateText: STATE_LABEL.not_measured, reason: null, link: null, retry: null }
+  return { key: `static:${label}`, label, service: label, signals: null, state: 'not_measured', stateText: STATE_LABEL.not_measured, reason: null, link: null, retry: null }
 }
 
 export function monitorView(

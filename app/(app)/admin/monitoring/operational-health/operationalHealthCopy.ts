@@ -37,9 +37,24 @@ export const PAGE_COPY = {
   byTypeCaption: 'Each type is measured with the metric AWS provides for it',
 
   monitorTitle: 'What we monitor',
+  monitorIntro: 'Every check DevControl runs, and whether your account has that resource type.',
+  /** The legend's three chips (founder-approved tidy mock): the chip text, then what it means. */
+  monitorLegend: [
+    { kind: 'monitored', chip: 'Monitored', meaning: 'checked now' },
+    { kind: 'none', chip: 'None found', meaning: 'checked, but you have none' },
+    { kind: 'not_measured', chip: 'Not measured yet', meaning: "DevControl doesn't check this yet" },
+  ],
+  monitorLegendLabel: 'Status key',
   planNote:
     "On the Visibility plan, discovery covers EC2, EBS, RDS and S3 only. Lambda, load balancers, ECS, EKS, DynamoDB, CloudFront and Aurora aren't discovered.",
   setUpSlos: 'Set up SLOs →',
+  rangeGroup: 'Time range',
+  /** Shown once before the ranges from md ("Last 5m · 15m · …"), and before each range on a phone. */
+  rangeLead: 'Last',
+
+  /** The green banner's coverage boundary, from fleet_summary (measured of count); the S3 clause only when S3 resources exist. */
+  coverage: (measured: number, total: number, hasS3: boolean) =>
+    `${measured.toLocaleString()} of ${total.toLocaleString()} ${total === 1 ? 'resource has' : 'resources have'} health checks${hasS3 ? '; S3 buckets have no health metric' : ''}.`,
 
   sloReport: 'SLO report →',
   auditLogs: 'Audit logs →',
@@ -56,6 +71,8 @@ export const PAGE_HREF = {
 } as const
 
 export const RANGES: MonitoringRange[] = ['5m', '15m', '1h', '3h', '24h', '7d']
+/** Each range button's accessible name, at every width (as the shared TimeRangeSelector's button text). */
+export const rangeLabel = (range: MonitoringRange) => `Last ${range}`
 export const DEFAULT_RANGE: MonitoringRange = '1h'
 
 /** The console for the region the page checks; never a guessed default region. */
@@ -90,7 +107,8 @@ export const TYPE_PLURAL: Record<string, string> = {
   ecs: 'ECS services',
   eks: 'EKS clusters',
   ebs: 'EBS volumes',
-  cloudfront: 'CloudFront distributions',
+  // "What we monitor" names the service beside it, so the short form (tidy mock) reads "No distributions found".
+  cloudfront: 'distributions',
   aurora: 'Aurora clusters',
 }
 
@@ -117,8 +135,8 @@ export const NO_HEALTH_METRIC_TYPES = new Set(['s3'])
 export const FREE_DISCOVERED_TYPES = new Set(['ec2', 'ebs', 'rds', 's3'])
 
 export type MonitorRowDef =
-  /** `label` and `key` name one signal of a type; the row keeps that type's state. */
-  | { kind: 'type'; type: string; label?: string; key?: string }
+  /** `signals` and `key` name one signal of a type; the row keeps that type's state. */
+  | { kind: 'type'; type: string; signals?: string; key?: string }
   | { kind: 'static_not_measured'; label: string }
   | { kind: 'alarms' }
   | { kind: 'slos' }
@@ -141,8 +159,8 @@ export const MONITOR_GROUPS: Array<{ title: string; rows: MonitorRowDef[] }> = [
     title: 'Traffic',
     rows: [
       // Both signals come from the same load balancer check, so both rows show its state (O4 decision 1).
-      { kind: 'type', type: 'load-balancer', label: 'Load balancer response time (average)' },
-      { kind: 'type', type: 'load-balancer', label: 'Load balancer 5xx rate', key: 'type:load-balancer:5xx' },
+      { kind: 'type', type: 'load-balancer', signals: 'response time (average)' },
+      { kind: 'type', type: 'load-balancer', signals: '5xx rate', key: 'type:load-balancer:5xx' },
       { kind: 'static_not_measured', label: 'Network and Gateway Load Balancers' },
       { kind: 'type', type: 'cloudfront' },
       { kind: 'type', type: 'api-gateway' },
@@ -152,6 +170,12 @@ export const MONITOR_GROUPS: Array<{ title: string; rows: MonitorRowDef[] }> = [
   },
   { title: 'Alerting', rows: [{ kind: 'alarms' }] },
   { title: 'Configuration', rows: [{ kind: 'slos' }] },
+]
+
+/** The two desktop columns (tidy mock): Compute and Traffic left; the rest right. One column on a phone, in this order. */
+export const MONITOR_COLUMNS: string[][] = [
+  ['Compute', 'Traffic'],
+  ['Storage and databases', 'Alerting', 'Configuration'],
 ]
 
 export const STATE_LABEL = {
