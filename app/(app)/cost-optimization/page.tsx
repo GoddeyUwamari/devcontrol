@@ -591,7 +591,7 @@ export default function CostOptimizationPage() {
                           <div className="text-right">
                             <p className="text-section tabular-nums text-ink-success whitespace-nowrap">
                               {isLowActivityFinding(rec)
-                                ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency)
+                                ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency, savingsBasisKind(rec))
                                 : formatRecommendationSavings(rec, formatSavingsCurrency)}
                             </p>
                             {isSavingsCeiling(rec) && (

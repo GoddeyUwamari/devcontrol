@@ -35,9 +35,14 @@ export function displayIssue(rec: { issue?: string | null; metadata?: Record<str
 /** The storage sentence shown with a low-activity finding's figure (W3). */
 export const LOW_ACTIVITY_STORAGE_NOTE = "Doesn't include storage, which is still billed while an instance is stopped."
 
-/** The headline figure of a low-activity finding (W3, C-3). `format` is the surface's own currency formatter. */
-export function lowActivitySavingsHeadline(potentialSavings: number, format: (value: number) => string): string {
-  return `Up to ${format(potentialSavings)}/mo if it's no longer needed`
+/**
+ * The headline figure of a low-activity finding (W3, C-3). `format` is the surface's own currency formatter.
+ * `kind` is the amount's savings basis (savingsBasisKind): "Up to" only for anything but an estimate
+ * (Cost Optimization tidy round 4): an estimate reads "$X/mo if it's no longer needed".
+ */
+export function lowActivitySavingsHeadline(potentialSavings: number, format: (value: number) => string, kind?: 'estimate' | 'ceiling' | null): string {
+  const figure = `${format(potentialSavings)}/mo if it's no longer needed`
+  return kind === 'estimate' ? figure : `Up to ${figure}`
 }
 
 /** The basis line for a list-price figure (C-3): the table is us-east-1 for every region. */

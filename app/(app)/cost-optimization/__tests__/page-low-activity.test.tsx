@@ -98,13 +98,14 @@ beforeEach(() => {
 })
 
 describe('a low-activity finding row (C-1, C-3)', () => {
-  it('is titled "Low-activity instance", with the "Up to" figure and the us-east-1 list-price basis', async () => {
+  it('is titled "Low-activity instance", with its estimate figure (round 4: no "Up to") and the us-east-1 list-price basis', async () => {
     renderPage()
     await screen.findByText('i-placeholder1')
     const row = within(card('i-placeholder1'))
     expect(row.getByText('Low-activity instance')).toBeInTheDocument()
     expect(row.queryByText('Idle Instance')).not.toBeInTheDocument()
-    expect(row.getByText("Up to $9/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.getByText("$9/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.queryByText(/Up to/)).not.toBeInTheDocument()
     expect(row.getByTestId('low-activity-savings-basis')).toHaveTextContent(`Estimated from list price for t2.micro in us-east-1. ${STORAGE}`)
     expect(row.queryByTestId('default-price-disclosure')).not.toBeInTheDocument()
     expect(row.queryByText('Estimated ceiling, not an expected saving')).not.toBeInTheDocument()
@@ -114,7 +115,8 @@ describe('a low-activity finding row (C-1, C-3)', () => {
     renderPage()
     await screen.findByText('i-placeholder2')
     const row = within(card('i-placeholder2'))
-    expect(row.getByText("Up to $50/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.getByText("$50/mo if it's no longer needed")).toBeInTheDocument()
+    expect(row.queryByText(/Up to/)).not.toBeInTheDocument()
     expect(row.getByTestId('default-price-disclosure')).toHaveTextContent(S1)
     expect(row.getByTestId('low-activity-savings-basis')).toHaveTextContent(STORAGE)
     expect(row.getByTestId('low-activity-savings-basis').textContent).toBe(STORAGE)

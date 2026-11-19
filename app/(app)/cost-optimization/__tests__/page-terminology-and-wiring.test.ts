@@ -90,9 +90,9 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   })
 
   it('renders each card\'s figure through formatRecommendationSavings ("Up to $X/mo" for a ceiling, "No dollar estimate" without a basis)', () => {
-    // FP PR 2b: a low-activity finding's figure reads "Up to $X/mo if it's no longer needed" (W3);
-    // every other card still goes through formatRecommendationSavings.
-    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(rec\.potentialSavings, formatSavingsCurrency\)\s*: formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
+    // FP PR 2b: a low-activity finding's figure reads "$X/mo if it's no longer needed" (W3), with "Up to" only
+    // when its basis isn't an estimate (round 4); every other card still goes through formatRecommendationSavings.
+    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(rec\.potentialSavings, formatSavingsCurrency, savingsBasisKind\(rec\)\)\s*: formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
     expect(source).not.toMatch(/formatSavings\(rec\.potentialSavings\)/)
   })
 
