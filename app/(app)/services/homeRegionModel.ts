@@ -199,10 +199,6 @@ export function connectionAccountId(accounts: ReadonlyArray<{ account_id?: strin
 }
 
 /**
- * The banner for the server's state, or null. `home` is the account's current
- * home region (coverage). `multiRegion`: coverage carries `multi_region`.
- */
-/**
  * Whether the proposal or split banner shows (PR 3d-2, founder ruling): from the server's
  * `home_region_proposal` and the account's home region only. `proposed` needs its region, that region's
  * share and the current home's share; `split` needs a home region. Every other state shows nothing.
@@ -218,6 +214,10 @@ export function homeRegionPromptShows(p: HomeRegionProposalView | null | undefin
   return false
 }
 
+/**
+ * The banner for the server's state, or null. `home` is the account's current
+ * home region (coverage). `multiRegion`: coverage carries `multi_region`.
+ */
 export function homeRegionBanner(
   p: HomeRegionProposalView | null | undefined,
   o: { canChange: boolean; scanRunning: boolean; home: string | null; multiRegion: boolean; accountId: string | null },

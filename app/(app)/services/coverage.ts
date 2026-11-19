@@ -240,7 +240,9 @@ export function describeCoverage(
   const homeCouldnt = !inProgress && !lastFailed && scan?.home?.kind === 'couldnt'
   // PR 3d-1 M-1: a home region never scanned (changed since the last successful scan) is never "scanned":
   // the headline takes the existing no-success variants ("{home}: not scanned yet", or "first scan in
-  // progress" / "last scan failed" while the cell below says "scan in progress" / "last scan failed").
+  // progress" while the cell below says "scan in progress"). A scan that didn't finish is the 3d-2 case
+  // below: with the shared scan state the headline says "{home}: last scan didn't finish", like the cell;
+  // only the Phase 1 strip (no shared state) still says "{home}: last scan failed".
   const homeScanned = !!lastSuccess && scan?.home?.kind !== 'not_scanned'
   // PR 3d-2 (founder ruling, Nov 19): with the shared scan state, wherever the home cell says "last scan
   // didn't finish" (a scan that didn't finish, and none running), the headline says

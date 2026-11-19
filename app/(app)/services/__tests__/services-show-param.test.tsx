@@ -6,19 +6,30 @@
  * - D4: the redesign's What needs attention shows the one shared sentence; the V2 page without the
  *   redesign keeps its text (flag-off unchanged).
  * Same harness as services-redesign-states.test.tsx (tab 5 fixture, one row set). TZ UTC, fixed clock.
+ *
+ * 3d-2 review L-2: `useSearchParams` below counts its calls (one per render of a reader: ShowFromUrl,
+ * ResourceFocus) and has a breaker. After SEARCH_PARAMS_BREAKER calls it reads an empty URL, so a page
+ * that re-applies `?show=` on every render (ShowFromUrl without its once-only guard re-renders forever)
+ * stops, and the "applied once" test fails on an assertion instead of the worker running out of memory.
  */
 process.env.TZ = 'UTC'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ServicesPage from '../page'
 import { R_NOW, scanOf, tab5 } from './redesign-fixtures'
 
-const nav = vi.hoisted(() => ({ search: '' }))
+const nav = vi.hoisted(() => ({ search: '', reads: 0, tripped: false }))
+/** Far above a settled page's reads (see the L-2 test); a render loop reaches it in one act(). */
+const SEARCH_PARAMS_BREAKER = 500
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(nav.search),
+  useSearchParams: () => {
+    nav.reads += 1
+    if (nav.reads > SEARCH_PARAMS_BREAKER) nav.tripped = true
+    return new URLSearchParams(nav.tripped ? '' : nav.search)
+  },
   usePathname: () => '/services',
 }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
@@ -72,6 +83,8 @@ const attentionHeader = () => screen.getByRole('heading', { name: 'What needs at
 beforeEach(() => {
   vi.clearAllMocks()
   nav.search = ''
+  nav.reads = 0
+  nav.tripped = false
   vi.useFakeTimers({ toFake: ['Date'], now: R_NOW })
   vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
   vi.stubEnv('NEXT_PUBLIC_SERVICES_REDESIGN', 'true')
@@ -86,6 +99,38 @@ describe('D7: ?show=needs_attention opens Services with Needs attention selected
     await renderPage()
     await waitFor(() => expect(showControl().value).toBe('needs_attention'))
     await waitFor(() => expect(listRequests().at(-1)).toMatchObject({ needs_attention: true }))
+  })
+
+  it('L-2: ?show=needs_attention is applied once: the page settles, no render loop', async () => {
+    nav.search = 'show=needs_attention'
+    await renderPage()
+    await waitFor(() => expect(showControl().value).toBe('needs_attention'))
+    const settled = nav.reads
+    // Without the once-only guard, every render re-applies the filters and renders again: the reads
+    // run up to the breaker inside the first act().
+    expect(nav.tripped).toBe(false)
+    expect(settled).toBeLessThan(SEARCH_PARAMS_BREAKER / 5)
+    // Settled means settled: nothing re-applies it afterwards.
+    await waitFor(() => expect(listRequests().at(-1)).toMatchObject({ needs_attention: true }))
+    expect(nav.reads).toBe(settled)
+  })
+
+  it('L-2: after landing on Needs attention, the user can switch Show back to All and it stays there', async () => {
+    nav.search = 'show=needs_attention'
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><ServicesPage /></QueryClientProvider>)
+    await waitFor(() => expect(showControl().value).toBe('needs_attention'))
+    await waitFor(() => expect(listRequests().at(-1)).toMatchObject({ needs_attention: true }))
+    await waitFor(() => expect(client.isFetching()).toBe(0))
+
+    fireEvent.change(showControl(), { target: { value: 'all' } })
+    await waitFor(() => expect(listRequests().at(-1)).not.toHaveProperty('needs_attention'))
+    await waitFor(() => expect(client.isFetching()).toBe(0))
+    // The URL still says needs_attention; the page doesn't put it back.
+    expect(nav.search).toBe('show=needs_attention')
+    expect(showControl().value).toBe('all')
+    expect(listRequests().at(-1)).not.toHaveProperty('needs_attention')
+    expect(nav.tripped).toBe(false)
   })
 
   it.each(['', 'show=unowned', 'show=NEEDS_ATTENTION', 'show=bogus', 'resource=abc'])('negative %j: ignored, the page opens as before (Show = all)', async (search) => {
