@@ -514,8 +514,9 @@ function savingsTile(i: OverviewInputs): Tile {
 const findings = (n: number) => `${n} open finding${n === 1 ? '' : 's'}`
 
 /**
- * The savings tile with open findings, in the weekly email's sentences
- * (weekly-summary-content.ts savingsLines). Green only for an estimate above
+ * The savings tile with open findings, in the Dashboard header's sentences
+ * (lib/savings-basis.ts estimatedSavingsHeadline; the weekly email no longer
+ * uses them since the executive brief redesign, 53a791e1). Green only for an estimate above
  * $0; a total of $0 is never shown as a measured "$0". The counts are the
  * stats API's own (estimated_findings / unestimated_findings): without them
  * the sentence leaves the count out, and nothing is computed here.
@@ -532,7 +533,7 @@ export function describeOpenSavings(
     const amount = `${formatUsd(total)}/month`
     const across = typeof estimatedFindings === 'number' && estimatedFindings > 0 ? ` across ${findings(estimatedFindings)}` : ''
     captions.push([`Estimated savings: ${amount}${across}. This is a DevControl estimate, not realized savings.`])
-    // The weekly email's order: the estimate, its upper bounds, then the findings with no figure.
+    // The Dashboard header's order (executive-roi-card.tsx): the estimate, its upper bounds, then the findings with no figure.
     for (const line of describeCeilings(ceilings, formatUsd, 'month')) captions.push([`${line}.`])
     if (typeof unestimatedFindings === 'number' && unestimatedFindings > 0) {
       captions.push([unestimatedFindings === 1
