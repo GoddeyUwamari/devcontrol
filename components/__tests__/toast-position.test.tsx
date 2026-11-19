@@ -37,6 +37,14 @@ describe('toasts appear at the top of the screen', () => {
     }
   })
 
+  it("the toaster's live region is not a containing block (else top-center is the end of the page, not the screen)", () => {
+    const css = source('app/globals.css')
+    // The app-wide rule that caused it stays for every other live region…
+    expect(css).toMatch(/\[aria-live\] \{\n {2}contain: layout;\n\}/)
+    // …and sonner's wrapper is exempted.
+    expect(css).toMatch(/\[aria-live\]:has\(> \[data-sonner-toaster\]\) \{\n {2}contain: none;\n\}/)
+  })
+
   it('a toast renders in the top stack', async () => {
     render(<Toaster position={TOAST_POSITION} />)
     act(() => { toast.success('Recommendation marked as resolved') })
