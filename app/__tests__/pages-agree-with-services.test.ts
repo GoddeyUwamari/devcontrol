@@ -152,14 +152,14 @@ const CASES: Record<string, { coverage: () => ServicesCoverage; expected: Expect
     coverage: () => tab8(),
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 10:21 AM · didn't finish" }, line: 'Last scan failed after checking 1 of 2 regions · 1 with resources',
-      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: "last scan didn't finish", connectHeadline: 'us-east-1 scanned',
+      notChecked: `1 region couldn't be checked · Not checked yet: ${IAM}`, otherRegions: ["1 region couldn't be checked"], inventory: 'us-east-1: Checked', finished: 'today, 4:20 AM', connectHome: "last scan didn't finish", connectHeadline: "us-east-1: last scan didn't finish",
     },
   },
   'abandoned job': {
     coverage: abandoned,
     expected: {
       scan: { state: 'failed', text: "Last scan: today, 12:00 PM · didn't finish" }, line: '1 of 4 regions checked · us-east-1',
-      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: "last scan didn't finish", connectHeadline: 'us-east-1 scanned',
+      notChecked: `Not scanned yet: 3 regions · ${IAM}`, otherRegions: ['3 regions not scanned yet'], inventory: 'us-east-1: Checked', connectHome: "last scan didn't finish", connectHeadline: "us-east-1: last scan didn't finish",
     },
   },
   'in progress past 60 minutes, lease held': {
@@ -244,6 +244,10 @@ describe.each(Object.entries(CASES))('%s', (_name, { coverage, expected }) => {
     } else {
       expect(v.headline).not.toContain("couldn't be checked")
     }
+    // 3d-2 founder ruling (Nov 19): wherever the cell says "didn't finish", the headline says
+    // "{home}: last scan didn't finish", and only there.
+    expect(v.chips[0].note.endsWith("last scan didn't finish")).toBe(expected.connectHome === "last scan didn't finish")
+    expect(v.headline === `${home}: last scan didn't finish`).toBe(expected.connectHome === "last scan didn't finish")
   })
 })
 
@@ -301,12 +305,12 @@ describe('M-1: a new home region not scanned yet is never "checked", "complete" 
     expect(v.headline).toBe('us-west-2: first scan in progress')
   })
 
-  it('the scan after the change didn\'t finish: the cell says "last scan didn\'t finish" (3d-2), the headline the existing "last scan failed"', () => {
+  it('the scan after the change didn\'t finish: the cell and the headline say "didn\'t finish" (3d-2 rulings)', () => {
     const c = newHomeNotScanned()
     c.last_scan = { status: 'failed', started_at: '2026-11-15T12:00:00.000Z', completed_at: '2026-11-15T12:05:00.000Z', warnings: [] }
     const v = describeIt(c)
     expect(v.chips[0].note).toBe("5 · home · last scan didn't finish")
-    expect(v.headline).toBe('us-west-2: last scan failed')
+    expect(v.headline).toBe("us-west-2: last scan didn't finish")
   })
 
   it('the Services Phase 1 strip (no shared scan state) is unchanged', () => {

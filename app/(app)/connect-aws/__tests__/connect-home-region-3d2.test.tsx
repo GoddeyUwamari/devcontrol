@@ -2,7 +2,7 @@
  * PR 3d-2 (D8): Connect AWS, next to "Home region · {r}":
  * - the owner (`can_change_home_region`) gets "Change in Services & Ownership →" to /services#region-coverage;
  * - the owner also gets "DevControl has a home-region suggestion for this account. Review it in Services &
- *   Ownership →" exactly when the server's `home_region_proposal.state` is proposed or split;
+ *   Ownership →" exactly when Services' own banner would show (homeRegionPromptShows; founder ruling Nov 19);
  * - a member sees the value only; with the Services redesign off (no Change button or banner there) nothing new shows.
  * The GET /api/aws/accounts answers are the Services home-region tests' own fixtures (accountsAnswer, proposal, split).
  */
@@ -61,6 +61,10 @@ describe('D8: owner', () => {
   it.each([
     ['no_signal', proposal({ state: 'no_signal' })], ['unavailable', proposal({ state: 'unavailable' })], ['none', null],
     ['waiting', proposal({ state: 'waiting' })], ['dismissed', proposal({ state: 'dismissed' })],
+    // Founder ruling Nov 19: Services shows no banner for these (services-home-region.test.tsx "3d-2"), so no line here.
+    ['proposed, no region', proposal({ region: null })],
+    ['proposed, no share for its region', proposal({ shares: proposal().shares.filter((x) => x.region !== 'us-west-2') })],
+    ['proposed, no current share', proposal({ current: null })],
   ] as [string, HomeRegionProposalView | null][])('%s: the Change link, never the suggestion', async (_n, p) => {
     await show(accountsAnswer({ proposal: p, canChange: true }))
     expect(screen.getByRole('link', { name: CHANGE })).toHaveAttribute('href', '/services#region-coverage')

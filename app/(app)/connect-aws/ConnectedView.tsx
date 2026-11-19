@@ -167,7 +167,7 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
   const homeChip = view?.chips.find((chip) => chip.key === 'home')
   // PR 3d-2 (D8): the owner's links to Services' home-region controls, only where they exist (the Services
   // redesign: the Change button and the proposal banner); without it, nothing new shows.
-  const homeLinks = isServicesV2Enabled() && isServicesRedesignEnabled() ? connectHomeRegionLinks(homeRegion) : { change: false, suggestion: false }
+  const homeLinks = isServicesV2Enabled() && isServicesRedesignEnabled() ? connectHomeRegionLinks(homeRegion, coverage) : { change: false, suggestion: false }
 
   return (
     <div className="space-y-4" data-testid="connected-view">

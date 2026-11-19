@@ -751,3 +751,18 @@ describe('axe-core on the new states (phone list and open dialog/tooltip include
     expect(await axeViolations(scopeOf(container))).toEqual([])
   })
 })
+
+// PR 3d-2 (founder ruling, Nov 19): "proposed" with missing data shows no banner here, and Connect AWS shows
+// no suggestion line for the same answer (connect-home-region-3d2.test.tsx); both use homeRegionPromptShows.
+describe('3d-2: proposed with missing data', () => {
+  it.each([
+    ['no region', proposal({ region: null })],
+    ['no share for its region', proposal({ shares: proposal().shares.filter((s) => s.region !== 'us-west-2') })],
+    ['no current share', proposal({ current: null })],
+  ] as const)('%s → no banner', async (_name, p) => {
+    await show(tab5(), accountsAnswer({ proposal: p }))
+    await waitFor(() => expect(mockAccounts).toHaveBeenCalled())
+    await act(async () => {})
+    expect(banner()).toBeNull()
+  })
+})

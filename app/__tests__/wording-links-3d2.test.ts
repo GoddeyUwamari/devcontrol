@@ -18,7 +18,7 @@ import {
   ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK, homeRegionOf, organisingLine,
   redesignScanLine, redesignScanLineTime,
 } from '../(app)/services/redesignModel'
-import { HOME_REGION_COPY, homeRegionBanner } from '../(app)/services/homeRegionModel'
+import { HOME_REGION_COPY, homeRegionBanner, homeRegionPromptShows } from '../(app)/services/homeRegionModel'
 import { describeCoverage } from '../(app)/services/coverage'
 import { connectHomeRegionLinks, homeRegionCheck, scanState, scanStateParts, scanStateTime } from '../(app)/services/servicesTruth'
 import { OVERVIEW_COPY } from '../(app)/infrastructure/overview/overviewModel'
@@ -85,13 +85,23 @@ describe('Connect\'s home cell: "last scan didn\'t finish" on the shared scan st
     ['an abandoned scan', abandoned],
     ['a failed scan (flag off)', failedFlagOff],
     ['a flagged latest_scan_failed', tab8],
-  ] as const)('%s: "… · home · last scan didn\'t finish"', (_name, make) => {
+  ] as const)('%s: cell "… · home · last scan didn\'t finish", headline "us-east-1: last scan didn\'t finish" (ruling Nov 19)', (_name, make) => {
     const v = connect(make())
     expect(v.chips[0].note).toMatch(/ · home · last scan didn't finish$/)
     expect(v.chips[0].note).not.toMatch(/last scan failed/)
+    expect(v.headline).toBe("us-east-1: last scan didn't finish")
   })
-  it('negative: the Services Phase 1 strip (no shared state) keeps its own "last scan failed"', () => {
-    expect(describeCoverage(failedFlagOff(), NOW, []).chips[0].note).toMatch(/ · home · last scan failed$/)
+  it.each([
+    ['finished', () => tab5('ok')], ['home failed', () => homeStatus('failed')], ['running', running], ['former home', tab12Coverage], ['flagged running', tab2],
+  ] as const)('negative %s: the cell doesn\'t say "didn\'t finish", nor does the headline', (_name, make) => {
+    const v = connect(make())
+    expect(v.chips[0].note).not.toMatch(/didn't finish/)
+    expect(v.headline).not.toMatch(/didn't finish/)
+  })
+  it('negative: the Services Phase 1 strip (no shared state) keeps its own words', () => {
+    const v = describeCoverage(failedFlagOff(), NOW, [])
+    expect(v.chips[0].note).toMatch(/ · home · last scan failed$/)
+    expect(v.headline).not.toMatch(/didn't finish/)
   })
 })
 
@@ -233,48 +243,71 @@ describe('D7: one label and target per link into Services', () => {
 
 const view = (o: Parameters<typeof accountsAnswer>[0]) => accountsAnswer(o).homeRegion as HomeRegionAccountView
 const other = (state: HomeRegionProposalView['state']) => proposal({ state })
+const COVERAGE = () => tab5('ok')
 
-describe('D8: Connect AWS reads the same home-region keys as Services (Services\' own proposal fixtures)', () => {
+describe('D8: Connect AWS shows the suggestion exactly when Services\' banner would (Services\' own proposal fixtures)', () => {
   const OPEN: [string, HomeRegionProposalView][] = [['proposed (tab 9)', proposal()], ['split (tab 10)', split()], ['split, 7 regions', splitSeven()]]
+  /** Founder ruling Nov 19: "proposed" with missing data: Services shows no banner, so Connect shows no line. */
+  const PROPOSED_MISSING_DATA: [string, HomeRegionProposalView][] = [
+    ['proposed, no region', proposal({ region: null })],
+    ['proposed, no share for its region', proposal({ shares: proposal().shares.filter((x) => x.region !== 'us-west-2') })],
+    ['proposed, no current share', proposal({ current: null })],
+  ]
   const CLOSED: [string, HomeRegionProposalView | null][] = [
+    ...PROPOSED_MISSING_DATA,
     ['no_signal', other('no_signal')], ['unavailable', other('unavailable')], ['none (null)', null],
     ['waiting', other('waiting')], ['split_waiting', other('split_waiting')], ['not_applicable', other('not_applicable')],
     ['accepted', other('accepted')], ['dismissed', other('dismissed')], ['superseded', other('superseded')],
   ]
 
   it.each(OPEN)('%s, owner: the Change link and the suggestion line', (_n, p) => {
-    expect(connectHomeRegionLinks(view({ proposal: p, canChange: true }))).toEqual({ change: true, suggestion: true })
+    expect(connectHomeRegionLinks(view({ proposal: p, canChange: true }), COVERAGE())).toEqual({ change: true, suggestion: true })
   })
   it.each(OPEN)('%s, member: the value only', (_n, p) => {
-    expect(connectHomeRegionLinks(view({ proposal: p, canChange: false }))).toEqual({ change: false, suggestion: false })
+    expect(connectHomeRegionLinks(view({ proposal: p, canChange: false }), COVERAGE())).toEqual({ change: false, suggestion: false })
   })
   it.each(CLOSED)('%s, owner: the Change link, no suggestion', (_n, p) => {
-    expect(connectHomeRegionLinks(view({ proposal: p, canChange: true }))).toEqual({ change: true, suggestion: false })
+    expect(connectHomeRegionLinks(view({ proposal: p, canChange: true }), COVERAGE())).toEqual({ change: true, suggestion: false })
   })
   it('missing keys (an older server) or no response: the value only', () => {
-    expect(connectHomeRegionLinks(undefined)).toEqual({ change: false, suggestion: false })
-    expect(connectHomeRegionLinks(null)).toEqual({ change: false, suggestion: false })
+    expect(connectHomeRegionLinks(undefined, COVERAGE())).toEqual({ change: false, suggestion: false })
+    expect(connectHomeRegionLinks(null, COVERAGE())).toEqual({ change: false, suggestion: false })
   })
-  it('parity: for every Services fixture, Services shows a proposal or split banner exactly when Connect shows the suggestion to that owner', () => {
-    const c = tab5('ok')
-    for (const [, p] of [...OPEN, ...CLOSED]) {
+  it('Services\' precondition: no suggestion before coverage is read, or with no connected account (the Change link stays)', () => {
+    const v = view({ proposal: proposal(), canChange: true })
+    expect(connectHomeRegionLinks(v, undefined)).toEqual({ change: true, suggestion: false })
+    const c = COVERAGE(); c.account = { ...c.account, connected: false }
+    expect(connectHomeRegionLinks(v, c)).toEqual({ change: true, suggestion: false })
+  })
+  it('parity: for every fixture (incl. proposed with missing data) × owner/member, Connect\'s line = Services\' banner shown', () => {
+    const c = COVERAGE()
+    for (const [name, p] of [...OPEN, ...CLOSED]) {
+      expect([name, homeRegionPromptShows(p, homeRegionOf(c))]).toEqual([name, homeRegionBanner(p, { canChange: true, scanRunning: false, home: homeRegionOf(c), multiRegion: false, accountId: ACCOUNT_ID }) !== null])
       for (const canChange of [true, false]) {
         const banner = homeRegionBanner(p, { canChange, scanRunning: false, home: homeRegionOf(c), multiRegion: false, accountId: ACCOUNT_ID })
-        const links = connectHomeRegionLinks(view({ proposal: p, canChange }))
-        expect([p?.state ?? null, canChange, links.suggestion]).toEqual([p?.state ?? null, canChange, canChange && banner !== null])
+        const links = connectHomeRegionLinks(view({ proposal: p, canChange }), c)
+        expect([name, canChange, links.suggestion]).toEqual([name, canChange, canChange && banner !== null])
       }
     }
+  })
+  it.each(PROPOSED_MISSING_DATA)('%s: Services shows no banner and Connect no line', (_n, p) => {
+    const c = COVERAGE()
+    expect(homeRegionBanner(p, { canChange: true, scanRunning: false, home: homeRegionOf(c), multiRegion: false, accountId: ACCOUNT_ID })).toBeNull()
+    expect(connectHomeRegionLinks(view({ proposal: p, canChange: true }), c).suggestion).toBe(false)
   })
   it('the approved strings', () => {
     expect([HOME_REGION_CHANGE, HOME_REGION_SUGGESTION, HOME_REGION_SUGGESTION_LINK]).toEqual([
       'Change in Services & Ownership →', 'DevControl has a home-region suggestion for this account.', 'Review it in Services & Ownership →',
     ])
   })
-  it('source: the state is read, never worked out from shares or amounts', () => {
-    const s = src('app/(app)/services/servicesTruth.ts')
-    const body = s.slice(s.indexOf('export function connectHomeRegionLinks'))
-    expect(body).toMatch(/state === 'proposed' \|\| state === 'split'/)
-    expect(body).not.toMatch(/shares|amount|share\b/)
+  it('source: Connect calls Services\' own visibility check and Services\' banner uses the same one; no Connect-specific rule', () => {
+    const truth = src('app/(app)/services/servicesTruth.ts')
+    const body = truth.slice(truth.indexOf('export function connectHomeRegionLinks'))
+    expect(body).toMatch(/homeRegionPromptShows\(view\?\.proposal, homeRegionOf\(coverage\)\)/)
+    expect(body).not.toMatch(/shares|amount|share\b|'proposed'|'split'/)
+    const model = src('app/(app)/services/homeRegionModel.ts')
+    const banner = model.slice(model.indexOf('export function homeRegionBanner'))
+    expect(banner).toMatch(/if \(!p \|\| !homeRegionPromptShows\(p, o\.home\)\) return null/)
   })
 })
 

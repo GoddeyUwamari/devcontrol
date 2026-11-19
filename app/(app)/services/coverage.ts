@@ -242,7 +242,13 @@ export function describeCoverage(
   // the headline takes the existing no-success variants ("{home}: not scanned yet", or "first scan in
   // progress" / "last scan failed" while the cell below says "scan in progress" / "last scan failed").
   const homeScanned = !!lastSuccess && scan?.home?.kind !== 'not_scanned'
-  const headline = homeScanned
+  // PR 3d-2 (founder ruling, Nov 19): with the shared scan state, wherever the home cell says "last scan
+  // didn't finish" (a scan that didn't finish, and none running), the headline says
+  // "{home}: last scan didn't finish" (the existing "{home}: …" pattern). The Phase 1 strip is unchanged.
+  const didntFinish = !!scan && !inProgress && lastFailed
+  const headline = didntFinish
+    ? `${home.region}: last scan didn't finish`
+    : homeScanned
     ? `${home.region} ${homeCouldnt ? "couldn't be checked" : 'scanned'}${plus(scopeParts(coverage, 'S3 buckets in every region', 'CloudFront (global)'))}`
     : inProgress ? `${home.region}: first scan in progress`
     : lastFailed ? `${home.region}: last scan failed`

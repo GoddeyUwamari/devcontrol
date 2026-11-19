@@ -26,6 +26,7 @@ import {
   homeOnlyStatus, homeRegionOf, multiRegionOf, organisingLine, redesignScanLine, redesignScanLineTime, regionRow, scanIsRunning,
   scanNotCheckedWho, scanSoFar, type RedesignScanLine, type RedesignScanState, type RowStatus, type ScanLineTime,
 } from './redesignModel'
+import { homeRegionPromptShows } from './homeRegionModel'
 
 export { homeRegionOf, scanIsRunning }
 // PR 3d-2 (D4, D7): the shared needs-attention sentence and the links into Services.
@@ -244,16 +245,19 @@ export function homeRegionCheck(c: ServicesCoverage): HomeRegionCheck | null {
 // ── Home region on Connect AWS (PR 3d-2, D8) ──
 
 /**
- * What Connect AWS shows next to "Home region · {r}", from the same GET /api/aws/accounts keys the
- * Services page reads (useHomeRegion):
+ * What Connect AWS shows next to "Home region · {r}", from the same GET /api/aws/accounts keys and
+ * coverage response the Services page reads (useHomeRegion):
  * - `change`: "Change in Services & Ownership →", for the owner only (`can_change_home_region`, G9);
  * - `suggestion`: "DevControl has a home-region suggestion for this account. Review it in …", for the
- *   owner only and only when the server's `home_region_proposal.state` is exactly `proposed` or `split`
- *   (the two states Services' homeRegionBanner shows). Read, never worked out from shares or amounts.
+ *   owner only, and only when Services' own banner would show (founder ruling, Nov 19): Services'
+ *   visibility check (homeRegionPromptShows) on the server's `home_region_proposal` and the account's
+ *   home region, with Services' precondition (coverage read, account connected). Nothing is worked out here.
  * Members, and an older server without the keys, get neither: the value only.
  */
-export function connectHomeRegionLinks(view: HomeRegionAccountView | null | undefined): { change: boolean; suggestion: boolean } {
+export function connectHomeRegionLinks(
+  view: HomeRegionAccountView | null | undefined, coverage: ServicesCoverage | null | undefined,
+): { change: boolean; suggestion: boolean } {
   const owner = view?.canChangeHomeRegion === true
-  const state = view?.proposal?.state
-  return { change: owner, suggestion: owner && (state === 'proposed' || state === 'split') }
+  const servicesShowsBanner = !!coverage?.account.connected && homeRegionPromptShows(view?.proposal, homeRegionOf(coverage))
+  return { change: owner, suggestion: owner && servicesShowsBanner }
 }
