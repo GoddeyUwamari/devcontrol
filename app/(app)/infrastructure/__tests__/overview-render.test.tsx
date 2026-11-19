@@ -385,7 +385,7 @@ describe('R8 / SY-1 Sync', () => {
   })
 
   // Multi-region flag-on prep, item 4 (founder ruling Nov 19, every organization): a busy answer, or a request
-  // cut while the scan goes on (nginx's 60 s → 504), is never "Scan failed"; coverage is re-read and decides.
+  // cut while the scan goes on (nginx's timeout → 504), is never "Scan failed"; coverage is re-read and decides.
   const BUSY = 'A scan is already running for this AWS account. Try again in a few minutes.'
   const rejectWith = (status: number, data?: unknown) => () => Promise.reject(Object.assign(new Error(String(status)), { response: { status, data } }))
   it.each([
@@ -409,6 +409,33 @@ describe('R8 / SY-1 Sync', () => {
     await renderSettled()
     fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Scan failed — check your AWS connection'))
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+  // Review L-1: the server said busy, but the lease was released before the re-read. Still the busy
+  // message (never nothing, never "Scan failed"), and no "in progress" state: the coverage says idle.
+  it('a 409 busy with no scan running after the re-read: the busy message, the page stays idle', async () => {
+    vi.mocked(toast.warning).mockReset()
+    m.responses['POST /api/services/discover'] = rejectWith(409, { success: false, error: BUSY })
+    await renderSettled()
+    const reads = m.log.filter((l) => l === 'GET /api/services/coverage').length
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(BUSY))
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(m.log.filter((l) => l === 'GET /api/services/coverage').length).toBeGreaterThan(reads)
+    await waitFor(() => { for (const b of screen.getAllByRole('button', { name: /Scan now/ })) expect(b).toBeEnabled() })
+    expect(document.getElementById('infra-scan-running')).toBeNull()
+  })
+  // Review L-2: network down. The request got no response and the coverage re-read fails too: nothing
+  // says a scan is running, so it is the normal failure, never the busy message.
+  it('no response and the coverage re-read fails: the existing failure toast, never busy', async () => {
+    vi.mocked(toast.warning).mockReset()
+    m.responses['POST /api/services/discover'] = () => Promise.reject(Object.assign(new Error('Network Error'), { request: {} }))
+    await renderSettled()
+    m.responses['GET /api/services/coverage'] = () => Promise.reject(Object.assign(new Error('Network Error'), { request: {} }))
+    const reads = m.log.filter((l) => l === 'GET /api/services/coverage').length
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Scan failed — check your AWS connection'))
+    expect(m.log.filter((l) => l === 'GET /api/services/coverage').length).toBeGreaterThan(reads)
     expect(toast.warning).not.toHaveBeenCalled()
   })
 })

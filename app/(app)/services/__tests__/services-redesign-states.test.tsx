@@ -29,6 +29,8 @@ vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'owner' }
 vi.mock('@/lib/hooks/use-registered-services', () => ({
   useRegisteredServices: () => ({ isPending: false, isError: false, isSuccess: true, data: [], refetch: vi.fn() }),
 }))
+const toastWarning = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: toastWarning } }))
 const mockGetServices = vi.fn()
 const mockGetStats = vi.fn()
 const mockGetCoverage = vi.fn()
@@ -683,5 +685,32 @@ describe('Scan now busy or cut: never "Failed to load resources."', () => {
     mockDiscover.mockRejectedValue(reject(504))
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Scan now' })) })
     expect(await screen.findByText('Failed to load resources.')).toBeInTheDocument()
+  })
+  // Review L-1: the server said busy, but the lease was released before the re-read. The page used to do
+  // nothing at all; it shows the server's busy message, and no "in progress" state (the coverage says idle).
+  it('a 409 busy with no scan running after the re-read: the busy message, the page stays idle', async () => {
+    toastWarning.mockReset()
+    await show(tab1())
+    const reads = mockGetCoverage.mock.calls.length
+    mockDiscover.mockRejectedValue(reject(409, { success: false, error: BUSY }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Scan now' })) })
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith(BUSY))
+    expect(mockGetCoverage.mock.calls.length).toBeGreaterThan(reads)
+    expect(screen.getByRole('button', { name: 'Scan now' })).toBeEnabled()
+    expect(orgLine()).not.toMatch(/^Scanning/)
+    expect(screen.queryByText('Failed to load resources.')).toBeNull()
+  })
+  // Review L-2: network down. The request got no response and the coverage re-read fails too: nothing
+  // says a scan is running, so it is the normal failure, never the busy message.
+  it('no response and the coverage re-read fails: the existing error state, never busy', async () => {
+    toastWarning.mockReset()
+    await show(tab1())
+    const reads = mockGetCoverage.mock.calls.length
+    mockGetCoverage.mockRejectedValue(reject(null))
+    mockDiscover.mockRejectedValue(reject(null))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Scan now' })) })
+    expect(await screen.findByText('Failed to load resources.')).toBeInTheDocument()
+    expect(mockGetCoverage.mock.calls.length).toBeGreaterThan(reads)
+    expect(toastWarning).not.toHaveBeenCalled()
   })
 })

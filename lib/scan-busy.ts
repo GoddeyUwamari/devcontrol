@@ -4,8 +4,9 @@
  * POST /api/services/discover holds the request for the whole scan. Two answers are not a failed scan:
  * - 409 with the server's busy body: another scan holds the account's lease and did not finish within
  *   the server's wait (backend/src/services/scan-session.ts SCAN_BUSY_MESSAGE, approved Q1);
- * - 504 or no response at all: the proxy (nginx's 60 s default) or the browser stopped waiting; the
- *   scan goes on on the server (it runs on its own database connection).
+ * - 504 or no response at all: the proxy (nginx: 1200 s on /api/services/discover and
+ *   /api/cost-recommendations/analyze, 60 s elsewhere; applied Nov 19) or the browser stopped waiting;
+ *   the scan goes on on the server (it runs on its own database connection).
  * The page then re-reads coverage, and only the server's lease state (scanIsRunning) says whether a
  * scan is in progress. Nothing here locks anything or keeps its own scan state.
  */

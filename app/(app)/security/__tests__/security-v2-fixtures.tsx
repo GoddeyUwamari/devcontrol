@@ -14,7 +14,7 @@ const DAY = 86_400_000
 export const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
 
 /** `wait`: the answer is held until that promise settles (to look at the page while a request is in flight). */
-export type Route = { status: number; body?: unknown; wait?: Promise<unknown> } | 'pending'
+export type Route = { status: number; body?: unknown; wait?: Promise<unknown>; noResponse?: true } | 'pending'
 export interface Harness { log: string[]; routes: Record<string, Route>; posts?: { path: string; body: unknown }[] }
 
 export const ok = (data: unknown): Route => ({ status: 200, body: { success: true, data } })
@@ -22,6 +22,8 @@ export const raw = (body: unknown): Route => ({ status: 200, body })
 export const fail = (status: number): Route => ({ status })
 /** An error status with the server's JSON error body. */
 export const failWith = (status: number, error: string): Route => ({ status, body: { success: false, error } })
+/** No response at all (a dropped connection or a client timeout): an axios-style error with a request and no response. */
+export const noResponse: Route = { status: 0, noResponse: true }
 
 /** Answers a logged request from the route table: 200 with its body, another status as an axios-style error, or never. */
 export function answer(h: Harness, method: string, path: string): Promise<{ data: unknown }> {
@@ -30,6 +32,8 @@ export function answer(h: Harness, method: string, path: string): Promise<{ data
   if (route === 'pending') return new Promise(() => {})
   const settle = () => route.status === 200
     ? Promise.resolve({ data: route.body })
+    : route.noResponse
+    ? Promise.reject(Object.assign(new Error('Network Error'), { request: {} }))
     : Promise.reject(Object.assign(new Error(`Request failed with status code ${route.status}`), { response: { status: route.status, data: route.body ?? {} } }))
   return route.wait ? route.wait.then(settle, settle) : settle()
 }
