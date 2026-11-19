@@ -230,7 +230,8 @@ describe('a connected organization', () => {
       ResultsByTime: [{ TimePeriod: { Start: '2026-10-01' }, Groups: [{ Keys: ['Amazon EC2'], Metrics: { UnblendedCost: { Amount: '3' } } }] }],
     });
 
-    const trend = await service.fetchCostTrend('org-connected', '30d');
+    // 90d: the range with a Cost Explorer request of its own (7d and 30d are slices of it, CE-2).
+    const trend = await service.fetchCostTrend('org-connected', '90d');
 
     expect(trend).toHaveLength(1);
     expect(trend[0]).toMatchObject({ date: '2026-10-01', total: 3 });

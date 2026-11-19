@@ -108,24 +108,27 @@ describe('Cost Explorer caches (monthly cost, trend, fetchedAt)', () => {
     expect(createdWith).toEqual([]);
   });
 
+  // 90d: the trend entry with a Cost Explorer request of its own; 7d and 30d
+  // are slices of it (CE-2), so they follow the same rule
+  // (thirty-day-from-ninety.test.ts pins that for 7d/30d).
   it('the trend and its fetchedAt follow the same rule; an old in-flight trend (empty) never fills B', async () => {
     const service = new AWSCostService();
     const slowA = deferred<unknown>();
     answers.push(() => slowA.promise, async () => [{ date: '2026-11-01', total: 7 }]);
-    const old = service.fetchCostTrend(ORG, '30d');
+    const old = service.fetchCostTrend(ORG, '90d');
     await new Promise((r) => setImmediate(r));
     current = ROW_B;
-    expect(await service.getCostTrendFetchedAt(ORG, '30d')).toBeNull();
-    const fresh = await service.fetchCostTrend(ORG, '30d');
+    expect(await service.getCostTrendFetchedAt(ORG, '90d')).toBeNull();
+    const fresh = await service.fetchCostTrend(ORG, '90d');
     slowA.resolve([]);
     expect(await old).toEqual([]);
     expect(fresh).toEqual([{ date: '2026-11-01', total: 7 }]);
-    expect(await service.fetchCostTrend(ORG, '30d')).toEqual([{ date: '2026-11-01', total: 7 }]);
-    expect(await service.getCostTrendFetchedAt(ORG, '30d')).not.toBeNull();
+    expect(await service.fetchCostTrend(ORG, '90d')).toEqual([{ date: '2026-11-01', total: 7 }]);
+    expect(await service.getCostTrendFetchedAt(ORG, '90d')).not.toBeNull();
     current = ROW_A;
-    expect(await service.getCostTrendFetchedAt(ORG, '30d')).not.toBeNull(); // A's own (empty) entry, A's only
+    expect(await service.getCostTrendFetchedAt(ORG, '90d')).not.toBeNull(); // A's own (empty) entry, A's only
     current = null;
-    expect(await service.getCostTrendFetchedAt(ORG, '30d')).toBeNull();
+    expect(await service.getCostTrendFetchedAt(ORG, '90d')).toBeNull();
   });
 });
 

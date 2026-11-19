@@ -92,10 +92,11 @@ describe('rollover: 2026-10-31T23:59Z vs 2026-11-01T00:37Z (Oct 31 8:37 PM EDT)'
     await service.fetchCostTrend(ORG, '7d');
     at('2026-11-01T00:37:00Z');
     await service.fetchCostTrend(ORG, '7d');
-    // 7d is served from the 30d request (today-bar TB-D1): today-30 .. today.
+    // 7d is served from the 30d series (today-bar TB-D1), and 30d from the 90d
+    // request (CE-2): today-90 .. today.
     expect(inputs().map((i) => i.TimePeriod)).toEqual([
-      { Start: '2026-10-01', End: '2026-11-01' },
-      { Start: '2026-10-02', End: '2026-11-02' },
+      { Start: '2026-08-02', End: '2026-11-01' },
+      { Start: '2026-08-03', End: '2026-11-02' },
     ]);
     expect(await service.getCostTrendFetchedAt(ORG, '7d')).toBe('2026-11-01T00:37:00.000Z');
   });

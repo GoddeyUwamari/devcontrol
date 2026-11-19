@@ -258,8 +258,19 @@ export const SEC_DATA_AFTER = " and we'll delete it."
 // Sidebar.
 export const SIDE_READS_TITLE = 'What DevControl reads'
 export const SIDE_READS: readonly string[] = ['EC2, RDS, Lambda, S3 resource metadata', 'CloudWatch metrics and alarms', 'Cost Explorer data']
-/** DB-D16 (founder wording, Nov 12): what reading Cost Explorer costs the customer. Backend cache TTL: aws-cost.service.ts MONTHLY_COST_CACHE_TTL. */
-export const COST_EXPLORER_BILLING_NOTE = 'Cost Explorer requests are billed at USD 0.01 per request. Results are cached for 4 hours, so a typical account makes only a few requests per day.'
+/**
+ * CE1-D8 (founder wording, Nov 19; replaces DB-D16's): what reading Cost Explorer costs the customer.
+ * Request model (review-logs/cost-explorer/ce1-build.md): one backend process; one cache fill = 2 requests
+ * (month to date + 90 days; 7d and 30d are slices of 90d, CE-2); 1-4 fills a day of use (first visit, 4 h
+ * expiries, 00:00 UTC); a deploy empties the in-memory cache ("after each DevControl update") until CE-1.
+ * Extras on top of the 2 per fill: +1 per fill for the 6-month request (T6, also read by Cost
+ * Optimization) and +1 per fill for the 1-year request (T12); Check again = 1 (probe B); connecting an
+ * account = 2 or 3 (probe B + home-region proposal C, up to 2 pages, in parallel; aws.routes.ts POST
+ * /api/aws/accounts). CE-2 review M-1/L-2.
+ * Backend cache TTL: aws-cost.service.ts MONTHLY_COST_CACHE_TTL.
+ */
+export const COST_EXPLORER_BILLING_NOTE =
+  'Cost Explorer bills USD 0.01 per request to your AWS account. DevControl reuses each result for up to 4 hours and fetches fresh data after 00:00 UTC, so a day of use by one or two people typically makes 2–8 requests (USD 0.02–0.08), plus about 2 after each DevControl update. Opening Cost Optimization or the 6-month or 1-year cost views, and Check again, each add one request; connecting an account adds two or three.'
 export const SIDE_SECURITY_TITLE = 'Security'
 export const SIDE_SECURITY: readonly string[] = ['Database stored on an encrypted disk (AWS EBS encryption)', 'Role credentials never stored']
 export const SIDE_NEED_HELP = 'Need help?'
