@@ -275,7 +275,7 @@ describe('R4 states', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'No AWS account connected' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Connect AWS →' })).toHaveAttribute('href', '/connect-aws')
     for (const name of ['Summary', 'What needs attention', 'Cost by AWS service', 'Ownership gaps']) expect(screen.queryByRole('heading', { name })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Sync/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Sync|Scan now|Scanning/ })).toBeNull()
     expect(screen.getByText('Nothing has been checked yet.')).toBeInTheDocument()
   })
   it.each(Object.keys(CONNECTED_STATES))('renders without throwing (%s)', async (state) => {
@@ -341,8 +341,8 @@ describe('R7 / R7b / F6 requests', () => {
   })
   it('after Sync: still no CloudWatch endpoint (legacy keys are marked stale, not fetched)', async () => {
     await renderSettled()
-    fireEvent.click(screen.getAllByRole('button', { name: /Sync now/ })[1])
-    await screen.findByText('Sync Complete')
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
+    await screen.findByText('Scan finished')
     expect(observability()).toEqual([])
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -354,8 +354,8 @@ describe('R8 / SY-1 Sync', () => {
   it('invalidates the V2 keys and the legacy keys', async () => {
     const { client } = await renderSettled()
     const spy = vi.spyOn(client, 'invalidateQueries')
-    fireEvent.click(screen.getAllByRole('button', { name: /Sync now/ })[1])
-    await screen.findByText('Sync Complete')
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
+    await screen.findByText('Scan finished')
     const keys = spy.mock.calls.map(([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey))
     for (const key of [
       ['services-coverage', 'org-test'], ['services-stats', 'org-test'], ['infra-overview-attention', 'org-test'], ['account-security-findings', 'org-test'],
@@ -364,23 +364,23 @@ describe('R8 / SY-1 Sync', () => {
       ['platform-dashboard-stats'], ['cost-recommendations-stats'], ['risk-score-trend'], ['risk-score-current'], ['account-security-findings'], ['account-security-findings-stats'],
     ]) expect(keys).toContain(JSON.stringify(key))
     expect(keys).not.toContain(JSON.stringify(['platform-cost-summary', 'org-test']))
-    expect(toast.success).toHaveBeenCalledWith('Sync complete — 9 resources discovered')
+    expect(toast.success).toHaveBeenCalledWith('Scan finished — 9 new · 0 updated')
   })
-  it('success: "Sync Complete" (desktop) and "Done" (phone) in green for 3 s, then "Sync now"', async () => {
+  it('success: "Scan finished" (desktop) and "Done" (phone) in green for 3 s, then "Scan now" (3d-2 D2; was Sync)', async () => {
     await renderSettled()
-    fireEvent.click(screen.getAllByRole('button', { name: /Sync now/ })[0])
-    const desktop = (await screen.findByText('Sync Complete')).closest('button')!
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[0])
+    const desktop = (await screen.findByText('Scan finished')).closest('button')!
     const phone = screen.getByText('Done').closest('button')!
     for (const b of [desktop, phone]) expect(b.className).toMatch(/bg-emerald-600/)
-    await waitFor(() => expect(screen.getAllByRole('button', { name: /Sync now/ })).toHaveLength(2), { timeout: 4500 })
-    expect(screen.queryByText('Sync Complete')).toBeNull()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Scan now/ })).toHaveLength(2), { timeout: 4500 })
+    expect(screen.queryByText('Scan finished')).toBeNull()
   }, 10_000)
   it('failure: no green state, the legacy error toast', async () => {
     m.responses['POST /api/services/discover'] = fail()
     await renderSettled()
-    fireEvent.click(screen.getAllByRole('button', { name: /Sync now/ })[1])
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Sync failed — check your AWS connection'))
-    expect(screen.queryByText('Sync Complete')).toBeNull()
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Scan failed — check your AWS connection'))
+    expect(screen.queryByText('Scan finished')).toBeNull()
     expect(document.querySelector('.bg-emerald-600')).toBeNull()
   })
 })
@@ -397,7 +397,7 @@ describe('PB-2 / PB-2b the resource-limit prompt', () => {
     m.responses['POST /api/services/discover'] = fail(402)
     await renderSettled()
     expect(screen.queryByTestId('infra-limit-prompt')).toBeNull()
-    fireEvent.click(screen.getAllByRole('button', { name: /Sync now/ })[1])
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[1])
     expect(await screen.findByTestId('infra-limit-prompt')).toBeInTheDocument()
   })
   it('200: none; GET /api/infrastructure is read once per mount (not polled) and its body never reaches the page', async () => {
@@ -661,5 +661,64 @@ describe('the status reason line', () => {
     expect(classes).toContain('break-words')
     expect(classes).toContain('sm:truncate')
     expect(classes).not.toContain('truncate')
+  })
+})
+
+// ── PR 3d-2: wording and links (D1, D2, D4, D5, D7) ──
+
+describe('PR 3d-2 wording and links', () => {
+  const linkTo = (name: string) => screen.getAllByRole('link', { name }).map((a) => a.getAttribute('href'))
+
+  it('D1: "See ownership in Services & Ownership →" to /services; "Assign owners" is gone; the tile keeps "Review ownership →"', async () => {
+    await renderSettled()
+    expect(linkTo('See ownership in Services & Ownership →')).toEqual(['/services'])
+    expect(document.body.textContent).not.toMatch(/Assign owners/)
+    expect(linkTo('Review ownership →')).toEqual(['/services'])
+  })
+
+  it('D2: the discovery button and toast say "scan" with Services\' counts; no "Sync" anywhere on the page', async () => {
+    m.responses['POST /api/services/discover'] = ok({ discovered: 9, updated: 4, errors: [], warnings: [], message: 'ok' })
+    await renderSettled()
+    expect(screen.getAllByRole('button', { name: /Scan now/ })).toHaveLength(2)
+    fireEvent.click(screen.getAllByRole('button', { name: /Scan now/ })[0])
+    await screen.findByText('Scan finished')
+    expect(toast.success).toHaveBeenCalledWith('Scan finished — 9 new · 4 updated')
+    expect(document.body.textContent).not.toMatch(/sync/i)
+  })
+
+  it('D4 + D5: the shared needs-attention sentence, the account-level note under it, and the account rows still listed', async () => {
+    await renderSettled()
+    expect(screen.getByTestId('infra-attention-description').textContent).toBe(
+      'Critical and high findings, cost recommendations estimated at $100/mo or more, and stopped, degraded or failed resources. 6 resources · 2 account-level findings.',
+    )
+    expect(screen.getByTestId('infra-attention-account-note').textContent).toBe(
+      'This list also includes account-level findings (IAM, security groups). The Services count covers resources only.',
+    )
+    // The account rows stay (D5 a; R10 rejected), next to the resource rows; the row label is unchanged.
+    const section = screen.getByRole('region', { name: 'What needs attention' })
+    expect(within(section).getAllByText('SSH open to the world').length).toBeGreaterThan(0)
+    expect(within(section).getAllByText('Console user without MFA').length).toBeGreaterThan(0)
+    expect(OVERVIEW_COPY.costRowLabel).toBe('Cost · ≥ $100/mo est.')
+  })
+
+  it('D7: "View all {n}" opens Services with Needs attention selected', async () => {
+    m.responses['GET /api/services'] = ok(attentionPage(undefined, 40))
+    await renderSettled()
+    expect(linkTo('View all 40 in Services & Ownership →')).toEqual(['/services?show=needs_attention'])
+  })
+
+  it('D7: both region links read "Region coverage →" to the card, with the Services V2 and M6 flags on; "View regions" is gone', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')
+    await renderSettled()
+    expect(linkTo('Region coverage →')).toEqual(['/services#region-coverage', '/services#region-coverage'])
+    expect(document.body.textContent).not.toMatch(/View regions/)
+  })
+
+  it('D7 negative: with the M6 flag off there is no region link (no card to land on), as before', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'false')
+    await renderSettled()
+    expect(screen.queryAllByRole('link', { name: 'Region coverage →' })).toHaveLength(0)
   })
 })

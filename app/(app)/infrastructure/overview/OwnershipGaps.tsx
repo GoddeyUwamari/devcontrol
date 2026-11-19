@@ -12,7 +12,7 @@ export function OwnershipGaps({ ownership }: { ownership: NonNullable<OverviewVi
         {ownership.lines.map((line) => <li key={line}>{line}</li>)}
       </ul>
       {ownership.note && <p className="m-0 mt-2 text-meta text-slate-600">{ownership.note}</p>}
-      <Link href="/services" className="mt-3 inline-block text-ui font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.assignOwners}</Link>
+      <Link href="/services" className="mt-3 inline-block text-ui font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.seeOwnership}</Link>
     </section>
   )
 }

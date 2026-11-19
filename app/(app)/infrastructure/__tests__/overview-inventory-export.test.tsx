@@ -132,7 +132,7 @@ describe('Infrastructure Overview — Export inventory', () => {
     // In the header's action column, with Sync.
     const header = document.querySelector('main header') as HTMLElement
     expect(within(header).getByTestId('overview-export-button')).toBe(button)
-    expect(within(header).getAllByRole('button', { name: /Sync now/ }).length).toBeGreaterThan(0)
+    expect(within(header).getAllByRole('button', { name: /Scan now/ }).length).toBeGreaterThan(0)
 
     fireEvent.click(button)
     const dialog = await screen.findByRole('dialog')

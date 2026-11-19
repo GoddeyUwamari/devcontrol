@@ -147,6 +147,7 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
           {OVERVIEW_COPY.attentionDescription}
           {ready && ` ${ready.counts}.`}
         </p>
+        <p data-testid="infra-attention-account-note" className="m-0 text-meta text-slate-600">{OVERVIEW_COPY.attentionAccountNote}</p>
         {ready?.resourceError && (
           <p role="alert" className="m-0 flex flex-wrap items-center gap-2 text-meta text-slate-700">
             {OVERVIEW_COPY.resourcesError}
@@ -161,7 +162,7 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
       {body}
       {ready && (ready.viewAll !== null || ready.securityLink) && (
         <div className="flex flex-wrap gap-4 border-t border-slate-100 px-4 py-3 text-ui">
-          {ready.viewAll !== null && <Link href="/services" className="font-semibold text-violet-700 hover:underline">View all {ready.viewAll} in Services &amp; Ownership →</Link>}
+          {ready.viewAll !== null && <Link href={OVERVIEW_COPY.viewAllHref} className="font-semibold text-violet-700 hover:underline">View all {ready.viewAll} in Services &amp; Ownership →</Link>}
           {ready.securityLink && <Link href="/security" className="font-semibold text-violet-700 hover:underline">Security findings →</Link>}
         </div>
       )}

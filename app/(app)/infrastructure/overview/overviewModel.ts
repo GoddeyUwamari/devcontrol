@@ -37,7 +37,10 @@ import { footerText, type Rich } from '../../services/regionCoverage'
 import { inventoryGap, scopeIsCompleted, warningNotes } from '../../services/coverage'
 import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { NOT_CHECKED_COPY, unknownTagsText } from '../../services/notChecked'
-import { coverageLine, homeRegionCheck, homeRegionOf, notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts } from '../../services/servicesTruth'
+import {
+  ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK, coverageLine, homeRegionCheck, homeRegionOf,
+  notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts,
+} from '../../services/servicesTruth'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T }
 
@@ -79,7 +82,10 @@ export const OVERVIEW_COPY = {
   reviewRecommendationsHref: '/cost-optimization',
   costRowLabel: 'Cost · ≥ $100/mo est.',
   attentionTitle: 'What needs attention',
-  attentionDescription: 'Critical and high findings, cost recommendations of $100/mo or more (est.), stopped or failed resources.',
+  // PR 3d-2 (D4): the one sentence Services' What needs attention shows too.
+  attentionDescription: ATTENTION_DEFINITION,
+  // PR 3d-2 (D5): the account-level rows stay; this says why the counts differ.
+  attentionAccountNote: 'This list also includes account-level findings (IAM, security groups). The Services count covers resources only.',
   attentionEmpty: 'Nothing needs review from the last scan.',
   attentionEmptyAccountError: "No resources need review. Account-level findings (security groups, IAM users) couldn't be loaded.",
   attentionEmptyResourceError: "No account-level findings need review. The resources that need attention couldn't be loaded.",
@@ -93,9 +99,20 @@ export const OVERVIEW_COPY = {
   costByServiceUnavailable: "Cost by service isn't available: ",
   costExplorerNotYet: 'Cost Explorer data not available yet',
   ownershipTitle: 'Ownership gaps',
-  assignOwners: 'Assign owners in Services & Ownership →',
+  // PR 3d-2 (D1): Services shows owner assignment as Coming soon, so the link promises only what is there.
+  seeOwnership: 'See ownership in Services & Ownership →',
   openServices: 'Open Services & Ownership',
-  regionsHref: '/services#region-coverage',
+  // PR 3d-2 (D7): one label for every link to the Region coverage card (Security's).
+  regionsHref: REGION_COVERAGE_HREF,
+  regionsLink: REGION_COVERAGE_LINK,
+  // PR 3d-2 (D7): Services opens with Needs attention selected.
+  viewAllHref: NEEDS_ATTENTION_HREF,
+  // PR 3d-2 (D2): the discovery scan is "scan", as on Services.
+  scanNow: 'Scan now',
+  scanning: 'Scanning…',
+  scanFinished: 'Scan finished',
+  scanFinishedToast: (discovered: number, updated: number) => `Scan finished — ${discovered.toLocaleString('en-US')} new · ${updated.toLocaleString('en-US')} updated`,
+  scanFailedToast: 'Scan failed — check your AWS connection',
 } as const
 
 const SEVERITIES: ComplianceSeverity[] = ['critical', 'high', 'medium', 'low']
@@ -604,7 +621,7 @@ function checkedLines(c: ServicesCoverage, i: OverviewInputs, now: number): Line
   } else {
     lines.push({ key: 'inventory', parts: [`Resource inventory · ${home}: Not checked yet (no scan has finished)`] })
   }
-  const regionsLink = i.regionsLinkAvailable ? { text: 'View regions not checked →', href: OVERVIEW_COPY.regionsHref } : undefined
+  const regionsLink = i.regionsLinkAvailable ? { text: OVERVIEW_COPY.regionsLink, href: OVERVIEW_COPY.regionsHref } : undefined
   // PR 3d-1 (D6): the other regions the Services card doesn't count as checked, one line each,
   // in its words; the home region's own result is on the inventory line above.
   const gaps = regionGaps(c, now)
