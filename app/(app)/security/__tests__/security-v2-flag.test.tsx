@@ -111,7 +111,39 @@ describe('the V2 module is loaded only with the flag on, outside demo mode', () 
 })
 
 describe('SecurityContent is the page at af3262e', () => {
-  const source = readFileSync(join(process.cwd(), 'app/(app)/security/page.tsx'), 'utf8')
+  // PR 3d-2 (D10, R7, founder-approved): the legacy page prints each anomaly's own region and leaves the
+  // segment out without one, in place of the literal "us-east-1". These are the only edits since af3262e
+  // besides the wrapper; each must occur exactly once and is undone here before hashing, so every other
+  // byte is still af3262e's.
+  const D10_EDITS: Array<[after: string, before: string]> = [
+    [
+      "  const criticalAnomalies = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active').length ?? 0\n"
+        + '  // PR 3d-2 (D10, R7): the anomalies\' own regions, never a literal. Named only when every counted anomaly has\n'
+        + '  // one; otherwise the segment is left out.\n'
+        + "  const criticalList: AnomalyDetection[] = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active') ?? []\n"
+        + '  const criticalRegions = criticalList.length > 0 && criticalList.every((a) => !!a.region) ? [...new Set(criticalList.map((a) => a.region as string))] : []\n',
+      "  const criticalAnomalies = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active').length ?? 0\n",
+    ],
+    [
+      "impacting user-facing services{criticalRegions.length > 0 ? ` (${criticalRegions.join(', ')})` : ''}</span>",
+      'impacting user-facing services (us-east-1)</span>',
+    ],
+    [
+      "<span>{topRisk.resourceName ?? '—'}</span>{topRisk.region && <><span>·</span><span>{topRisk.region}</span></>}",
+      "<span>{topRisk.resourceName ?? '—'}</span><span>·</span><span>us-east-1</span>",
+    ],
+    [
+      "{anomaly.resourceName ? ` · ${anomaly.resourceName}` : ''}{anomaly.region ? ` · ${anomaly.region}` : ''}</span>",
+      "{anomaly.resourceName ? ` · ${anomaly.resourceName}` : ''} · us-east-1</span>",
+    ],
+  ]
+  const current = readFileSync(join(process.cwd(), 'app/(app)/security/page.tsx'), 'utf8')
+  const source = D10_EDITS.reduce((text, [after, before]) => (text.split(after).length === 2 ? text.replace(after, () => before) : text), current)
+
+  it('D10: each region edit occurs exactly once, and no "us-east-1" literal is left in the page', () => {
+    for (const [after] of D10_EDITS) expect(current.split(after)).toHaveLength(2)
+    expect(current).not.toContain('us-east-1')
+  })
   const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
   // Computed from `git show af3262e:'app/(app)/security/page.tsx'` (the page before Security V2).
   const AF3262E_BODY_SHA256 = '2e8dc819bd1e8438f99d5215517f33ecafbdd4c59d64390668e03f8a2ce0498b'

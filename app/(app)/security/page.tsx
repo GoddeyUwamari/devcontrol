@@ -184,6 +184,10 @@ function SecurityContent() {
   const scoreColor = isPreliminary ? '#D97706' : score >= 80 ? '#059669' : score >= 70 ? '#D97706' : '#DC2626'
   const activeAnomalies = anomalyStats?.active || anomalyData?.anomalies?.length || 0
   const criticalAnomalies = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active').length ?? 0
+  // PR 3d-2 (D10, R7): the anomalies' own regions, never a literal. Named only when every counted anomaly has
+  // one; otherwise the segment is left out.
+  const criticalList: AnomalyDetection[] = anomalyData?.anomalies?.filter((a: AnomalyDetection) => a.severity === 'critical' && a.status === 'active') ?? []
+  const criticalRegions = criticalList.length > 0 && criticalList.every((a) => !!a.region) ? [...new Set(criticalList.map((a) => a.region as string))] : []
 
   // Real accounts with no frameworks added yet haven't been evaluated against anything —
   // matches /compliance/frameworks' own "Risk Visibility: Not Established" state. Falling
@@ -422,7 +426,7 @@ function SecurityContent() {
           <div className="flex items-start gap-2.5">
             <AlertTriangle size={15} className="text-red-600 shrink-0 mt-0.5" />
             <div>
-              <span className="text-sm font-semibold text-red-600">{criticalAnomalies} critical risk{criticalAnomalies !== 1 ? 's' : ''} impacting user-facing services (us-east-1)</span>
+              <span className="text-sm font-semibold text-red-600">{criticalAnomalies} critical risk{criticalAnomalies !== 1 ? 's' : ''} impacting user-facing services{criticalRegions.length > 0 ? ` (${criticalRegions.join(', ')})` : ''}</span>
               <p className="text-xs text-red-800 font-medium mt-0.5">Critical service degradation — immediate action required</p>
             </div>
           </div>
@@ -453,7 +457,7 @@ function SecurityContent() {
                   {rt.toLowerCase().includes('ec2') ? `${rt} latency risk — CPU saturation (${Math.round(topRisk.currentValue ?? 88)}%)` : rt.toLowerCase().includes('lambda') ? `${rt} throttling risk — concurrency saturation (+${d}%)` : `${rt} anomaly — +${d}% deviation`}
                 </p>
                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 mb-3">
-                  <span>{topRisk.resourceType ?? '—'}</span><span>·</span><span>{topRisk.resourceName ?? '—'}</span><span>·</span><span>us-east-1</span>
+                  <span>{topRisk.resourceType ?? '—'}</span><span>·</span><span>{topRisk.resourceName ?? '—'}</span>{topRisk.region && <><span>·</span><span>{topRisk.region}</span></>}
                 </div>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-2 text-xs text-amber-800">
                   <AlertTriangle size={11} className="text-amber-500 shrink-0" />
@@ -667,7 +671,7 @@ function SecurityContent() {
                       <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: severityColor(anomaly.severity) }} />
                       <div>
                         <p className="text-sm font-semibold text-slate-900 mb-0.5 leading-snug">{riskTitle}</p>
-                        <span className="text-xs text-slate-500">{anomaly.resourceType ?? '—'}{anomaly.resourceName ? ` · ${anomaly.resourceName}` : ''} · us-east-1</span>
+                        <span className="text-xs text-slate-500">{anomaly.resourceType ?? '—'}{anomaly.resourceName ? ` · ${anomaly.resourceName}` : ''}{anomaly.region ? ` · ${anomaly.region}` : ''}</span>
                       </div>
                     </div>
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0 capitalize" style={{ background: severityBadgeBg(anomaly.severity), color: severityColor(anomaly.severity) }}>{anomaly.severity}</span>

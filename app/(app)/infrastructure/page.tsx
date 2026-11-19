@@ -169,7 +169,8 @@ async function fetchTopActions(): Promise<any[] | null> {
         // The default figure for an unpriced instance type is labelled, never shown as a known price.
         defaultPrice: isDefaultPriceEstimate(r),
         // No risk or urgency label: nothing computes one. A rank is list order only.
-        subtitle: `${r.resourceName ?? 'Resource'} · ${r.awsRegion ?? 'us-east-1'} · cost leakage active`,
+        // PR 3d-2 (D10): the resource's own region; the segment is left out without one (never a literal).
+        subtitle: `${r.resourceName ?? 'Resource'}${r.awsRegion ? ` · ${r.awsRegion}` : ''} · cost leakage active`,
         type: 'cost' as const,
       }))
     const reliabilityActions = (anomalyData.anomalies ?? anomalyData ?? [])
