@@ -278,10 +278,14 @@ export const weeklySummaryTriggerRateLimiter = rateLimit({
 
 const UNSUBSCRIBE_PATH = '/api/user/preferences/unsubscribe';
 
-/** GET or POST on exactly the public weekly summary unsubscribe endpoint. */
-/** The GitHub App webhook: exempt from standardRateLimiter, limited by githubAppWebhookRateLimiter. */
+/**
+ * The GitHub App webhook, with or without a trailing slash (Express routes
+ * both to the handler): exempt from standardRateLimiter, limited by
+ * githubAppWebhookRateLimiter.
+ */
 export function isGitHubAppWebhookRequest(req: Request): boolean {
-  return req.method === 'POST' && req.originalUrl.split('?')[0] === GITHUB_APP_WEBHOOK_PATH;
+  const path = req.originalUrl.split('?')[0];
+  return req.method === 'POST' && (path === GITHUB_APP_WEBHOOK_PATH || path === `${GITHUB_APP_WEBHOOK_PATH}/`);
 }
 
 /**
@@ -301,6 +305,7 @@ export const githubAppWebhookRateLimiter = rateLimit({
   },
 });
 
+/** GET or POST on exactly the public weekly summary unsubscribe endpoint. */
 function isUnsubscribeRequest(req: Request): boolean {
   return (req.method === 'GET' || req.method === 'POST') && req.originalUrl.split('?')[0] === UNSUBSCRIBE_PATH;
 }

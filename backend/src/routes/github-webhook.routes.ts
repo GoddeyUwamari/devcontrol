@@ -153,7 +153,8 @@ export async function githubWebhookHandler(req: Request, res: Response): Promise
     } catch (err: any) {
       // deployments_github_job_uidx (admin migration 202611201200): a
       // concurrent redelivery of the same job lost the race. Recorded once.
-      if (err?.code === '23505') {
+      // Any other unique violation stays an error.
+      if (err?.code === '23505' && err?.constraint === 'deployments_github_job_uidx') {
         res.status(200).json({ success: true, message: 'Already recorded' });
         return;
       }

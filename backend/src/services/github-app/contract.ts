@@ -113,7 +113,7 @@ export interface WorkflowRunFacts extends Common {
   head_commit: { id: string | null; timestamp: string | null } | null;
 }
 
-export interface DeploymentFacts extends Common {
+interface DeploymentFacts extends Common {
   kind: 'deployment';
   deployment_id: number;
   sha: string | null;
@@ -126,7 +126,7 @@ export interface DeploymentFacts extends Common {
   creator: GitHubUserRef | null;
 }
 
-export interface DeploymentStatusFacts extends Common {
+interface DeploymentStatusFacts extends Common {
   kind: 'deployment_status';
   status_id: number;
   deployment_id: number | null;
@@ -165,7 +165,7 @@ export interface InstallationFacts extends Common {
   repositories_truncated: boolean;
 }
 
-export interface InstallationRepositoriesFacts extends Common {
+interface InstallationRepositoriesFacts extends Common {
   kind: 'installation_repositories';
   repository_selection: 'all' | 'selected' | null;
   added: RepositoryBrief[];

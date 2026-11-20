@@ -23,7 +23,7 @@ export class GitHubClientError extends Error {
   }
 }
 
-export interface GitHubAccount {
+interface GitHubAccount {
   id: number;
   login: string;
   type: 'User' | 'Organization' | 'Enterprise';
@@ -37,7 +37,7 @@ export interface GitHubInstallationDetails {
   events: string[];
 }
 
-export interface GitHubRepository {
+interface GitHubRepository {
   id: number;
   fullName: string;
   defaultBranch: string | null;

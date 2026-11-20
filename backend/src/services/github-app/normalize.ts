@@ -23,7 +23,7 @@ import {
 
 export { NORMALIZER_VERSION };
 
-export type NormalizeResult =
+type NormalizeResult =
   | { kind: 'record'; record: NormalizedDelivery }
   | { kind: 'ignored'; reason: 'unsupported_event' | 'unsupported_action' | 'no_installation' | 'malformed' };
 

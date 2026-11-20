@@ -19,7 +19,7 @@ export async function installationOrganization(client: PoolClient, installationI
   return rows[0]?.org ?? null;
 }
 
-export type HoldOutcome = 'held' | 'duplicate' | 'claimed';
+type HoldOutcome = 'held' | 'duplicate' | 'claimed';
 
 /** Holds a delivery of an unclaimed installation ('claimed' = it was claimed meanwhile; store it for the org). */
 export async function holdDelivery(
@@ -54,8 +54,8 @@ export async function releaseHeldDeliveries(client: PoolClient, installationId: 
 
 // ─── Install states ───────────────────────────────────────────────────────────
 
-export const INSTALL_STATE_TTL_MINUTES = 15;
-export const MAX_CLAIM_RETRIES = 10;
+const INSTALL_STATE_TTL_MINUTES = 15;
+const MAX_CLAIM_RETRIES = 10;
 
 export async function createInstallState(client: PoolClient, organizationId: string, userId: string, stateHash: Buffer): Promise<void> {
   await client.query(
@@ -134,7 +134,7 @@ export async function takeClaimRetry(
 
 // ─── Installations ────────────────────────────────────────────────────────────
 
-export interface InstallationClaim {
+interface InstallationClaim {
   installationId: number;
   accountId: number;
   accountLogin: string;
@@ -148,7 +148,7 @@ export interface InstallationClaim {
   claimedByGithubUserId: number;
 }
 
-export interface InstallationRow {
+interface InstallationRow {
   installation_id: string;
   account_login: string;
   account_type: string;
@@ -198,7 +198,7 @@ export async function listInstallations(client: PoolClient, organizationId: stri
   return rows;
 }
 
-export type InstallationLifecycle =
+type InstallationLifecycle =
   | { kind: 'deleted'; at: string }
   | { kind: 'suspend'; at: string }
   | { kind: 'unsuspend' }

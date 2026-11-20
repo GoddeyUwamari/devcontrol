@@ -11,11 +11,17 @@ export const SHA_A = 'a'.repeat(40);
 export const SHA_B = 'b'.repeat(40);
 export const SHA_MERGE = 'c0ffee0000000000000000000000000000000001';
 
-/** A unique positive id per call, inside the safe-integer range. */
+/**
+ * A unique positive id per call, inside the safe-integer range. Within one
+ * process the ids are strictly increasing (a counter, never the clock), so
+ * two calls in the same millisecond cannot collide. The random per-process
+ * offset keeps parallel workers and earlier runs on the same database apart.
+ */
+const PROCESS_OFFSET = crypto.randomInt(0, 2 ** 40);
 let counter = 0;
 export function uniqueId(base = 7_000_000_000): number {
   counter += 1;
-  return base + (Date.now() % 1_000_000_000) + counter * 13 + Math.floor(Math.random() * 1000);
+  return base + PROCESS_OFFSET + counter;
 }
 
 export const PLANTED = {

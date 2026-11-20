@@ -10,7 +10,7 @@
  *
  * Never log a value from here. Error and warning text names variables only.
  */
-export const GITHUB_APP_ENABLED_ENV = 'GITHUB_APP_ENABLED';
+const GITHUB_APP_ENABLED_ENV = 'GITHUB_APP_ENABLED';
 
 export const GITHUB_APP_REQUIRED_ENV = [
   'GITHUB_APP_ID',
@@ -20,9 +20,6 @@ export const GITHUB_APP_REQUIRED_ENV = [
   'GITHUB_APP_PRIVATE_KEY',
   'GITHUB_APP_WEBHOOK_SECRET',
 ] as const;
-
-/** Set only while rotating the webhook secret: deliveries signed with either verify. */
-export const GITHUB_APP_OPTIONAL_ENV = ['GITHUB_APP_WEBHOOK_SECRET_PREVIOUS'] as const;
 
 export interface GitHubAppConfig {
   appId: string;

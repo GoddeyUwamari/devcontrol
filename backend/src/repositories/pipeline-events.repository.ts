@@ -24,7 +24,7 @@ export type ProcessingStatus = 'pending' | 'processed' | 'ignored' | 'unmapped' 
 /** A reason code: lowercase snake case only, never an error message. */
 const REASON = /^[a-z0-9_]{1,64}$/;
 
-export interface InsertedEvent {
+interface InsertedEvent {
   id: string;
   inserted: boolean;
 }

@@ -32,19 +32,19 @@ export interface WebhookDeps {
   log: (line: string) => void;
 }
 
-export const defaultWebhookDeps: WebhookDeps = {
+const defaultWebhookDeps: WebhookDeps = {
   readConfig: () => readGitHubAppConfig(),
   source: defaultSource,
   processor: processEvent,
   log: (line) => console.log(line),
 };
 
-export interface WebhookInput {
+interface WebhookInput {
   rawBody: unknown;
   headers: Record<string, string | string[] | undefined>;
 }
 
-export interface WebhookResult {
+interface WebhookResult {
   status: number;
   body: Record<string, unknown>;
 }

@@ -43,7 +43,7 @@ export interface ClaimDeps {
   log: (line: string) => void;
 }
 
-export const defaultClaimDeps: ClaimDeps = {
+const defaultClaimDeps: ClaimDeps = {
   readConfig: () => readGitHubAppConfig(),
   source: defaultSource,
   github: (config) => createFetchGitHubAppClient(config),
@@ -51,14 +51,14 @@ export const defaultClaimDeps: ClaimDeps = {
   log: (line) => console.log(line),
 };
 
-export interface ClaimResult {
+interface ClaimResult {
   status: number;
   body: Record<string, unknown>;
 }
 
 export const STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-export function hashState(state: string): Buffer {
+function hashState(state: string): Buffer {
   return crypto.createHash('sha256').update(state, 'utf8').digest();
 }
 
@@ -90,7 +90,7 @@ export async function startInstall(organizationId: string, userId: string, deps:
   return { status: 200, body: { success: true, data: { install_url: installUrl, state, expires_in_minutes: 15 } } };
 }
 
-export interface ClaimInput {
+interface ClaimInput {
   organizationId: string;
   userId: string;
   state: string;

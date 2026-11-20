@@ -177,6 +177,9 @@ describe('/api/webhooks/github-app through the application body parsing', () => 
     const req = (method: string, originalUrl: string) => ({ method, originalUrl }) as express.Request;
     expect(isGitHubAppWebhookRequest(req('POST', '/api/webhooks/github-app'))).toBe(true);
     expect(isGitHubAppWebhookRequest(req('POST', '/api/webhooks/github-app?x=1'))).toBe(true);
+    expect(isGitHubAppWebhookRequest(req('POST', '/api/webhooks/github-app/'))).toBe(true);
+    expect(isGitHubAppWebhookRequest(req('POST', '/api/webhooks/github-app/?x=1'))).toBe(true);
+    expect(isGitHubAppWebhookRequest(req('POST', '/api/webhooks/github-app/x'))).toBe(false);
     expect(isGitHubAppWebhookRequest(req('POST', '/api/webhooks/github'))).toBe(false);
     expect(isGitHubAppWebhookRequest(req('GET', '/api/webhooks/github-app'))).toBe(false);
   });
@@ -189,6 +192,27 @@ describe('/api/webhooks/github-app through the application body parsing', () => 
     const res = await post(raw, { 'content-type': 'application/json', 'x-github-event': 'installation', 'x-github-delivery': id, 'x-hub-signature-256': signed(raw) });
     expect(res.status).toBe(202);
     expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_held_deliveries WHERE delivery_id = $1', [id])).rows[0].n).toBe(1);
+  });
+
+  it('unsigned or wrongly signed, through the real body parser -> 401, no held row and no event row', async () => {
+    const inst = 8_700_000_000 + Math.floor(Math.random() * 1e8);
+    heldInstallations.push(inst);
+    const raw = Buffer.from(JSON.stringify({ action: 'created', installation: { id: inst, account: { id: 1, login: 'acme', type: 'Organization' } }, sender: { id: 5, login: 'x' } }));
+    const wrong = 'sha256=' + crypto.createHmac('sha256', 'not-the-route-test-webhook-secret-01').update(raw).digest('hex');
+    const ids: string[] = [];
+    for (const signature of [undefined, wrong]) {
+      const id = crypto.randomUUID();
+      ids.push(id);
+      const headers: Record<string, string> = { 'content-type': 'application/json', 'x-github-event': 'installation', 'x-github-delivery': id };
+      if (signature) headers['x-hub-signature-256'] = signature;
+      const res = await post(raw, headers);
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ received: false, error: 'invalid_signature' });
+    }
+    const count = async (table: string) => (await harness.pool.query(
+      `SELECT count(*)::int AS n FROM ${table} WHERE delivery_id = ANY($1::uuid[]) OR installation_id = $2`, [ids, inst])).rows[0].n;
+    expect(await count('github_held_deliveries')).toBe(0);
+    expect(await count('pipeline_events')).toBe(0);
   });
 
   it('over 1 MB -> 413, nothing written; a non-JSON content type -> 400 (no raw body)', async () => {

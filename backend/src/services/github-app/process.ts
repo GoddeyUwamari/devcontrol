@@ -14,7 +14,7 @@ import { applyInstallationLifecycle } from '../../repositories/github-installati
 import { ConnectionSource, withOrgClient, withOrgTransaction } from './db';
 import { permissionsStateOf } from './permissions';
 
-export interface ProcessingOutcome {
+interface ProcessingOutcome {
   status: ProcessingStatus;
   reason: string | null;
 }

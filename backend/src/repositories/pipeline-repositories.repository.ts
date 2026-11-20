@@ -9,7 +9,7 @@
  */
 import { PoolClient } from 'pg';
 
-export interface RepositoryUpsert {
+interface RepositoryUpsert {
   githubRepoId: number;
   installationId: number;
   fullName: string;
@@ -18,7 +18,7 @@ export interface RepositoryUpsert {
   at: string;
 }
 
-export interface PipelineRepositoryRow {
+interface PipelineRepositoryRow {
   id: string;
   github_repo_id: string;
   installation_id: string | null;
