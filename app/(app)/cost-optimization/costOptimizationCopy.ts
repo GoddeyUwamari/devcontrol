@@ -13,14 +13,64 @@ export const stillDetectedKpiNote = (count: number) => `+ ${count} still detecte
 
 /**
  * The empty state (nothing open) after a run that completed every check and
- * found nothing new. The second sentence only when there are resolved or
- * dismissed findings below to point to.
+ * found nothing new (light-lane layout, founder ruling 5, Nov 20). Replaces
+ * the tidy's emptyAllChecks; shown only under the same condition.
  */
-export function emptyAllChecks(checks: number, hasDecided: boolean): string {
-  // "listed under What DevControl checks" (founder ruling 5): true on a phone, where the rail sits below.
-  const first = `The latest analysis ran all ${checks} active check${plural(checks, '', 's')} (listed under What DevControl checks) and found nothing new.`
-  return hasDecided ? `${first} Findings you resolved or dismissed are below.` : first
+export const NOTHING_TO_ACT_ON = 'Nothing to act on right now'
+export const nothingToActOnBody = (checks: number) =>
+  `Your resources passed all ${checks} active check${plural(checks, '', 's')} in the last analysis. DevControl runs the checks again on a schedule and lists anything new here.`
+export const SEE_WHATS_CHECKED = "See what's checked"
+export const VIEW_COSTS = 'View costs →'
+
+// ── Light-lane layout (Nov 20): header, summary cards, opportunities, Summary, How DevControl checks ──
+
+/** The header's "Last analysis …" line: the run's source in brackets. */
+export const LAST_ANALYSIS = 'Last analysis'
+export const LAST_ANALYSIS_SOURCE: Record<'scheduled' | 'manual', string> = { scheduled: 'scheduled', manual: 'manual' }
+
+export const OPEN_OPPORTUNITIES = 'Open opportunities'
+export const ESTIMATED_MONTHLY_SAVINGS = 'Estimated monthly savings'
+export const COVERAGE = 'Coverage'
+
+/** The Coverage card: "9 of 32 checks · 5 services". */
+export const coverageCardLine = (active: number, total: number, services: number) =>
+  `${active} of ${total} checks · ${services} service${plural(services, '', 's')}`
+
+/** The savings card when every open figure is an upper bound (founder ruling 4): never a firm total. */
+export const upperBoundOnly = (amount: string) => `Up to ${amount}/mo · upper bound only`
+export const NO_FIRM_ESTIMATE = 'No firm estimate yet.'
+
+export const opportunitiesHeading = (count: number) => `Opportunities (${count})`
+export const ALL = 'All'
+export const SEVERITY_FILTER_LABEL = 'Filter opportunities by severity'
+/** `severity` is the chip's label: "High", "Medium" or "Low". */
+export const noFilterMatches = (severity: string) => `No ${severity}-severity opportunities in this list.`
+
+/** An opportunity card's savings line for an upper bound (beside "Up to $X/mo"). */
+export const UPPER_BOUND = 'upper bound'
+export const found = (date: string) => `Found ${date}`
+
+export const SUMMARY = 'Summary'
+/** Summary bullet: open findings by severity, all from /stats. */
+export function summaryOpen(open: number, high: number, medium: number, low: number): string {
+  if (open === 0) return 'No open opportunities.'
+  return `${open} open opportunit${plural(open, 'y', 'ies')}: ${high} High, ${medium} Medium, ${low} Low.`
 }
+/** Summary bullet: the firm total, with any upper bound kept apart from it. */
+export function summaryFirmSavings(firm: string, ceiling: string | null): string {
+  const first = `${firm}/mo in firm estimates.`
+  return ceiling ? `${first} Up to ${ceiling}/mo more is an upper bound only, not included.` : first
+}
+export const summaryUpperBoundOnly = (ceiling: string) => `No firm estimate yet. Up to ${ceiling}/mo is an upper bound only.`
+export const SUMMARY_NO_ESTIMATE = 'No dollar estimate yet for the open opportunities.'
+/** Summary bullet: the latest run's new_count (scan.counts.new). */
+export const summaryNew = (count: number) => (count === 0 ? 'Nothing new since the last analysis.' : `${count} new since the last analysis.`)
+
+export const HOW_DEVCONTROL_CHECKS = 'How DevControl checks'
+/** The collapsible's header: "9 of 32 checks active · 5 services". */
+export const checksHeaderLine = (active: number, total: number, services: number) =>
+  `${active} of ${total} checks active · ${services} service${plural(services, '', 's')}`
+export const NO_CRITICAL_TIER = 'Only High/Medium/Low severities are currently supported — there is no Critical tier in the underlying data.'
 
 /** The legacy (7b) caveat's second sentence: the checks are now listed in the rail, not below the card. */
 export const LEGACY_CHECKS_CAVEAT = 'This list does not confirm that nothing can be saved: DevControl does not yet record whether each listed check completed with enough data.'

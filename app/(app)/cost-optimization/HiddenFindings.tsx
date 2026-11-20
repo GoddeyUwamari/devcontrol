@@ -167,7 +167,7 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
               disabled={busy || !canReopen}
               aria-describedby={isViewer ? viewerNoteId : undefined}
               title={isViewer ? VIEWER_CANT_REOPEN : undefined}
-              className="flex items-center gap-1 bg-white text-slate-800 px-3 py-1.5 rounded-lg text-label font-semibold border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex min-h-11 sm:min-h-9 items-center gap-1 bg-white text-slate-800 px-3 py-1.5 rounded-lg text-label font-semibold border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <RotateCcw size={12} aria-hidden="true" /> {REOPEN}
             </button>
@@ -176,7 +176,7 @@ function HiddenItem({ item, actions, inGroup }: { item: HiddenFinding; actions: 
                 type="button"
                 onClick={() => actions.onDismiss(item.id)}
                 disabled={busy}
-                className="flex items-center gap-1 bg-transparent text-ink-muted px-3 py-1.5 rounded-lg text-label font-medium border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex min-h-11 sm:min-h-9 items-center gap-1 bg-transparent text-ink-muted px-3 py-1.5 rounded-lg text-label font-medium border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <XCircle size={12} aria-hidden="true" /> {DISMISS}
               </button>
@@ -281,7 +281,7 @@ export function ReviewList({ data, actions }: { data: HiddenFindings; actions: I
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full sm:w-auto items-center justify-between gap-3 bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-ui font-semibold text-slate-900 hover:bg-slate-50 transition-colors"
+        className="flex min-h-11 w-full sm:w-auto items-center justify-between gap-3 bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-ui font-semibold text-slate-900 hover:bg-slate-50 transition-colors"
       >
         <span>{reviewToggleLabel(total)}</span>
         <span className="inline-flex items-center gap-1 text-label font-medium text-ink-muted">

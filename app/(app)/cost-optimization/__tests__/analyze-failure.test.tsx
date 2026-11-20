@@ -1,10 +1,11 @@
 /**
  * A failed "Run cost analysis": the user reads the backend's message, never
- * axios's transport text, and the status stops showing the previous run.
+ * axios's transport text, in the red result banner at the top (light-lane
+ * layout, Nov 20; it was a toast), and the status stops showing the previous run.
  * Renders the real page with real axios error objects. Fixture data only.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AxiosError, type AxiosResponse } from 'axios'
 import { analyzeFailureMessage } from '../costOptimizationStatus'
@@ -35,6 +36,11 @@ vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAn
 vi.mock('@/lib/services/aws-resources.service', () => ({ awsResourcesService: { getDiscoveryJobs: async () => [] } }))
 
 const CHECKS_FAILED = 'None of the cost checks could complete. Try again.'
+const runBanner = () => screen.getByTestId('run-result-banner')
+const failure = async () => {
+  await waitFor(() => expect(runBanner()).toHaveAttribute('data-phase', 'failed'))
+  return runBanner()
+}
 
 function run(status: 'completed' | 'failed', errorMessage: string | null = null) {
   return {
@@ -66,16 +72,19 @@ beforeEach(() => {
 })
 
 describe('Cost Optimization page: a failed Analyze', () => {
-  it('shows the response body message, not the transport text', async () => {
+  it('shows the response body message in a red alert banner, not the transport text and not a toast', async () => {
     await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith(CHECKS_FAILED))
+    const banner = await failure()
+    expect(banner).toHaveAttribute('data-tone', 'danger')
+    expect(within(banner).getByRole('alert')).toHaveTextContent(`Cost analysis didn't finish. ${CHECKS_FAILED}`)
+    expect(banner.textContent).not.toContain('Request failed with status code')
+    expect(toastError).not.toHaveBeenCalled()
     expect(toastSuccess).not.toHaveBeenCalled()
-    expect(JSON.stringify(toastError.mock.calls)).not.toContain('Request failed with status code')
   })
 
   it('never shows transport text when the response has no message, e.g. a proxy page', async () => {
     await failScan(requestError(504, '<html>gateway timeout</html>'))
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Scan failed — try again'))
+    expect(within(await failure()).getByRole('alert')).toHaveTextContent("Cost analysis didn't finish. Scan failed — try again")
   })
 
   it('refreshes run history, so the status stops saying "Analysis complete"', async () => {
@@ -83,6 +92,8 @@ describe('Cost Optimization page: a failed Analyze', () => {
     mockGetAnalysisRuns.mockResolvedValue([run('failed', CHECKS_FAILED)])
 
     await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
+    // The failure banner holds the slot until closed; then the latest analysis banner shows the failed run.
+    fireEvent.click(within(await failure()).getByRole('button', { name: 'Dismiss' }))
 
     expect(await screen.findByText('Last manual cost analysis failed')).toBeInTheDocument()
     expect(screen.queryByText('Analysis complete')).not.toBeInTheDocument()
@@ -91,7 +102,7 @@ describe('Cost Optimization page: a failed Analyze', () => {
 
   it('the button is usable again afterwards', async () => {
     await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
-    await waitFor(() => expect(toastError).toHaveBeenCalled())
+    await failure()
     await waitFor(() => expect(screen.getByRole('button', { name: /run cost analysis/i })).toBeEnabled())
   })
 })

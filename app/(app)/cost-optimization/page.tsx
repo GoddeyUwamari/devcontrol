@@ -1,18 +1,21 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState, type MouseEvent } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Loader2,
   RefreshCw,
   CheckCircle,
+  CheckCircle2,
+  ChevronDown,
   XCircle,
   CloudOff,
   Clock,
   AlertTriangle,
   Server,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service';
 import awsAccountsService from '@/lib/services/aws-accounts.service';
@@ -23,9 +26,9 @@ import type { HiddenFindings, OptimizationRuleCatalog } from '@/lib/services/cos
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
-import { cn, formatAnnualSavingsTotal, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
+import { cn, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
+import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings, savingsBasisKind } from '@/lib/savings-basis';
 import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline } from '@/lib/finding-display';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,7 +46,7 @@ import {
   analyzeToast,
   bannerContent,
 } from './costScanBanner';
-import { CostAnalysisBanner } from './CostAnalysisBanner';
+import { CostAnalysisBanner, RunResultBanner, type RunResult } from './CostAnalysisBanner';
 import { ReviewList, StillDetectedSlot, scrollToStillDetected, type HiddenView } from './HiddenFindings';
 import {
   ALREADY_REOPENED,
@@ -54,14 +57,40 @@ import {
   REOPEN_FAILED,
 } from './hiddenFindingsCopy';
 import {
+  ALL,
+  COVERAGE,
+  ESTIMATED_MONTHLY_SAVINGS,
+  HOW_DEVCONTROL_CHECKS,
   HOW_EACH_CHECK_WORKS,
+  LAST_ANALYSIS,
+  LAST_ANALYSIS_SOURCE,
   LEGACY_CHECKS_CAVEAT,
+  NOTHING_TO_ACT_ON,
+  NO_CRITICAL_TIER,
+  NO_FIRM_ESTIMATE,
+  OPEN_OPPORTUNITIES,
+  SEE_WHATS_CHECKED,
+  SEVERITY_FILTER_LABEL,
+  SUMMARY,
+  SUMMARY_NO_ESTIMATE,
+  UPPER_BOUND,
+  VIEW_COSTS,
   activeChecksNote,
+  checksHeaderLine,
   costChecksRegionLine,
+  coverageCardLine,
   coverageLine,
-  emptyAllChecks,
+  found,
+  noFilterMatches,
+  nothingToActOnBody,
+  opportunitiesHeading,
   plannedToggle,
   stillDetectedKpiNote,
+  summaryFirmSavings,
+  summaryNew,
+  summaryOpen,
+  summaryUpperBoundOnly,
+  upperBoundOnly,
 } from './costOptimizationCopy';
 
 // Fetching more than this in one page is an edge case; the KPI tile (sourced
@@ -105,6 +134,55 @@ const EMPTY_RULE_CATALOG: OptimizationRuleCatalog = {
 
 // Zero on this page reads as muted, never green (founder decision 5: slate-500 for contrast).
 const ZERO_CLASS = 'text-slate-500';
+
+// High, Medium, Low: the open card's chips, the filter chips and the checks header, counts always from /stats.
+// Only these three exist (no Critical tier in the data).
+type SeverityKey = 'high' | 'medium' | 'low';
+const SEVERITY_ROWS: readonly { key: SeverityKey; label: string; color: string }[] = [
+  { key: 'high', label: 'High', color: 'bg-red-500' },
+  { key: 'medium', label: 'Medium', color: 'bg-amber-500' },
+  { key: 'low', label: 'Low', color: 'bg-slate-400' },
+];
+
+/** The id of the How DevControl checks section: the empty state's "See what's checked" opens it. */
+const CHECKS_ANCHOR = 'how-devcontrol-checks';
+
+/** "Nov 18, 2026" from a recommendation's createdAt; nothing for a missing or unreadable date. */
+function foundDate(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : format(date, 'MMM d, yyyy');
+}
+
+/**
+ * One card's figure, labelled by its basis (lib/savings-basis): an estimate in dark text, an upper bound as
+ * "Up to $X/mo" with "upper bound" in grey, no basis as "No dollar estimate" in grey.
+ */
+function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
+  const kind = savingsBasisKind(rec);
+  return (
+    <div className="sm:text-right" data-testid="opportunity-savings">
+      <p className={cn('text-section tabular-nums sm:whitespace-nowrap', kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
+        {isLowActivityFinding(rec)
+          ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency, savingsBasisKind(rec))
+          : formatRecommendationSavings(rec, formatSavingsCurrency)}
+      </p>
+      {isSavingsCeiling(rec) && (
+        <p className="text-label text-ink-muted font-medium">{UPPER_BOUND}</p>
+      )}
+      {isDefaultPriceEstimate(rec) && (
+        <p className="text-label text-ink-muted font-medium sm:max-w-[16rem] sm:ml-auto" data-testid="default-price-disclosure">{DEFAULT_PRICE_DISCLOSURE}</p>
+      )}
+      {isLowActivityFinding(rec) && (
+        <p className="text-label text-ink-muted font-medium sm:max-w-[16rem] sm:ml-auto" data-testid="low-activity-savings-basis">
+          {!isDefaultPriceEstimate(rec) && typeof rec.metadata?.instance_type === 'string'
+            ? lowActivityListPriceBasis(rec.metadata.instance_type)
+            : LOW_ACTIVITY_STORAGE_NOTE}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function CostOptimizationPage() {
   const queryClient = useQueryClient();
@@ -174,7 +252,7 @@ export default function CostOptimizationPage() {
   // checks are implemented vs planned. This is code-defined backend metadata,
   // not org-scoped AWS data, so it changes rarely; a long staleTime avoids
   // needless refetches.
-  const { data: ruleCatalog = EMPTY_RULE_CATALOG } = useQuery({
+  const { data: ruleCatalog = EMPTY_RULE_CATALOG, isLoading: rulesLoading, isError: rulesError } = useQuery({
     queryKey: ['optimization-rules'],
     queryFn: costRecommendationsService.getOptimizationRules,
     staleTime: 5 * 60_000,
@@ -282,8 +360,16 @@ export default function CostOptimizationPage() {
     onError: () => toast.error('Failed to dismiss recommendation'),
   });
 
+  // "Run cost analysis": its progress and result in the top banner slot (light-lane layout, founder ruling 1),
+  // in place of the Latest analysis banner until closed or auto-hidden. Never a toast.
+  const [runResult, setRunResult] = useState<RunResult | null>(null);
+  const runId = useRef(0);
+  const closeRunResult = useCallback(() => setRunResult(null), []);
+
   const handleScan = async () => {
+    const id = ++runId.current;
     setIsAnalyzing(true);
+    setRunResult({ phase: 'running', id });
     try {
       const result = await costRecommendationsService.analyze();
       await Promise.all([
@@ -296,15 +382,16 @@ export default function CostOptimizationPage() {
         // The run records which hidden findings it found again.
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
       ]);
-      // The toast's "resolved found again" is /hidden's still-detected count, refetched above:
+      // The result's "resolved found again" is /hidden's still-detected count, refetched above:
       // the same number the banner and the Still detected group show (founder ruling 8).
       // A failed refetch is unknown (null), never the previous answer.
       const hiddenState = queryClient.getQueryState<HiddenFindings>(['cost-recommendations-hidden']);
       const stillDetectedNow = hiddenState?.status === 'success' && hiddenState.data ? hiddenState.data.summary.stillDetected.count : null;
+      // The banner's text and colour are analyzeToast()'s (founder ruling 7): the same honest details the toast gave.
       const message = analyzeToast(result, stillDetectedNow);
-      toast[message.kind](message.text);
+      setRunResult({ phase: 'finished', id, kind: message.kind, text: message.text });
     } catch (err: unknown) {
-      toast.error(analyzeFailureMessage(err));
+      setRunResult({ phase: 'failed', id, message: analyzeFailureMessage(err) });
       // The backend recorded this attempt too: the status must not keep showing the previous one.
       await queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] });
     } finally {
@@ -342,8 +429,6 @@ export default function CostOptimizationPage() {
   // Rendered only when the monthly figure is available (below), so a failed stats fetch shows none.
   const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
   const monthlyLabel = monthlySavings === null ? null : formatSavingsTotal(monthlySavings, estimatedFindings);
-  // A monthly total that rounds to $0 with estimates behind it is under $0.06/yr, never "<$0.01/yr" (founder ruling).
-  const annualLabel = monthlySavings === null ? null : formatAnnualSavingsTotal(monthlySavings, estimatedFindings);
   const bySeverity = statsAvailable ? stats.bySeverity : null;
 
   // The banner states a resolved finding "found again" only from /hidden's judgement, the
@@ -363,17 +448,60 @@ export default function CostOptimizationPage() {
   const hiddenCount = activeCount === null ? 0 : Math.max(0, activeCount - recommendations.length);
   // The legacy caveat names "each listed check" only when the rail lists them, and not while /hidden has failed (no conclusion).
   const checksVisible = hiddenView.status !== 'error' && implementedRules.length > 0;
-  // The tidy empty state: only for a completed run that recorded every check as complete and found nothing new.
+  // The "Nothing to act on" empty state: only for a completed run that recorded every check as complete and found nothing new.
   const runCounts = scan.key.startsWith('completed') ? scan.counts : null;
   const ranAllChecks = runCounts !== null && runCounts.allChecksComplete && runCounts.new === 0;
-  const decidedCount = hiddenView.status === 'ready' ? hiddenView.data.summary.resolved + hiddenView.data.summary.dismissed : 0;
   // Coverage counts the services with at least one active check, so "across N services" is true of the active ones.
   const activeServices = ruleCatalog.summary.services.filter((s) => s.implementedCount > 0);
+  const catalogLoaded = ruleCatalog.summary.totalRules > 0;
+
+  // High / Medium / Low from /stats; null (shown as "—", never 0) when stats are unavailable.
+  const severityCounts = bySeverity ? { high: bySeverity.high, medium: bySeverity.medium, low: bySeverity.low } : null;
+  const severityLine = SEVERITY_ROWS.map((row) => `${row.label} ${severityCounts ? severityCounts[row.key] : '—'}`).join(' · ');
+
+  // Upper bounds are never added to the firm total; with no firm figure at all, the card says so (founder ruling 4).
+  const ceilingTotal = statsAvailable ? stats.potentialSavingsCeiling : 0;
+  // formatSavingsCurrency: whole dollars from $1, cents below, "<$0.01" under a cent; never "$0" for a positive bound.
+  const ceilingLabel = ceilingTotal > 0 ? formatSavingsCurrency(ceilingTotal) : null;
+  const upperBoundOnlySavings = monthlyLabel === '$0' && ceilingLabel !== null;
+
+  // Opportunities: firm estimates first, then upper bounds, then no basis, each largest first (rankBySavings,
+  // the Costs and Infrastructure pages' order). The severity filter only narrows the loaded list.
+  const [severityFilter, setSeverityFilter] = useState<'all' | SeverityKey>('all');
+  const visibleRecommendations = rankBySavings(recommendations)
+    .filter((rec) => severityFilter === 'all' || rec.severity?.toLowerCase() === severityFilter);
+  // A recommendation's check and service: the registry rule with the same issue (a lookup, not a calculation).
+  const ruleByIssue = new Map(implementedRules.flatMap((rule) => (rule.issue ? [[rule.issue, rule] as const] : [])));
+
+  // Summary: only open counts by severity, firm vs upper-bound savings and the latest run's new count (ruling 8).
+  const summaryLines: string[] = [];
+  if (activeCount !== null && severityCounts) {
+    summaryLines.push(summaryOpen(activeCount, severityCounts.high, severityCounts.medium, severityCounts.low));
+  }
+  if (monthlyLabel !== null && activeCount !== null && activeCount > 0) {
+    if (monthlyLabel !== '$0') summaryLines.push(summaryFirmSavings(monthlyLabel, ceilingLabel));
+    else if (ceilingLabel !== null) summaryLines.push(summaryUpperBoundOnly(ceilingLabel));
+    else summaryLines.push(SUMMARY_NO_ESTIMATE);
+  }
+  if (scan.counts) summaryLines.push(summaryNew(scan.counts.new));
+
+  // "See what's checked": open the How DevControl checks section and bring it into view.
+  const openChecks = (event: MouseEvent<HTMLAnchorElement>) => {
+    const section = document.getElementById(CHECKS_ANCHOR) as HTMLDetailsElement | null;
+    if (!section) return;
+    event.preventDefault();
+    section.open = true;
+    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    section.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    section.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
-      {/* ── LATEST ANALYSIS: one line across the top (tidy mock, Nov 19) ── */}
-      {!isDemoActive && (
+      {/* ── TOP BANNER SLOT: the Run cost analysis result while it shows, otherwise the latest analysis. Never both. ── */}
+      {!isDemoActive && (runResult ? (
+        <RunResultBanner className="mb-6" result={runResult} onClose={closeRunResult} />
+      ) : (
         <CostAnalysisBanner
           className="mb-6"
           content={banner}
@@ -382,25 +510,44 @@ export default function CostOptimizationPage() {
           onRetry={retryStatus}
           onReview={scrollToStillDetected}
         />
-      )}
+      ))}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
-        <div>
+      {/* ── HEADER: title, purpose, last analysis, Run cost analysis ── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
+        <div className="min-w-0">
           <h1 className={cn(PAGE_TITLE_CLASS, 'mb-2')}>Cost Optimization</h1>
           <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-lg')}>
             DevControl identifies potential AWS cost-saving opportunities by checking your connected account
             against the categories below. Figures are estimated potential savings, not realized or billed savings.
           </p>
+          {!isDemoActive && (
+            <p className="text-meta text-ink-muted mt-2 flex flex-wrap items-center gap-x-1.5" data-testid="last-analysis">
+              <span>{LAST_ANALYSIS}</span>
+              {scan.key === 'loading' ? <Skeleton className="h-4 w-28" /> : scan.key === 'status_unavailable' ? (
+                <span>{UNAVAILABLE}</span>
+              ) : scan.key === 'not_connected' ? (
+                <span>—</span>
+              ) : scan.key === 'never_analyzed' ? (
+                <span>Never</span>
+              ) : scan.key === 'running' ? (
+                <span>Running…</span>
+              ) : scan.completedAt && scan.source ? (
+                <span>{formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })} ({LAST_ANALYSIS_SOURCE[scan.source]})</span>
+              ) : (
+                <span>—</span>
+              )}
+            </p>
+          )}
         </div>
         {!isDemoActive && awsConnected === false ? (
           <a
             href="/connect-aws"
-            className="inline-flex items-center gap-2 text-white text-ui font-semibold px-5 py-2.5 rounded-lg bg-violet-700 hover:bg-violet-800 whitespace-nowrap no-underline transition-colors"
+            className="inline-flex min-h-11 w-full sm:w-auto items-center justify-center gap-2 text-white text-ui font-semibold px-5 py-2.5 rounded-lg bg-violet-700 hover:bg-violet-800 whitespace-nowrap no-underline transition-colors"
           >
             Connect AWS
           </a>
         ) : (
-          <Button size="lg" onClick={handleScan} disabled={!canRunScan} className="whitespace-nowrap shrink-0">
+          <Button size="lg" onClick={handleScan} disabled={!canRunScan} className="min-h-11 w-full sm:w-auto whitespace-nowrap shrink-0">
             {isAnalyzing ? <><Loader2 size={16} className="mr-1.5 animate-spin" /> Scanning...</> : <><RefreshCw size={16} className="mr-1.5" /> Run cost analysis</>}
           </Button>
         )}
@@ -413,15 +560,26 @@ export default function CostOptimizationPage() {
         </div>
       ) : (
         <>
-          {/* ── KPI AREA ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <Card>
+          {/* ── SUMMARY CARDS: three equal; on a phone Open + Coverage side by side, savings full width below ── */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4" data-testid="summary-cards">
+            <Card className="order-1">
               <CardContent className="px-5">
-                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Active Opportunities</p>
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">{OPEN_OPPORTUNITIES}</p>
                 {statsLoading ? <Skeleton className="h-8 w-14" /> : activeCount === null ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
                 ) : (
                   <p className={cn('text-kpi tabular-nums', activeCount === 0 ? ZERO_CLASS : 'text-slate-900')}>{activeCount}</p>
+                )}
+                {!statsLoading && (
+                  <ul className="flex flex-wrap gap-x-3 gap-y-1 list-none m-0 p-0 mt-2" data-testid="severity-chips" aria-label="Open opportunities by severity">
+                    {SEVERITY_ROWS.map((row) => (
+                      // Stats unavailable: "—", never 0.
+                      <li key={row.key} className="inline-flex items-center gap-1.5 text-meta text-slate-700">
+                        <span className={cn('h-2 w-2 rounded-full shrink-0', row.color)} aria-hidden="true" />
+                        {row.label} <span className="font-semibold text-slate-900 tabular-nums">{severityCounts ? severityCounts[row.key] : '—'}</span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 {/* Still-detected findings are not in this count (they come from /hidden, never /stats). */}
                 {stillDetectedCount !== null && stillDetectedCount > 0 && (
@@ -429,11 +587,17 @@ export default function CostOptimizationPage() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className="order-3 col-span-2 md:order-2 md:col-span-1">
               <CardContent className="px-5">
-                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Estimated Monthly Savings</p>
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">{ESTIMATED_MONTHLY_SAVINGS}</p>
                 {statsLoading ? <Skeleton className="h-8 w-24" /> : monthlyLabel === null ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
+                ) : upperBoundOnlySavings ? (
+                  // Every open figure is an upper bound: grey, never a firm total (founder ruling 4).
+                  <>
+                    <p className="text-section tabular-nums text-ink-muted" data-testid="savings-upper-bound-only">{upperBoundOnly(ceilingLabel)}</p>
+                    <p className="text-meta text-ink-muted mt-1">{NO_FIRM_ESTIMATE}</p>
+                  </>
                 ) : (
                   <>
                     <p className={cn('text-kpi tabular-nums', monthlyLabel === '$0' ? ZERO_CLASS : 'text-ink-success')}>{monthlyLabel}<span className="text-ui font-semibold text-ink-muted">/mo</span></p>
@@ -444,34 +608,18 @@ export default function CostOptimizationPage() {
                 )}
               </CardContent>
             </Card>
-            <Card>
+            <Card className="order-2 md:order-3">
               <CardContent className="px-5">
-                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Estimated Annual Savings</p>
-                {statsLoading ? <Skeleton className="h-8 w-24" /> : annualLabel === null ? (
+                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">{COVERAGE}</p>
+                {rulesLoading ? <Skeleton className="h-6 w-28" /> : rulesError || !catalogLoaded ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
                 ) : (
-                  <p className={cn('text-kpi tabular-nums', annualLabel === '$0' ? ZERO_CLASS : 'text-ink-success')}>{annualLabel}<span className="text-ui font-semibold text-ink-muted">/yr</span></p>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="px-5">
-                <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">Last Analysis</p>
-                {scan.key === 'loading' ? <Skeleton className="h-6 w-20" /> : scan.key === 'status_unavailable' ? (
-                  <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
-                ) : scan.key === 'not_connected' ? (
-                  <p className="text-section text-ink-muted">—</p>
-                ) : scan.key === 'never_analyzed' ? (
-                  <p className="text-section text-ink-muted">Never</p>
-                ) : scan.key === 'running' ? (
-                  <p className="text-section text-violet-600">Running…</p>
-                ) : scan.completedAt && scan.source ? (
-                  <>
-                    <p className="text-section text-slate-900 leading-tight">{formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })}</p>
-                    <p className="text-label font-normal text-ink-muted mt-0.5">{SOURCE_LABEL[scan.source]}</p>
-                  </>
-                ) : (
-                  <p className="text-section text-ink-muted">—</p>
+                  <p className="text-section text-slate-900 tabular-nums" data-testid="coverage-card-line">
+                    {/* Each part kept whole, so a narrow card breaks between them, never inside one. */}
+                    {coverageCardLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length).split(' · ').map((part, index, parts) => (
+                      <span key={part}>{index > 0 && ' '}<span className="whitespace-nowrap">{part}{index < parts.length - 1 && ' ·'}</span></span>
+                    ))}
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -480,7 +628,7 @@ export default function CostOptimizationPage() {
           {statsError && (
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <p className="text-label font-normal text-ink-muted">{STATS_UNAVAILABLE_NOTE}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => refetchStats()}>{TRY_AGAIN}</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => refetchStats()} className="max-sm:min-h-11">{TRY_AGAIN}</Button>
             </div>
           )}
 
@@ -494,8 +642,8 @@ export default function CostOptimizationPage() {
           <DiscoveryWarningNotice warnings={discoveryJobs?.[0]?.warnings} className="mb-6" />
 
           {/* ── OPPORTUNITIES / EMPTY STATE ── */}
-          {/* ~70/30: findings on the left, what DevControl checks and coverage on the right. */}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] gap-6 items-start">
+          {/* 2fr / 1fr: opportunities on the left, the Summary on the right; stacked on a phone. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6 items-start">
             <div className="flex flex-col gap-6 min-w-0" data-testid="findings-column">
               {isLoading ? (
                 <div className="flex items-center justify-center h-64">
@@ -505,7 +653,7 @@ export default function CostOptimizationPage() {
                 <div className="bg-white border border-red-100 rounded-2xl p-12 text-center">
                   {/* Fixed text: never the request error's own message (transport text such as "Request failed with status code 500"). */}
                   <p className="text-ui font-semibold text-slate-900 mb-4">Couldn&apos;t load recommendations. Try again.</p>
-                  <button onClick={() => refetch()} className="bg-violet-700 hover:bg-violet-800 text-white text-label font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors">
+                  <button onClick={() => refetch()} className="min-h-11 bg-violet-700 hover:bg-violet-800 text-white text-label font-semibold px-5 py-2.5 rounded-lg border-none cursor-pointer transition-colors">
                     Try again
                   </button>
                 </div>
@@ -547,144 +695,158 @@ export default function CostOptimizationPage() {
                       </p>
                       <p className="text-ui text-ink-muted">{scan.errorMessage || 'Something interrupted the scan before it finished.'}</p>
                     </>
+                  ) : ranAllChecks ? (
+                    // The run completed every check and found nothing new (founder ruling 5). Still-detected
+                    // findings show below it, in their own group.
+                    <div data-testid="empty-all-checks">
+                      <CheckCircle2 size={28} className="text-green-700 mb-3" aria-hidden="true" />
+                      <h2 className="text-ui font-semibold text-slate-900 mb-2">{NOTHING_TO_ACT_ON}</h2>
+                      <p className="text-ui text-ink-muted">{nothingToActOnBody(runCounts.checksTotal)}</p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3">
+                        {catalogLoaded && (
+                          <a href={`#${CHECKS_ANCHOR}`} onClick={openChecks} className="inline-flex min-h-11 items-center text-ui font-semibold text-violet-700 hover:text-violet-800">
+                            {SEE_WHATS_CHECKED}
+                          </a>
+                        )}
+                        <Link href="/costs" className="inline-flex min-h-11 items-center text-ui font-semibold text-violet-700 hover:text-violet-800">
+                          {VIEW_COSTS}
+                        </Link>
+                      </div>
+                    </div>
                   ) : (
                     // Nothing open. The banner states the run's result once; this card doesn't repeat it
                     // (founder fix, PR 3b). Still-detected findings show below it, in their own group.
                     <>
                       <Clock size={28} className="text-slate-400 mb-3" aria-hidden="true" />
-                      {ranAllChecks ? (
-                        <p className="text-ui text-slate-900" data-testid="empty-all-checks">
-                          {emptyAllChecks(runCounts.checksTotal, decidedCount > 0)}
+                      <p className="text-ui font-semibold text-slate-900">No active recommendations to review</p>
+                      {/* A run from before per-check results were recorded keeps its LIVE caveat. */}
+                      {scan.key === 'completed_unrecorded' && (totalEverCount > 0 || checksVisible) && (
+                        <p className="text-ui text-ink-muted mt-2" data-testid="legacy-caveat">
+                          {totalEverCount > 0 ? `Previously identified items have been resolved or dismissed.${checksVisible ? ' ' : ''}` : ''}
+                          {/* "each listed check" only when the checks section lists them. */}
+                          {checksVisible && LEGACY_CHECKS_CAVEAT}
                         </p>
-                      ) : (
-                        <>
-                          <p className="text-ui font-semibold text-slate-900">No active recommendations to review</p>
-                          {/* A run from before per-check results were recorded keeps its LIVE caveat. */}
-                          {scan.key === 'completed_unrecorded' && (totalEverCount > 0 || checksVisible) && (
-                            <p className="text-ui text-ink-muted mt-2" data-testid="legacy-caveat">
-                              {totalEverCount > 0 ? `Previously identified items have been resolved or dismissed.${checksVisible ? ' ' : ''}` : ''}
-                              {/* "each listed check" only when the rail lists them. */}
-                              {checksVisible && LEGACY_CHECKS_CAVEAT}
-                            </p>
-                          )}
-                        </>
                       )}
                     </>
                   )}
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
+                <section className="flex flex-col gap-3" aria-labelledby="opportunities-heading" data-testid="opportunities">
                   <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                    <p className="text-ui font-semibold text-slate-900">
-                      {hiddenCount > 0 ? `Showing ${recommendations.length} of ${activeCount} active opportunities` : `${listedActiveCount} active opportunit${listedActiveCount !== 1 ? 'ies' : 'y'}`}
-                    </p>
+                    <h2 id="opportunities-heading" className="text-ui font-semibold text-slate-900">{opportunitiesHeading(listedActiveCount)}</h2>
                     {hiddenCount > 0 && (
-                      <p className="text-label font-normal text-ink-muted">Sorted by highest potential savings first</p>
+                      <p className="text-label font-normal text-ink-muted">
+                        {`Showing ${recommendations.length} of ${activeCount} active opportunities`} · Sorted by highest potential savings first
+                      </p>
                     )}
                   </div>
 
-                  {recommendations.map((rec) => (
-                    <div key={rec.id} className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200">
-                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-start">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <span className="text-ui font-semibold text-slate-900">{displayIssue(rec) || '—'}</span>
-                            {rec.severity && <SeverityBadge {...severityToBadge(rec.severity)} />}
-                            <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-ink-muted">{rec.status || '—'}</span>
-                          </div>
-                          {rec.description && <p className="text-meta text-ink-muted leading-relaxed mb-2.5">{rec.description}</p>}
-                          <div className="flex flex-wrap gap-1.5">
-                            <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.resourceId || '—'}</span>
-                            {rec.resourceName && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.resourceName}</span>}
-                            {rec.resourceType && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.resourceType}</span>}
-                            {rec.awsRegion && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full">{rec.awsRegion}</span>}
-                          </div>
+                  {/* Severity filter: All · High · Medium · Low with /stats counts; scrolls sideways on a phone, never wraps. */}
+                  <div role="group" aria-label={SEVERITY_FILTER_LABEL} className="-mx-4 flex flex-nowrap gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" data-testid="severity-filter">
+                    {([{ key: 'all', label: ALL, count: activeCount }, ...SEVERITY_ROWS.map((row) => ({ key: row.key, label: row.label, count: severityCounts ? severityCounts[row.key] : null }))] as const).map((chip) => (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        aria-pressed={severityFilter === chip.key}
+                        onClick={() => setSeverityFilter(chip.key)}
+                        className={cn(
+                          'inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-label font-semibold whitespace-nowrap transition-colors sm:min-h-9',
+                          severityFilter === chip.key ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                        )}
+                      >
+                        {chip.label}
+                        <span className="tabular-nums">{chip.count ?? '—'}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {visibleRecommendations.length === 0 ? (
+                    <p className="text-meta text-ink-muted" data-testid="filter-empty">{noFilterMatches(SEVERITY_ROWS.find((row) => row.key === severityFilter)?.label ?? severityFilter)}</p>
+                  ) : visibleRecommendations.map((rec) => {
+                    const rule = ruleByIssue.get(rec.issue);
+                    const service = rule?.service ?? rec.resourceType;
+                    const foundOn = foundDate(rec.createdAt);
+                    const meta = [foundOn && found(foundOn), rule?.name].filter(Boolean).join(' · ');
+                    return (
+                      <article key={rec.id} className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200 min-w-0" data-testid="opportunity-card">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          {rec.severity && <SeverityBadge {...severityToBadge(rec.severity)} />}
+                          {service && <span className="bg-slate-100 text-ink-muted text-label font-medium px-2 py-0.5 rounded-full" data-testid="service-chip">{service}</span>}
                         </div>
-                        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3">
-                          <div className="text-right">
-                            <p className="text-section tabular-nums text-ink-success whitespace-nowrap">
-                              {isLowActivityFinding(rec)
-                                ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency, savingsBasisKind(rec))
-                                : formatRecommendationSavings(rec, formatSavingsCurrency)}
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 items-start">
+                          <div className="min-w-0">
+                            <h3 className="text-ui font-semibold text-slate-900">{displayIssue(rec) || '—'}</h3>
+                            <p className="font-mono text-meta text-ink-muted break-all mt-0.5" data-testid="resource-region">
+                              {[rec.resourceName, rec.resourceId || '—', rec.awsRegion].filter(Boolean).map((part, index) => (
+                                <span key={index}>{index > 0 && ' · '}<span>{part}</span></span>
+                              ))}
                             </p>
-                            {isSavingsCeiling(rec) && (
-                              <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
-                            )}
-                            {isDefaultPriceEstimate(rec) && (
-                              <p className="text-label text-ink-muted font-medium max-w-[16rem]" data-testid="default-price-disclosure">{DEFAULT_PRICE_DISCLOSURE}</p>
-                            )}
-                            {isLowActivityFinding(rec) && (
-                              <p className="text-label text-ink-muted font-medium max-w-[16rem]" data-testid="low-activity-savings-basis">
-                                {!isDefaultPriceEstimate(rec) && typeof rec.metadata?.instance_type === 'string'
-                                  ? lowActivityListPriceBasis(rec.metadata.instance_type)
-                                  : LOW_ACTIVITY_STORAGE_NOTE}
-                              </p>
-                            )}
+                            {rec.description && <p className="text-meta text-ink-muted leading-relaxed mt-2">{rec.description}</p>}
                           </div>
+                          <OpportunitySavings rec={rec} />
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-label font-normal text-ink-muted" data-testid="opportunity-meta">{meta}</p>
                           <div className="flex gap-2">
-                            <button
-                              onClick={() => resolveMutation.mutate(rec.id)}
-                              disabled={pendingMutation(rec.id)}
-                              className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3.5 py-1.5 rounded-lg text-label font-semibold border-none cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                            >
-                              <CheckCircle size={12} /> Resolve
-                            </button>
                             <button
                               onClick={() => dismissMutation.mutate(rec.id)}
                               disabled={pendingMutation(rec.id)}
-                              className="flex items-center gap-1 bg-transparent text-ink-muted px-3 py-1.5 rounded-lg text-label font-medium border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                              className="flex min-h-11 items-center gap-1 bg-transparent text-ink-muted px-3 py-1.5 rounded-lg text-label font-medium border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed sm:min-h-9"
                             >
                               <XCircle size={12} /> Dismiss
                             </button>
+                            <button
+                              onClick={() => resolveMutation.mutate(rec.id)}
+                              disabled={pendingMutation(rec.id)}
+                              className="flex min-h-11 items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3.5 py-1.5 rounded-lg text-label font-semibold border-none cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed sm:min-h-9"
+                            >
+                              <CheckCircle size={12} /> Resolve
+                            </button>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      </article>
+                    );
+                  })}
+                </section>
               )}
 
               {/* ── STILL DETECTED: resolved findings the latest analysis found again (PR 3b), never collapsed ── */}
               <StillDetectedSlot view={hiddenView} actions={hiddenActions} onRetry={() => hiddenQuery.refetch()} retrying={hiddenQuery.isFetching} />
-
-              {/* ── REVIEW: every resolved and dismissed finding, collapsed (PR 3b). Absent while /hidden is loading or failed (C27 above). ── */}
-              {hiddenView.status === 'ready' && <ReviewList data={hiddenView.data} actions={hiddenActions} />}
             </div>
 
-            {/* ── RAIL: severity, what DevControl checks, coverage ── */}
-            <div className="flex flex-col gap-4 min-w-0" data-testid="checks-rail">
-              {recommendations.length > 0 && (
-                <Card>
-                  <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">Severity breakdown</h2></CardHeader>
-                  <CardContent className="px-5">
-                    <ul className="flex flex-col gap-1.5 list-none m-0 p-0" data-testid="severity-rows">
-                      {([
-                        { key: 'high', label: 'High', count: bySeverity ? bySeverity.high : null, color: 'bg-red-500' },
-                        { key: 'medium', label: 'Medium', count: bySeverity ? bySeverity.medium : null, color: 'bg-amber-500' },
-                        { key: 'low', label: 'Low', count: bySeverity ? bySeverity.low : null, color: 'bg-slate-400' },
-                      ] as const).map((row) => (
-                        // Stats unavailable: "—", never 0.
-                        <li key={row.key} className="flex items-center justify-between gap-3 text-meta">
-                          <span className="inline-flex items-center gap-2 font-medium text-slate-600">
-                            <span className={cn('h-2 w-2 rounded-full shrink-0', row.color)} aria-hidden="true" />
-                            {row.label}
-                          </span>
-                          <span className="font-semibold text-slate-900 tabular-nums">{row.count ?? '—'}</span>
-                        </li>
-                      ))}
+            {/* ── SUMMARY: sentences from /stats and the latest run only ── */}
+            <div className="flex flex-col gap-4 min-w-0" data-testid="summary-column">
+              <Card data-testid="summary-card">
+                <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">{SUMMARY}</h2></CardHeader>
+                <CardContent className="px-5">
+                  {statsLoading ? <Skeleton className="h-16 w-full" /> : summaryLines.length === 0 ? (
+                    <p className="text-meta text-ink-muted">{STATS_UNAVAILABLE_NOTE}</p>
+                  ) : (
+                    <ul className="flex flex-col gap-2 list-disc pl-5 m-0" data-testid="summary-lines">
+                      {summaryLines.map((line) => <li key={line} className="text-meta text-slate-700">{line}</li>)}
                     </ul>
-                    <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed">
-                      Only High/Medium/Low severities are currently supported — there is no Critical tier in the underlying data.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
 
-              {implementedRules.length > 0 && (
-                <Card data-testid="checks-card">
-                  <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">What DevControl checks</h2></CardHeader>
-                  <CardContent className="px-5">
-                    <ul className="flex flex-col gap-1.5 list-none m-0 p-0" data-testid="check-names">
+          {/* ── HOW DEVCONTROL CHECKS: full width, closed by default. Registry-derived, never a hardcoded "every rule
+              active" claim: an implementedCount below totalRules is expected and disclosed (config/optimization-rules.ts). ── */}
+          {catalogLoaded && (
+            <details id={CHECKS_ANCHOR} className="group mt-6 bg-white border border-slate-200 rounded-xl scroll-mt-24" data-testid="checks-section">
+              <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 [&::-webkit-details-marker]:hidden">
+                <span className="text-ui font-semibold text-slate-900">{HOW_DEVCONTROL_CHECKS}</span>
+                {/* Phone: the counts wrap onto their own line under the title, the chevron stays beside the title. */}
+                <ChevronDown size={16} className="ml-auto shrink-0 text-ink-muted transition-transform group-open:rotate-180 sm:order-last sm:ml-0" aria-hidden="true" />
+                <span className="text-meta text-ink-muted tabular-nums basis-full min-w-0 sm:basis-auto sm:flex-1" data-testid="checks-summary-line">
+                  {checksHeaderLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)} · {severityLine}
+                </span>
+              </summary>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 border-t border-slate-100 px-5 py-5">
+                {implementedRules.length > 0 ? (
+                  <div className="min-w-0" data-testid="checks-card">
+                    <ul className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1.5 list-none m-0 p-0" data-testid="check-names">
                       {implementedRules.map((rule) => (
                         <li key={rule.id} className="flex items-start gap-2 text-label font-semibold text-slate-700">
                           <Server size={13} className="text-slate-400 mt-0.5 shrink-0" aria-hidden="true" />
@@ -696,7 +858,7 @@ export default function CostOptimizationPage() {
                       <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed" data-testid="checks-region-line">{checksRegionLine}</p>
                     )}
                     <details className="mt-3" data-testid="how-checks-work">
-                      <summary className="cursor-pointer text-label font-semibold text-violet-700">{HOW_EACH_CHECK_WORKS}</summary>
+                      <summary className="cursor-pointer text-label font-semibold text-violet-700 max-sm:py-3.5">{HOW_EACH_CHECK_WORKS}</summary>
                       <div className="flex flex-col gap-3 mt-2">
                         {implementedRules.map((rule) => (
                           <div key={rule.id}>
@@ -709,45 +871,45 @@ export default function CostOptimizationPage() {
                     <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed border-t border-slate-100 pt-3" data-testid="checks-count-note">
                       {activeChecksNote(implementedRules.length)}
                     </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* ── COVERAGE / PLANNED ──
-                  Registry-derived, never a hardcoded "every rule active"
-                  claim: an implementedCount below totalRules is expected
-                  and disclosed, not hidden. See config/optimization-rules.ts. */}
-              {ruleCatalog.summary.totalRules > 0 && (
-                <Card data-testid="coverage-card">
-                  <CardHeader className="px-5 pb-0"><h2 className="text-ui font-semibold text-slate-900">Coverage</h2></CardHeader>
-                  <CardContent className="px-5">
-                    <p className="text-label font-normal text-ink-muted leading-relaxed mb-3" data-testid="coverage-line">
-                      {coverageLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)}
-                    </p>
-                    {activeServices.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5" data-testid="coverage-services">
-                        {activeServices.map((s) => (
-                          <span key={s.service} className="text-label font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">{s.service}</span>
+                  </div>
+                ) : <div />}
+                <div className="min-w-0" data-testid="coverage-card">
+                  <p className="text-label font-normal text-ink-muted leading-relaxed mb-3" data-testid="coverage-line">
+                    {coverageLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)}
+                  </p>
+                  {activeServices.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" data-testid="coverage-services">
+                      {activeServices.map((s) => (
+                        <span key={s.service} className="text-label font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">{s.service}</span>
+                      ))}
+                    </div>
+                  )}
+                  {plannedRules.length > 0 && (
+                    <details className="mt-3 border-t border-slate-100 pt-3" data-testid="planned-checks">
+                      <summary className="cursor-pointer text-label font-semibold text-violet-700 max-sm:py-3.5">{plannedToggle(plannedRules.length)}</summary>
+                      <div className="flex flex-col gap-1.5 mt-2">
+                        {plannedRules.map((rule) => (
+                          <p key={rule.id} className="text-label font-normal text-ink-muted leading-snug">
+                            {rule.service} — {rule.name}
+                          </p>
                         ))}
                       </div>
-                    )}
-                    {plannedRules.length > 0 && (
-                      <details className="mt-3 border-t border-slate-100 pt-3" data-testid="planned-checks">
-                        <summary className="cursor-pointer text-label font-semibold text-violet-700">{plannedToggle(plannedRules.length)}</summary>
-                        <div className="flex flex-col gap-1.5 mt-2">
-                          {plannedRules.map((rule) => (
-                            <p key={rule.id} className="text-label font-normal text-ink-muted leading-snug">
-                              {rule.service} — {rule.name}
-                            </p>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
+                    </details>
+                  )}
+                  <p className="text-label font-normal text-ink-muted mt-3 leading-relaxed border-t border-slate-100 pt-3" data-testid="no-critical-note">
+                    {NO_CRITICAL_TIER}
+                  </p>
+                </div>
+              </div>
+            </details>
+          )}
+
+          {/* ── RESOLVED AND DISMISSED: every decided finding, collapsed (PR 3b), at the bottom. Absent while /hidden is loading or failed. ── */}
+          {hiddenView.status === 'ready' && (
+            <div className="mt-6">
+              <ReviewList data={hiddenView.data} actions={hiddenActions} />
             </div>
-          </div>
+          )}
         </>
       )}
     </div>

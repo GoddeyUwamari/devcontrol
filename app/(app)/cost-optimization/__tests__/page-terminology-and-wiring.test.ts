@@ -49,11 +49,14 @@ describe('Cost Optimization page: forbidden terminology', () => {
 })
 
 describe('Cost Optimization page: required terminology', () => {
-  it('labels the KPIs with the approved wording', () => {
-    expect(source).toMatch(/Active Opportunities/)
-    expect(source).toMatch(/Estimated Monthly Savings/)
-    expect(source).toMatch(/Estimated Annual Savings/)
-    expect(source).toMatch(/Last Analysis/)
+  it('labels the summary cards and the header line with the approved wording (light-lane layout, Nov 20)', () => {
+    expect(source).toMatch(/'Open opportunities'/)
+    expect(source).toMatch(/'Estimated monthly savings'/)
+    expect(source).toMatch(/export const COVERAGE = 'Coverage'/)
+    // "Last analysis" moved from its own card into the header (founder ruling 2), still from the scan state.
+    expect(source).toMatch(/'Last analysis'/)
+    // The annual card was dropped (founder ruling 2).
+    expect(source).not.toMatch(/Estimated Annual Savings/)
   })
 
   it('a completed scan with nothing active draws no "no opportunities" conclusion -- per-check outcomes are not recorded yet', () => {
@@ -108,13 +111,17 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   })
 
   it('discloses the ceiling nature of the figure near the amount, not just in the page-wide disclaimer', () => {
-    expect(source).toMatch(/Estimated ceiling, not an expected saving/)
+    // Light-lane layout: "Up to $X/mo" with "upper bound" in grey right under it, on every ceiling card.
+    expect(source).toMatch(/\{isSavingsCeiling\(rec\) && \(\s*<p className="text-label text-ink-muted font-medium">\{UPPER_BOUND\}<\/p>/)
+    expect(source).toMatch(/export const UPPER_BOUND = 'upper bound'/)
   })
 })
 
 describe('Cost Optimization page: severity breakdown stays schema-accurate', () => {
   it('only renders High/Medium/Low severity rows', () => {
-    const severityBlock = source.slice(source.indexOf('Severity breakdown'), source.indexOf('What DevControl checks'))
+    // One list feeds the open card's chips, the filter chips and the checks header.
+    const severityBlock = source.slice(source.indexOf('const SEVERITY_ROWS'), source.indexOf('const CHECKS_ANCHOR'))
+    expect(severityBlock.length).toBeGreaterThan(0)
     expect(severityBlock).toMatch(/'High'/)
     expect(severityBlock).toMatch(/'Medium'/)
     expect(severityBlock).toMatch(/'Low'/)

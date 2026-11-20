@@ -1,13 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Clock, Info, Loader2, X, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SCAN_BANNER_TONE_CLASSES, type ScanBannerTone } from '@/components/ui/scan-status-banner';
-import { DISMISS_BANNER, REVIEW_IT, TRY_AGAIN, type BannerContent } from './costScanBanner';
+import {
+  DISMISS_BANNER,
+  REVIEW_IT,
+  RUN_FAILED,
+  RUN_RESULT_AUTO_HIDE_MS,
+  RUN_RUNNING,
+  TRY_AGAIN,
+  type BannerContent,
+  type ToastKind,
+} from './costScanBanner';
 
 /**
  * The latest analysis's result, one line across the top of Cost Optimization
@@ -83,10 +92,10 @@ export function CostAnalysisBanner({
         // Phones: its own row under the text (aligned with it); from sm up: on the line, before the ×.
         <div className="order-3 flex w-full shrink-0 items-center gap-2 pl-[30px] sm:order-2 sm:w-auto sm:pl-0">
           {content.review ? (
-            <Button type="button" variant="outline" size="sm" onClick={onReview} className="bg-white">{REVIEW_IT}</Button>
+            <Button type="button" variant="outline" size="sm" onClick={onReview} className="bg-white max-sm:min-h-11">{REVIEW_IT}</Button>
           ) : null}
           {content.retry ? (
-            <Button type="button" variant="outline" size="sm" onClick={onRetry} className="bg-white">{TRY_AGAIN}</Button>
+            <Button type="button" variant="outline" size="sm" onClick={onRetry} className="bg-white max-sm:min-h-11">{TRY_AGAIN}</Button>
           ) : null}
         </div>
       ) : null}
@@ -95,11 +104,84 @@ export function CostAnalysisBanner({
           type="button"
           aria-label={DISMISS_BANNER}
           onClick={() => setClosed(signature)}
-          className="order-2 -mr-1 shrink-0 rounded-md p-1 hover:bg-white/70 transition-colors sm:order-3"
+          className="order-2 -mr-1 inline-flex shrink-0 items-center justify-center rounded-md p-1 hover:bg-white/70 transition-colors max-sm:-my-2.5 max-sm:h-11 max-sm:w-11 sm:order-3"
         >
           <X size={16} aria-hidden="true" />
         </button>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * What "Run cost analysis" is doing or did, in this page's session. `id` is
+ * the click it belongs to, so a new click re-opens a closed banner and
+ * restarts the auto-hide.
+ */
+export type RunResult =
+  | { phase: 'running'; id: number }
+  | { phase: 'finished'; id: number; kind: ToastKind; text: string }
+  | { phase: 'failed'; id: number; message: string | null };
+
+const RUN_TONE: Record<ToastKind, ScanBannerTone> = { success: 'success', info: 'info', warning: 'warning' };
+const RUN_ICON: Record<ToastKind, LucideIcon> = { success: CheckCircle2, info: Info, warning: AlertTriangle };
+
+/**
+ * The "Run cost analysis" result, in the top banner slot (founder ruling 1,
+ * light-lane layout): the page shows it in place of the Latest analysis banner
+ * while a run is going or its result is showing, never both. Running and a
+ * finished run are a polite status; a failure is an alert. A finished run of
+ * the success or info kind hides itself after 10 seconds; a warning (partial
+ * run) or a failure stays until closed.
+ */
+export function RunResultBanner({ result, onClose, className }: {
+  result: RunResult;
+  onClose: () => void;
+  className?: string;
+}) {
+  const autoHide = result.phase === 'finished' && result.kind !== 'warning';
+  useEffect(() => {
+    if (!autoHide) return undefined;
+    const timer = setTimeout(onClose, RUN_RESULT_AUTO_HIDE_MS);
+    return () => clearTimeout(timer);
+  }, [autoHide, result.id, onClose]);
+
+  const tone: ScanBannerTone = result.phase === 'running' ? 'info' : result.phase === 'failed' ? 'danger' : RUN_TONE[result.kind];
+  const Icon = result.phase === 'running' ? Loader2 : result.phase === 'failed' ? XCircle : RUN_ICON[result.kind];
+  const title = result.phase === 'running' ? RUN_RUNNING : result.phase === 'failed' ? RUN_FAILED : result.text;
+  const detail = result.phase === 'failed' ? result.message : null;
+  const failed = result.phase === 'failed';
+
+  return (
+    <section
+      aria-label="Cost analysis"
+      data-testid="run-result-banner"
+      data-tone={tone}
+      data-phase={result.phase}
+      className={cn('flex items-start gap-2 rounded-lg border py-1.5 pl-4 pr-1.5', SCAN_BANNER_TONE_CLASSES[tone], className)}
+    >
+      {/* A failure mounts a fresh alert element: a role change on an existing node isn't reliably announced. */}
+      <div
+        key={failed ? 'alert' : 'status'}
+        role={failed ? 'alert' : 'status'}
+        aria-live={failed ? 'assertive' : 'polite'}
+        aria-atomic="true"
+        className="flex min-w-0 flex-1 items-start gap-3 py-1.5"
+      >
+        <Icon size={18} aria-hidden="true" className={cn('mt-0.5 shrink-0', result.phase === 'running' && 'motion-safe:animate-spin')} />
+        <p className="min-w-0 flex-1 text-ui font-semibold break-words" data-testid="run-result-text">
+          {title}
+          {detail ? <span className="font-normal"> {detail}</span> : null}
+        </p>
+      </div>
+      <button
+        type="button"
+        aria-label={DISMISS_BANNER}
+        onClick={onClose}
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-white/70 transition-colors"
+      >
+        <X size={16} aria-hidden="true" />
+      </button>
     </section>
   );
 }

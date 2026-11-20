@@ -2,8 +2,9 @@
  * The Cost Optimization page renders each approved scan state (pr2-step1.md,
  * founder decisions 2026-11-02): banner at the top, failures never shown as
  * 0, $0, Never or an endless skeleton, zero values muted, no raw job text,
- * and the toast built from the run's counts. Real page, mocked services,
- * fixture data only.
+ * and the Run cost analysis result built from the run's counts (a banner in
+ * the top slot since the light-lane layout, Nov 20, never a toast). Real page,
+ * mocked services, fixture data only.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -69,6 +70,7 @@ const hiddenWith = (count: number) => ({
   items: [],
 })
 const kpiCard = (label: string) => screen.getByText(label).parentElement as HTMLElement
+const runBanner = () => screen.getByTestId('run-result-banner')
 
 async function settled() {
   await waitFor(() => expect(screen.getByRole('status')).not.toHaveAttribute('aria-busy'))
@@ -85,10 +87,10 @@ beforeEach(() => {
 })
 
 describe('placement and source', () => {
-  it('the banner sits above the KPI cards', async () => {
+  it('the banner sits above the summary cards', async () => {
     renderPage()
     await settled()
-    const kpi = screen.getByText('Active Opportunities')
+    const kpi = screen.getByText('Open opportunities')
     expect(banner().compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
@@ -167,11 +169,15 @@ describe('banner states', () => {
     expect(within(banner()).getByText('The analysis was interrupted before it finished. Run it again.')).toBeInTheDocument()
   })
 
-  it('shows running the moment the button is clicked', async () => {
+  it('shows running the moment the button is clicked; closing the run banner brings back the latest analysis, running', async () => {
     svc.analyze.mockReturnValue(new Promise(() => undefined))
     renderPage()
     await settled()
     fireEvent.click(screen.getByRole('button', { name: /run cost analysis/i }))
+    await waitFor(() => expect(within(runBanner()).getByText('Cost analysis running. This can take a few minutes.')).toBeInTheDocument())
+    // One banner in the slot, never both.
+    expect(screen.queryByTestId('scan-status-banner')).not.toBeInTheDocument()
+    fireEvent.click(within(runBanner()).getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(within(banner()).getByText('Analysis in progress')).toBeInTheDocument())
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true')
   })
@@ -181,12 +187,10 @@ describe('fetch failures are never 0, $0, Never or an endless skeleton', () => {
   it('stats failed: every stats card says Unavailable, with a retry', async () => {
     svc.getStats.mockRejectedValue(new Error('boom'))
     const { container } = renderPage()
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('Unavailable')).toBeInTheDocument())
-    expect(within(kpiCard('Estimated Monthly Savings')).getByText('Unavailable')).toBeInTheDocument()
-    expect(within(kpiCard('Estimated Annual Savings')).getByText('Unavailable')).toBeInTheDocument()
-    expect(within(kpiCard('Active Opportunities')).queryByText('0')).not.toBeInTheDocument()
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('Unavailable')).toBeInTheDocument())
+    expect(within(kpiCard('Estimated monthly savings')).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(kpiCard('Open opportunities')).queryByText('0')).not.toBeInTheDocument()
     expect(container.textContent).not.toMatch(/\$0/)
-    expect(container.textContent).not.toMatch(/\/yr/)
     expect(container.textContent).not.toMatch(/\/mo/)
     expect(screen.getByText("Totals couldn't load. This doesn't mean there are no savings.")).toBeInTheDocument()
     svc.getStats.mockResolvedValue(stats())
@@ -194,14 +198,15 @@ describe('fetch failures are never 0, $0, Never or an endless skeleton', () => {
     await waitFor(() => expect(svc.getStats).toHaveBeenCalledTimes(2))
   })
 
-  it('stats failed while recommendations exist: the active card is still Unavailable, not the list length; severity shows dashes', async () => {
+  it('stats failed while recommendations exist: the open card is still Unavailable, not the list length; severity shows dashes', async () => {
     svc.getStats.mockRejectedValue(new Error('boom'))
     svc.getAll.mockResolvedValue([{ id: 'rec-1', resourceId: 'i-1234567890abcdef0', issue: 'Idle Instance', severity: 'LOW', status: 'ACTIVE', potentialSavings: 5, metadata: { savings_basis: 'estimated: placeholder' } }])
     renderPage()
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('Unavailable')).toBeInTheDocument())
-    expect(within(kpiCard('Active Opportunities')).queryByText('1')).not.toBeInTheDocument()
-    const severity = screen.getByText('Severity breakdown').closest('[data-slot="card"]') as HTMLElement ?? document.body
-    expect(within(severity).getAllByText('—').length).toBe(3)
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('Unavailable')).toBeInTheDocument())
+    expect(within(kpiCard('Open opportunities')).queryByText('1')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('severity-chips')).getAllByText('—').length).toBe(3)
+    // The filter chips: no count for All, High, Medium or Low (never the list length, never 0).
+    expect(within(screen.getByTestId('severity-filter')).getAllByText('—').length).toBe(4)
   })
 
   it('run history failed: Unavailable, never "Never"', async () => {
@@ -209,7 +214,7 @@ describe('fetch failures are never 0, $0, Never or an endless skeleton', () => {
     renderPage()
     await waitFor(() => expect(within(banner()).getByText("Couldn't load analysis status")).toBeInTheDocument())
     expect(within(banner()).getByText("This doesn't mean nothing was found. Try again.")).toBeInTheDocument()
-    expect(within(kpiCard('Last Analysis')).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(screen.getByTestId('last-analysis')).getByText('Unavailable')).toBeInTheDocument()
     expect(screen.queryByText('Never')).not.toBeInTheDocument()
     expect(screen.queryByText('Never analyzed')).not.toBeInTheDocument()
     svc.getAnalysisRuns.mockResolvedValue([run()])
@@ -235,7 +240,7 @@ describe('fetch failures are never 0, $0, Never or an endless skeleton', () => {
     expect(screen.getByRole('status')).not.toHaveAttribute('aria-busy')
     expect(screen.queryByText('Connect AWS')).not.toBeInTheDocument()
     expect(screen.queryByText('Connect AWS to check for savings')).not.toBeInTheDocument()
-    expect(within(kpiCard('Last Analysis')).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(screen.getByTestId('last-analysis')).getByText('Unavailable')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /run cost analysis/i })).toBeEnabled()
   })
 })
@@ -264,15 +269,13 @@ describe('the recommendations list fails to load', () => {
 })
 
 describe('zero values are muted, never green', () => {
-  it('$0/mo, $0/yr and 0 active use slate-500', async () => {
+  it('$0/mo and 0 open use slate-500', async () => {
     renderPage()
-    await waitFor(() => expect(within(kpiCard('Estimated Monthly Savings')).getByText('/mo')).toBeInTheDocument())
-    for (const label of ['Estimated Monthly Savings', 'Estimated Annual Savings']) {
-      const value = kpiCard(label).querySelector('.text-kpi') as HTMLElement
-      expect(value).toHaveClass('text-slate-500')
-      expect(value).not.toHaveClass('text-ink-success')
-    }
-    const active = kpiCard('Active Opportunities').querySelector('.text-kpi') as HTMLElement
+    await waitFor(() => expect(within(kpiCard('Estimated monthly savings')).getByText('/mo')).toBeInTheDocument())
+    const value = kpiCard('Estimated monthly savings').querySelector('.text-kpi') as HTMLElement
+    expect(value).toHaveClass('text-slate-500')
+    expect(value).not.toHaveClass('text-ink-success')
+    const active = kpiCard('Open opportunities').querySelector('.text-kpi') as HTMLElement
     expect(active).toHaveTextContent('0')
     expect(active).toHaveClass('text-slate-500')
   })
@@ -280,66 +283,77 @@ describe('zero values are muted, never green', () => {
   it('non-zero values keep their colours', async () => {
     svc.getStats.mockResolvedValue(stats({ activeRecommendations: 2, totalPotentialSavings: 40 }))
     renderPage()
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('2')).toBeInTheDocument())
-    expect(kpiCard('Estimated Monthly Savings').querySelector('.text-kpi')).toHaveClass('text-ink-success')
-    expect(kpiCard('Estimated Annual Savings').querySelector('.text-kpi')).toHaveClass('text-ink-success')
-    expect(kpiCard('Active Opportunities').querySelector('.text-kpi')).toHaveClass('text-slate-900')
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('2')).toBeInTheDocument())
+    expect(kpiCard('Estimated monthly savings').querySelector('.text-kpi')).toHaveClass('text-ink-success')
+    expect(kpiCard('Open opportunities').querySelector('.text-kpi')).toHaveClass('text-slate-900')
   })
 })
 
-describe('the toast after Run cost analysis', () => {
+describe('the Run cost analysis result: a banner in the top slot, from analyzeToast (founder ruling 7)', () => {
   async function scan(result: Record<string, unknown>) {
     svc.analyze.mockResolvedValue({ recommendationsFound: 0, totalPotentialSavings: 0, bySeverity: { high: 0, medium: 0, low: 0 }, timestamp: 't', ...result })
     renderPage()
     await settled()
     fireEvent.click(screen.getByRole('button', { name: /run cost analysis/i }))
   }
+  const resultText = async (text: string) => waitFor(() => expect(within(runBanner()).getByTestId('run-result-text')).toHaveTextContent(text))
+
+  it('never a toast for the run', async () => {
+    await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({}) })
+    await resultText('Analysis complete: nothing flagged.')
+    for (const fn of Object.values(toast)) expect(fn).not.toHaveBeenCalled()
+  })
 
   it('detected 2, persisted 0: never "0 found", and not green', async () => {
     svc.getHidden.mockResolvedValue(hiddenWith(1))
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 2, suppressedResolved: 1, suppressedDismissed: 1 }) })
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new. 1 resolved found again, 1 dismissed found again.'))
-    expect(toast.success).not.toHaveBeenCalled()
-    expect(JSON.stringify([toast.info.mock.calls, toast.success.mock.calls])).not.toMatch(/0 opportunit|\b0 found|\b0\b/)
+    await resultText('Analysis complete: nothing new. 1 resolved found again, 1 dismissed found again.')
+    expect(runBanner()).toHaveAttribute('data-tone', 'info')
+    expect(runBanner().textContent).not.toMatch(/0 opportunit|\b0 found|\b0\b/)
   })
 
-  it('partial: a warning with the approved text', async () => {
+  it('partial: amber, with the approved text', async () => {
     await scan({ runState: 'partial', unknownResourceCount: 0, counts: counts({}) })
-    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith("Some cost checks didn't complete, so these results may be incomplete."))
-    expect(toast.success).not.toHaveBeenCalled()
+    await resultText("Some cost checks didn't complete, so these results may be incomplete.")
+    expect(runBanner()).toHaveAttribute('data-tone', 'warning')
   })
 
-  it('clean: the only green toast', async () => {
+  it('clean: the only green result', async () => {
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({}) })
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Analysis complete: nothing flagged.'))
+    await resultText('Analysis complete: nothing flagged.')
+    expect(runBanner()).toHaveAttribute('data-tone', 'success')
   })
 
-  it('ruling 8: the run counted a resolved finding found again but /hidden (refetched) confirms none: the toast says nothing new, like the banner', async () => {
+  it('ruling 8: the run counted a resolved finding found again but /hidden (refetched) confirms none: the result says nothing new, like the banner', async () => {
     svc.getAnalysisRuns.mockResolvedValueOnce([run()]).mockResolvedValue([run({ detected_count: 1, suppressed_resolved_count: 1 })])
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 1, suppressedResolved: 1 }) })
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new.'))
-    expect(JSON.stringify(toast.info.mock.calls)).not.toMatch(/found again/)
+    await resultText('Analysis complete: nothing new.')
+    expect(runBanner().textContent).not.toMatch(/found again/)
+    fireEvent.click(within(runBanner()).getByRole('button', { name: 'Dismiss' }))
     expect(banner().textContent).not.toMatch(/found again/)
   })
 
-  it('ruling 8: the toast reads /hidden as refetched after the run, not the answer from before it', async () => {
+  it('ruling 8: the result reads /hidden as refetched after the run, not the answer from before it', async () => {
     svc.getHidden.mockResolvedValueOnce(hiddenWith(0)).mockResolvedValue(hiddenWith(2))
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 3, suppressedResolved: 3 }) })
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new. 2 resolved found again.'))
+    await resultText('Analysis complete: nothing new. 2 resolved found again.')
   })
 
-  it('ruling 8: /hidden fails on the refetch: the toast makes no "resolved found again" claim', async () => {
+  it('ruling 8: /hidden fails on the refetch: the result makes no "resolved found again" claim', async () => {
     svc.getHidden.mockResolvedValueOnce(hiddenWith(1)).mockRejectedValue(new Error('x'))
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 1, suppressedResolved: 1 }) })
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Analysis complete: nothing new.'))
+    await resultText('Analysis complete: nothing new.')
   })
 
-  it('the banner shows the new run when the toast does', async () => {
+  it('closing the result shows the latest analysis banner with the new run', async () => {
     svc.getAnalysisRuns.mockResolvedValueOnce([run()]).mockResolvedValue([PRODUCTION_HIDDEN])
     // /hidden, refetched with the runs after the scan, now has the resolved finding still detected.
     svc.getHidden.mockResolvedValueOnce(hiddenWith(0)).mockResolvedValue(hiddenWith(1))
     await scan({ runState: 'completed', unknownResourceCount: 0, counts: counts({ detected: 2, suppressedResolved: 2 }) })
-    await waitFor(() => expect(toast.info).toHaveBeenCalled())
+    await resultText('Analysis complete: nothing new. 1 resolved found again.')
+    expect(screen.queryByTestId('scan-status-banner')).not.toBeInTheDocument()
+    fireEvent.click(within(runBanner()).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByTestId('run-result-banner')).not.toBeInTheDocument()
     expect(banner()).toHaveAttribute('data-tone', 'info')
     expect(within(banner()).getByText('Analysis complete · 1 finding you resolved was found again.')).toBeInTheDocument()
   })

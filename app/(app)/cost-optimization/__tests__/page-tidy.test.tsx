@@ -1,8 +1,9 @@
 /**
- * Cost Optimization tidy (founder-approved mock, Nov 19): the top banner
- * (green / blue / amber / red, Review it, ×), the ~70/30 layout, the Still
- * detected group, the rail's closed disclosures, counts from data, the money
- * rule on the page, and the truth fix (one finding, one state).
+ * Cost Optimization tidy (founder-approved mock, Nov 19), as laid out by the
+ * light-lane layout (Nov 20): the top banner (green / blue / amber / red,
+ * Review it, ×), the 2fr/1fr row, the Still detected group, the How DevControl
+ * checks section's closed disclosures, counts from data, the money rule on the
+ * page, and the truth fix (one finding, one state).
  * Real page and real React Query, mocked services, placeholder data only.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -230,8 +231,9 @@ describe('top banner', () => {
     await loaded()
     fireEvent.click(within(banner()).getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByTestId('scan-status-banner')).not.toBeInTheDocument()
-    // The KPI cards and the rest of the page stay.
-    expect(screen.getByText('Last Analysis')).toBeInTheDocument()
+    // The summary cards, the header's last analysis line and the rest of the page stay.
+    expect(screen.getByTestId('last-analysis')).toBeInTheDocument()
+    expect(screen.getByText('Open opportunities')).toBeInTheDocument()
   })
 })
 
@@ -271,7 +273,7 @@ describe('Still detected group', () => {
     await loaded()
     expect(screen.getByRole('heading', { name: 'Still detected (1)' })).toBeInTheDocument()
     expect(screen.getByText("You marked this resolved, but the latest analysis found it again. It isn't counted in the totals above until you reopen it.")).toBeInTheDocument()
-    expect(within(kpiCard('Active Opportunities')).getByTestId('kpi-still-detected')).toHaveTextContent('+ 1 still detected (below)')
+    expect(within(kpiCard('Open opportunities')).getByTestId('kpi-still-detected')).toHaveTextContent('+ 1 still detected (below)')
   })
 
   it('several: every card, plural intro, count in heading and KPI note', async () => {
@@ -285,7 +287,7 @@ describe('Still detected group', () => {
     expect(screen.getByTestId('kpi-still-detected')).toHaveTextContent('+ 3 still detected (below)')
   })
 
-  it('alongside open findings: the opportunities first, then the group, then the review list; banner names both', async () => {
+  it('alongside open findings: the opportunities first, then the group, then the review list at the bottom; banner names both', async () => {
     svc.getAnalysisRuns.mockResolvedValue([run({ detected_count: 2, new_count: 1, persisted_count: 1, suppressed_resolved_count: 1 })])
     svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, totalPotentialSavings: 4, estimatedFindings: 1, bySeverity: { high: 0, medium: 0, low: 1 } }))
     svc.getAll.mockResolvedValue([rec('open', 4)])
@@ -293,10 +295,13 @@ describe('Still detected group', () => {
     renderPage()
     await loaded()
     const column = screen.getByTestId('findings-column')
-    const opportunities = within(column).getByText('1 active opportunity')
+    const opportunities = within(column).getByRole('heading', { name: 'Opportunities (1)' })
     const group = within(column).getByTestId('still-detected-slot')
     expect(opportunities.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(group.compareDocumentPosition(within(column).getByTestId('review-list')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Resolved and dismissed: its own collapsible at the bottom, after How DevControl checks (ruling 6 of the layout).
+    const reviewList = screen.getByTestId('review-list')
+    expect(column).not.toContainElement(reviewList)
+    expect(screen.getByTestId('checks-section').compareDocumentPosition(reviewList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(subline()).toHaveTextContent(/1 new opportunity found\. 1 finding you resolved was found again\.$/)
     expect(within(banner()).getByRole('button', { name: 'Review it' })).toBeInTheDocument()
   })
@@ -312,13 +317,13 @@ describe('Still detected group', () => {
   })
 })
 
-describe('the rail: what DevControl checks and coverage', () => {
+describe('How DevControl checks: what DevControl checks and coverage', () => {
   it('one line per active check, from the registry; the count note from data', async () => {
     renderPage()
     await loaded()
-    const rail = screen.getByTestId('checks-rail')
-    expect(within(rail).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Idle EC2 instances', 'Unattached EBS volumes', 'S3 lifecycle'])
-    expect(within(rail).getByTestId('checks-count-note')).toHaveTextContent('3 active checks today — not every possible AWS cost optimization.')
+    const checksCard = screen.getByTestId('checks-card')
+    expect(within(within(checksCard).getByTestId('check-names')).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Idle EC2 instances', 'Unattached EBS volumes', 'S3 lifecycle'])
+    expect(within(checksCard).getByTestId('checks-count-note')).toHaveTextContent('3 active checks today — not every possible AWS cost optimization.')
   })
 
   it('"How each check works" is closed by default and holds every description', async () => {
@@ -358,23 +363,28 @@ describe('the rail: what DevControl checks and coverage', () => {
     expect(screen.getByText('Planned / Coming soon (1)')).toBeInTheDocument()
   })
 
-  it('the rail is on the right of the findings column at desktop width (~70/30)', async () => {
+  it('the Summary is on the right of the findings column at desktop width (2fr / 1fr)', async () => {
     renderPage()
     await loaded()
     const grid = screen.getByTestId('findings-column').parentElement as HTMLElement
-    expect(grid.className).toMatch(/lg:grid-cols-\[minmax\(0,7fr\)_minmax\(0,3fr\)\]/)
-    expect(grid.children[1]).toBe(screen.getByTestId('checks-rail'))
+    expect(grid.className).toMatch(/lg:grid-cols-\[minmax\(0,2fr\)_minmax\(0,1fr\)\]/)
+    expect(grid.children[1]).toBe(screen.getByTestId('summary-column'))
   })
 })
 
-describe('severity: three compact rows', () => {
+describe('severity: three compact chips in the Open opportunities card', () => {
   it('High, Medium, Low with counts from /stats; "—" when stats failed', async () => {
     svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, totalPotentialSavings: 4, estimatedFindings: 1, bySeverity: { high: 2, medium: 1, low: 0 } }))
     svc.getAll.mockResolvedValue([rec('open', 4)])
-    renderPage()
+    const first = renderPage()
     await loaded()
-    const rows = within(screen.getByTestId('severity-rows')).getAllByRole('listitem')
-    expect(rows.map((r) => r.textContent)).toEqual(['High2', 'Medium1', 'Low0'])
+    const rows = within(within(kpiCard('Open opportunities')).getByTestId('severity-chips')).getAllByRole('listitem')
+    expect(rows.map((r) => r.textContent)).toEqual(['High 2', 'Medium 1', 'Low 0'])
+    first.unmount()
+    svc.getStats.mockRejectedValue(new Error('x'))
+    renderPage()
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('Unavailable')).toBeInTheDocument())
+    expect(within(screen.getByTestId('severity-chips')).getAllByRole('listitem').map((r) => r.textContent)).toEqual(['High —', 'Medium —', 'Low —'])
   })
 })
 
@@ -383,38 +393,109 @@ describe('money rule on the page', () => {
     svc.getStats.mockResolvedValue(stats({ activeRecommendations: estimatedFindings, totalPotentialSavings: total, estimatedFindings }))
     renderPage()
     await loaded()
-    return {
-      monthly: within(kpiCard('Estimated Monthly Savings')).getByText('/mo').parentElement as HTMLElement,
-      annual: within(kpiCard('Estimated Annual Savings')).getByText('/yr').parentElement as HTMLElement,
-    }
+    // The annual card was dropped by the light-lane layout (founder ruling 2): the monthly figure only.
+    return { monthly: within(kpiCard('Estimated monthly savings')).getByText('/mo').parentElement as HTMLElement }
   }
 
   it('0 with no estimates: "$0", muted', async () => {
-    const { monthly, annual } = await show(0, 0)
+    const { monthly } = await show(0, 0)
     expect(monthly).toHaveTextContent(/^\$0\/mo$/)
-    expect(annual).toHaveTextContent(/^\$0\/yr$/)
     expect(monthly.className).toMatch(/text-slate-500/)
+    expect(screen.queryByText(/\/yr/)).not.toBeInTheDocument()
   })
 
-  it('rounded-total edge: 0 with positive estimates behind it is "<$0.01/mo" and "<$0.06/yr" (ruling 4), never "$0"', async () => {
-    const { monthly, annual } = await show(0, 2)
+  it('rounded-total edge: 0 with positive estimates behind it is "<$0.01/mo" (ruling 4), never "$0"', async () => {
+    const { monthly } = await show(0, 2)
     expect(monthly).toHaveTextContent(/^<\$0\.01\/mo$/)
-    expect(annual).toHaveTextContent(/^<\$0\.06\/yr$/)
-    expect(annual).not.toHaveTextContent(/<\$0\.01/)
     expect(monthly.className).not.toMatch(/text-slate-500/)
-    expect(annual.className).not.toMatch(/text-slate-500/)
   })
 
-  it('exactly $0.01: "$0.01/mo", "$0.12/yr"', async () => {
-    const { monthly, annual } = await show(0.01, 1)
+  it('exactly $0.01: "$0.01/mo"', async () => {
+    const { monthly } = await show(0.01, 1)
     expect(monthly).toHaveTextContent(/^\$0\.01\/mo$/)
-    expect(annual).toHaveTextContent(/^\$0\.12\/yr$/)
   })
 
   it('$1 and above: whole dollars', async () => {
-    const { monthly, annual } = await show(12.34, 1)
+    const { monthly } = await show(12.34, 1)
     expect(monthly).toHaveTextContent(/^\$12\/mo$/)
-    expect(annual).toHaveTextContent(/^\$148\/yr$/)
+  })
+})
+
+// A "$0" that isn't part of "<$0.01" or "$0.xx".
+const BARE_ZERO = /(?<!<)\$0(?![.\d])/
+
+describe('upper bounds use the page\'s money rule (sub-cent "<$0.01", cents under $1, whole dollars from $1)', () => {
+  function ceilingRec(id: string, savings: number): CostRecommendation {
+    return { ...rec(id, savings), resourceType: 'S3', metadata: { savings_basis: 'ceiling: assumes all Standard storage qualifies for Standard-IA' } } as unknown as CostRecommendation
+  }
+  const summary = () => within(screen.getByTestId('summary-card')).getByTestId('summary-lines')
+
+  it('a ceiling of 0.004: "Up to <$0.01/mo" on the savings card, the Summary and the opportunity card, never "$0"', async () => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, potentialSavingsCeiling: 0.004, potentialSavingsCeilingByResourceType: { S3: 0.004 }, bySeverity: { high: 0, medium: 0, low: 1 } }))
+    svc.getAll.mockResolvedValue([ceilingRec('tiny', 0.004)])
+    renderPage()
+    await loaded()
+    const card = await screen.findByTestId('savings-upper-bound-only')
+    expect(card).toHaveTextContent(/^Up to <\$0\.01\/mo · upper bound only$/)
+    expect(within(summary()).getByText('No firm estimate yet. Up to <$0.01/mo is an upper bound only.')).toBeInTheDocument()
+    const savings = within(await screen.findByTestId('opportunity-card')).getByTestId('opportunity-savings')
+    expect(savings).toHaveTextContent(/^Up to <\$0\.01\/mo/)
+    for (const el of [card, summary(), savings]) expect(el.textContent).not.toMatch(BARE_ZERO)
+  })
+
+  it('a firm total with a 0.004 ceiling: the Summary keeps them apart, "Up to <$0.01/mo more", never "$0"', async () => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 2, totalPotentialSavings: 12.34, estimatedFindings: 1, potentialSavingsCeiling: 0.004, bySeverity: { high: 0, medium: 0, low: 2 } }))
+    svc.getAll.mockResolvedValue([rec('firm', 12.34), ceilingRec('tiny', 0.004)])
+    renderPage()
+    await loaded()
+    await waitFor(() => expect(within(summary()).getByText('$12/mo in firm estimates. Up to <$0.01/mo more is an upper bound only, not included.')).toBeInTheDocument())
+    expect(summary().textContent).not.toMatch(BARE_ZERO)
+  })
+
+  it.each([[0.5, '$0.50'], [12.4, '$12']])('a ceiling of %s: "Up to %s/mo"', async (ceiling, label) => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, potentialSavingsCeiling: ceiling, bySeverity: { high: 0, medium: 0, low: 1 } }))
+    svc.getAll.mockResolvedValue([ceilingRec('c', ceiling)])
+    renderPage()
+    await loaded()
+    expect(await screen.findByTestId('savings-upper-bound-only')).toHaveTextContent(`Up to ${label}/mo · upper bound only`)
+    expect(within(await screen.findByTestId('opportunity-card')).getByTestId('opportunity-savings')).toHaveTextContent(new RegExp(`^Up to \\${label}/mo`))
+  })
+})
+
+describe('Summary: the latest run\'s new count', () => {
+  const lines = async () => {
+    renderPage()
+    await loaded()
+    return within(within(screen.getByTestId('summary-card')).getByTestId('summary-lines')).getAllByRole('listitem').map((li) => li.textContent)
+  }
+
+  it('0 new: "Nothing new since the last analysis."', async () => {
+    expect(await lines()).toContain('Nothing new since the last analysis.')
+  })
+
+  it.each([[1, '1 new since the last analysis.'], [3, '3 new since the last analysis.']])('%s new: "%s"', async (count, text) => {
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', detected_count: count, new_count: count, persisted_count: count })])
+    expect(await lines()).toContain(text)
+  })
+
+  it('counts not recorded: no new-count line', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', new_count: null } as never)])
+    expect((await lines()).some((line) => /since the last analysis/.test(line ?? ''))).toBe(false)
+  })
+})
+
+describe('severity filter with no match', () => {
+  it.each([
+    ['High', 'LOW'], ['Medium', 'LOW'], ['Low', 'HIGH'],
+  ])('the %s chip on a list with only a %s finding: "No <chip>-severity opportunities in this list."', async (chip, severity) => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, totalPotentialSavings: 4, estimatedFindings: 1, bySeverity: { high: severity === 'HIGH' ? 1 : 0, medium: 0, low: severity === 'LOW' ? 1 : 0 } }))
+    svc.getAll.mockResolvedValue([{ ...rec('one', 4), severity }])
+    renderPage()
+    await loaded()
+    await screen.findByTestId('opportunity-card')
+    fireEvent.click(within(screen.getByTestId('severity-filter')).getByRole('button', { name: new RegExp(`^${chip}`) }))
+    expect(screen.getByTestId('filter-empty')).toHaveTextContent(new RegExp(`^No ${chip}-severity opportunities in this list\\.$`))
+    expect(screen.queryByTestId('opportunity-card')).not.toBeInTheDocument()
   })
 })
 
