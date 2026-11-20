@@ -7,7 +7,8 @@
  *   - Lead time for changes and time to restore are "not tracked", with the
  *     reason: the deployment records hold nothing to measure them from, and
  *     they are never estimated from deployment timestamps.
- *   - With nothing finished in the period there is no rate and no tier.
+ *   - With nothing finished in the period there is no rate, no frequency
+ *     (null, not 0) and no tier.
  *
  * The real service and repository against live Postgres.
  */
@@ -113,7 +114,7 @@ describe('DORAMetricsService.getComprehensiveMetrics', () => {
       tracked: true,
       value: 25, // 2 / (6 + 2)
       unit: 'percentage',
-      benchmark: 'high',
+      benchmark: 'low', // standard bands (config/dora-bands.ts): > 15% is low; it was 'high' under the old 15/30/45
       description: '2 failed out of 8 finished deployments',
     });
   });
@@ -140,11 +141,12 @@ describe('DORAMetricsService.getComprehensiveMetrics', () => {
     expect(metrics.changeFailureRate).toMatchObject({
       tracked: true, value: null, benchmark: null, description: 'No finished deployments in this period',
     });
-    expect(metrics.deploymentFrequency).toMatchObject({ tracked: true, value: 0, benchmark: null });
+    // D4-D7: null, not a measured-looking 0, when nothing finished.
+    expect(metrics.deploymentFrequency).toMatchObject({ tracked: true, value: null, benchmark: null });
     expect(metrics.period.days).toBe(7);
   });
 
-  it('reports no trend for any metric: none is computed from real data', async () => {
+  it('carries no per-metric trend property: the period comparison is the top-level previousPeriod / change', async () => {
     const org = await buildOrg();
     await insertDeployments(org, 'success', 2);
 

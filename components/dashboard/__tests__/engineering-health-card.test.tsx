@@ -33,7 +33,7 @@ vi.mock('@/lib/contexts/auth-context', () => ({
 const HOUR = 3_600_000
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
 
-function doraBody(successful: number, failed: number, perDay: number, rate: number | null) {
+function doraBody(successful: number, failed: number, perDay: number | null, rate: number | null) {
   return {
     success: true,
     data: {
@@ -152,7 +152,7 @@ describe('Engineering Health card', () => {
   })
 
   it('with no deployment in the organization at all: "No deployments recorded · Connect your CI", and no numbers', async () => {
-    dora = doraBody(0, 0, 0, null)
+    dora = doraBody(0, 0, null, null)
     stats = statsBody({ total: 0, success: 0, failed: 0, change_failure_rate: null, organization_has_deployments: false, last_deployment: null })
     renderCard()
 
@@ -162,8 +162,9 @@ describe('Engineering Health card', () => {
     expect(cardText()).not.toMatch(/\d/)
   })
 
-  it('a quiet window is not "no deployments": zero successes is shown as measured, the rate as a dash', async () => {
-    dora = doraBody(0, 0, 0, null)
+  it('a quiet window is not "no deployments": with nothing finished, frequency and rate are both dashes, never "0.0/day"', async () => {
+    // GET /api/metrics/dora answers deploymentFrequency.value null (not 0) when nothing finished (D4-D7).
+    dora = doraBody(0, 0, null, null)
     stats = statsBody({
       total: 0, success: 0, failed: 0, change_failure_rate: null, organization_has_deployments: true,
       last_deployment: { status: 'failed', deployed_at: iso(45 * 24 * HOUR) },
@@ -172,7 +173,9 @@ describe('Engineering Health card', () => {
 
     await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
     expect(screen.queryByTestId('engineering-health-empty')).not.toBeInTheDocument()
-    expect(within(cell('deploys-per-day')).getByText('0.0/day')).toBeInTheDocument()
+    expect(within(cell('deploys-per-day')).getByText('—')).toBeInTheDocument()
+    expect(cell('deploys-per-day')).not.toHaveTextContent('/day')
+    expect(cell('deploys-per-day')).toHaveTextContent('0 successful')
     expect(within(cell('change-failure-rate')).getByText('—')).toBeInTheDocument()
     expect(cell('change-failure-rate')).toHaveTextContent('No finished deployments in this window')
     expect(cell('change-failure-rate')).not.toHaveTextContent('%')

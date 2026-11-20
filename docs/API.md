@@ -12,6 +12,7 @@
 - [Infrastructure API](#infrastructure-api)
 - [Teams API](#teams-api)
 - [Platform Stats API](#platform-stats-api)
+- [DORA Metrics API](#dora-metrics-api)
 - [Error Handling](#error-handling)
 
 ---
@@ -497,6 +498,40 @@ GET /api/platform/stats
 - `costChange`: Percentage change vs. last month
 - `totalTeams`: Number of teams
 - `teamsChange`: Percentage change vs. last month
+
+---
+
+## DORA Metrics API
+
+### Get DORA Metrics
+
+```http
+GET /api/metrics/dora?date_range=30d
+```
+
+Requires the `doraMetrics` plan entitlement. Always scoped to the authenticated organization; an organization in the query string is ignored.
+
+**Query Parameters** (an invalid value is a `400` with a plain `error` message; database error text is never returned):
+- `date_range`: `7d` | `30d` | `90d` (default `30d`), called N below
+- `service_id`: a service UUID (absent = all services)
+- `team_id`: a team UUID (absent = all teams)
+- `environment`: `all` | `development` | `staging` | `production` (absent or `all` = all environments)
+
+**Windows.** One `now` is captured per request. Both windows are N × 24 h and half-open: current `[now − N×24h, now)`, previous `[now − 2N×24h, now − N×24h)`. A deployment is in at most one. "Finished" means status `success` or `failed`; `deploying` and unknown statuses never count.
+
+**Response Fields** (`data`; `0` never stands for "unavailable"):
+- `deploymentFrequency.value`: successful ÷ N, 2 dp. **Null when nothing finished** in the period. `benchmark` is null whenever `value` is null.
+- `changeFailureRate.value`: failed ÷ finished × 100, 2 dp. Null when nothing finished.
+- `deploymentFrequency.benchmark`, `changeFailureRate.benchmark`: `elite` | `high` | `medium` | `low`, from `bands` (or from the organization's custom target on Enterprise, `isCustomBenchmark: true`).
+- `leadTime`, `mttr`: `{ tracked: false, reason }`.
+- `deployments`: `{ successful, failed, finished }` for the current period.
+- `period`: `{ start, end, days, startAt, endAt }`. `start` / `end` are the first and last UTC dates the window touches; `startAt` (inclusive) and `endAt` (exclusive, = `now`) are ISO 8601.
+- `previousPeriod`: the same bounds for the previous window, plus `deployments`, `deploymentsPerDay` and `changeFailureRate` counted the same way (each rate null when the previous period has no finished deployment).
+- `change`: `{ finishedPercent, deploymentsPerDayPercent, changeFailureRatePercent }`, relative change in percent (1 dp). Each is null unless both periods have finished deployments and the previous value is above 0. For a percentage-point change of the failure rate, use the two raw rates.
+- `daily`: `[{ date, succeeded, failed, total, partial }]`, one entry for every UTC day (00:00–24:00 UTC) the current window touches, ascending and zero-filled: N + 1 days, the first and last `partial: true` (N whole days when `now` is exactly 00:00:00.000Z). The totals add up to `deployments.finished`.
+- `busiestDay`: `{ date, total, succeeded, failed, partial, tiedDays }` for the day with the most finished deployments; on a tie the most recent tied day, with `tiedDays` counting all of them. Null when nothing finished.
+- `filters`: `{ environment, serviceId, teamId }` as applied; null = all.
+- `bands`: DevControl's standard comparison bands, `{ version, description, deploymentFrequency, changeFailureRate }`, each metric with `unit`, `direction` and `levels: [{ level, lower, upper, label }]` (`lower` / `upper` = `{ value, inclusive }` or null for open). Deployment frequency: elite > 1/day, high ≥ 0.14/day, medium ≥ 0.03/day, low below. Change failure rate: elite ≤ 5%, high ≤ 10%, medium ≤ 15%, low > 15%. They are informed by the DORA 2023 performance clusters and are directional benchmarks, not official DORA cutoffs.
 
 ---
 

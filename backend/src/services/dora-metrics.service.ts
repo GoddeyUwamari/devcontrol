@@ -2,15 +2,34 @@ import { Pool } from 'pg';
 import {
   DORAMetricsRepository,
   DORAMetricsFilters,
+  DoraQueryScope,
+  DoraServiceCountRow,
 } from '../repositories/dora-metrics.repository';
 import { organizationHasEntitlement } from '../middleware/subscription.middleware';
+import { DORA_BANDS, DoraBands, gradeAgainstBands } from '../config/dora-bands';
+import { isStatsWindow, STATS_WINDOW_DAYS } from './deployment-status';
+import { normalizeDoraFilters, NormalizedDoraFilters } from './dora-filters';
+import {
+  buildDailySeries,
+  DoraBusiestDay,
+  DoraDailyEntry,
+  pickBusiestDay,
+  PeriodWindow,
+  relativeChangePercent,
+  rollingWindows,
+  windowDateRange,
+} from './dora-periods';
 
 export type BenchmarkLevel = 'elite' | 'high' | 'medium' | 'low';
 
 /** A metric the deployment records can support. */
 export interface TrackedDORAMetric {
   tracked: true;
-  /** Null when there is nothing in the window to measure it from. */
+  /**
+   * Null when nothing finished in the period (no success and no failed
+   * deployment): there is nothing to measure. Never 0 for "unavailable".
+   * A real 0 (deployments finished, none succeeded / none failed) stays 0.
+   */
   value: number | null;
   unit: string;
   /** Null whenever value is null: no tier without a measurement. */
@@ -33,22 +52,65 @@ export const LEAD_TIME_NOT_TRACKED_REASON =
 export const TIME_TO_RESTORE_NOT_TRACKED_REASON =
   'No incident or service-restoration records are collected; a failed deployment is not evidence of an outage.';
 
+export interface DoraDeploymentCounts {
+  successful: number;
+  failed: number;
+  /** successful + failed. 'deploying' and unknown statuses are in neither. */
+  finished: number;
+}
+
+export interface DoraPeriodBounds {
+  /** First UTC date the window touches (YYYY-MM-DD). */
+  start: string;
+  /** Last UTC date the window touches (YYYY-MM-DD). */
+  end: string;
+  /** N: 7, 30 or 90. */
+  days: number;
+  /** Inclusive lower bound, ISO 8601 UTC. */
+  startAt: string;
+  /** Exclusive upper bound, ISO 8601 UTC. For the current period this is the request's one captured `now`. */
+  endAt: string;
+}
+
+/** The previous period's raw figures, counted exactly like the current period's. */
+export interface DoraPreviousPeriod extends DoraPeriodBounds {
+  deployments: DoraDeploymentCounts;
+  /** successful ÷ days, 2 dp. Null when the previous period has no finished deployment. */
+  deploymentsPerDay: number | null;
+  /** failed ÷ finished × 100, 2 dp. Null when the previous period has no finished deployment. */
+  changeFailureRate: number | null;
+}
+
+/**
+ * Relative change, current vs previous, in percent (1 dp), computed from the
+ * unrounded figures. Each is null unless BOTH periods have finished
+ * deployments AND the previous value is above 0. Not percentage points: for
+ * a point change of the failure rate use the two raw rates.
+ */
+export interface DoraPeriodChange {
+  finishedPercent: number | null;
+  deploymentsPerDayPercent: number | null;
+  changeFailureRatePercent: number | null;
+}
+
 export interface ComprehensiveDORAMetrics {
   deploymentFrequency: TrackedDORAMetric;
   leadTime: UntrackedDORAMetric;
   changeFailureRate: TrackedDORAMetric;
   mttr: UntrackedDORAMetric;
   /** Finished deployments in the period, as recorded. */
-  deployments: {
-    successful: number;
-    failed: number;
-    finished: number;
-  };
-  period: {
-    start: string;
-    end: string;
-    days: number;
-  };
+  deployments: DoraDeploymentCounts;
+  period: DoraPeriodBounds;
+  previousPeriod: DoraPreviousPeriod;
+  change: DoraPeriodChange;
+  /** Current period, every UTC day it touches, ascending, zero-filled. */
+  daily: DoraDailyEntry[];
+  /** Null when nothing finished in the current period. */
+  busiestDay: DoraBusiestDay | null;
+  /** The filters every figure above was computed with. Null = all. */
+  filters: NormalizedDoraFilters;
+  /** The standard comparison bands the industry grades come from (config/dora-bands.ts). */
+  bands: DoraBands;
 }
 
 // Shape of a single row from custom_dora_benchmarks
@@ -66,9 +128,15 @@ interface CustomBenchmarkMap {
 }
 
 export class DORAMetricsService {
+  /**
+   * @param now The clock. Read exactly once per getComprehensiveMetrics call;
+   *            every bound of that request derives from that one value.
+   *            Injected in tests to freeze time.
+   */
   constructor(
     private repository: DORAMetricsRepository,
-    private pool?: Pool
+    private pool?: Pool,
+    private now: () => Date = () => new Date()
   ) {}
 
   // ─── Custom benchmark loader ────────────────────────────────────────────────
@@ -121,87 +189,121 @@ export class DORAMetricsService {
 
   /**
    * The DORA metrics the deployment records support -- deployment frequency
-   * and change failure rate -- with benchmarks. Lead time for changes and
-   * time to restore are reported as not tracked, with the reason; they are
-   * never estimated from deployment timestamps.
+   * and change failure rate -- with benchmarks, the previous period, the
+   * daily series and the busiest day. Lead time for changes and time to
+   * restore are reported as not tracked, with the reason; they are never
+   * estimated from deployment timestamps.
+   *
+   * One captured `now` per call. Current = [now − N×24h, now), previous =
+   * [now − 2N×24h, now − N×24h) (see dora-periods.ts). Current totals,
+   * previous totals and the daily series come from ONE grouped query, so they
+   * share bounds and filters by construction; the per-service breakdowns use
+   * the same bounds and the same filter builder.
    *
    * If filters.organizationId is set and a pool was injected, custom
-   * benchmarks from custom_dora_benchmarks take precedence over industry
-   * standards for any metric that has been configured.
+   * benchmarks from custom_dora_benchmarks take precedence over the standard
+   * bands for any metric that has been configured.
+   *
+   * Throws DoraFilterError for an invalid service / team / environment.
    */
   async getComprehensiveMetrics(
     filters: DORAMetricsFilters
   ): Promise<ComprehensiveDORAMetrics> {
-    const [
-      deploymentFrequency,
-      changeFailureRate,
-      period,
-      custom,
-    ] = await Promise.all([
-      this.repository.calculateDeploymentFrequency(filters),
-      this.repository.calculateChangeFailureRate(filters),
-      this.repository.getDateRangePeriod(filters.dateRange || '30d'),
+    if (!filters.organizationId) {
+      throw new Error('DORAMetricsService: an organization is required');
+    }
+    const normalized = normalizeDoraFilters(filters);
+    const scope: DoraQueryScope = { organizationId: filters.organizationId, ...normalized };
+    const days = STATS_WINDOW_DAYS[isStatsWindow(filters.dateRange) ? filters.dateRange : '30d'];
+
+    const now = this.now();
+    const { current, previous } = rollingWindows(now, days);
+
+    const [dayRows, serviceRows, custom] = await Promise.all([
+      this.repository.countFinishedByUtcDay(scope, {
+        previousStartAt: previous.startAt,
+        currentStartAt: current.startAt,
+        endAt: current.endAt,
+      }),
+      this.repository.countFinishedByService(scope, { startAt: current.startAt, endAt: current.endAt }),
       this.loadCustomBenchmarks(filters.organizationId),
     ]);
 
-    const successful = deploymentFrequency.totalDeployments;
-    const finished = changeFailureRate.totalDeployments;
-    const failed = changeFailureRate.failedDeployments;
+    const daily = buildDailySeries(current, dayRows.filter((row) => row.isCurrent));
+    const previousTotals = sumCounts(dayRows.filter((row) => !row.isCurrent));
+    const currentTotals = sumCounts(daily);
+    const { successful, failed, finished } = currentTotals;
     // With nothing finished in the period there is no measurement to grade.
     const measured = finished > 0;
+    const deploymentsPerDay = measured ? round2(successful / days) : null;
+    const failureRate = measured ? round2((failed / finished) * 100) : null;
 
     return {
       deploymentFrequency: {
         tracked: true,
-        value: deploymentFrequency.deploymentsPerDay,
+        value: deploymentsPerDay,
         unit: 'per day',
-        ...(measured
-          ? this.resolveDeploymentFrequency(
-              deploymentFrequency.deploymentsPerDay,
-              custom.deployment_frequency
-            )
+        ...(deploymentsPerDay !== null
+          ? this.resolveDeploymentFrequency(deploymentsPerDay, custom.deployment_frequency)
           : { benchmark: null, isCustomBenchmark: false }),
-        breakdown: deploymentFrequency.breakdown,
-        description: `${successful} successful deployments in ${period.days} days`,
+        breakdown: frequencyBreakdown(serviceRows, days),
+        description: `${successful} successful deployments in ${days} days`,
       },
       leadTime: { tracked: false, reason: LEAD_TIME_NOT_TRACKED_REASON },
       changeFailureRate: {
         tracked: true,
-        value: measured ? changeFailureRate.failureRate : null,
+        value: failureRate,
         unit: 'percentage',
-        ...(measured
-          ? this.resolveChangeFailureRate(
-              changeFailureRate.failureRate,
-              custom.change_failure_rate
-            )
+        ...(failureRate !== null
+          ? this.resolveChangeFailureRate(failureRate, custom.change_failure_rate)
           : { benchmark: null, isCustomBenchmark: false }),
-        breakdown: changeFailureRate.breakdown,
+        breakdown: failureRateBreakdown(serviceRows),
         description: measured
           ? `${failed} failed out of ${finished} finished deployments`
           : 'No finished deployments in this period',
       },
       mttr: { tracked: false, reason: TIME_TO_RESTORE_NOT_TRACKED_REASON },
-      deployments: { successful, failed, finished },
-      period,
+      deployments: currentTotals,
+      period: periodBounds(current),
+      previousPeriod: {
+        ...periodBounds(previous),
+        deployments: previousTotals,
+        deploymentsPerDay: previousTotals.finished > 0 ? round2(previousTotals.successful / days) : null,
+        changeFailureRate: previousTotals.finished > 0
+          ? round2((previousTotals.failed / previousTotals.finished) * 100)
+          : null,
+      },
+      change: periodChange(currentTotals, previousTotals),
+      daily,
+      busiestDay: pickBusiestDay(daily),
+      filters: normalized,
+      bands: DORA_BANDS,
     };
   }
 
   // ─── Benchmark resolvers ────────────────────────────────────────────────────
   //
-  // Public so other consumers (e.g. the weekly summary email) can label a raw
-  // measured value with the same industry-standard tier the dashboard shows,
-  // instead of re-deriving their own thresholds or leaving an LLM to invent a
-  // qualitative judgment ("healthy", "low") with no defensible basis.
+  // Used by getComprehensiveMetrics only (nothing else imports them; the
+  // weekly email grades nothing). Each returns { benchmark, isCustomBenchmark }
+  // and grades the value as reported (2 dp), so benchmark always matches
+  // `value` read against `bands`.
   //
-  // Each resolver returns { benchmark, isCustomBenchmark }.
-  // When a custom threshold is provided:
-  //   - For frequency metrics (higher = better):  elite ≥ t, high ≥ t×0.5, medium ≥ t×0.2
-  //   - For time/rate metrics (lower = better):   elite ≤ t, high ≤ t×2,   medium ≤ t×5
-  // When no custom threshold: industry-standard DORA 2024 thresholds are used.
+  // Without a custom target the standard comparison bands of
+  // config/dora-bands.ts grade the value (deployment frequency and change
+  // failure rate). They are informed by the DORA 2023 performance clusters and
+  // are not DORA's own thresholds.
+  //
+  // With a custom (Enterprise) target t, the multipliers are, per metric:
+  //   - deployment frequency (higher = better): elite ≥ t, high ≥ t×0.5, medium ≥ t×0.2
+  //     (note: ≥ t for elite, unlike the standard band's > 1)
+  //   - change failure rate (lower = better):   elite ≤ t, high ≤ t×2,   medium ≤ t×3
+  //   - lead time (lower = better, unused):     elite ≤ t, high ≤ t×2,   medium ≤ t×5
+  //   - time to restore (lower = better, unused): elite ≤ t, high ≤ t×3, medium ≤ t×10
+  //   - anything worse is low.
 
   /**
-   * Deployment Frequency — higher is better
-   * Industry: Elite >1/day, High ≥0.14/day (~1/week), Medium ≥0.03/day (~1/month)
+   * Deployment frequency (successful deployments per day) — higher is better.
+   * Standard: DORA_BANDS.deploymentFrequency (elite > 1, high ≥ 0.14, medium ≥ 0.03).
    */
   resolveDeploymentFrequency(
     deploymentsPerDay: number,
@@ -216,17 +318,17 @@ export class DORAMetricsService {
                                         'low';
       return { benchmark, isCustomBenchmark: true };
     }
-    const benchmark: BenchmarkLevel =
-      deploymentsPerDay > 1    ? 'elite'  :
-      deploymentsPerDay >= 0.14 ? 'high'   :
-      deploymentsPerDay >= 0.03 ? 'medium' :
-                                  'low';
-    return { benchmark, isCustomBenchmark: false };
+    return {
+      benchmark: gradeAgainstBands(DORA_BANDS.deploymentFrequency, deploymentsPerDay),
+      isCustomBenchmark: false,
+    };
   }
 
   /**
-   * Lead Time — lower is better (hours)
-   * Industry: Elite <24h, High ≤168h (1 week), Medium ≤720h (1 month)
+   * Lead Time — lower is better (hours). Not called: lead time is not
+   * tracked (D6). Its literal bands below are not DevControl's standard
+   * comparison bands and must move to config/dora-bands.ts before any use.
+   * Custom: elite ≤ t, high ≤ t×2, medium ≤ t×5.
    */
   resolveLeadTime(
     leadTimeHours: number,
@@ -250,8 +352,9 @@ export class DORAMetricsService {
   }
 
   /**
-   * Change Failure Rate — lower is better (percentage)
-   * Industry: Elite ≤15%, High ≤30%, Medium ≤45%
+   * Change failure rate (percent of finished) — lower is better.
+   * Standard: DORA_BANDS.changeFailureRate (elite ≤ 5, high ≤ 10, medium ≤ 15, low > 15).
+   * Custom: elite ≤ t, high ≤ t×2, medium ≤ t×3.
    */
   resolveChangeFailureRate(
     failureRate: number,
@@ -266,17 +369,17 @@ export class DORAMetricsService {
                                'low';
       return { benchmark, isCustomBenchmark: true };
     }
-    const benchmark: BenchmarkLevel =
-      failureRate <= 15 ? 'elite'  :
-      failureRate <= 30 ? 'high'   :
-      failureRate <= 45 ? 'medium' :
-                          'low';
-    return { benchmark, isCustomBenchmark: false };
+    return {
+      benchmark: gradeAgainstBands(DORA_BANDS.changeFailureRate, failureRate),
+      isCustomBenchmark: false,
+    };
   }
 
   /**
-   * MTTR — lower is better (minutes)
-   * Industry: Elite <60min, High <1440min (1 day), Medium ≤10080min (1 week)
+   * MTTR — lower is better (minutes). Not called: time to restore is not
+   * tracked (D7). Its literal bands below are not DevControl's standard
+   * comparison bands and must move to config/dora-bands.ts before any use.
+   * Custom: elite ≤ t, high ≤ t×3, medium ≤ t×10.
    */
   resolveMTTR(
     mttrMinutes: number,
@@ -298,4 +401,71 @@ export class DORAMetricsService {
                              'low';
     return { benchmark, isCustomBenchmark: false };
   }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function round2(value: number): number {
+  return parseFloat(value.toFixed(2));
+}
+
+function sumCounts(rows: ReadonlyArray<{ succeeded: number; failed: number }>): DoraDeploymentCounts {
+  let successful = 0;
+  let failed = 0;
+  for (const row of rows) {
+    successful += row.succeeded;
+    failed += row.failed;
+  }
+  return { successful, failed, finished: successful + failed };
+}
+
+function periodBounds(window: PeriodWindow): DoraPeriodBounds {
+  return {
+    ...windowDateRange(window),
+    days: window.days,
+    startAt: window.startAt.toISOString(),
+    endAt: window.endAt.toISOString(),
+  };
+}
+
+/**
+ * D4-D8: a relative change only when both periods have finished deployments
+ * and the previous value is above 0, from unrounded figures. Each metric's
+ * change is computed from its own two values; none is derived from another.
+ * Both periods are N days long, so deploys/day changes exactly as the
+ * successful count does.
+ */
+function periodChange(current: DoraDeploymentCounts, previous: DoraDeploymentCounts): DoraPeriodChange {
+  if (current.finished === 0 || previous.finished === 0) {
+    return { finishedPercent: null, deploymentsPerDayPercent: null, changeFailureRatePercent: null };
+  }
+  return {
+    finishedPercent: relativeChangePercent(current.finished, previous.finished),
+    deploymentsPerDayPercent: relativeChangePercent(current.successful, previous.successful),
+    changeFailureRatePercent: relativeChangePercent(
+      current.failed / current.finished,
+      previous.failed / previous.finished
+    ),
+  };
+}
+
+/** Successful deployments per day per service, services with a success only, most first. */
+function frequencyBreakdown(rows: readonly DoraServiceCountRow[], days: number): { [key: string]: number } {
+  const breakdown: { [key: string]: number } = {};
+  [...rows]
+    .filter((row) => row.succeeded > 0)
+    .sort((a, b) => b.succeeded - a.succeeded || a.serviceName.localeCompare(b.serviceName))
+    .forEach((row) => { breakdown[row.serviceName] = round2(row.succeeded / days); });
+  return breakdown;
+}
+
+/** Change failure rate per service (percent of its finished), highest first. */
+function failureRateBreakdown(rows: readonly DoraServiceCountRow[]): { [key: string]: number } {
+  const rated = rows
+    .filter((row) => row.succeeded + row.failed > 0)
+    .map((row) => ({ name: row.serviceName, rate: (row.failed / (row.succeeded + row.failed)) * 100 }))
+    .sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name));
+  const breakdown: { [key: string]: number } = {};
+  rated.forEach((row) => { breakdown[row.name] = round2(row.rate); });
+  return breakdown;
 }
