@@ -206,35 +206,52 @@ curl http://localhost:8080/api/deployments?environment=production&limit=10
 GET /api/deployments/:id
 ```
 
-### Create Deployment
+### Record a Deployment
 
 ```http
 POST /api/deployments
 ```
+
+Records a deployment **that has already happened**. DevControl does not deploy anything: this endpoint only stores the record, and the Deployments page, the deployment stats and the DORA metrics count it.
+
+**Who can call it:** a signed-in user (Bearer access token) whose current role in the organization is `owner`, `admin` or `member`. A `viewer` gets `403`. The organization is always the caller's own; any `organization_id` in the body is ignored. The plan's monthly limit of recorded deployments applies (`402` when it is reached).
 
 **Request Body:**
 ```json
 {
   "service_id": "550e8400-e29b-41d4-a716-446655440000",
   "environment": "production",
+  "status": "success",
   "aws_region": "us-east-1",
-  "status": "deploying",
-  "cost_estimate": 125.50,
-  "deployed_by": "john.doe@example.com",
-  "resources": {
-    "ec2": ["i-1234567890abcdef0"]
-  }
+  "version": "v2.4.1"
 }
 ```
 
-**Validation Rules:**
-- `service_id`: Required, valid UUID
-- `environment`: Required, must be: `development`, `staging`, or `production`
-- `aws_region`: Required, valid AWS region format (e.g., `us-east-1`)
-- `status`: Required, must be: `running`, `stopped`, `deploying`, or `failed`
-- `cost_estimate`: Optional, non-negative number
-- `deployed_by`: Required, valid email
-- `resources`: Optional, JSON object
+| Field | Required | Notes |
+|-------|----------|-------|
+| `service_id` | One of `service_id` / `service_name` | UUID of a service already registered in the caller's organization. |
+| `service_name` (or `serviceName`) | One of `service_id` / `service_name` | Name of a service already registered in the caller's organization (matched case-insensitively). Used only when `service_id` is absent. |
+| `environment` | Yes | `development`, `staging` or `production`. |
+| `status` | No | `success` or `failed`: how the deployment ended. Any other value is `400` (`Invalid status: use 'success' or 'failed'.`). |
+| `aws_region` (or `region`) | No | AWS region format, e.g. `us-east-1`. Defaults to `us-east-1`. |
+| `version` | No | Up to 100 characters; stored as `resources.version`. |
+| `resources` | No | JSON object. |
+| `cost_estimate` | No | Non-negative number. Absent or `0` is stored as not recorded (`null`). |
+
+**When `status` is omitted** the row is stored as `deploying`, as it was before `status` was accepted. Nothing ever completes such a row: it shows as "In progress" for two hours and then "No completion recorded", and it is not counted as succeeded or failed. To record an outcome, send `status`.
+
+**Set by the server, never by the caller:**
+- `deployed_by` is the signed-in user's email. A `deployed_by` in the body is accepted and ignored.
+- `deployed_at` is the time of the request. A `deployed_at` in the body is ignored: a deployment can't be back-dated or future-dated.
+- `metadata` is `{ "source": "manual" }`. A `metadata` object in the body is ignored. (Rows from the GitHub Actions webhook carry `"source": "github_actions"`.)
+
+**The service must already exist.** An unknown `service_id` or name, or a service of another organization, is `400` with `Choose an existing service.`; no service is created and nothing is recorded. With neither `service_id` nor a name: `400` `Choose a service.`
+
+**Responses:**
+- `201` `{ "success": true, "data": { …the stored row… }, "message": "Deployment recorded" }` (`"Deployment created successfully"` when `status` was omitted).
+- `400` `{ "success": false, "error": "<reason>" }` for the cases above or an invalid field.
+- `401` not signed in; `403` viewer; `402` plan limit reached.
+- `500` `{ "success": false, "error": "The deployment could not be recorded." }`.
 
 ### Delete Deployment
 
