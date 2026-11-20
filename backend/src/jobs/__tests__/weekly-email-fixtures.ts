@@ -21,6 +21,12 @@
  *      Nov 2 and Nov 3, so only 1 of the 3 earlier days is finished; 2 open
  *      findings with no estimate (S3 ceiling $18); no deployment ever
  *   E  no AWS account connected (the separate short layout, founder Q3)
+ *   F  as B (clean), but this week's 3 deployments are all 'deploying': none
+ *      finished, so never "none failed" and no rate; the clean state holds
+ *      (D3-D1); Visibility
+ *   G  as A, with 6 deployments: 3 success, 1 failed, 1 'deploying' and 1
+ *      with a legacy status ('running'): 4 finished, 2 without a result
+ *      (D3-D2); Optimization Engine (rate over the 4 finished)
  *
  * All evidence objects are built here directly (no database, no AWS), so the
  * facts, rules, snapshots and the preview script share them.
@@ -41,7 +47,7 @@ import {
 import { weeklyFacts, type WeeklyFacts } from '../../services/weekly-brief/facts';
 
 export const FIXTURE_NOW = new Date('2026-11-16T09:00:00.000Z');
-export const FIXTURE_IDS = ['A', 'B', 'C', 'D', 'E'] as const;
+export const FIXTURE_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
 export type FixtureId = (typeof FIXTURE_IDS)[number];
 
 export const FIXTURE_ORG_NAME = 'Example Org (synthetic)';
@@ -242,6 +248,25 @@ export const FIXTURES: Record<FixtureId, FixtureSpec> = {
       security: noData(src.security, 'not_connected', 'no AWS account is connected'),
       recommendations: noData(src.recommendations, 'not_connected', 'no AWS account is connected'),
       stillDetected: noData(src.still, 'not_connected', 'no AWS account is connected'),
+    }),
+  },
+  F: {
+    plan: 'Visibility',
+    evidence: () => connectedEvidence({
+      // Below the plan: no posture score (as C).
+      security: available<WeeklySecurityEvidence>(src.security, { accountLevelFindings: 0, resourceComplianceIssues: 0 }),
+      // 3 rows recorded, all 'deploying': the repository counts them in the total only.
+      delivery: available<WeeklyDORAMetrics>(src.delivery, { deploymentCount: 3, successfulDeployments: 0, failedDeployments: 0 }),
+    }),
+  },
+  G: {
+    plan: 'Optimization Engine',
+    evidence: () => connectedEvidence({
+      security: available<WeeklySecurityEvidence>(src.security, { score: 72, accountLevelFindings: 4, resourceComplianceIssues: 10 }),
+      recommendations: available(src.recommendations, { active: 3, estimatedMonthlySavings: 42, estimatedFindings: 2, ceilingByResourceType: { S3: 18 }, unestimatedFindings: 1 }),
+      stillDetected: available(src.still, ONE_STILL_DETECTED),
+      // 3 success + 1 failed + 1 'deploying' + 1 'running' (legacy): rate over the 4 finished.
+      delivery: available<WeeklyDORAMetrics>(src.delivery, { deploymentCount: 6, successfulDeployments: 3, failedDeployments: 1, deploymentFrequency: '0.43 per day', changeFailureRate: 25 }),
     }),
   },
 };

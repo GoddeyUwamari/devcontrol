@@ -1,6 +1,6 @@
 /**
  * The executive brief's rules R1-R9 (brief-build.md), one test (or table) per
- * rule, on the synthetic fixtures A-E and single-fact variants of them. Pure:
+ * rule, on the synthetic fixtures A-G and single-fact variants of them. Pure:
  * no database, AWS, model or clock.
  */
 import { Pool } from 'pg';
@@ -28,6 +28,7 @@ import { formatSavingsCurrency } from '../../../utils/formatSavingsCurrency';
 import { normalizeServiceName } from '../../aws-cost.service';
 import { WeeklyAISummaryJob } from '../../../jobs/weekly-ai-summary.job';
 import { WEEKLY_EMAIL_PATHS } from '../../../config/weekly-email-paths';
+import { changeFailureRate } from '../../deployment-status';
 import type {
   WeeklyConnectionHealth,
   WeeklyDORAMetrics,
@@ -681,10 +682,13 @@ describe('R8: delivery', () => {
     deliverySection(facts({ delivery: delivery(d), deploymentHistory: available(SOURCES.history, { anyRecorded }) }));
   it.each([
     ['all finished, on plan', { deploymentCount: 21, successfulDeployments: 20, failedDeployments: 1, changeFailureRate: 4.8 }, '21 deployments · 1 failed · 4.8% change failure rate'],
-    ['some unfinished, on plan', { deploymentCount: 5, successfulDeployments: 3, failedDeployments: 1, changeFailureRate: 25 }, '5 deployments · 1 failed · 25% change failure rate (of 4 finished)'],
-    ['none finished, on plan', { deploymentCount: 2, successfulDeployments: 0, failedDeployments: 0, changeFailureRate: null }, '2 deployments · 0 failed'],
+    ['some unfinished, on plan (D3: finished counts lead, the rest without a result)', { deploymentCount: 5, successfulDeployments: 3, failedDeployments: 1, changeFailureRate: 25 }, '4 finished deployments · 1 failed · 25% change failure rate · 1 without a result'],
+    ['none finished, on plan (D3: no failed count, no rate)', { deploymentCount: 2, successfulDeployments: 0, failedDeployments: 0, changeFailureRate: null }, 'No deployment finished this week · 2 recorded without a result'],
+    ['none finished, below the plan', { deploymentCount: 2, successfulDeployments: 0, failedDeployments: 0 }, 'No deployment finished this week · 2 recorded without a result'],
     ['below the plan: no rate, no upsell', { deploymentCount: 4, successfulDeployments: 3, failedDeployments: 1 }, '4 deployments · 1 failed'],
+    ['some unfinished, below the plan', { deploymentCount: 6, successfulDeployments: 3, failedDeployments: 1 }, '4 finished deployments · 1 failed · 2 without a result'],
     ['one deployment', { deploymentCount: 1, successfulDeployments: 1, failedDeployments: 0, changeFailureRate: 0 }, '1 deployment · 0 failed · 0% change failure rate'],
+    ['one finished, one without a result', { deploymentCount: 2, successfulDeployments: 1, failedDeployments: 0, changeFailureRate: 0 }, '1 finished deployment · 0 failed · 0% change failure rate · 1 without a result'],
   ] as Array<[string, WeeklyDORAMetrics, string]>)('%s', (_name, d, expected) => {
     expect(line(d).line).toBe(expected);
   });
@@ -693,6 +697,115 @@ describe('R8: delivery', () => {
     const none: WeeklyDORAMetrics = { deploymentCount: 0, successfulDeployments: 0, failedDeployments: 0 };
     expect(line(none)).toEqual({ line: 'No deployments recorded in DevControl this week.', link: { label: 'See deployments →', path: '/deployments' } });
     expect(line(none, false).link.label).toBe('Record a deployment on the Deployments page →');
+  });
+});
+
+// ── D3: deployments without a result (d3-build.md §1) ────────────────────────
+
+describe('D3: the email never reports unfinished deployments as finished or as "none failed"', () => {
+  const PRO = 'Optimization Engine';
+  const FREE = 'Visibility';
+  const FRONTEND = FIXTURE_URLS.frontendUrl;
+  /** What getWeeklyDeliveryOnPlan returns: the rate and frequency only on the plan. */
+  const rows = (total: number, success: number, failed: number, onPlan: boolean): WeeklyDORAMetrics =>
+    onPlan
+      ? { deploymentCount: total, successfulDeployments: success, failedDeployments: failed, deploymentFrequency: `${(success / 7).toFixed(2)} per day`, changeFailureRate: changeFailureRate(success, failed) }
+      : { deploymentCount: total, successfulDeployments: success, failedDeployments: failed };
+  const factsFor = (total: number, success: number, failed: number, onPlan: boolean, anyRecorded = true) =>
+    facts({ delivery: delivery(rows(total, success, failed, onPlan)), deploymentHistory: available(SOURCES.history, { anyRecorded }) });
+
+  // [state, total, success, failed, summary sentence, bold (an attention fact), Pro line, below-Pro line]
+  const STATES: Array<[string, number, number, number, string, boolean, string, string]> = [
+    ['A finished, none failed', 21, 21, 0, '21 deployments, none failed.', false,
+      '21 deployments · 0 failed · 0% change failure rate', '21 deployments · 0 failed'],
+    ['B finished, with failures', 4, 3, 1, '4 deployments, 1 failed.', true,
+      '4 deployments · 1 failed · 25% change failure rate', '4 deployments · 1 failed'],
+    ['C only deploying', 3, 0, 0, 'No deployment finished this week; 3 were recorded without a result.', false,
+      'No deployment finished this week · 3 recorded without a result', 'No deployment finished this week · 3 recorded without a result'],
+    ['C one deploying', 1, 0, 0, 'No deployment finished this week; 1 was recorded without a result.', false,
+      'No deployment finished this week · 1 recorded without a result', 'No deployment finished this week · 1 recorded without a result'],
+    ['D no rows', 0, 0, 0, 'No deployments recorded in DevControl this week.', false,
+      'No deployments recorded in DevControl this week.', 'No deployments recorded in DevControl this week.'],
+    ['E mixed, none failed', 6, 4, 0, '4 deployments finished, none failed; 2 more were recorded without a result.', false,
+      '4 finished deployments · 0 failed · 0% change failure rate · 2 without a result', '4 finished deployments · 0 failed · 2 without a result'],
+    ['E mixed, with failures', 6, 3, 1, '4 deployments finished, 1 failed; 2 more were recorded without a result.', true,
+      '4 finished deployments · 1 failed · 25% change failure rate · 2 without a result', '4 finished deployments · 1 failed · 2 without a result'],
+    ['E one of each', 2, 1, 0, '1 deployment finished, none failed; 1 more was recorded without a result.', false,
+      '1 finished deployment · 0 failed · 0% change failure rate · 1 without a result', '1 finished deployment · 0 failed · 1 without a result'],
+  ];
+
+  describe.each([[PRO, true], [FREE, false]] as const)('%s plan', (plan, onPlan) => {
+    it.each(STATES)('%s: summary sentence and Delivery line, HTML and plain text', (_state, total, success, failed, sentence, bold, proLine, freeLine) => {
+      const f = factsFor(total, success, failed, onPlan);
+      const line = onPlan ? proLine : freeLine;
+      const summary = summarySentence(f);
+      expect(bold ? summary.bold : summary.plain).toContain(sentence);
+      expect(bold ? summary.plain : summary.bold).not.toContain(sentence);
+      expect(deliverySection(f).line).toBe(line);
+
+      const { text, htmlText } = render(f, plan);
+      for (const body of [text, htmlText]) {
+        expect(body).toContain(sentence);
+        expect(body).toContain(line);
+      }
+      expect(text).toContain(`\nDELIVERY\n${line}\n`);
+    });
+  });
+
+  it.each([[PRO, true], [FREE, false]] as const)('%s: with nothing finished, no "none failed", no failed count and no rate anywhere in the email', (plan, onPlan) => {
+    for (const total of [1, 3]) {
+      const f = factsFor(total, 0, 0, onPlan);
+      const { text, htmlText } = render(f, plan);
+      for (const body of [text, htmlText]) {
+        expect(body).not.toMatch(/none failed|\b0 failed|change failure rate|\d+ deployments?, /);
+      }
+      expect(attentionItems(f).map(i => i.title)).toEqual([]);
+    }
+  });
+
+  it('rows without a result never change the finished counts: E reads as B with the extra rows named after them', () => {
+    expect(deliverySection(factsFor(4, 3, 1, true)).line).toBe('4 deployments · 1 failed · 25% change failure rate');
+    expect(deliverySection(factsFor(9, 3, 1, true)).line).toBe('4 finished deployments · 1 failed · 25% change failure rate · 5 without a result');
+    expect(attentionItems(factsFor(9, 3, 1, true)).map(i => i.title)).toEqual(['Delivery · 1 failed deployment']);
+  });
+
+  it('D3-D2: a status other than success, failed or deploying is "without a result", never a failure (repository counts it in the total only)', () => {
+    // 3 success + 1 failed + 1 'deploying' + 1 'running': the repository gives total 6, success 3, failed 1 (weekly-summary-dora.test.ts).
+    const f = factsFor(6, 3, 1, true);
+    expect(f.delivery).toMatchObject({ count: 6, finished: 4, failed: 1 });
+    expect(deliverySection(f).line).toBe('4 finished deployments · 1 failed · 25% change failure rate · 2 without a result');
+    expect(summarySentence(f).bold).toContain('4 deployments finished, 1 failed; 2 more were recorded without a result.');
+  });
+
+  it('D3-D1: rows without a result leave the clean state as it is, and the email still never says "none failed"', () => {
+    const f = factsFor(3, 0, 0, false);
+    expect(isClean(f)).toBe(true);
+    const summary = summarySentence(f);
+    expect(summary.bold).toBe(CLEAN_SENTENCE);
+    expect(summary.plain).toContain('No deployment finished this week; 3 were recorded without a result.');
+    const { text, htmlText } = render(f, FREE);
+    for (const body of [text, htmlText]) expect(body).not.toMatch(/none failed|\b0 failed/);
+    // A failure still breaks it.
+    expect(isClean(factsFor(4, 3, 1, false))).toBe(false);
+  });
+
+  it('D3-D3: the link goes to the Deployments page, /deployments, in every state', () => {
+    expect(WEEKLY_EMAIL_PATHS.deployments).toBe('/deployments');
+    for (const [, total, success, failed] of STATES) {
+      expect(deliverySection(factsFor(total, success, failed, true)).link).toEqual({ label: 'See deployments →', path: '/deployments' });
+    }
+    const never = factsFor(0, 0, 0, false, false);
+    expect(deliverySection(never).link).toEqual({ label: 'Record a deployment on the Deployments page →', path: '/deployments' });
+    const { text, html } = render(never, FREE);
+    expect(text).toContain(`Record a deployment on the Deployments page: ${FRONTEND}/deployments\n`);
+    expect(html).toContain(`<a href="${FRONTEND}/deployments" `);
+    expect(html).not.toContain('record=1');
+  });
+
+  it('the new fixtures F (only deploying, clean) and G (mixed with a legacy status) read as approved', () => {
+    expect(isClean(fixtureFacts('F'))).toBe(true);
+    expect(deliverySection(fixtureFacts('F')).line).toBe('No deployment finished this week · 3 recorded without a result');
+    expect(deliverySection(fixtureFacts('G')).line).toBe('4 finished deployments · 1 failed · 25% change failure rate · 2 without a result');
   });
 });
 
@@ -785,7 +898,7 @@ describe('header', () => {
 
 // ── Guards ported from weekly-email-truth.test.ts (brief review H-1, M-2) ─────
 //
-// Each runs over fixtures A-E and every VARIANTS entry, on the rendered HTML
+// Each runs over fixtures A-G and every VARIANTS entry, on the rendered HTML
 // and the plain-text part.
 
 describe('guards over every fixture and variant, HTML and text (brief review H-1)', () => {

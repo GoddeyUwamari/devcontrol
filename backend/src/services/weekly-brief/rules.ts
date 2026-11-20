@@ -17,7 +17,10 @@
  *   R6 savings figures use the Cost Optimization page's formatter;
  *   R7 the security tile leads with the open count;
  *   R8 delivery is one line; the rate only over finished deployments, and only
- *      on the plan that includes it;
+ *      on the plan that includes it. Only success and failed are finished;
+ *      every other row (deploying, or any other status) is "without a
+ *      result": never a failure, never in the finished counts, and never
+ *      reported as "none failed" (D3, d3-build.md §1);
  *   R9 the footer carries provenance, method and what is not tracked.
  */
 
@@ -164,7 +167,9 @@ const days = (n: number) => plural(n, 'day');
  * Board B: the connection is OK, no security finding is open, nothing is
  * open or still detected in Cost Optimization (after an analysis has
  * measured it), no deployment failed, and every source was read (founder Q4:
- * unknown is never 0).
+ * unknown is never 0). Rows without a result are not failures and leave the
+ * clean state as it is (D3-D1); the delivery sentence still says that nothing
+ * finished, never "none failed".
  */
 export function isClean(f: WeeklyFacts): boolean {
   return (
@@ -275,10 +280,28 @@ function connectionStatusSentence(f: WeeklyFacts): string | null {
   }
 }
 
-/** "21 deployments, none failed." / "21 deployments, 2 failed." / "No deployments recorded in DevControl this week." */
-function deliverySentence(count: number, failed: number): string {
-  if (count === 0) return NO_DEPLOYMENTS;
-  return `${plural(count, 'deployment')}, ${failed === 0 ? 'none' : failed} failed.`;
+/** The delivery facts when they were read. */
+type AvailableDelivery = Extract<WeeklyFacts['delivery'], { state: 'available' }>;
+
+/** Rows with no finished outcome: 'deploying' and any other status (D3-D2). */
+function withoutResult(d: AvailableDelivery): number {
+  return Math.max(0, d.count - d.finished);
+}
+
+/**
+ * The summary's delivery sentence (D3, d3-build.md §1.2):
+ *   all finished:  "21 deployments, none failed." / "4 deployments, 1 failed."
+ *   none finished: "No deployment finished this week; 3 were recorded without a result."
+ *   mixed:         "4 deployments finished, none failed; 2 more were recorded without a result."
+ *   no rows:       "No deployments recorded in DevControl this week."
+ */
+function deliverySentence(d: AvailableDelivery): string {
+  if (d.count === 0) return NO_DEPLOYMENTS;
+  const open = withoutResult(d);
+  if (d.finished === 0) return `No deployment finished this week; ${open} ${wasWere(open)} recorded without a result.`;
+  const failed = d.failed === 0 ? 'none' : String(d.failed);
+  if (open === 0) return `${plural(d.finished, 'deployment')}, ${failed} failed.`;
+  return `${plural(d.finished, 'deployment')} finished, ${failed} failed; ${open} more ${wasWere(open)} recorded without a result.`;
 }
 
 function spendSentence(c: CostFacts): string | null {
@@ -322,7 +345,7 @@ export function summarySentence(f: WeeklyFacts): { bold: string; plain: string }
     if (open > 0) bold.push(`${plural(open, 'cost opportunity', 'cost opportunities')} ${isAre(open)} open in Cost Optimization.`);
   }
   const failed = f.delivery.state === 'available' && f.delivery.failed > 0;
-  if (failed && f.delivery.state === 'available') bold.push(deliverySentence(f.delivery.count, f.delivery.failed));
+  if (failed && f.delivery.state === 'available') bold.push(deliverySentence(f.delivery));
   if (isClean(f)) bold.push(CLEAN_SENTENCE);
 
   const status = connectionStatusSentence(f);
@@ -333,7 +356,7 @@ export function summarySentence(f: WeeklyFacts): { bold: string; plain: string }
   }
   const spend = spendSentence(f.cost);
   if (spend) plain.push(spend);
-  if (!failed && f.delivery.state === 'available') plain.push(deliverySentence(f.delivery.count, f.delivery.failed));
+  if (!failed && f.delivery.state === 'available') plain.push(deliverySentence(f.delivery));
 
   return { bold: bold.join(' '), plain: plain.join(' ') };
 }
@@ -599,11 +622,16 @@ export function deliverySection(f: WeeklyFacts): BriefDeliverySection {
   const d = f.delivery;
   if (d.state !== 'available') return { line: 'Deployment data could not be retrieved for this period.', link: LINKS.deployments };
   if (d.count === 0) return { line: NO_DEPLOYMENTS, link: d.everRecorded === false ? LINKS.recordDeployment : LINKS.deployments };
-  let line = `${plural(d.count, 'deployment')} · ${d.failed} failed`;
+  const open = withoutResult(d);
+  // Nothing finished: no failed count and no rate (D3: never a measured zero).
+  if (d.finished === 0) return { line: `No deployment finished this week · ${open} recorded without a result`, link: LINKS.deployments };
+  // Rows without a result never enter the finished counts or the rate.
+  let line = open === 0
+    ? `${plural(d.finished, 'deployment')} · ${d.failed} failed`
+    : `${plural(d.finished, 'finished deployment')} · ${d.failed} failed`;
   // Below the DORA metrics plan the rate is left out of the data (founder Q9: no upsell).
-  if (typeof d.rate === 'number' && d.finished > 0) {
-    line += ` · ${d.rate}% change failure rate${d.finished !== d.count ? ` (of ${d.finished} finished)` : ''}`;
-  }
+  if (typeof d.rate === 'number') line += ` · ${d.rate}% change failure rate`;
+  if (open > 0) line += ` · ${open} without a result`;
   return { line, link: LINKS.deployments };
 }
 
