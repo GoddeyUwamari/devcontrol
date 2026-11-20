@@ -503,7 +503,7 @@ function DeploymentsContent() {
             const { label: statusLabel, color: statusColor, background: statusBg } = deploymentStatusDisplay(d.status, d.createdAt)
             const envColor    = d.environment === 'production' ? '#059669' : d.environment === 'staging' ? '#D97706' : '#64748B'
             const envBg       = d.environment === 'production' ? '#F0FDF4' : d.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
-            // A failure recorded by hand has no pipeline logs to open.
+            // A failure recorded by hand has no pipeline logs to open and nothing to roll back.
             const manualRecord = isManualRecord(d)
 
             return (
@@ -535,7 +535,7 @@ function DeploymentsContent() {
                       <div className="flex gap-1.5 shrink-0">
                         {/* No /logs or /rollback page exists: logs go to the deployment's detail page; rollback isn't built. */}
                         {!manualRecord && <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>}
-                        <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2 py-1 rounded cursor-not-allowed">Rollback · Coming soon</button>
+                        {!manualRecord && <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2 py-1 rounded cursor-not-allowed">Rollback · Coming soon</button>}
                       </div>
                     </div>
                   )}
@@ -573,7 +573,7 @@ function DeploymentsContent() {
                     </div>
                     <div className="flex gap-2 shrink-0">
                       {!manualRecord && <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>}
-                      <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2.5 py-1 rounded-lg cursor-not-allowed">Rollback · Coming soon</button>
+                      {!manualRecord && <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2.5 py-1 rounded-lg cursor-not-allowed">Rollback · Coming soon</button>}
                     </div>
                   </div>
                 )}

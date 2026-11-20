@@ -238,7 +238,7 @@ Records a deployment **that has already happened**. DevControl does not deploy a
 | `resources` | No | JSON object. |
 | `cost_estimate` | No | Non-negative number. Absent or `0` is stored as not recorded (`null`). |
 
-**When `status` is omitted** the row is stored as `deploying`, as it was before `status` was accepted. Nothing ever completes such a row: it shows as "In progress" for two hours and then "No completion recorded", and it is not counted as succeeded or failed. To record an outcome, send `status`.
+**When `status` is omitted** the row is stored as `deploying`, as it was before `status` was accepted. It is still recorded by the signed-in user (`deployed_by` = their email, not `platform-portal` or a body value) with `metadata.source = 'manual'`, like every row from this endpoint. Nothing ever completes such a row: it shows as "In progress" for two hours and then "No completion recorded", and it is not counted as succeeded or failed. To record an outcome, send `status`.
 
 **Set by the server, never by the caller:**
 - `deployed_by` is the signed-in user's email. A `deployed_by` in the body is accepted and ignored.

@@ -310,7 +310,7 @@ describe('entry points', () => {
 })
 
 describe('failed rows', () => {
-  it('recorded by hand: "Recorded by hand · no logs attached" and no logs link; a pipeline failure keeps its banner and links', async () => {
+  it('recorded by hand: "Recorded by hand · no logs attached", no logs link, no Rollback; a pipeline failure keeps its banner, links and Rollback', async () => {
     listRows = [
       deploymentRow('manual-fail', 'failed', { source: 'manual' }),
       deploymentRow('pipe-fail', 'failed', { source: 'github_actions', github_job_id: 1 }),
@@ -325,5 +325,11 @@ describe('failed rows', () => {
     expect(screen.getByRole('link', { name: 'Logs' })).toHaveAttribute('href', '/deployments/pipe-fail')
     expect(screen.getByText('Deployment failed · Check logs and consider rolling back to previous version')).toBeInTheDocument()
     expect(screen.getByText('Deployment failed · Check logs')).toBeInTheDocument()
+    // Rollback (disabled, "Coming soon"): only on the pipeline row, phone + desktop.
+    const rollbacks = screen.getAllByRole('button', { name: 'Rollback · Coming soon' })
+    expect(rollbacks).toHaveLength(2)
+    const manualBanners = screen.getAllByText('Recorded by hand · no logs attached').map(el => el.closest('div.bg-red-50')!)
+    for (const banner of manualBanners) expect(within(banner as HTMLElement).queryByRole('button', { name: /Rollback/ })).toBeNull()
+    for (const button of rollbacks) expect(button.closest('div.bg-red-50')).toHaveTextContent(/Deployment failed · Check logs/)
   })
 })
