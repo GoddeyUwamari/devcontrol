@@ -18,21 +18,22 @@ export interface DisplayMetric {
 export const isNotTracked = (metric: DisplayMetric) => metric.tracked === false
 
 /**
- * CSV export rows. An untracked metric is exported as "Not tracked" with its
- * reason and no value; a tracked one with nothing to measure has an empty
- * value. There is no trend column: no trend is computed.
+ * CSV export rows, named as on the Engineering Intelligence cards (D5-D11).
+ * A metric not measured yet is exported as "Planned" with the API's reason and
+ * no value; a tracked one with nothing to measure has an empty value. There is
+ * no trend column: no trend is computed.
  */
 export function doraCsvRows(
   metrics: Record<'deploymentFrequency' | 'leadTime' | 'changeFailureRate' | 'mttr', DisplayMetric>
 ): string[][] {
   const row = (label: string, metric: DisplayMetric) => isNotTracked(metric)
-    ? [label, 'Not tracked', '', '', metric.reason ?? '']
+    ? [label, 'Planned', '', '', metric.reason ?? '']
     : [label, metric.value == null ? '' : metric.value.toFixed(2), metric.unit ?? '', metric.benchmark ?? '', metric.description ?? '']
   return [
     ['Metric', 'Value', 'Unit', 'Benchmark', 'Note'],
-    row('Deployment Frequency', metrics.deploymentFrequency),
-    row('Lead Time for Changes', metrics.leadTime),
-    row('Change Failure Rate', metrics.changeFailureRate),
-    row('Mean Time to Recovery', metrics.mttr),
+    row('Deployment frequency', metrics.deploymentFrequency),
+    row('Merge-to-production time', metrics.leadTime),
+    row('Change failure rate', metrics.changeFailureRate),
+    row('Failed deployment recovery time', metrics.mttr),
   ]
 }

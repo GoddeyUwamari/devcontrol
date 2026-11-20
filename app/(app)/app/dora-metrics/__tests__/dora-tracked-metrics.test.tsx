@@ -1,18 +1,19 @@
 /**
  * DORA Metrics page in real mode: only what the deployment records support.
  *
- *   - Lead time for changes and time to restore are "Not tracked", with the
- *     reason from the API -- no value, tier or chart.
+ *   - Merge-to-production time and failed deployment recovery time are
+ *     "Planned" (the API reports them not tracked) -- no value or level.
  *   - Deployment frequency and change failure rate show their values and
- *     tiers, and the page's data state uses the real finished-deployment
- *     count (it used to be a hardcoded 0, so the page always read "Pipeline
- *     inactive" with N/A tiers).
- *   - No trend sparkline: no trend is computed from real data.
+ *     levels from the real finished-deployment count (it used to be a
+ *     hardcoded 0, so the page always read "Pipeline inactive").
+ *   - No trend sparkline and none of the old placeholder analysis.
+ * D5 rewrote the page (review-logs/deployments/d5-build.md); this file keeps
+ * the original guarantees against the new copy.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import DORAMetricsPage from '../page'
 
@@ -31,10 +32,17 @@ vi.mock('@/lib/services/dora-metrics.service', () => ({
 vi.mock('@/lib/services/services.service', () => ({ servicesService: { getAll: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/lib/services/teams.service', () => ({ teamsService: { getAll: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/lib/api', () => ({ default: { get: vi.fn().mockResolvedValue({ data: { success: true, data: [] } }) } }))
-// A sparkline would have to come from recharts: make any use visible.
+// Any sparkline or area chart would have to come from recharts: make any use visible.
 vi.mock('recharts', () => ({
   AreaChart: () => <div data-testid="sparkline" />,
   Area: () => null,
+  BarChart: () => <div data-testid="bar-chart" />,
+  Bar: () => null,
+  Cell: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+  CartesianGrid: () => null,
+  Tooltip: () => null,
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
@@ -47,7 +55,7 @@ function metrics(successful: number, failed: number) {
     success: true,
     data: {
       deploymentFrequency: {
-        tracked: true, value: successful / 30, unit: 'per day',
+        tracked: true, value: finished > 0 ? successful / 30 : null, unit: 'per day',
         benchmark: finished > 0 ? 'elite' : null, isCustomBenchmark: false,
         description: `${successful} successful deployments in 30 days`,
       },
@@ -80,41 +88,35 @@ describe('DORA Metrics page — real mode', () => {
     getDORAMetrics.mockReset()
   })
 
-  it('shows lead time and time to restore as "Not tracked" with the reason -- no value, tier or chart', async () => {
+  it('shows merge-to-production and recovery time as Planned -- no value or level', async () => {
     getDORAMetrics.mockResolvedValue(metrics(150, 50))
     renderPage()
 
-    const leadTime = await card('lead-time-for-changes')
-    expect(within(leadTime).getByText('Not tracked')).toBeInTheDocument()
-    expect(within(leadTime).getByText(LEAD_TIME_REASON)).toBeInTheDocument()
-    expect(leadTime).not.toHaveTextContent(/\d/)
-    expect(leadTime).not.toHaveTextContent(/elite|high|medium|low|hrs|N\/A/i)
-
-    const restore = await card('mean-time-to-recovery')
-    expect(within(restore).getByText('Not tracked')).toBeInTheDocument()
-    expect(within(restore).getByText(RESTORE_REASON)).toBeInTheDocument()
-    expect(restore).not.toHaveTextContent(/\d/)
-    expect(restore).not.toHaveTextContent(/elite|high|medium|low|min\b|N\/A/i)
+    for (const name of ['merge-to-production-time', 'failed-deployment-recovery-time']) {
+      const planned = await card(name)
+      expect(within(planned).getByText('Planned')).toBeInTheDocument()
+      expect(planned).not.toHaveTextContent(/\d/)
+      expect(planned).not.toHaveTextContent(/elite|\bhigh\b|medium|\blow\b|hrs|min\b|N\/A|Not tracked/i)
+    }
+    // The API's reasons are kept for the CSV export, not shown on the cards.
+    expect(document.body).not.toHaveTextContent(LEAD_TIME_REASON)
   })
 
-  it('uses the real finished-deployment count: tiers are shown and the page is not "inactive"', async () => {
+  it('uses the real finished-deployment count: levels are shown and the page is not "inactive"', async () => {
     getDORAMetrics.mockResolvedValue(metrics(150, 50))
     renderPage()
 
     const frequency = await card('deployment-frequency')
-    expect(within(frequency).getByText('5.0/day')).toBeInTheDocument()
+    expect(within(frequency).getByText('5.0 / day')).toBeInTheDocument()
     expect(within(frequency).getByText('Elite')).toBeInTheDocument()
-    expect(within(frequency).getByText('150 successful deployments in 30 days')).toBeInTheDocument()
+    expect(within(frequency).getByText('150 successful deploys in 30 days')).toBeInTheDocument()
 
     const failureRate = await card('change-failure-rate')
     expect(within(failureRate).getByText('25.0%')).toBeInTheDocument()
     expect(within(failureRate).getByText('High')).toBeInTheDocument()
-    expect(within(failureRate).getByText('50 failed out of 200 finished deployments')).toBeInTheDocument()
+    expect(within(failureRate).getByText('50 of 200 finished deploys failed')).toBeInTheDocument()
 
-    expect(screen.getByText(/Based on 200 finished deployments/)).toBeInTheDocument()
-    expect(screen.getByTestId('dora-real-summary')).toHaveTextContent('200 finished deployments in the last 30 days')
-    expect(screen.getByTestId('dora-real-summary')).toHaveTextContent('150 succeeded · 50 failed')
-    expect(document.body).not.toHaveTextContent(/pipeline inactive/i)
+    expect(document.body).not.toHaveTextContent(/pipeline inactive|No finished deployments recorded/i)
   })
 
   it('draws no trend sparkline and shows none of the placeholder analysis', async () => {
@@ -124,53 +126,51 @@ describe('DORA Metrics page — real mode', () => {
 
     expect(screen.queryByTestId('sparkline')).not.toBeInTheDocument()
     expect(document.body).not.toHaveTextContent(/stable|improving|declining|vs last period/i)
-    expect(document.body).not.toHaveTextContent(/Decision Intelligence|Engineering Score|Calculating|top 10%/i)
+    expect(document.body).not.toHaveTextContent(/Decision Intelligence|Engineering Score|Calculating|top 10%|percentile|Service Breakdown/i)
   })
 
-  it('with no finished deployments: an honest empty state -- dashes, no tiers, no zero that reads like data', async () => {
+  it('with no finished deployments: an honest empty state -- dashes, no levels, no zero that reads like data', async () => {
     getDORAMetrics.mockResolvedValue(metrics(0, 0))
     renderPage()
 
     const failureRate = await card('change-failure-rate')
     expect(within(failureRate).getByText('—')).toBeInTheDocument()
-    expect(within(failureRate).getByText('N/A')).toBeInTheDocument()
-    expect(failureRate).not.toHaveTextContent('0.0%')
+    expect(failureRate).not.toHaveTextContent(/0\.0%|N\/A|Elite|High/)
 
     const frequency = await card('deployment-frequency')
     expect(within(frequency).getByText('—')).toBeInTheDocument()
-    expect(within(frequency).getByText('N/A')).toBeInTheDocument()
-    expect(frequency).not.toHaveTextContent('0.0/day')
+    expect(frequency).not.toHaveTextContent(/0\.0|N\/A|Elite/)
+    expect(within(frequency).getByText('No finished deployments recorded in this period.')).toBeInTheDocument()
 
-    expect(within(await card('lead-time-for-changes')).getByText('Not tracked')).toBeInTheDocument()
-    expect(screen.getByText('No deployments recorded')).toBeInTheDocument()
-    expect(screen.getByText(/Connect your CI to record deployments/)).toBeInTheDocument()
-    expect(screen.getByText(/No deployments recorded in the selected period/)).toBeInTheDocument()
+    expect(within(await card('merge-to-production-time')).getByText('Planned')).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Connect your CI/i)
     // The old link sent "Connect CI/CD" to the AWS connection page.
     expect(document.querySelector('a[href="/connect-aws"]')).toBeNull()
   })
 
-  it('with fewer than 5 finished deployments: says the tier is indicative, using the real count', async () => {
+  it('with fewer than 5 finished deployments: says the level is indicative, using the real count', async () => {
     getDORAMetrics.mockResolvedValue(metrics(2, 1))
     renderPage()
 
-    await card('change-failure-rate')
-    expect(screen.getByText(/3 finished deployments in the selected period, fewer than 5/)).toBeInTheDocument()
-    expect(within(await card('change-failure-rate')).getByText(/tier is indicative only/)).toBeInTheDocument()
+    expect(within(await card('change-failure-rate')).getByText('1 of 3 finished deploys failed · fewer than 5 finished, so the level is indicative')).toBeInTheDocument()
+    expect(within(await card('deployment-frequency')).getByText(/2 successful deploys in 30 days · fewer than 5 finished/)).toBeInTheDocument()
   })
 
   it('does not claim inactivity while the metrics are loading or have failed', async () => {
     getDORAMetrics.mockRejectedValue(new Error('boom'))
     renderPage()
 
-    await waitFor(() => expect(screen.getByText(/Deployment data could not be loaded/)).toBeInTheDocument())
-    expect(document.body).not.toHaveTextContent(/No deployments recorded/)
-    expect(screen.queryByTestId('dora-card-lead-time-for-changes')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Failed to load metrics.', { exact: false })).toBeInTheDocument())
+    expect(document.body).not.toHaveTextContent(/No finished deployments|isn't connected/)
+    expect(screen.queryByTestId('dora-card-merge-to-production-time')).not.toBeInTheDocument()
   })
 
-  it('has no hardcoded deployment count or random data in real mode', () => {
-    const source = readFileSync(resolve(__dirname, '../page.tsx'), 'utf8')
-    expect(source).not.toMatch(/isDemoActive \? 847 : 0\b/)
-    expect(source.match(/Math\.random/g) ?? []).toHaveLength(1) // generateDemoTrendData only
-    expect(source).toMatch(/isDemoActive && metric\.value != null && \(/)
+  it('has no hardcoded deployment count or random data in the page or its components', () => {
+    const dir = resolve(__dirname, '..')
+    for (const file of ['page.tsx', ...readdirSync(resolve(dir, '_components')).map((f) => `_components/${f}`)]) {
+      const source = readFileSync(resolve(dir, file), 'utf8')
+      expect(source, file).not.toMatch(/\b847\b/)
+      expect(source, file).not.toMatch(/Math\.random/)
+    }
   })
 })

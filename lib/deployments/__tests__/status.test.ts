@@ -141,7 +141,7 @@ describe('deploymentSummaryText', () => {
 })
 
 describe('doraCsvRows', () => {
-  it('exports untracked metrics as "Not tracked" with the reason and no value, and has no trend column', () => {
+  it('exports metrics not measured yet as "Planned" with the reason and no value, named as on the cards, and has no trend column', () => {
     const rows = doraCsvRows({
       deploymentFrequency: { tracked: true, value: 0.2, unit: 'per day', benchmark: 'high', description: '6 successful deployments in 30 days' },
       leadTime: { tracked: false, reason: 'no change timestamp' },
@@ -150,10 +150,10 @@ describe('doraCsvRows', () => {
     })
 
     expect(rows[0]).toEqual(['Metric', 'Value', 'Unit', 'Benchmark', 'Note'])
-    expect(rows[1]).toEqual(['Deployment Frequency', '0.20', 'per day', 'high', '6 successful deployments in 30 days'])
-    expect(rows[2]).toEqual(['Lead Time for Changes', 'Not tracked', '', '', 'no change timestamp'])
-    expect(rows[3]).toEqual(['Change Failure Rate', '', 'percentage', '', 'No finished deployments in this period'])
-    expect(rows[4]).toEqual(['Mean Time to Recovery', 'Not tracked', '', '', 'no incident records'])
+    expect(rows[1]).toEqual(['Deployment frequency', '0.20', 'per day', 'high', '6 successful deployments in 30 days'])
+    expect(rows[2]).toEqual(['Merge-to-production time', 'Planned', '', '', 'no change timestamp'])
+    expect(rows[3]).toEqual(['Change failure rate', '', 'percentage', '', 'No finished deployments in this period'])
+    expect(rows[4]).toEqual(['Failed deployment recovery time', 'Planned', '', '', 'no incident records'])
   })
 })
 

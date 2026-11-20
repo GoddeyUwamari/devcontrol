@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
@@ -102,6 +102,8 @@ describe('DORA Metrics page — shared authenticated API client', () => {
   it('still reads the benchmark response envelope and saves/resets with the same payload', async () => {
     renderPage()
 
+    // D5: the editing moved into the "Set targets" dialog of the Your targets card.
+    fireEvent.click(await screen.findByRole('button', { name: 'Set targets →' }))
     // A custom benchmark row from `{ success, data: [...] }` enables "Reset to Default".
     const reset = await screen.findByRole('button', { name: /reset to default/i })
     fireEvent.click(reset)
@@ -123,8 +125,11 @@ describe('DORA Metrics page — shared authenticated API client', () => {
   })
 
   it('has no hardcoded API origin or raw fetch left in the page source', () => {
-    const source = readFileSync(resolve(__dirname, '../page.tsx'), 'utf8')
-    expect(source).not.toMatch(/localhost/)
-    expect(source).not.toMatch(/\bfetch\(/)
+    const dir = resolve(__dirname, '..')
+    for (const file of ['page.tsx', ...readdirSync(resolve(dir, '_components')).map((f) => `_components/${f}`)]) {
+      const source = readFileSync(resolve(dir, file), 'utf8')
+      expect(source, file).not.toMatch(/localhost/)
+      expect(source, file).not.toMatch(/\bfetch\(/)
+    }
   })
 })

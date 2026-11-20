@@ -1,86 +1,66 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { FileText, Download } from 'lucide-react';
 import { usePlan } from '@/lib/hooks/use-plan';
 import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements';
-import { PLAN_DISPLAY_NAME } from '@/lib/plan/plan-names';
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status';
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { TrendingUp, Activity, Clock, AlertTriangle, Timer, ArrowRight, Sparkles, FileText, Download } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import api from '@/lib/api';
 import { doraMetricsService, type DORAMetricsData } from '@/lib/services/dora-metrics.service';
-import { doraCsvRows, isNotTracked, type DisplayMetric } from '@/lib/deployments/dora-display';
+import { deploymentsService } from '@/lib/services/deployments.service';
+import { doraCsvRows } from '@/lib/deployments/dora-display';
 import { servicesService } from '@/lib/services/services.service';
 import { teamsService } from '@/lib/services/teams.service';
-import { DORAMetricsFilters, DateRangeOption, BenchmarkLevel, TrendDirection, Service, Team } from '@/lib/types';
+import type { DORAMetricsFilters, DateRangeOption, Service, Team } from '@/lib/types';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
+import {
+  COPY,
+  doraCsvFilename,
+  doraCsvText,
+  methodSourceSentence,
+  sourceLine,
+  whatChanged,
+  withoutResultCount,
+  withoutResultSentence,
+  type SourceInfo,
+} from './_lib/dora-page';
+import { DEMO_DORA_RESPONSE } from './_lib/demo-fixture';
+import { Filters, NoDataBanner, SourceLine } from './_components/HeaderParts';
+import { MetricCards, type TargetValues } from './_components/MetricCards';
+import { DailyChart } from './_components/DailyChart';
+import { WhatChanged } from './_components/WhatChanged';
+import { PerformanceLevels } from './_components/PerformanceLevels';
+import { LockedTargets, YourTargets, type CustomBenchmark } from './_components/YourTargets';
+import { DataAndMethod } from './_components/DataAndMethod';
 
-// Demo mode only: decorative sparkline. Real mode shows no trend, because
-// none is computed from real data.
-function generateDemoTrendData(baseValue: number, variance: number = 0.2) {
-  return Array.from({ length: 30 }, (_, i) => ({ day: i + 1, value: Math.max(0, baseValue + (Math.random() - 0.5) * variance * baseValue) }));
-}
-
-function exportToCSV(metrics: any, dateRange: string) {
-  const csv = doraCsvRows(metrics).map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+function exportToCSV(metrics: DORAMetricsData, dateRange: string, demo: boolean) {
+  const csv = doraCsvText(doraCsvRows(metrics), demo);
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = `dora-metrics-${dateRange}-${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url; a.download = doraCsvFilename(dateRange, new Date().toISOString().split('T')[0], demo); a.click(); URL.revokeObjectURL(url);
 }
 
 function exportToPDF() { window.print(); }
 
-const DEMO_DORA_METRICS = {
-  deploymentFrequency: { value: 4.2, unit: 'per day', benchmark: 'elite' as BenchmarkLevel, trend: 'improving' as TrendDirection, description: 'Deployments per day across all services', changeFromPrevious: +0.8 },
-  leadTime: { value: 1.8, unit: 'hours', benchmark: 'elite' as BenchmarkLevel, trend: 'improving' as TrendDirection, description: 'Time from commit to production deployment', changeFromPrevious: -0.6 },
-  changeFailureRate: { value: 1.2, unit: '%', benchmark: 'elite' as BenchmarkLevel, trend: 'improving' as TrendDirection, description: 'Percentage of deployments causing incidents', changeFromPrevious: -0.3 },
-  mttr: { value: 14, unit: 'minutes', benchmark: 'elite' as BenchmarkLevel, trend: 'improving' as TrendDirection, description: 'Mean time to restore service after incident', changeFromPrevious: -22 },
-};
-
-const DEMO_SERVICE_BREAKDOWN = [
-  { name: 'api-gateway',          env: 'production', deployFreq: '6.1/d', leadTime: '0.9h', cfr: '0.8%', mttr: '8m',  tier: 'elite' },
-  { name: 'auth-service',         env: 'production', deployFreq: '5.3/d', leadTime: '1.2h', cfr: '1.1%', mttr: '12m', tier: 'elite' },
-  { name: 'notification-service', env: 'production', deployFreq: '3.8/d', leadTime: '2.1h', cfr: '1.8%', mttr: '18m', tier: 'elite' },
-  { name: 'analytics-worker',     env: 'production', deployFreq: '2.4/d', leadTime: '3.4h', cfr: '2.2%', mttr: '24m', tier: 'high'  },
-  { name: 'data-pipeline',        env: 'production', deployFreq: '1.9/d', leadTime: '4.1h', cfr: '3.1%', mttr: '31m', tier: 'high'  },
-  { name: 'payment-processor',    env: 'production', deployFreq: '0.8/d', leadTime: '6.2h', cfr: '4.8%', mttr: '52m', tier: 'medium', attention: true },
-];
-
 const BENCHMARK_API = '/api/dora/benchmarks';
-interface CustomBenchmark { metric_name: string; target_value: number; target_unit: string; performance_label: string; }
+/** The newest rows of the deployment log: the latest finished one names the record source (ruling D5-D1). */
+const LATEST_ROWS = 25;
 
-const METRIC_CONFIGS = [
-  { metricKey: 'deployment_frequency', label: 'Deployment Frequency',   unit: 'per day',    unitLabel: 'deployments/day', higherBetter: true,  industryElite: 1,  placeholder: 'e.g. 2',  hint: 'Teams performing above this threshold are classified Elite.' },
-  { metricKey: 'lead_time',            label: 'Lead Time for Changes',  unit: 'hours',      unitLabel: 'hours',           higherBetter: false, industryElite: 24, placeholder: 'e.g. 4',  hint: 'Teams deploying changes faster than this threshold are classified Elite.' },
-  { metricKey: 'change_failure_rate',  label: 'Change Failure Rate',    unit: 'percentage', unitLabel: '%',               higherBetter: false, industryElite: 15, placeholder: 'e.g. 5',  hint: 'Teams with a failure rate below this threshold are classified Elite.' },
-  { metricKey: 'recovery_time',        label: 'Mean Time to Recovery',  unit: 'minutes',    unitLabel: 'minutes',         higherBetter: false, industryElite: 60, placeholder: 'e.g. 30', hint: 'Teams recovering faster than this threshold are classified Elite.' },
-] as const;
-
-const tierStyle = (tier: string) => {
-  if (tier === 'elite')  return { color: '#059669', bg: '#ECFDF5' }
-  if (tier === 'high')   return { color: '#2563EB', bg: '#EFF6FF' }
-  if (tier === 'medium') return { color: '#D97706', bg: '#FFFBEB' }
-  return { color: '#DC2626', bg: '#FEF2F2' }
-}
+const PAGE = 'px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6';
+const EXPORT_BUTTON = 'flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-ink-muted px-3.5 min-h-11 sm:min-h-9 rounded-lg text-label cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap';
 
 export default function DORAMetricsPage() {
   const [dateRange, setDateRange] = useState<DateRangeOption>('30d');
   const [selectedService, setSelectedService] = useState<string>('all');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
-  const [selectedEnvironment, setSelectedEnvironment] = useState<string>('all');
-  const [editingMetric, setEditingMetric] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState<string>('');
-  const [editLabel, setEditLabel] = useState<string>('Elite');
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // DORA metrics, and custom benchmarks (reads included), are each on their own
+  // DORA metrics, and custom targets (reads included), are each on their own
   // plan (PLAN_ENTITLEMENTS); neither is asked for below it.
   const plan = usePlan();
   const doraOnPlan = plan.hasEntitlement('doraMetrics');
@@ -89,22 +69,49 @@ export default function DORAMetricsPage() {
   const demoMode = useDemoMode();
   const salesDemoMode = useSalesDemo((state) => state.enabled);
   const isDemoActive = demoMode || salesDemoMode;
+  const live = doraOnPlan && !isDemoActive;
 
   const { data: services } = useQuery<Service[]>({ queryKey: ['services'], queryFn: () => servicesService.getAll() });
   const { data: teams } = useQuery<Team[]>({ queryKey: ['teams'], queryFn: teamsService.getAll });
-  const { data: metricsData, isLoading, error, refetch } = useQuery({ queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam, selectedEnvironment], queryFn: async () => { const filters: DORAMetricsFilters = { dateRange }; if (selectedService !== 'all') filters.serviceId = selectedService; if (selectedTeam !== 'all') filters.teamId = selectedTeam; if (selectedEnvironment !== 'all') filters.environment = selectedEnvironment; return doraMetricsService.getDORAMetrics(filters); }, enabled: doraOnPlan });
-  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({ queryKey: ['dora-benchmarks'], queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; }, enabled: isEnterprise });
-
-  const benchmarksMap: Record<string, CustomBenchmark> = (benchmarksData?.data || []).reduce((acc, b) => ({ ...acc, [b.metric_name]: b }), {});
+  // The one metrics query: every card, the chart, What changed and Performance levels read this response.
+  const { data: metricsData, isLoading, error, refetch } = useQuery({
+    queryKey: ['dora-metrics', dateRange, selectedService, selectedTeam],
+    queryFn: async () => {
+      const filters: DORAMetricsFilters = { dateRange };
+      if (selectedService !== 'all') filters.serviceId = selectedService;
+      if (selectedTeam !== 'all') filters.teamId = selectedTeam;
+      return doraMetricsService.getDORAMetrics(filters);
+    },
+    enabled: live,
+  });
+  // Workspace-wide facts the DORA response doesn't carry: whether any record exists, the last record's
+  // time, and rows recorded without a result (d5-build.md §1.2-A, G).
+  const { data: stats } = useQuery({
+    queryKey: ['dora-deployment-stats', dateRange],
+    queryFn: async () => (await deploymentsService.getStats({ dateRange })) ?? null,
+    enabled: live,
+  });
+  const { data: latestRows } = useQuery({
+    queryKey: ['dora-latest-records'],
+    queryFn: () => deploymentsService.getAll({ limit: LATEST_ROWS }),
+    enabled: live,
+  });
+  const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({
+    queryKey: ['dora-benchmarks'],
+    queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; },
+    enabled: isEnterprise && !isDemoActive,
+  });
+  const benchmarks = isDemoActive ? [] : (benchmarksData?.data ?? []);
 
   const saveBenchmark = useCallback(async (metricKey: string, value: string, label: string) => {
     setSaveError(null);
     const parsed = parseFloat(value);
-    if (isNaN(parsed) || parsed <= 0) { setSaveError('Please enter a valid positive number.'); return; }
+    if (isNaN(parsed) || parsed <= 0) { setSaveError('Please enter a valid positive number.'); return false; }
     try {
       await api.post(BENCHMARK_API, { metric_name: metricKey, target_value: parsed, performance_label: label || 'Elite' });
-      await refetchBenchmarks(); queryClient.invalidateQueries({ queryKey: ['dora-metrics'] }); setEditingMetric(null);
-    } catch { setSaveError('Failed to save. Please try again.'); }
+      await refetchBenchmarks(); queryClient.invalidateQueries({ queryKey: ['dora-metrics'] });
+      return true;
+    } catch { setSaveError('Failed to save. Please try again.'); return false; }
   }, [refetchBenchmarks, queryClient]);
 
   const resetBenchmark = useCallback(async (metricKey: string) => {
@@ -113,34 +120,32 @@ export default function DORAMetricsPage() {
     catch { setSaveError('Failed to reset. Please try again.'); }
   }, [refetchBenchmarks, queryClient]);
 
-  const realMetrics: DORAMetricsData | null = metricsData?.data ?? null;
-  const metrics = isDemoActive ? DEMO_DORA_METRICS : realMetrics;
-  // Real mode: the finished (succeeded + failed) deployments in the period,
-  // as the API counted them. Unknown until the metrics have loaded.
-  const totalDeployments = isDemoActive ? 847 : (realMetrics?.deployments.finished ?? 0);
-  const dataState: 'pending' | 'inactive' | 'insufficient' | 'active' =
-    isDemoActive ? 'active'
-    : !realMetrics ? 'pending'
-    : totalDeployments === 0 ? 'inactive'
-    : totalDeployments < 5 ? 'insufficient'
-    : 'active';
-  const dataStateLabel =
-    dataState === 'pending' ? (error ? 'Deployment data could not be loaded' : 'Loading deployment data…')
-    : dataState === 'inactive' ? 'No deployments recorded in the selected period'
-    : dataState === 'insufficient' ? `Insufficient data for benchmarking — ${totalDeployments} finished deployment${totalDeployments !== 1 ? 's' : ''} in the selected period, fewer than 5`
-    : `Based on ${totalDeployments} ${isDemoActive ? '' : 'finished '}deployments`;
-  const dataStateColor = dataState === 'pending' ? '#64748B' : dataState === 'inactive' ? '#DC2626' : dataState === 'insufficient' ? '#D97706' : '#059669';
-  const exportDisabled = !isDemoActive && dataState !== 'active' && dataState !== 'insufficient';
+  const data: DORAMetricsData | null = isDemoActive ? DEMO_DORA_RESPONSE : (metricsData?.data ?? null);
+  const finished = data?.deployments.finished ?? 0;
+  const loadFailed = !isDemoActive && !isLoading && (error != null || (metricsData != null && !metricsData.data));
+  const exportDisabled = !data || finished === 0;
+  const filtered = selectedService !== 'all' || selectedTeam !== 'all';
+
+  const source: SourceInfo = isDemoActive
+    ? { dot: 'solid', text: COPY.demoSource, kind: null }
+    : sourceLine(stats, latestRows);
+  const showBanner = !isDemoActive && data != null && finished === 0 && stats?.organization_has_deployments === false;
+  const withoutResult = data && !isDemoActive ? withoutResultCount(data, stats, filtered) : null;
+  const targets: TargetValues = {};
+  for (const b of benchmarks) {
+    if (b.metric_name === 'deployment_frequency') targets.deploymentFrequency = Number(b.target_value);
+    if (b.metric_name === 'change_failure_rate') targets.changeFailureRate = Number(b.target_value);
+  }
 
   if (!isDemoActive) {
     if (plan.status === 'loading') return <PlanLoadingState />;
     if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
     if (!doraOnPlan) {
       return (
-        <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
+        <div className={PAGE}>
           <div>
-            <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>Engineering Intelligence</h1>
-            <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-lg`}>DORA metrics and engineering performance, automatically measured from your deployment pipeline.</p>
+            <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>{COPY.title}</h1>
+            <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-xl`}>{COPY.subtitle}</p>
           </div>
           <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-10">
             <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="dora-plan-required" />
@@ -151,414 +156,99 @@ export default function DORAMetricsPage() {
   }
 
   return (
-    <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1400px] mx-auto flex flex-col gap-6">
+    <div className={PAGE}>
 
-      {/* Page header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>Engineering Intelligence</h1>
-          <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-lg`}>DORA metrics and engineering performance, automatically measured from your deployment pipeline.</p>
-          <div className="flex items-center gap-1.5 text-meta" style={{ color: dataStateColor }}>
-            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dataStateColor }} />
-            {dataStateLabel} · Last updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </div>
+      {/* Header: title, subtitle and source line; period, filters and exports on the right */}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <h1 className={PAGE_TITLE_CLASS}>{COPY.title}</h1>
+          <p className={`${PAGE_SUBTITLE_CLASS} mt-1.5 max-w-xl`}>{COPY.subtitle}</p>
+          <SourceLine source={source} />
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button disabled={exportDisabled} onClick={() => metrics && exportToCSV(metrics, dateRange)} className="flex items-center gap-1.5 bg-white border border-slate-200 text-ink-muted px-3.5 py-2 rounded-lg text-label font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
-            <FileText size={13} /> Export CSV
-          </button>
-          <button disabled={exportDisabled} onClick={exportToPDF} className="flex items-center gap-1.5 bg-white border border-slate-200 text-ink-muted px-3.5 py-2 rounded-lg text-label font-medium cursor-pointer hover:bg-slate-50 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
-            <Download size={13} /> Download PDF
-          </button>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap xl:flex-nowrap sm:items-center gap-2 xl:shrink-0" data-testid="dora-controls">
+          <Filters
+            dateRange={dateRange} onDateRange={setDateRange}
+            serviceId={selectedService} onService={setSelectedService}
+            teamId={selectedTeam} onTeam={setSelectedTeam}
+            services={services} teams={teams}
+          />
+          <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
+            <button type="button" disabled={exportDisabled} onClick={() => data && exportToCSV(data, dateRange, isDemoActive)} className={`${EXPORT_BUTTON} disabled:opacity-50 disabled:cursor-not-allowed`}>
+              <FileText size={13} aria-hidden="true" /> Export CSV
+            </button>
+            <button type="button" disabled={exportDisabled} onClick={exportToPDF} className={`${EXPORT_BUTTON} disabled:opacity-50 disabled:cursor-not-allowed`}>
+              <Download size={13} aria-hidden="true" /> Download PDF
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Filter bar */}
-      <div className="bg-white border border-slate-100 rounded-xl px-4 sm:px-5 py-3 overflow-x-auto">
-        <div className="flex items-center gap-3" style={{ minWidth: 'max-content' }}>
-          <span className="text-label text-ink-muted">Period</span>
-          <div className="flex bg-slate-50 border border-slate-100 rounded-lg p-0.5 gap-0.5">
-            {(['7d', '30d', '90d'] as const).map(r => (
-              <button key={r} onClick={() => setDateRange(r)} className={`px-3.5 py-1.5 rounded-md text-label font-medium border-none cursor-pointer transition-all ${dateRange === r ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted'}`}>{r}</button>
+      {showBanner && <NoDataBanner />}
+
+      {/* Loading */}
+      {!isDemoActive && isLoading && (
+        <div className="flex flex-col gap-4" data-testid="dora-loading" aria-busy="true">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`bg-white border border-slate-200 rounded-xl p-4 sm:p-5 ${i < 2 ? 'col-span-2 sm:col-span-1' : 'col-span-1'}`}>
+                <Skeleton className="h-3 w-28 mb-4" /><Skeleton className="h-8 w-24 mb-3" /><Skeleton className="h-3 w-full" />
+              </div>
             ))}
           </div>
-          <div className="w-px h-5 bg-slate-200" />
-          <span className="text-label text-ink-muted">Service</span>
-          <div style={{ width: '140px' }}>
-            <Select value={selectedService} onValueChange={setSelectedService}>
-              <SelectTrigger className="w-full h-8 text-label font-normal"><SelectValue placeholder="All Services" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Services</SelectItem>
-                {services?.map((s: Service) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-5 lg:col-span-2"><Skeleton className="h-4 w-48 mb-4" /><Skeleton className="h-[200px] w-full" /></div>
+            <div className="bg-white border border-slate-200 rounded-xl p-5"><Skeleton className="h-4 w-28 mb-4" /><Skeleton className="h-3 w-full mb-2" /><Skeleton className="h-3 w-3/4" /></div>
           </div>
-          <span className="text-label text-ink-muted">Team</span>
-          <div style={{ width: '120px' }}>
-            <Select value={selectedTeam} onValueChange={setSelectedTeam}>
-              <SelectTrigger className="w-full h-8 text-label font-normal"><SelectValue placeholder="All Teams" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Teams</SelectItem>
-                {teams?.map((t: Team) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
-
-      {/* Engineering Intelligence Strip */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          {!isDemoActive && realMetrics && dataState === 'active' ? (
-            <div className="flex items-center gap-4" data-testid="dora-real-summary">
-              <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
-                <Activity size={17} className="text-slate-500" />
-              </div>
-              <div>
-                <p className="text-ui font-semibold text-slate-900 mb-0.5">{totalDeployments} finished deployments in the last {realMetrics.period.days} days</p>
-                <p className="text-meta text-ink-muted">{realMetrics.deployments.successful} succeeded · {realMetrics.deployments.failed} failed · measured from the deployments your pipeline recorded</p>
-              </div>
-            </div>
-          ) : isDemoActive ? (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5 flex-wrap">
-              {/* Score ring */}
-              <div className="flex items-center gap-3">
-                <div className="relative w-12 h-12 shrink-0">
-                  <svg width="54" height="54" viewBox="0 0 54 54">
-                    <circle cx="27" cy="27" r="23" fill="none" stroke="#F1F5F9" strokeWidth="5"/>
-                    <circle cx="27" cy="27" r="23" fill="none" stroke={isDemoActive ? '#059669' : '#D97706'} strokeWidth="5" strokeDasharray="144.5" strokeDashoffset={isDemoActive ? 12 : 58} strokeLinecap="round" transform="rotate(-90 27 27)"/>
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-label" style={{ color: isDemoActive ? '#059669' : '#D97706' }}>{isDemoActive ? '92nd' : 'N/A'}</span>
-                </div>
-                <div>
-                  <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Engineering Score</p>
-                  <p className="text-ui font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Elite Tier — Top 8%' : 'Calculating...'}</p>
-                  <p className="text-meta text-ink-muted">{isDemoActive ? '92nd percentile vs SaaS teams · 33,000+ data points' : `${totalDeployments} deployments · ${dateRange} window`}</p>
-                </div>
-              </div>
-              <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
-              <div>
-                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1.5">Performance Drivers</p>
-                <div className="flex flex-col gap-0.5">
-                  {isDemoActive ? (<>
-                    <p className="text-meta text-ink-success font-semibold">● Change Failure Rate 1.2% — top 5% globally</p>
-                    <p className="text-meta text-ink-success font-medium">● Lead time improved 18% this quarter</p>
-                    <p className="text-meta text-ink-warning font-medium">● Payment Processor constraining deploy frequency</p>
-                  </>) : (<>
-                    <p className="text-meta text-ink-muted font-medium">● Benchmarking active for this period</p>
-                  </>)}
-                </div>
-              </div>
-              <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
-              <div>
-                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Business Impact</p>
-                <p className="text-meta font-semibold text-slate-900 mb-0.5">{isDemoActive ? 'Delivery velocity at Elite — feature release cadence strong' : 'Impact analysis requires more deployment data'}</p>
-                <p className="text-meta font-semibold text-ink-success">{isDemoActive ? `Operational risk: LOW · high confidence, based on 847 deployments` : 'Connect deployment pipeline to enable impact analysis'}</p>
-              </div>
-              <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0" />
-              <div>
-                <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">To Stay Elite</p>
-                <p className="text-meta font-semibold text-ink-warning mb-0.5">{isDemoActive ? '1 service lagging' : 'Insufficient baseline'}</p>
-                <p className="text-meta text-ink-muted">{isDemoActive ? 'Maintain ≥3.5 deploys/day · <5% failure rate' : '+1.6 deploys/day required to reach top 10%'}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              </div>
-              <div>
-                <p className="text-ui font-semibold text-slate-900 mb-0.5">{dataState === 'pending' ? (error ? 'Deployment data unavailable' : 'Loading deployment data') : dataState === 'inactive' ? 'No deployments recorded' : 'Insufficient Data for Benchmarking'}</p>
-                <p className="text-meta text-ink-muted">{dataState === 'pending' ? (error ? 'The metrics could not be loaded.' : 'Fetching the deployments recorded for this period.') : dataState === 'inactive' ? 'No finished deployments were recorded in the selected period. Connect your CI to record deployments.' : `Only ${totalDeployments} finished deployment${totalDeployments !== 1 ? 's' : ''} recorded — minimum 5 required.`}</p>
-              </div>
-            </div>
-          )}
-          {/* No link in the empty states: /connect-aws connects an AWS account, not a CI pipeline. */}
-          {!isDemoActive && dataState !== 'active'
-            ? null
-            : <a href="/ai-reports" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap shrink-0 self-start lg:self-auto">Full report <ArrowRight size={10} /></a>
-          }
-        </div>
-      </div>
-
-      {/* Decision Intelligence — demo only: there is no real-mode analysis behind it */}
-      {isDemoActive && (
-        <div className="bg-white rounded-xl border border-slate-100 px-4 sm:px-5 py-4 flex items-start gap-3.5">
-          <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0"><Sparkles size={12} className="text-white" /></div>
-          <div className="flex-1">
-            <p className="text-label text-violet-600 uppercase tracking-[0.04em] mb-1">Decision Intelligence</p>
-            <p className="text-ui text-slate-700 leading-relaxed">
-              {isDemoActive ? (<>Team performing at <strong className="text-ink-success">Elite tier</strong> across 3 of 4 DORA metrics — 92nd percentile vs SaaS teams. Primary constraint: <strong className="text-ink-danger">Payment Processor</strong> — 0.8 deploys/day vs team average 3.8/day.<span className="block mt-1 text-meta text-ink-muted">Contributing factors: low deployment throughput · high lead time (6.2h) · likely CI queue time or manual approval gating.</span><span className="block mt-1 text-meta text-ink-muted font-semibold">Recommended: investigate CI queue time and remove manual approval gates in Payment Processor pipeline.</span></>) : (<>{totalDeployments} deployments analyzed in the selected period. Connect more services to your deployment pipeline to enable full cross-metric synthesis and gap analysis.<span className="block mt-1 text-meta text-ink-muted">Cross-metric synthesis and causal analysis available with more deployment data.</span></>)}
-            </p>
-          </div>
-          {isDemoActive && <a href="/deployments" className="text-label text-ink-danger no-underline shrink-0 flex items-center gap-1 whitespace-nowrap">Resolve bottleneck <ArrowRight size={10} /></a>}
         </div>
       )}
 
-      {/* Performance Positioning */}
-      {(isDemoActive || dataState === 'active') && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
-            <div>
-              <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Performance Positioning</p>
-              <p className="text-meta text-ink-muted">Where you stand vs. industry · 2024 DORA State of DevOps Report · 33,000+ professionals</p>
-            </div>
-            {isDemoActive && (
-              <div className="text-right shrink-0">
-                <span className="text-label text-ink-success bg-green-50 px-2.5 py-1 rounded-full">92nd Percentile</span>
-                <p className="text-meta text-ink-muted mt-1">8 pts below top decile · +1.6 deploys/day to reach top 10%</p>
-              </div>
+      {/* Error */}
+      {loadFailed && (
+        <div className="bg-white border border-red-200 rounded-xl p-5 sm:p-6" role="alert" data-testid="dora-error">
+          <p className="text-ui text-ink-danger">
+            {COPY.loadError}{' '}
+            <button type="button" onClick={() => refetch()} className="text-ink-accent ml-1 bg-transparent border-none cursor-pointer font-semibold text-ui min-h-11 sm:min-h-0">Retry →</button>
+          </p>
+        </div>
+      )}
+
+      {data && (
+        <>
+          <MetricCards data={data} targets={targets} />
+
+          <div className="grid lg:grid-cols-3 gap-4">
+            {data.daily && (
+              <DailyChart daily={data.daily} days={data.period.days} showFullReport={isDemoActive || finished >= 5} />
             )}
+            <WhatChanged
+              items={whatChanged(data)}
+              emptyText={withoutResult != null ? withoutResultSentence(withoutResult) : COPY.whatChangedEmpty}
+            />
           </div>
-          {isDemoActive && (
-            <div className="mb-5">
-              <div className="flex justify-between mb-1.5">
-                {['Low', 'Medium', 'High', 'Elite'].map((l, i) => <span key={l} className={`text-meta ${i === 0 ? 'text-ink-danger' : i === 1 ? 'text-ink-warning' : i === 2 ? 'text-ink-info' : 'text-ink-success'}`}>{l}</span>)}
-              </div>
-              <div className="h-2 bg-slate-100 rounded-full relative">
-                <div className="absolute left-0 top-0 w-[15%] h-full bg-red-100 rounded-l-full" />
-                <div className="absolute left-[15%] top-0 w-[25%] h-full bg-amber-100" />
-                <div className="absolute left-[40%] top-0 w-[30%] h-full bg-blue-100" />
-                <div className="absolute left-[70%] top-0 w-[30%] h-full bg-green-100 rounded-r-full" />
-                <div className="absolute w-4 h-4 bg-green-600 border-[3px] border-white rounded-full shadow-md" style={{ left: '91%', top: '50%', transform: 'translate(-50%,-50%)' }} />
-              </div>
-              <p className="text-label text-ink-success mt-2 text-right pr-[4%]">← You are here (92nd percentile)</p>
-            </div>
+        </>
+      )}
+
+      {(data || loadFailed) && (
+        <div className="grid lg:grid-cols-3 gap-4">
+          {data && <PerformanceLevels data={data} hasTarget={targets.deploymentFrequency !== undefined || targets.changeFailureRate !== undefined || data.deploymentFrequency.isCustomBenchmark || data.changeFailureRate.isCustomBenchmark} />}
+          {isEnterprise ? (
+            <YourTargets
+              benchmarks={benchmarks}
+              bands={data?.bands}
+              readOnly={isDemoActive}
+              saveError={saveError}
+              onSave={saveBenchmark}
+              onReset={resetBenchmark}
+              onClearError={() => setSaveError(null)}
+            />
+          ) : (
+            <LockedTargets />
           )}
-          {/* Benchmark table */}
-          <div className="border border-slate-100 rounded-xl overflow-hidden">
-            <div className="grid bg-slate-50" style={{ gridTemplateColumns: '110px 1fr 1fr 1fr 1fr' }}>
-              {['Tier', 'Deploy Freq', 'Lead Time', 'Failure Rate', 'MTTR'].map(h => (
-                <div key={h} className="px-3 py-2.5 text-label text-ink-muted uppercase tracking-[0.04em]">{h}</div>
-              ))}
-            </div>
-            {[
-              { tier: 'Elite', ts: tierStyle('elite'), df: isDemoActive ? '4.2/day' : '>1/day', lt: isDemoActive ? '1.8 hrs' : '<1 hour', cfr: isDemoActive ? '1.2%' : '<5%', mttr: isDemoActive ? '14 min' : '<1 hour', isYou: isDemoActive },
-              { tier: 'High',   ts: tierStyle('high'),   df: '>1/week',  lt: '<1 week',  cfr: '<10%', mttr: '<1 day',  isYou: false },
-              { tier: 'Medium', ts: tierStyle('medium'), df: '>1/month', lt: '<1 month', cfr: '<15%', mttr: '<1 week', isYou: false },
-              { tier: 'Low',    ts: tierStyle('low'),    df: '<1/month', lt: '>1 month', cfr: '>15%', mttr: '>1 week', isYou: false },
-            ].map(row => (
-              <div key={row.tier} className={`grid border-t border-slate-100 ${row.isYou ? 'bg-green-50' : 'bg-white'}`} style={{ gridTemplateColumns: '110px 1fr 1fr 1fr 1fr' }}>
-                <div className="px-3 py-2.5 flex items-center gap-1.5">
-                  {row.isYou && <span className="w-1.5 h-1.5 rounded-full bg-violet-600 shrink-0" />}
-                  <span className="text-label px-2 py-0.5 rounded-full" style={{ background: row.ts.bg, color: row.ts.color }}>{row.tier}{row.isYou ? ' ← You' : ''}</span>
-                </div>
-                {[row.df, row.lt, row.cfr, row.mttr].map((val, i) => (
-                  <div key={i} className={`px-3 py-2.5 text-xs ${row.isYou ? 'font-semibold' : 'font-normal text-ink-muted'}`} style={row.isYou ? { color: row.ts.color } : undefined}>{val}</div>
-                ))}
-              </div>
-            ))}
-          </div>
+          <DataAndMethod
+            sourceSentence={methodSourceSentence(source.kind, isDemoActive)}
+            bandsDescription={data?.bands?.description ?? COPY.bandsFallbackDescription}
+          />
         </div>
-      )}
-
-      {/* Loading state */}
-      {isLoading && !isDemoActive && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}><CardHeader><Skeleton className="h-4 w-32" /></CardHeader><CardContent><Skeleton className="h-10 w-24 mb-2" /><Skeleton className="h-4 w-full" /></CardContent></Card>
-          ))}
-        </div>
-      )}
-
-      {/* 4 KPI cards */}
-      {metrics && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: 'Deployment Frequency', metric: metrics.deploymentFrequency, icon: TrendingUp, formatVal: (v: number) => `${v.toFixed(1)}/day`, change: isDemoActive ? '+0.8 deploys/day · pipeline throughput increasing' : null },
-            { label: 'Lead Time for Changes', metric: metrics.leadTime,           icon: Clock,       formatVal: (v: number) => `${v.toFixed(1)} hrs`,  change: isDemoActive ? '−0.6 hrs · CI queue time reducing' : null },
-            { label: 'Change Failure Rate',   metric: metrics.changeFailureRate,  icon: AlertTriangle, formatVal: (v: number) => `${v.toFixed(1)}%`,  change: isDemoActive ? '−0.3% · test coverage improving' : null },
-            { label: 'Mean Time to Recovery', metric: metrics.mttr,               icon: Timer,       formatVal: (v: number) => `${Math.round(v)} min`, change: isDemoActive ? '−22 min · incident response process maturing' : null },
-          ].map(({ label, metric: rawMetric, formatVal, change }) => {
-            const metric = rawMetric as DisplayMetric
-            const testId = `dora-card-${label.toLowerCase().replace(/ /g, '-')}`
-
-            // The deployment records cannot support this metric: say so, with
-            // the reason. No value, tier or chart.
-            if (isNotTracked(metric)) {
-              return (
-                <Card key={label} data-testid={testId} style={{ borderTop: '3px solid #94A3B8', overflow: 'hidden' }}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-label uppercase tracking-[0.04em] text-ink-muted">{label}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-section sm:text-kpi text-ink-muted leading-none mb-1.5">Not tracked</div>
-                    <div className="text-meta text-ink-muted mt-2.5 pt-2.5 border-t border-slate-50">{metric.reason}</div>
-                  </CardContent>
-                </Card>
-              )
-            }
-
-            const isInactiveState = dataState === 'inactive' && !isDemoActive
-            const tier = isInactiveState ? null : metric.benchmark ?? null
-            const ts = tier ? tierStyle(tier) : { color: '#94A3B8', bg: '#F1F5F9' }
-            return (
-              <Card key={label} data-testid={testId} style={{ borderTop: `3px solid ${ts.color}`, overflow: 'hidden' }}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-label uppercase tracking-[0.04em] text-ink-muted">{label}</CardTitle>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="text-label px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.color}30` }}>{tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'N/A'}</span>
-                      {metric.isCustomBenchmark && <span className="text-label text-violet-600 bg-violet-50 rounded px-1.5 py-0.5 whitespace-nowrap">Custom benchmark</span>}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-section sm:text-kpi tabular-nums text-slate-900 leading-none mb-1.5">{metric.value == null || isInactiveState ? '—' : formatVal(metric.value)}</div>
-                  {change && <div className="text-meta font-medium text-ink-success mb-3 flex items-center gap-1">↑ {change} vs last period</div>}
-                  {/* Sparkline is demo decoration; real mode has no computed trend to draw. */}
-                  {isDemoActive && metric.value != null && (
-                    <div className="h-10">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={generateDemoTrendData(metric.value)}>
-                          <Area type="monotone" dataKey="value" stroke={ts.color} fill={ts.color} fillOpacity={0.15} strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                  <div className="text-meta text-ink-muted mt-2.5 pt-2.5 border-t border-slate-50">
-                    {isDemoActive
-                      ? (metric.benchmark === 'elite' ? 'Exceeds Elite benchmark — no immediate action required' : metric.benchmark === 'high' ? 'Above industry median — monitor for regression' : metric.benchmark === 'medium' ? 'Below Elite threshold — review pipeline constraints' : metric.description)
-                      : isInactiveState ? 'No finished deployments recorded in this period'
-                      : <>{metric.description}{dataState === 'insufficient' ? ' · fewer than 5 finished deployments, so the tier is indicative only' : ''}</>}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Service Breakdown */}
-      {isDemoActive && (
-        <Card>
-          <CardHeader>
-            <div className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">Service Breakdown</div>
-            <CardTitle className="text-ui flex flex-wrap items-center gap-2">
-              Performance by service · last 90 days
-              <span className="text-label text-ink-warning bg-amber-50 px-2 py-0.5 rounded">1 service needs attention</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="hidden sm:grid pb-2 border-b border-slate-100 text-label text-ink-muted uppercase tracking-[0.04em]" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: '12px' }}>
-              <span>Service</span><span className="text-right">Deploy Freq</span><span className="text-right">Lead Time</span><span className="text-right">Failure Rate</span><span className="text-right">MTTR</span><span className="text-center">Tier</span>
-            </div>
-            {DEMO_SERVICE_BREAKDOWN.map(svc => {
-              const ts = tierStyle(svc.tier)
-              return (
-                <div key={svc.name} className={`py-3 border-b border-slate-50 last:border-0 ${svc.attention ? 'bg-amber-50 rounded-xl px-3 -mx-3' : ''}`}>
-                  {/* Desktop row */}
-                  <div className="hidden sm:grid items-center" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: '12px' }}>
-                    <div>
-                      <span className="text-ui font-semibold text-slate-700">{svc.name}</span>
-                      <span className="text-meta text-ink-muted ml-1.5">{svc.env}</span>
-                      {svc.attention && <span className="text-label text-ink-warning-strong bg-amber-100 px-1.5 py-0.5 rounded ml-1.5">⚠ Pipeline bottleneck</span>}
-                      {svc.attention && <div className="mt-1 text-meta text-ink-warning font-semibold">Primary bottleneck · affects ~22% of deployments · upstream dependency for 3 critical services</div>}
-                    </div>
-                    {[svc.deployFreq, svc.leadTime, svc.cfr, svc.mttr].map((val, i) => (
-                      <div key={i} className={`text-right text-ui font-semibold tabular-nums ${svc.attention ? 'text-ink-warning' : 'text-slate-900'}`}>{val}</div>
-                    ))}
-                    <div className="text-center"><span className="text-label px-2 py-0.5 rounded-full" style={{ background: ts.bg, color: ts.color }}>{svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}</span></div>
-                  </div>
-                  {/* Mobile card */}
-                  <div className="sm:hidden">
-                    <div className="flex items-start justify-between mb-1.5">
-                      <div>
-                        <span className="text-ui font-semibold text-slate-700">{svc.name}</span>
-                        <span className="text-meta text-ink-muted ml-1.5">{svc.env}</span>
-                        {svc.attention && <span className="text-label text-ink-warning-strong bg-amber-100 px-1.5 py-0.5 rounded ml-1.5">⚠ Bottleneck</span>}
-                      </div>
-                      <span className="text-label px-2 py-0.5 rounded-full shrink-0" style={{ background: ts.bg, color: ts.color }}>{svc.tier.charAt(0).toUpperCase() + svc.tier.slice(1)}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-ink-muted">
-                      <span>{svc.deployFreq}</span><span>{svc.leadTime}</span><span>{svc.cfr}</span><span>{svc.mttr}</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Benchmark Settings */}
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
-        <div className="px-5 sm:px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-          <div>
-            <div className="text-label text-ink-muted uppercase tracking-[0.04em] mb-1">{PLAN_DISPLAY_NAME.enterprise} · Custom Benchmarks</div>
-            <p className="text-ui font-semibold text-slate-900 mb-1">Benchmark Settings</p>
-            <p className="text-meta text-ink-muted">Override industry-standard DORA thresholds with targets specific to your organization.</p>
-          </div>
-          {isEnterprise && <span className="text-label text-ink-success bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap self-start">{PLAN_DISPLAY_NAME.enterprise} active</span>}
-        </div>
-        {!isEnterprise ? (
-          <div className="p-10 sm:p-16 text-center bg-slate-50">
-            <div className="w-11 h-11 bg-slate-100 rounded-xl flex items-center justify-center text-xl mx-auto mb-4">🔒</div>
-            <p className="text-ui font-semibold text-slate-900 mb-1.5">Custom DORA Benchmarking</p>
-            <p className="text-meta text-ink-muted leading-relaxed mb-5 max-w-sm mx-auto">Set custom performance thresholds per metric so your team is measured against your own standards, not just industry averages. Available on the {PLAN_DISPLAY_NAME.enterprise} plan.</p>
-            <a href="/settings/billing" className="inline-block bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-lg text-label no-underline transition-colors">Upgrade to {PLAN_DISPLAY_NAME.enterprise} →</a>
-          </div>
-        ) : (
-          <div>
-            {saveError && <div className="px-5 py-2.5 bg-red-50 border-b border-red-100 text-meta text-ink-danger">{saveError}</div>}
-            {METRIC_CONFIGS.map(cfg => {
-              const custom = benchmarksMap[cfg.metricKey]
-              const isEditing = editingMetric === cfg.metricKey
-              const hasCustom = !!custom
-              return (
-                <div key={cfg.metricKey} className="px-5 py-4 border-b border-slate-50 flex flex-wrap items-center gap-4">
-                  <div className="flex-1 min-w-36">
-                    <div className="text-ui font-semibold text-slate-900 mb-0.5">{cfg.label}</div>
-                    <div className="text-meta text-ink-muted">Unit: {cfg.unitLabel}</div>
-                  </div>
-                  <div className="flex-1 min-w-48">
-                    {hasCustom ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-ui font-semibold tabular-nums text-slate-900">{custom.target_value} {cfg.unitLabel}</span>
-                        <span className="text-label text-violet-600 bg-violet-50 rounded px-1.5 py-0.5">Custom</span>
-                        <span className="text-meta text-ink-muted">label: "{custom.performance_label}"</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-meta text-ink-muted">Industry default: {cfg.industryElite} {cfg.unitLabel}</span>
-                        <span className="text-label text-ink-muted bg-slate-100 rounded px-1.5 py-0.5">Standard</span>
-                      </div>
-                    )}
-                    {!isEditing && <div className="text-meta text-ink-muted mt-0.5">{cfg.hint}</div>}
-                  </div>
-                  {isEditing ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" min="0" step="any" value={editValue} onChange={e => setEditValue(e.target.value)} placeholder={cfg.placeholder} className="w-20 px-2.5 py-1.5 border border-slate-200 rounded-lg text-label font-normal text-slate-900 outline-none focus:border-violet-500 transition-colors" />
-                        <span className="text-meta text-ink-muted">{cfg.unitLabel}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-meta text-ink-muted">Top label:</span>
-                        <input type="text" value={editLabel} onChange={e => setEditLabel(e.target.value)} placeholder="Elite" maxLength={30} className="w-20 px-2.5 py-1.5 border border-slate-200 rounded-lg text-label font-normal text-slate-900 outline-none focus:border-violet-500 transition-colors" />
-                      </div>
-                      <button onClick={() => saveBenchmark(cfg.metricKey, editValue, editLabel)} className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg text-label cursor-pointer transition-colors">Save</button>
-                      <button onClick={() => { setEditingMetric(null); setSaveError(null); }} className="px-3 py-1.5 bg-transparent text-ink-muted border border-slate-200 rounded-lg text-label font-medium cursor-pointer hover:bg-slate-50 transition-colors">Cancel</button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditingMetric(cfg.metricKey); setEditValue(custom ? String(custom.target_value) : ''); setEditLabel(custom?.performance_label || 'Elite'); setSaveError(null); }} className="px-3.5 py-1.5 bg-transparent text-ink-muted border border-slate-200 rounded-lg text-label font-medium cursor-pointer hover:bg-slate-50 transition-colors">{hasCustom ? 'Edit' : 'Set Custom'}</button>
-                      {hasCustom && <button onClick={() => resetBenchmark(cfg.metricKey)} className="px-3 py-1.5 bg-transparent text-ink-danger border border-red-200 rounded-lg text-label font-medium cursor-pointer hover:bg-red-50 transition-colors">Reset to Default</button>}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Error state */}
-      {error && !isDemoActive && (
-        <Card style={{ borderColor: '#DC2626' }}>
-          <CardContent className="p-6">
-            <p className="text-ui text-ink-danger">Failed to load metrics. <button onClick={() => refetch()} className="text-violet-600 ml-2 bg-transparent border-none cursor-pointer font-semibold text-ui">Retry →</button></p>
-          </CardContent>
-        </Card>
       )}
     </div>
   );
