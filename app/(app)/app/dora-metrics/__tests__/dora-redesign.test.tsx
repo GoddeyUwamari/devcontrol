@@ -22,6 +22,7 @@ const getDORAMetrics = vi.fn()
 const getStats = vi.fn()
 const getAll = vi.fn()
 const apiGet = vi.fn()
+const apiPost = vi.fn()
 
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({ organization: { id: 'org-1', subscriptionTier: env.tier }, organizationStatus: 'ready' }),
@@ -43,7 +44,7 @@ vi.mock('@/lib/services/teams.service', () => ({
   teamsService: { getAll: vi.fn().mockResolvedValue([{ id: 'team-1', name: 'Payments' }]) },
 }))
 vi.mock('@/lib/api', () => ({
-  default: { get: (...a: unknown[]) => apiGet(...a), post: vi.fn().mockResolvedValue({ data: { success: true } }), delete: vi.fn() },
+  default: { get: (...a: unknown[]) => apiGet(...a), post: (...a: unknown[]) => apiPost(...a), delete: vi.fn() },
 }))
 // The chart is recharts: expose exactly what it is given.
 vi.mock('recharts', () => ({
@@ -80,6 +81,7 @@ beforeEach(() => {
   getStats.mockReset().mockResolvedValue({ ...STATS_BASE })
   getAll.mockReset().mockResolvedValue([PIPELINE_ROW])
   apiGet.mockReset().mockResolvedValue({ data: { success: true, data: [] } })
+  apiPost.mockReset().mockResolvedValue({ data: { success: true } })
 })
 
 describe('Engineering Intelligence — own account, populated', () => {
@@ -157,7 +159,9 @@ describe('the chart draws the API daily buckets exactly', () => {
     const points = chartPoints()
     expect(points).toEqual(d.daily)
     expect(points.filter((p: { total: number }) => p.total === 0).map((p: { date: string }) => p.date)).toEqual(['2026-10-25', '2026-11-01', '2026-11-08', '2026-11-15'])
-    const rows = within(screen.getByTestId('dora-daily-table')).getAllByRole('row').slice(1)
+    const table = screen.getByTestId('dora-daily-table')
+    expect(table.parentElement).toHaveClass('sr-only') // a table ignores overflow: the wrapper must carry sr-only
+    const rows = within(table).getAllByRole('row').slice(1)
     expect(rows).toHaveLength(31)
     expect(rows[0]).toHaveAttribute('data-partial', 'true')
     expect(rows[30]).toHaveAttribute('data-partial', 'true')
@@ -379,6 +383,32 @@ describe('targets and plans', () => {
     expect(await screen.findByTestId('dora-target-default-change_failure_rate')).toHaveTextContent('Default: comparison band · Elite: API elite failure label')
     expect(screen.getByTestId('dora-target-default-deployment_frequency')).toHaveTextContent('Default: comparison band · Elite: API elite frequency label')
     expect(screen.getByTestId('dora-targets-dialog')).not.toHaveTextContent(/Industry default|15 %|15%/)
+  })
+})
+
+describe('target editor without a label input', () => {
+  it('no "Top label" field; saving keeps the stored label, a new target gets the default', async () => {
+    env.tier = 'enterprise'
+    apiGet.mockResolvedValue({ data: { success: true, data: [
+      { metric_name: 'change_failure_rate', target_value: '2.00', target_unit: 'percentage', performance_label: 'Gold' },
+    ] } })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Set targets →' }))
+    const cfr = await screen.findByTestId('dora-target-edit-change_failure_rate')
+    await waitFor(() => expect(within(cfr).getByRole('button', { name: 'Edit' })).toBeInTheDocument())
+    fireEvent.click(within(cfr).getByRole('button', { name: 'Edit' }))
+    expect(screen.getByTestId('dora-targets-dialog')).not.toHaveTextContent(/Top label/)
+    expect(within(cfr).getAllByRole('spinbutton')).toHaveLength(1)
+    expect(within(cfr).queryByRole('textbox')).not.toBeInTheDocument()
+    fireEvent.change(within(cfr).getByRole('spinbutton'), { target: { value: '3' } })
+    fireEvent.click(within(cfr).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/api/dora/benchmarks', { metric_name: 'change_failure_rate', target_value: 3, performance_label: 'Gold' }))
+
+    const df = screen.getByTestId('dora-target-edit-deployment_frequency')
+    fireEvent.click(within(df).getByRole('button', { name: 'Set Custom' }))
+    fireEvent.change(within(df).getByRole('spinbutton'), { target: { value: '2' } })
+    fireEvent.click(within(df).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(apiPost).toHaveBeenLastCalledWith('/api/dora/benchmarks', { metric_name: 'deployment_frequency', target_value: 2, performance_label: 'Elite' }))
   })
 })
 

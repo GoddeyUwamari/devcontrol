@@ -81,7 +81,9 @@ export function DailyChart({
           <p className="absolute inset-0 flex items-center justify-center text-meta text-ink-muted">No finished deployments in this period.</p>
         )}
       </div>
-      <table className="sr-only" data-testid="dora-daily-table">
+      {/* sr-only on a wrapper: a <table> ignores overflow, so sr-only on the table itself still adds scroll height. */}
+      <div className="sr-only">
+      <table data-testid="dora-daily-table">
         <caption>Deploys per UTC day</caption>
         <thead><tr><th>Date</th><th>Succeeded</th><th>Failed</th><th>Part day</th></tr></thead>
         <tbody>
@@ -92,6 +94,7 @@ export function DailyChart({
           ))}
         </tbody>
       </table>
+      </div>
     </section>
   )
 }

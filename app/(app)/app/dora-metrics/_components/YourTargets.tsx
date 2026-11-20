@@ -17,6 +17,8 @@ const EDITABLE: { metricName: string; key: MetricKey; name: string; unitLabel: s
   { metricName: 'change_failure_rate', key: 'changeFailureRate', name: COPY.failureName, unitLabel: '%', placeholder: 'e.g. 5', hint: 'Meets your target at or below this failure rate.' },
 ]
 /** Targets for metrics that are not measured yet: shown read-only, with Reset, if one is stored. */
+// No label input (founder ruling): the stored performance_label is sent back unchanged, because the API's
+// upsert overwrites it; a new target gets the API's own default, 'Elite'.
 const NOT_MEASURED: { metricName: string; name: string }[] = [
   { metricName: 'lead_time', name: COPY.mergeName },
   { metricName: 'recovery_time', name: COPY.recoveryName },
@@ -61,7 +63,6 @@ export function YourTargets({ benchmarks, bands, readOnly, saveError, onSave, on
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
-  const [editLabel, setEditLabel] = useState('Elite')
   const byName: Record<string, CustomBenchmark> = Object.fromEntries(benchmarks.map((b) => [b.metric_name, b]))
 
   return (
@@ -123,18 +124,14 @@ export function YourTargets({ benchmarks, bands, readOnly, saveError, onSave, on
                       <input type="number" min="0" step="any" value={editValue} onChange={(e) => setEditValue(e.target.value)} placeholder={m.placeholder} className="w-24 px-2.5 py-1.5 min-h-11 sm:min-h-0 border border-slate-200 rounded-lg text-ui text-ink outline-none focus:border-violet-500" />
                       {m.unitLabel}
                     </label>
-                    <label className="flex items-center gap-1.5 text-meta text-ink-muted">
-                      Top label:
-                      <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} placeholder="Elite" maxLength={30} className="w-24 px-2.5 py-1.5 min-h-11 sm:min-h-0 border border-slate-200 rounded-lg text-ui text-ink outline-none focus:border-violet-500" />
-                    </label>
-                    <button type="button" onClick={async () => { if (await onSave(m.metricName, editValue, editLabel)) setEditing(null) }} className={`${BUTTON} bg-violet-600 hover:bg-violet-700 text-white border-none`}>Save</button>
+                    <button type="button" onClick={async () => { if (await onSave(m.metricName, editValue, custom?.performance_label || 'Elite')) setEditing(null) }} className={`${BUTTON} bg-violet-600 hover:bg-violet-700 text-white border-none`}>Save</button>
                     <button type="button" onClick={() => { setEditing(null); onClearError() }} className={SECONDARY}>Cancel</button>
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => { setEditing(m.metricName); setEditValue(custom ? String(custom.target_value) : ''); setEditLabel(custom?.performance_label || 'Elite'); onClearError() }}
+                      onClick={() => { setEditing(m.metricName); setEditValue(custom ? String(custom.target_value) : ''); onClearError() }}
                       className={SECONDARY}
                     >
                       {custom ? 'Edit' : 'Set Custom'}
