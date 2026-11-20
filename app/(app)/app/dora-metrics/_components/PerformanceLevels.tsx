@@ -53,13 +53,13 @@ export function BandsTable({ bands }: { bands: DORABands }) {
   )
 }
 
-export function PerformanceLevels({ data }: { data: DORAMetricsData }) {
+export function PerformanceLevels({ data, hasTarget }: { data: DORAMetricsData; hasTarget: boolean }) {
   const [open, setOpen] = useState(false)
   const bands = data.bands
   return (
     <section className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col min-w-0" data-testid="dora-performance-levels" aria-label={COPY.levelsTitle}>
       <h2 className="text-card-title text-ink mb-1">{COPY.levelsTitle}</h2>
-      <p className="text-meta text-ink-muted mb-2">{COPY.levelsIntro}</p>
+      <p className="text-meta text-ink-muted mb-2" data-testid="dora-levels-intro">{COPY.levelsIntro}{hasTarget ? COPY.levelsIntroCustom : ''}</p>
       <LevelRow name={COPY.frequencyName} metricKey="deploymentFrequency" metric={data.deploymentFrequency} data={data} />
       <LevelRow name={COPY.failureName} metricKey="changeFailureRate" metric={data.changeFailureRate} data={data} />
       <div className="flex flex-wrap items-center justify-between gap-2 py-2.5 border-b border-slate-100">

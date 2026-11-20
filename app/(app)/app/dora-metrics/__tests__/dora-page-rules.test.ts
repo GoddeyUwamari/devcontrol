@@ -6,6 +6,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   displayDecimals,
+  doraCsvFilename,
+  doraCsvText,
+  pointsText,
   failureChangeLine,
   formatMetricValue,
   formatTarget,
@@ -124,6 +127,33 @@ describe('change lines', () => {
     expect(failureChangeLine(emptyData())).toBeNull()
   })
 
+  it('review L-1: a points change is never "Same" unless the two rates are equal; 0.0 never stands for a change', () => {
+    const at = (cur: number, prev: number) => {
+      const d = mixedData()
+      d.changeFailureRate = { ...d.changeFailureRate, value: cur }
+      d.previousPeriod!.changeFailureRate = prev
+      return d
+    }
+    expect(failureChangeLine(at(5.04, 5))).toBe('Up 0.04 points vs previous 30 days') // High now, Elite before
+    expect(failureChangeLine(at(5, 5.04))).toBe('Down 0.04 points vs previous 30 days')
+    expect(failureChangeLine(at(0.02, 0))).toBe('Up 0.02 points vs previous 30 days')
+    expect(failureChangeLine(at(2.65, 2.6))).toBe('Up 0.1 points vs previous 30 days') // exactly 0.05, not 0.0499…
+    expect(failureChangeLine(at(2.5, 2.5))).toBe('Same as previous 30 days')
+    expect(failureChangeLine(at(0, 0))).toBe('Same as previous 30 days')
+    expect(whatChanged(at(5.04, 5))?.[1].headline).toBe('Failure rate up 0.04 points')
+    expect(whatChanged(at(0.02, 0))?.[1].headline).toBe('Failure rate up 0.02 points')
+    expect(whatChanged(at(4, 4))?.[1].headline).toBe('Failure rate unchanged')
+  })
+
+  it('points text: one decimal, two only when one would read 0.0', () => {
+    expect(pointsText(0.04)).toBe('0.04')
+    expect(pointsText(-0.01)).toBe('0.01')
+    expect(pointsText(0.05)).toBe('0.1')
+    expect(pointsText(1.5)).toBe('1.5')
+    expect(pointsText(-2.25)).toBe('2.3')
+    expect(pointsText(12)).toBe('12.0')
+  })
+
   it('fact line keeps the indicative note under 5 finished (D5-D8)', () => {
     const few = founderData(); few.deployments = { successful: 3, failed: 1, finished: 4 }
     expect(frequencyFactLine(few)).toBe('3 successful deploys in 30 days · fewer than 5 finished, so the level is indicative')
@@ -211,5 +241,21 @@ describe('source line (D5-D1) and deploying-only (G)', () => {
     expect(withoutResultCount(emptyData(), s, true)).toBeNull()
     expect(withoutResultCount(founderData(), s, false)).toBeNull()
     expect(withoutResultCount(emptyData(), stats({ total: 0, success: 0 }), false)).toBeNull()
+  })
+})
+
+describe('CSV (review L-6)', () => {
+  const rows = [['Metric', 'Value', 'Unit', 'Benchmark', 'Note'], ['Deployment frequency', '4.20', 'per day', 'elite', 'x']]
+  it('demo data is marked on the first line after the header and in the file name', () => {
+    expect(doraCsvText(rows, true).split('\n')).toEqual([
+      '"Metric","Value","Unit","Benchmark","Note"',
+      '"Demo data · not your workspace","","","",""',
+      '"Deployment frequency","4.20","per day","elite","x"',
+    ])
+    expect(doraCsvFilename('30d', '2026-11-20', true)).toBe('dora-metrics-30d-2026-11-20-demo.csv')
+  })
+  it('real data carries no demo marker', () => {
+    expect(doraCsvText(rows, false)).not.toMatch(/Demo data/)
+    expect(doraCsvFilename('30d', '2026-11-20', false)).toBe('dora-metrics-30d-2026-11-20.csv')
   })
 })

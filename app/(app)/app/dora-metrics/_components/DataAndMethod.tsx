@@ -32,7 +32,7 @@ export function DataAndMethod({ sourceSentence, bandsDescription }: { sourceSent
           <div className="flex flex-col gap-3 text-meta text-ink-body">
             <p data-testid="dora-method-dialog-source">{sourceSentence}</p>
             <p>A deploy counts once it has finished, succeeded or failed. Deploys still in progress, recorded without a result, stopped before deploying or cancelled are not counted.</p>
-            <p>Each period is the last 7, 30 or 90 days, ending now. The previous period is the same length, just before it. The Service and Team filters apply to every number, chart and sentence on the page.</p>
+            <p>Each period is the last 7, 30 or 90 days, ending now. The previous period is the same length, just before it. The Service and Team filters apply to the metrics, the chart and What changed. The source line and the banner describe the whole workspace.</p>
             <p>Deployment frequency is successful deploys divided by the days in the period. Change failure rate is failed deploys as a share of finished deploys.</p>
             <p>The chart counts deploys per UTC day. The first and last days are only partly inside the period.</p>
             <p>Levels come from DevControl&apos;s comparison bands, or from your own targets when you have set them. {bandsDescription}</p>

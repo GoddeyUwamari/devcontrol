@@ -42,7 +42,8 @@ export const COPY = {
   whatChangedEmpty: 'Nothing to compare yet. This panel fills in once two periods have finished deployments.',
   fullReport: 'Full report →',
   levelsTitle: 'Performance levels',
-  levelsIntro: "Your two measured metrics against DevControl's comparison bands. The chips and this table use the same bands.",
+  levelsIntro: "Your two measured metrics against DevControl's comparison bands.",
+  levelsIntroCustom: ' Metrics with your own target are graded against it.',
   levelsPlannedRow: 'Merge to production, recovery time',
   levelsCustom: 'Graded against your target · see Your targets',
   levelsNoData: 'No finished deployments',
@@ -156,12 +157,28 @@ function percentText(p: number): string {
   return a >= 0.5 ? `${Math.round(a)}%` : `${round1(a)}%`
 }
 
-/** Change in percentage points, from the two rates the API served. */
+/**
+ * Change in percentage points, from the two rates the API served (both 2 dp).
+ * Worked in hundredths, so 2.65 − 2.6 is exactly 0.05, never 0.0499….
+ * null: either rate is missing. 0 only when the two rates are equal.
+ */
 export function failureRatePoints(d: DORAMetricsData): number | null {
   const cur = d.changeFailureRate.value
   const prev = d.previousPeriod?.changeFailureRate
   if (cur == null || prev == null) return null
-  return round1(cur - prev)
+  return (Math.round(cur * 100) - Math.round(prev * 100)) / 100
+}
+
+/**
+ * A non-zero points change as text, by the same precision rule as the values
+ * (review L-1): one decimal, two when one would read 0.0 ("0.04"). Never used
+ * for 0 -- equal rates read "Same" / "unchanged", and only equal rates do
+ * (equal 2-dp rates also mean the same level).
+ */
+export function pointsText(points: number): string {
+  const hundredths = Math.round(Math.abs(points) * 100)
+  const tenths = Math.round(hundredths / 10)
+  return tenths === 0 ? (hundredths / 100).toFixed(2) : (tenths / 10).toFixed(1)
 }
 
 /** The change line on the Deployment frequency card (null: no line). */
@@ -186,7 +203,7 @@ export function failureChangeLine(d: DORAMetricsData): string | null {
   const pts = failureRatePoints(d)
   if (pts == null) return null
   if (pts === 0) return `Same as previous ${n} days`
-  return `${pts > 0 ? 'Up' : 'Down'} ${Math.abs(pts).toFixed(1)} points vs previous ${n} days`
+  return `${pts > 0 ? 'Up' : 'Down'} ${pointsText(pts)} points vs previous ${n} days`
 }
 
 export function frequencyFactLine(d: DORAMetricsData): string {
@@ -237,7 +254,7 @@ export function whatChanged(d: DORAMetricsData): WhatChangedItem[] | null {
     items.push({
       headline: pts == null || pts === 0
         ? 'Failure rate unchanged'
-        : `Failure rate ${pts > 0 ? 'up' : 'down'} ${Math.abs(pts).toFixed(1)} points`,
+        : `Failure rate ${pts > 0 ? 'up' : 'down'} ${pointsText(pts)} points`,
       detail: `${cur.failed} of ${cur.finished} failed, against ${prev.deployments.failed} of ${prev.deployments.finished} in the ${n} days before.`,
     })
   }
@@ -327,8 +344,21 @@ export function methodSourceSentence(kind: SourceInfo['kind'], demo: boolean): s
   return 'Records come from your pipeline (via webhook) or from deployments recorded by hand on the Deployments page.'
 }
 
-/** A band level's label as served ("More than once a day"). */
+/** A band level's label, exactly as the API serves it. */
 export function bandLabel(bands: DORAMetricBands | undefined, level: BenchmarkLevel | null): string | null {
   if (!bands || !level) return null
   return bands.levels.find((b) => b.level === level)?.label ?? null
+}
+
+/**
+ * CSV text and file name (review L-6). Demo data is marked: the first line
+ * after the header says so and the file name ends "-demo".
+ */
+export function doraCsvText(rows: string[][], demo: boolean): string {
+  const lines = demo ? [rows[0], [COPY.demoSource, '', '', '', ''], ...rows.slice(1)] : rows
+  return lines.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
+}
+
+export function doraCsvFilename(dateRange: string, today: string, demo: boolean): string {
+  return `dora-metrics-${dateRange}-${today}${demo ? '-demo' : ''}.csv`
 }

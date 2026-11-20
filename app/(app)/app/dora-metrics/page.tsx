@@ -20,6 +20,8 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import {
   COPY,
+  doraCsvFilename,
+  doraCsvText,
   methodSourceSentence,
   sourceLine,
   whatChanged,
@@ -36,11 +38,11 @@ import { PerformanceLevels } from './_components/PerformanceLevels';
 import { LockedTargets, YourTargets, type CustomBenchmark } from './_components/YourTargets';
 import { DataAndMethod } from './_components/DataAndMethod';
 
-function exportToCSV(metrics: DORAMetricsData, dateRange: string) {
-  const csv = doraCsvRows(metrics).map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+function exportToCSV(metrics: DORAMetricsData, dateRange: string, demo: boolean) {
+  const csv = doraCsvText(doraCsvRows(metrics), demo);
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = `dora-metrics-${dateRange}-${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url; a.download = doraCsvFilename(dateRange, new Date().toISOString().split('T')[0], demo); a.click(); URL.revokeObjectURL(url);
 }
 
 function exportToPDF() { window.print(); }
@@ -171,7 +173,7 @@ export default function DORAMetricsPage() {
             services={services} teams={teams}
           />
           <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
-            <button type="button" disabled={exportDisabled} onClick={() => data && exportToCSV(data, dateRange)} className={`${EXPORT_BUTTON} disabled:opacity-50 disabled:cursor-not-allowed`}>
+            <button type="button" disabled={exportDisabled} onClick={() => data && exportToCSV(data, dateRange, isDemoActive)} className={`${EXPORT_BUTTON} disabled:opacity-50 disabled:cursor-not-allowed`}>
               <FileText size={13} aria-hidden="true" /> Export CSV
             </button>
             <button type="button" disabled={exportDisabled} onClick={exportToPDF} className={`${EXPORT_BUTTON} disabled:opacity-50 disabled:cursor-not-allowed`}>
@@ -228,7 +230,7 @@ export default function DORAMetricsPage() {
 
       {(data || loadFailed) && (
         <div className="grid lg:grid-cols-3 gap-4">
-          {data && <PerformanceLevels data={data} />}
+          {data && <PerformanceLevels data={data} hasTarget={targets.deploymentFrequency !== undefined || targets.changeFailureRate !== undefined || data.deploymentFrequency.isCustomBenchmark || data.changeFailureRate.isCustomBenchmark} />}
           {isEnterprise ? (
             <YourTargets
               benchmarks={benchmarks}

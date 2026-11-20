@@ -246,7 +246,8 @@ describe('read, never recomputed', () => {
 
   it('no band threshold, label or previous-period arithmetic in the page or its components', () => {
     const dir = resolve(__dirname, '..')
-    const files = ['page.tsx', ...readdirSync(resolve(dir, '_components')).map((f) => `_components/${f}`)]
+    // _lib/dora-page.ts holds the precision rule: it reads served bounds and must not hold its own (review L-5).
+    const files = ['page.tsx', '_lib/dora-page.ts', ...readdirSync(resolve(dir, '_components')).map((f) => `_components/${f}`)]
     for (const f of files) {
       const src = readFileSync(resolve(dir, f), 'utf8')
       expect(src, f).not.toMatch(/0\.14|0\.03|More than once a day|5% or less|industryElite|DORA thresholds/)
@@ -337,6 +338,82 @@ describe('no data, deploying-only and filters', () => {
     fireEvent.click(screen.getByRole('button', { name: '7d' }))
     await waitFor(() => expect(getDORAMetrics).toHaveBeenLastCalledWith({ dateRange: '7d', serviceId: 'svc-1', teamId: 'team-1' }))
     for (const [f] of getDORAMetrics.mock.calls) expect(f).not.toHaveProperty('environment')
+  })
+})
+
+describe('review fixes', () => {
+  it('L-5: stats get only the selected period and the list only its size: both workspace-wide, never the filters', async () => {
+    renderPage()
+    await card('deployment-frequency')
+    await waitFor(() => expect(getStats).toHaveBeenCalled())
+    expect(getStats.mock.calls.every(([a]) => JSON.stringify(a) === JSON.stringify({ dateRange: '30d' }))).toBe(true)
+    await screen.findByRole('option', { name: 'checkout-api' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Service' }), { target: { value: 'svc-1' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Team' }), { target: { value: 'team-1' } })
+    fireEvent.click(screen.getByRole('button', { name: '7d' }))
+    await waitFor(() => expect(getStats).toHaveBeenLastCalledWith({ dateRange: '7d' }))
+    await waitFor(() => expect(getDORAMetrics).toHaveBeenLastCalledWith({ dateRange: '7d', serviceId: 'svc-1', teamId: 'team-1' }))
+    for (const [a] of getStats.mock.calls) expect(Object.keys(a)).toEqual(['dateRange'])
+    expect(getAll.mock.calls.length).toBeGreaterThan(0)
+    for (const [a] of getAll.mock.calls) expect(a).toEqual({ limit: 25 })
+  })
+
+  it('M-1: the method dialog says which parts the filters cover and that the source line and banner are workspace-wide', async () => {
+    renderPage()
+    await card('deployment-frequency')
+    fireEvent.click(screen.getByRole('button', { name: 'How this is measured →' }))
+    const dialog = await screen.findByTestId('dora-method-dialog')
+    expect(dialog).toHaveTextContent('The Service and Team filters apply to the metrics, the chart and What changed. The source line and the banner describe the whole workspace.')
+    expect(dialog).not.toHaveTextContent(/every number, chart and sentence/)
+  })
+
+  it('L-3: the levels intro, and the target sentence only when a target is set', async () => {
+    renderPage()
+    expect(await screen.findByTestId('dora-levels-intro')).toHaveTextContent(/^Your two measured metrics against DevControl's comparison bands\.$/)
+    expect(document.body).not.toHaveTextContent(/The chips and this table use the same bands/)
+  })
+
+  it('L-3: with a custom target the intro adds that those metrics are graded against it', async () => {
+    env.tier = 'enterprise'
+    const d = founderData()
+    d.changeFailureRate = { ...d.changeFailureRate, isCustomBenchmark: true }
+    getDORAMetrics.mockResolvedValue(ok(d))
+    apiGet.mockResolvedValue({ data: { success: true, data: [
+      { metric_name: 'change_failure_rate', target_value: '2.00', target_unit: 'percentage', performance_label: 'Elite' },
+    ] } })
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('dora-levels-intro')).toHaveTextContent("Your two measured metrics against DevControl's comparison bands. Metrics with your own target are graded against it."))
+  })
+
+  it('L-6: CSV export is marked as demo data in demo mode, and not otherwise', async () => {
+    const downloads: string[] = []
+    const blobs: Blob[] = []
+    const urlApi = URL as unknown as { createObjectURL?: (b: Blob) => string; revokeObjectURL?: (u: string) => void }
+    const saved = { create: urlApi.createObjectURL, revoke: urlApi.revokeObjectURL }
+    urlApi.createObjectURL = (b: Blob) => { blobs.push(b); return 'blob:test' }
+    urlApi.revokeObjectURL = () => {}
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download) })
+    const read = (b: Blob) => new Promise<string>((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result)); fr.readAsText(b) })
+    try {
+      env.demo = true
+      const demo = renderPage()
+      await screen.findByTestId('dora-metric-cards')
+      fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+      expect(downloads[0]).toMatch(/^dora-metrics-30d-\d{4}-\d{2}-\d{2}-demo\.csv$/)
+      expect((await read(blobs[0])).split('\n')[1]).toBe('"Demo data · not your workspace","","","",""')
+      demo.unmount()
+
+      env.demo = false
+      renderPage()
+      await card('deployment-frequency')
+      fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+      expect(downloads[1]).toMatch(/^dora-metrics-30d-\d{4}-\d{2}-\d{2}\.csv$/)
+      expect(await read(blobs[1])).not.toMatch(/Demo data/)
+    } finally {
+      click.mockRestore()
+      urlApi.createObjectURL = saved.create
+      urlApi.revokeObjectURL = saved.revoke
+    }
   })
 })
 
