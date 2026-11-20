@@ -1,6 +1,6 @@
 /**
  * The weekly summary email (executive brief) as rendered for the synthetic
- * fixtures A-E (weekly-email-fixtures.ts), HTML and plain text, pinned byte
+ * fixtures A-G (weekly-email-fixtures.ts), HTML and plain text, pinned byte
  * for byte in __fixtures__/weekly-email/. A wording or layout change shows up
  * as a diff of these files. To regenerate after an approved change:
  *   WEEKLY_EMAIL_FIXTURES=write npx jest weekly-email-snapshots
@@ -46,7 +46,7 @@ export function templateDataFor(id: FixtureId) {
   return data;
 }
 
-describe('weekly summary email fixtures A-E', () => {
+describe('weekly summary email fixtures A-G', () => {
   it.each(FIXTURE_IDS)('%s: the subject carries the cost window (WE-D12)', (id) => {
     expect(templateDataFor(id).subject).toBe('Your DevControl weekly summary · Nov 9 – 15, 2026');
   });

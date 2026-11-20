@@ -10,7 +10,28 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { deploymentStatusDisplay, type RecordedDeployment as Deployment } from '@/lib/deployments/status';
+import { isManualRecord } from '@/lib/deployments/record';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
+
+/**
+ * A deployment recorded by hand (metadata.source = 'manual', D2) has no
+ * pipeline behind it: no logs, no duration, and its person and time are who
+ * recorded it and when. Its version is the one recorded (resources.version).
+ * Copy approved in review-logs/deployments/d3-build.md §1.8; pipeline rows are
+ * shown as before.
+ */
+const MANUAL_DETAIL_COPY = {
+  recordedBy: 'Recorded by',
+  recordedAt: 'Recorded at',
+  notRecorded: 'Not recorded',
+  noLogs: 'Recorded by hand · no logs attached',
+} as const;
+
+/** The version recorded with a hand-recorded deployment, or null when none was. */
+function recordedVersion(deployment: Deployment): string | null {
+  const version = deployment.resources?.version;
+  return typeof version === 'string' && version.trim() ? version.trim() : null;
+}
 
 export default function DeploymentDetailsPage() {
   const params = useParams();
@@ -57,6 +78,9 @@ export default function DeploymentDetailsPage() {
     );
   }
 
+  const manual = isManualRecord(deployment);
+  const version = manual ? recordedVersion(deployment) : null;
+
   // The status as recorded; unrecognised values are Unknown.
   const getStatusBadge = (status: string, createdAt: string) => {
     const { label, color, background } = deploymentStatusDisplay(status, createdAt);
@@ -84,7 +108,7 @@ export default function DeploymentDetailsPage() {
               {deployment.serviceName || deployment.serviceId || 'Deployment'}
             </h1>
             <p className={`${PAGE_SUBTITLE_CLASS} mt-2`}>
-              {deployment.environment} • Deployed by {deployment.deployedBy}
+              {deployment.environment} • {manual ? MANUAL_DETAIL_COPY.recordedBy : 'Deployed by'} {deployment.deployedBy}
             </p>
           </div>
 
@@ -113,16 +137,22 @@ export default function DeploymentDetailsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-section font-mono">
-              {(deployment as any).version || 'N/A'}
-            </p>
+            {manual ? (
+              <p className={`text-section${version ? ' font-mono' : ''}`} data-testid="deployment-version">
+                {version ?? MANUAL_DETAIL_COPY.notRecorded}
+              </p>
+            ) : (
+              <p className="text-section font-mono" data-testid="deployment-version">
+                {(deployment as any).version || 'N/A'}
+              </p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-ui font-medium text-muted-foreground">
-              Started At
+              {manual ? MANUAL_DETAIL_COPY.recordedAt : 'Started At'}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -139,14 +169,20 @@ export default function DeploymentDetailsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-section">
-              {(deployment as any).duration || 'In progress...'}
+            <p className="text-section" data-testid="deployment-duration">
+              {manual ? MANUAL_DETAIL_COPY.notRecorded : (deployment as any).duration || 'In progress...'}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Live Logs Section */}
+      {manual ? (
+        // Nothing ran in a pipeline, so there are no logs to show or fetch (same text as D2's list banner).
+        <p className="text-ui text-ink-muted rounded-lg border border-border p-4 m-0" data-testid="deployment-no-logs">
+          {MANUAL_DETAIL_COPY.noLogs}
+        </p>
+      ) : (
+      /* Live Logs Section */
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-section">Live Deployment Logs</h2>
@@ -169,6 +205,7 @@ export default function DeploymentDetailsPage() {
           logStreamName={deploymentId}
         />
       </div>
+      )}
     </div>
   );
 }

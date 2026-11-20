@@ -5,8 +5,10 @@
  * endpoints the Deployments and DORA pages use: deploys per day, change
  * failure rate and the last finished deployment. Lead time and time to
  * restore are "not tracked". A value that has not loaded or could not be
- * loaded is a dash -- never a zero -- and "No deployments recorded · Connect
- * your CI" appears only when the API says the organization has none.
+ * loaded is a dash -- never a zero -- and "No deployments recorded · Record a
+ * deployment →" appears only when the API says the organization has none.
+ * Deployments with no finished outcome are never counted as finished; the
+ * card says how many were recorded without a result (d3-build.md §1.7).
  *
  * The real card, services and shared axios client, with only the client's
  * transport stubbed.
@@ -22,8 +24,10 @@ import { EngineeringHealthCard } from '../engineering-health-card'
 // and above). No organization yet is the auth context's loading state.
 // effectiveTier: the tier the server enforces (free while restricted or lapsed).
 const auth = vi.hoisted(() => ({ organization: { id: 'org-a', subscriptionTier: 'pro', effectiveTier: 'pro' } as { id: string; subscriptionTier: string; effectiveTier?: string } | null }))
+const viewer = vi.hoisted(() => ({ role: 'ADMIN' as string }))
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({
+    user: { id: 'user-a', email: 'member@example.test', role: viewer.role },
     organization: auth.organization,
     organizationStatus: auth.organization ? 'ready' : 'loading',
     retryOrganizationLoad: async () => {},
@@ -94,6 +98,7 @@ const cardText = () => screen.getByTestId('engineering-health-card').textContent
 describe('Engineering Health card', () => {
   beforeEach(() => {
     requests.length = 0
+    viewer.role = 'ADMIN'
     auth.organization = { id: 'org-a', subscriptionTier: 'pro', effectiveTier: 'pro' }
     dora = doraBody(45, 5, 1.5, 10)
     stats = statsBody()
@@ -151,15 +156,85 @@ describe('Engineering Health card', () => {
     expect(cardText()).not.toMatch(/\bAI\b|AI-powered|insight/i)
   })
 
-  it('with no deployment in the organization at all: "No deployments recorded · Connect your CI", and no numbers', async () => {
+  it('with no deployment in the organization at all: "No deployments recorded · Record a deployment →" (to the form), no CI claim, and no numbers', async () => {
     dora = doraBody(0, 0, null, null)
     stats = statsBody({ total: 0, success: 0, failed: 0, change_failure_rate: null, organization_has_deployments: false, last_deployment: null })
     renderCard()
 
     const empty = await screen.findByTestId('engineering-health-empty')
-    expect(empty).toHaveTextContent(/^No deployments recorded · Connect your CI$/)
+    expect(empty).toHaveTextContent(/^No deployments recorded · Record a deployment →$/)
+    expect(within(empty).getByText('Record a deployment →').closest('a')).toHaveAttribute('href', '/deployments?record=1')
+    expect(cardText()).not.toMatch(/Connect your CI|\bCI\b|pipeline/i)
     expect(screen.queryByTestId('engineering-health-metrics')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('engineering-health-without-result')).not.toBeInTheDocument()
     expect(cardText()).not.toMatch(/\d/)
+  })
+
+  it.each([
+    ['ADMIN', 'pro'], ['USER', 'pro'], ['VIEWER', 'pro'], ['VIEWER', 'free'],
+  ])('the "Record a deployment →" link is offered to every role (D3-D5): %s on %s', async (role, tier) => {
+    // The same link for every member; a viewer gets the form's own "Viewers can't record" message (D2).
+    viewer.role = role
+    auth.organization = { id: 'org-a', subscriptionTier: tier, effectiveTier: tier }
+    stats = statsBody({ total: 0, success: 0, failed: 0, organization_has_deployments: false, last_deployment: null })
+    renderCard()
+
+    expect(await screen.findByTestId('engineering-health-record')).toHaveAttribute('href', '/deployments?record=1')
+  })
+
+  it.each([
+    ['on Pro', 'pro'],
+    ['below Pro', 'free'],
+  ])('only deployments without a result (%s): dashes, no "0 successful", no "0.0/day", and how many have no result', async (_name, tier) => {
+    auth.organization = { id: 'org-a', subscriptionTier: tier, effectiveTier: tier }
+    // 3 'deploying' rows in the window (2 older than 2 h: no completion recorded), nothing finished, ever.
+    dora = doraBody(0, 0, null, null)
+    stats = statsBody({
+      total: 3, success: 0, failed: 0, in_progress: 1, no_completion_recorded: 2, unknown: 0,
+      change_failure_rate: null, organization_has_deployments: true, last_deployment: null,
+    })
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    expect(screen.queryByTestId('engineering-health-empty')).not.toBeInTheDocument()
+    expect(screen.getByTestId('engineering-health-without-result')).toHaveTextContent(/^3 deployments recorded without a result · last 30 days$/)
+    expect(within(cell('last-deploy')).getByText('—')).toBeInTheDocument()
+    expect(cell('last-deploy')).toHaveTextContent('No finished deployment recorded')
+    if (tier === 'pro') {
+      expect(within(cell('deploys-per-day')).getByText('—')).toBeInTheDocument()
+      expect(cell('deploys-per-day')).toHaveTextContent(/^—Deployment frequencyLast 30 days$/)
+      expect(within(cell('change-failure-rate')).getByText('—')).toBeInTheDocument()
+      expect(cell('change-failure-rate')).toHaveTextContent('No finished deployments in this window')
+    }
+    expect(cardText()).not.toMatch(/0\.0\/day|0 successful|0\.0%|none failed|0 failed|Connect your CI/)
+  })
+
+  it('a mixed window: the finished figures as before, and the rows without a result named separately (D3-D4)', async () => {
+    dora = doraBody(4, 1, 0.13, 20)
+    stats = statsBody({ total: 7, success: 4, failed: 1, in_progress: 0, no_completion_recorded: 1, unknown: 1, change_failure_rate: 20 })
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    expect(cell('deploys-per-day')).toHaveTextContent('4 successful · last 30 days')
+    expect(cell('change-failure-rate')).toHaveTextContent('1 of 5 finished failed')
+    // 1 with no completion recorded + 1 with an unrecognised status.
+    expect(screen.getByTestId('engineering-health-without-result')).toHaveTextContent(/^2 deployments recorded without a result · last 30 days$/)
+  })
+
+  it('one deployment without a result: singular', async () => {
+    stats = statsBody({ total: 51, success: 45, failed: 5, in_progress: 1 })
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    expect(screen.getByTestId('engineering-health-without-result')).toHaveTextContent(/^1 deployment recorded without a result · last 30 days$/)
+  })
+
+  it('every deployment finished: no "without a result" line', async () => {
+    renderCard()
+
+    await waitFor(() => expect(screen.getByTestId('engineering-health-metrics')).toHaveAttribute('data-state', 'loaded'))
+    expect(screen.queryByTestId('engineering-health-without-result')).not.toBeInTheDocument()
+    expect(cardText()).not.toMatch(/without a result/)
   })
 
   it('a quiet window is not "no deployments": with nothing finished, frequency and rate are both dashes, never "0.0/day"', async () => {
@@ -175,7 +250,8 @@ describe('Engineering Health card', () => {
     expect(screen.queryByTestId('engineering-health-empty')).not.toBeInTheDocument()
     expect(within(cell('deploys-per-day')).getByText('—')).toBeInTheDocument()
     expect(cell('deploys-per-day')).not.toHaveTextContent('/day')
-    expect(cell('deploys-per-day')).toHaveTextContent('0 successful')
+    // A dash, so no measured "0 successful" under it (D3).
+    expect(cell('deploys-per-day')).toHaveTextContent(/^—Deployment frequencyLast 30 days$/)
     expect(within(cell('change-failure-rate')).getByText('—')).toBeInTheDocument()
     expect(cell('change-failure-rate')).toHaveTextContent('No finished deployments in this window')
     expect(cell('change-failure-rate')).not.toHaveTextContent('%')
@@ -288,7 +364,8 @@ describe('Engineering Health card', () => {
     stats = statsBody({ organization_has_deployments: false, total: 0, success: 0, failed: 0, last_deployment: null })
     renderCard()
 
-    expect(await screen.findByTestId('engineering-health-empty')).toHaveTextContent('No deployments recorded · Connect your CI')
+    expect(await screen.findByTestId('engineering-health-empty')).toHaveTextContent('No deployments recorded · Record a deployment →')
+    expect(cardText()).not.toMatch(/Connect your CI/)
     expect(requests.some(r => (r.url ?? '').startsWith('/api/metrics/dora'))).toBe(false)
   })
 

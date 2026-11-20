@@ -1,0 +1,58 @@
+DEVCONTROL WEEKLY SUMMARY
+Nov 9 – 15, 2026
+Example Org (synthetic) · Visibility plan
+
+Hi Alex,
+
+No open security findings and nothing to review in Cost Optimization. Spend for the 5 finished days was $2.31, down 26% on the same 5 days last week; 1 day is still updating and 1 isn't reported yet. No deployment finished this week; 3 were recorded without a result.
+
+SECURITY
+0 open
+
+AWS SPEND · 5 FINISHED DAYS
+Nov 9–13
+$2.31
+Down 26% on the same days
++ 1 day still updating · 1 not reported yet
+
+ESTIMATED SAVINGS
+Nothing to review
+all 7 active checks ran
+
+COST
+Finished days, Nov 9–13: $2.31. Same 5 days last week (Nov 2–6): $3.12. Down 26%.
+Still updating, Nov 14: $0.26 so far. Not included in the comparison.
+Not reported by Cost Explorer yet, Nov 15.
+
+Change in spend vs the same days last week
+RDS  −$0.60
+EC2  −$0.46
+CloudWatch  +$0.25
+See costs: https://app.example.test/costs
+
+DELIVERY
+No deployment finished this week · 3 recorded without a result
+See deployments: https://app.example.test/deployments
+
+Open DevControl: https://app.example.test/dashboard
+
+---
+AWS connection: OK · checked Nov 16, 06:02 UTC.
+Security figures are from the latest scan, completed Nov 16, 06:14 UTC.
+Savings are from the cost analysis completed Nov 16, 06:20 UTC.
+AWS Cost Explorer unblended cost after credits, by UTC day. Cost Explorer can take several days to finish a day; DevControl counts only finished days and lists the others as so far. If credits take a category below $0 on a day, that category counts as $0. Per-service figures are after credits and may not add up to the total.
+Security covers DevControl's own configuration checks, not AWS Security Hub. Savings are estimates, not confirmed billing savings.
+Lead time for changes and time to restore service: not tracked.
+Your active CloudWatch alarms are on Operational Health: https://app.example.test/admin/monitoring
+
+This is your weekly automated summary from DevControl.
+Unsubscribe: https://api.example.test/api/user/preferences/unsubscribe?token=v1.SYNTHETIC-USER.0000000000.SYNTHETIC-MAC
+Email Preferences: https://app.example.test/settings/notifications
+Privacy Policy: https://app.example.test/legal/privacy
+
+You're receiving this because you're an owner of Example Org (synthetic) and weekly summaries are on in your notification settings.
+
+DevControl, Inc.
+Questions? Email support@getdevcontrol.com.
+
+© 2026 DevControl. All rights reserved.

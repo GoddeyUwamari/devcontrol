@@ -360,7 +360,7 @@ export type DeliveryFacts =
       /** Every deployment recorded in the window, whatever its status. */
       count: number;
       failed: number;
-      /** success + failed. */
+      /** success + failed: the only finished outcomes. count - finished have no result (D3). */
       finished: number;
       /** The change failure rate: a number, null when nothing finished, undefined below the DORA metrics plan. */
       rate: number | null | undefined;
