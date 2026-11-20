@@ -3,7 +3,7 @@
  *   - DORA metrics are on Pro and above. Below, the page shows the upgrade
  *     state and asks the server for neither the metrics nor the benchmarks.
  *   - Custom benchmarks (reads included) are on Enterprise. Pro sees the
- *     existing lock and the benchmarks are never requested.
+ *     locked "Your targets" card and the benchmarks are never requested.
  *   - While the plan is loading or cannot be read: the shared plan states,
  *     never the upgrade state, and no DORA request.
  *
@@ -96,7 +96,7 @@ describe('DORA page — plan', () => {
 
     await waitFor(() => expect(asked('/api/metrics/dora')).toBe(true))
     expect(screen.queryByTestId('dora-plan-required')).not.toBeInTheDocument()
-    expect(screen.getByText('Custom DORA Benchmarking')).toBeInTheDocument()
+    expect(await screen.findByTestId('dora-targets-locked')).toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/dora/benchmarks')).toBe(false)
   })
@@ -105,14 +105,13 @@ describe('DORA page — plan', () => {
     auth.tier = 'pro'
     renderPage()
 
-    const lock = screen.getByText('Custom DORA Benchmarking').parentElement as HTMLElement
-    expect(lock).toHaveTextContent('Available on the Revenue Protection plan.')
+    // D5: the targets card's locked variant (Benchmark Settings moved there).
+    const lock = await screen.findByTestId('dora-targets-locked')
+    expect(lock).toHaveTextContent('Your targetsRevenue Protection')
+    expect(lock).toHaveTextContent('Available on the Revenue Protection plan')
     expect(within(lock).getByRole('link', { name: 'Upgrade to Revenue Protection →' })).toHaveAttribute('href', '/settings/billing')
-    expect(lock.textContent).not.toMatch(/Enterprise/)
-    // The section label uses the customer-facing name; the active badge is Enterprise-only.
-    expect(screen.getByText('Revenue Protection · Custom Benchmarks')).toBeInTheDocument()
-    expect(screen.queryByText('Revenue Protection active')).not.toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/Enterprise · Custom Benchmarks|Enterprise Active/)
+    expect(screen.queryByRole('button', { name: 'Set targets →' })).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Enterprise/)
   })
 
   it('on enterprise: both are requested', async () => {
@@ -121,10 +120,11 @@ describe('DORA page — plan', () => {
 
     await waitFor(() => expect(asked('/api/metrics/dora')).toBe(true))
     await waitFor(() => expect(asked('/api/dora/benchmarks')).toBe(true))
-    expect(screen.queryByText('Custom DORA Benchmarking')).not.toBeInTheDocument()
-    expect(screen.getByText('Revenue Protection · Custom Benchmarks')).toBeInTheDocument()
-    expect(screen.getByText('Revenue Protection active')).toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/Enterprise · Custom Benchmarks|Enterprise Active/)
+    const targets = await screen.findByTestId('dora-targets')
+    expect(targets).toHaveTextContent('Your targetsRevenue Protection')
+    expect(within(targets).getByRole('button', { name: 'Set targets →' })).toBeEnabled()
+    expect(screen.queryByTestId('dora-targets-locked')).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Enterprise/)
   })
 
   it('while the plan is loading: the loading state, no upgrade state, no request', async () => {
