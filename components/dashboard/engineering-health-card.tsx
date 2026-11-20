@@ -25,6 +25,8 @@ interface EngineeringHealthCardProps {
 
 const WINDOW = '30d'
 const WINDOW_LABEL = 'Last 30 days'
+/** D2's form, opened on the Deployments page (lib/navigation-config.ts uses the same path). */
+const RECORD_DEPLOYMENT_HREF = '/deployments?record=1'
 
 /**
  * Real mode reads the organization's own deployment records through the same
@@ -32,7 +34,11 @@ const WINDOW_LABEL = 'Last 30 days'
  * deployment frequency and change failure rate from GET /api/metrics/dora, the
  * last finished deployment from GET /api/deployments/stats. Lead time and
  * time to restore are not tracked and are never estimated. A value that has
- * not loaded, or could not be, is a dash -- never a zero.
+ * not loaded, or could not be, is a dash -- never a zero. Deployments with no
+ * finished outcome (anything but success / failed) are never counted as
+ * finished; when any were recorded in the window the card says how many
+ * (d3-build.md §1.7, D3-D4). DevControl records deployments; it does not run
+ * them, so the empty state offers the "Record a deployment" form.
  * Demo mode keeps the existing demonstration metrics, laid out as a compact
  * 4-up stat grid.
  *
@@ -81,12 +87,17 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
   const frequency = doraData?.deploymentFrequency.value
   const failureRate = doraData?.changeFailureRate.value
   const lastDeployment = statsData?.last_deployment ?? null
+  // Rows in the window with no finished outcome: 'deploying' and any other status (D3-D2).
+  const withoutResult = statsData ? Math.max(0, statsData.total - statsData.success - statsData.failed) : 0
   const realRows = [
     {
       key: 'deploys-per-day',
       label: 'Deployment frequency',
       value: typeof frequency === 'number' ? `${frequency.toFixed(1)}/day` : '—',
-      sub: doraData ? `${doraData.deployments.successful} successful · ${WINDOW_LABEL.toLowerCase()}` : WINDOW_LABEL,
+      // Nothing finished: the value is a dash, so no measured "0 successful" under it.
+      sub: doraData && doraData.deployments.finished > 0
+        ? `${doraData.deployments.successful} successful · ${WINDOW_LABEL.toLowerCase()}`
+        : WINDOW_LABEL,
     },
     {
       key: 'change-failure-rate',
@@ -142,7 +153,10 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
         </div>
       ) : noneRecorded ? (
         <p className="text-ui text-ink-muted leading-relaxed m-0" data-testid="engineering-health-empty">
-          No deployments recorded · Connect your CI
+          No deployments recorded ·{' '}
+          <a href={RECORD_DEPLOYMENT_HREF} className="font-semibold no-underline whitespace-nowrap" style={{ color: 'var(--text-accent)' }} data-testid="engineering-health-record">
+            Record a deployment →
+          </a>
         </p>
       ) : (
         <div data-testid="engineering-health-metrics" data-state={failed ? 'error' : loaded ? 'loaded' : 'loading'}>
@@ -158,8 +172,13 @@ export function EngineeringHealthCard({ isDemoActive, doraRows }: EngineeringHea
               </div>
             ))}
           </div>
+          {withoutResult > 0 && (
+            <p className="text-meta text-ink-muted leading-relaxed m-0 mt-3" data-testid="engineering-health-without-result">
+              {withoutResult} {withoutResult === 1 ? 'deployment' : 'deployments'} recorded without a result · {WINDOW_LABEL.toLowerCase()}
+            </p>
+          )}
           {(!planRequired || failed) && (
-            <p className="text-meta text-ink-muted leading-relaxed m-0 mt-3" data-testid="engineering-health-note">
+            <p className={`text-meta text-ink-muted leading-relaxed m-0 ${withoutResult > 0 ? 'mt-1' : 'mt-3'}`} data-testid="engineering-health-note">
               {failed ? 'Deployment metrics could not be loaded. ' : ''}{planRequired ? '' : 'Lead time and time to restore: not tracked'}
             </p>
           )}
