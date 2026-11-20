@@ -51,7 +51,7 @@ function MetricCard({ metricKey, name, metric, data, target, testId }: MetricCar
       </div>
       {custom && level && (
         <p className="text-meta text-ink-accent mb-1" data-testid={`${testId}-target`}>
-          {target !== undefined ? `Your target ${formatTarget(metricKey, target)} · ` : 'Graded against your target · '}Level: {LEVEL_NAME[level]}
+          {target !== undefined ? `Your target ${formatTarget(metricKey, target)} · ` : ''}{LEVEL_NAME[level]} against your target
         </p>
       )}
       {change && <p className="text-meta text-ink-body mb-1" data-testid={`${testId}-change`}>{change}</p>}

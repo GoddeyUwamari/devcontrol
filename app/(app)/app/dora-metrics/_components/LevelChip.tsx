@@ -18,11 +18,16 @@ export function LevelChip({ level, testId }: { level: BenchmarkLevel; testId?: s
   return <span data-testid={testId} data-level={level} className={`${CHIP} ${LEVEL_TONE[level]}`}>{LEVEL_NAME[level]}</span>
 }
 
+/** Met: the accent (purple). Missed: amber, so the two never look alike; the text says which. */
+const TARGET_MET = 'bg-violet-50 border-violet-200 text-ink-accent'
+const TARGET_MISSED = 'bg-amber-50 border-amber-200 text-ink-warning-strong'
+
 export function TargetChip({ meets, testId }: { meets: boolean; testId?: string }) {
   return (
     <span
       data-testid={testId}
-      className={`${CHIP} text-ink-accent ${meets ? 'bg-violet-50 border-violet-200' : 'bg-white border-violet-300'}`}
+      data-meets={meets ? 'true' : 'false'}
+      className={`${CHIP} ${meets ? TARGET_MET : TARGET_MISSED}`}
     >
       {meets ? COPY.meetsTarget : COPY.missesTarget}
     </span>

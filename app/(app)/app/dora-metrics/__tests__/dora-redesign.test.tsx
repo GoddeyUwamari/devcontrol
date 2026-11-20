@@ -362,11 +362,19 @@ describe('targets and plans', () => {
     ] } })
     renderPage()
     const failure = await card('change-failure-rate')
-    await waitFor(() => expect(within(failure).getByTestId('dora-card-change-failure-rate-target')).toHaveTextContent('Your target ≤ 2.0% · Level: Elite'))
+    await waitFor(() => expect(within(failure).getByTestId('dora-card-change-failure-rate-target')).toHaveTextContent('Your target ≤ 2.0% · Elite against your target'))
     expect(within(failure).getByTestId('dora-card-change-failure-rate-target-chip')).toHaveTextContent('Meets your target')
     const frequency = await card('deployment-frequency')
     expect(within(frequency).getByTestId('dora-card-deployment-frequency-target-chip')).toHaveTextContent('Misses your target')
-    expect(within(frequency).getByTestId('dora-card-deployment-frequency-target')).toHaveTextContent('Your target ≥ 5.0 / day · Level: High')
+    expect(within(frequency).getByTestId('dora-card-deployment-frequency-target')).toHaveTextContent('Your target ≥ 5.0 / day · High against your target')
+    expect(document.body).not.toHaveTextContent(/Level:/)
+    // Met and missed never share a style: purple vs amber.
+    const met = within(failure).getByTestId('dora-card-change-failure-rate-target-chip')
+    const missed = within(frequency).getByTestId('dora-card-deployment-frequency-target-chip')
+    expect(met).toHaveClass('bg-violet-50', 'text-ink-accent')
+    expect(missed).toHaveClass('bg-amber-50', 'text-ink-warning-strong')
+    expect(missed).not.toHaveClass('bg-violet-50')
+    expect(missed).not.toHaveClass('text-ink-accent')
     expect(screen.getByTestId('dora-levels-changeFailureRate')).toHaveTextContent('Graded against your target · see Your targets')
     expect(screen.getByTestId('dora-target-change_failure_rate')).toHaveTextContent('Target ≤ 2.0%')
   })
@@ -409,6 +417,28 @@ describe('target editor without a label input', () => {
     fireEvent.change(within(df).getByRole('spinbutton'), { target: { value: '2' } })
     fireEvent.click(within(df).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(apiPost).toHaveBeenLastCalledWith('/api/dora/benchmarks', { metric_name: 'deployment_frequency', target_value: 2, performance_label: 'Elite' }))
+  })
+})
+
+describe('How this is measured: the same records sentence as the Data and method card', () => {
+  it.each([
+    ['pipeline and by hand', [PIPELINE_ROW], { ...STATS_BASE }, 'Records come from your pipeline (GitHub Actions, via webhook) and from deployments recorded by hand on the Deployments page.'],
+    ['by hand only', [{ ...PIPELINE_ROW, metadata: { source: 'manual' } }], { ...STATS_BASE }, 'Records come from deployments recorded by hand on the Deployments page.'],
+    ['no records', [], { ...STATS_BASE, total: 0, success: 0, organization_has_deployments: false, last_deployment: null }, 'No records yet. Record a deployment by hand on the Deployments page.'],
+  ])('%s', async (_name, rows, stats, sentence) => {
+    getAll.mockResolvedValue(rows)
+    getStats.mockResolvedValue(stats)
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('dora-method-source')).toHaveTextContent(sentence))
+    fireEvent.click(screen.getByRole('button', { name: 'How this is measured →' }))
+    const dialog = await screen.findByTestId('dora-method-dialog')
+    expect(within(dialog).getByTestId('dora-method-dialog-source')).toHaveTextContent(sentence)
+    const others = [
+      'Records come from your pipeline (GitHub Actions, via webhook) and from deployments recorded by hand on the Deployments page.',
+      'Records come from deployments recorded by hand on the Deployments page.',
+      'No records yet. Record a deployment by hand on the Deployments page.',
+    ].filter((o) => o !== sentence)
+    for (const o of others) expect(dialog).not.toHaveTextContent(o)
   })
 })
 
