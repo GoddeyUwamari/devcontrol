@@ -11,8 +11,9 @@
  *     what GET /api/deployments/stats counts for them.
  *   - Another organization's deployments never appear, in a page or a total.
  *   - A created deployment's organization comes from the authenticated
- *     request only. organization_id, status, deployed_at and metadata in the
- *     body are dropped; an absent cost is stored as NULL, never 0.00.
+ *     request only. organization_id, deployed_at and metadata in the body are
+ *     dropped; deployed_by is the signed-in user; an absent cost is stored as
+ *     NULL, never 0.00. (status: see deployments-record.test.ts.)
  *
  * Real routes over an in-process HTTP server against live Postgres. The test
  * role is not subject to RLS, so the isolation assertions pass only because
@@ -408,9 +409,11 @@ describe('POST /api/deployments — the body cannot choose the organization', ()
     const caller = await buildOrg();
     const victim = await buildOrg();
 
+    // D2-D5: was 404 "Service not found"; now the route's own 400.
     for (const extra of [{}, { organization_id: victim.orgId }]) {
       const res = await create(caller, { service_id: victim.serviceId, environment: 'production', ...extra });
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ success: false, error: 'Choose an existing service.' });
     }
     const { rows } = await pool.query(
       'SELECT COUNT(*)::int AS n FROM deployments WHERE service_id = $1 OR organization_id = $2',
@@ -419,7 +422,10 @@ describe('POST /api/deployments — the body cannot choose the organization', ()
     expect(rows[0].n).toBe(0);
   });
 
-  it('drops status, deployed_at, metadata and unknown fields; an absent cost is stored as NULL', async () => {
+  // D2: status is no longer dropped ('success' / 'failed' are recorded; see
+  // deployments-record.test.ts), so this case omits it. deployed_by is the
+  // signed-in user and metadata is { source: 'manual' }.
+  it('drops deployed_at, metadata, deployed_by and unknown fields; an absent cost is stored as NULL', async () => {
     const org = await buildOrg();
 
     const res = await create(org, {
@@ -427,7 +433,7 @@ describe('POST /api/deployments — the body cannot choose the organization', ()
       environment: 'staging',
       region: 'eu-west-1',
       version: '1.2.3',
-      status: 'success',
+      deployed_by: 'platform-portal',
       deployed_at: '2001-01-01T00:00:00.000Z',
       metadata: { source: 'github_actions', github_job_id: 1 },
       id: '11111111-1111-4111-8111-111111111111',
@@ -435,15 +441,16 @@ describe('POST /api/deployments — the body cannot choose the organization', ()
     });
 
     expect(res.status).toBe(201);
+    const callerEmail = (await pool.query('SELECT email FROM users WHERE id = $1', [org.userId])).rows[0].email;
     const { rows } = await pool.query('SELECT * FROM deployments WHERE organization_id = $1', [org.orgId]);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       status: 'deploying',
       environment: 'staging',
       aws_region: 'eu-west-1',
-      deployed_by: 'platform-portal',
+      deployed_by: callerEmail,
       cost_estimate: null,
-      metadata: {},
+      metadata: { source: 'manual' },
       resources: { version: '1.2.3' },
     });
     expect(rows[0].id).not.toBe('11111111-1111-4111-8111-111111111111');

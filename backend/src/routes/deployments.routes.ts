@@ -12,6 +12,7 @@ import {
   changeFailureRate,
   isStatsWindow,
 } from '../services/deployment-status';
+import { MANUAL_RECORD_SOURCE, RECORDED_RESULTS, RECORD_MESSAGES } from '../services/deployment-record';
 
 const router = Router();
 const controller = new DeploymentsController();
@@ -131,18 +132,24 @@ router.get('/stats', authenticateToken, deploymentStatsHandler);
 router.get('/', authenticateToken, (req, res) => controller.getAll(req, res));
 router.get('/:id', authenticateToken, (req, res) => controller.getById(req, res));
 
-// ─── POST / — resolve serviceName → service_id, then delegate ────────────────
+// ─── POST / — record a deployment that already happened ──────────────────────
 
 // The only body fields a caller may set. Everything else -- organization_id,
-// status, deployed_at, metadata and any unknown key -- is dropped: the
-// organization comes from the authenticated request, a deployment created
-// here is always 'deploying' as of now, and metadata is reserved for the CI
-// integration's own provenance.
+// deployed_at, metadata and any unknown key -- is dropped: the organization
+// comes from the authenticated request, the time is the server's now, and
+// metadata is the server's provenance (source 'manual' here; the GitHub
+// webhook writes its own). deployed_by is accepted for older callers and
+// ignored: the row always names the signed-in user.
+//
+// status is optional. Omitted, the row is 'deploying', as before this
+// existed. 'success' or 'failed' records a finished deployment. Anything
+// else is refused.
 export const createDeploymentBodySchema = z.object({
   service_id: z.string().uuid().optional(),
   service_name: z.string().trim().min(1).max(255).optional(),
   serviceName: z.string().trim().min(1).max(255).optional(),
   environment: z.enum(DEPLOYMENT_ENVIRONMENTS),
+  status: z.enum(RECORDED_RESULTS).optional(),
   aws_region: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/).optional(),
   region: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/).optional(),
   deployed_by: z.string().trim().min(1).max(255).optional(),
@@ -158,64 +165,68 @@ router.post('/', authenticateToken, requireMember, checkResourceLimit('deploymen
       res.status(401).json({ success: false, error: 'Unauthorized - organization context required' });
       return;
     }
+    // The recorder is the signed-in user, from the current membership.
+    const recordedBy = req.user?.email;
+    if (!recordedBy) {
+      res.status(401).json({ success: false, error: 'Authentication required' });
+      return;
+    }
 
     const parsed = createDeploymentBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
-      res.status(400).json({ success: false, error: `Invalid ${issue.path.join('.') || 'body'}: ${issue.message}` });
+      const error = issue.path[0] === 'status'
+        ? RECORD_MESSAGES.invalidStatus
+        : `Invalid ${issue.path.join('.') || 'body'}: ${issue.message}`;
+      res.status(400).json({ success: false, error });
       return;
     }
     const body = parsed.data;
-    let service_id = body.service_id;
     const name = body.serviceName || body.service_name;
-
-    // Resolve service name → service_id if not already provided. The name is
-    // only ever matched against, or created in, the caller's organization.
-    if (!service_id && name) {
-      const { rows: existing } = await pool.query(
-        `SELECT id FROM services
-          WHERE LOWER(name) = LOWER($1) AND organization_id = $2
-          ORDER BY created_at DESC LIMIT 1`,
-        [name, orgId]
-      );
-
-      if (existing.length > 0) {
-        service_id = existing[0].id;
-      } else {
-        // Create a placeholder service
-        const { rows: inserted } = await pool.query(
-          `INSERT INTO services (name, template, owner, status, organization_id)
-           VALUES ($1, 'api', 'platform-portal@internal', 'active', $2)
-           RETURNING id`,
-          [name, orgId]
-        );
-        service_id = inserted[0].id;
-      }
+    if (!body.service_id && !name) {
+      res.status(400).json({ success: false, error: RECORD_MESSAGES.chooseService });
+      return;
     }
 
-    if (!service_id) {
-      res.status(400).json({ success: false, error: 'service_id or serviceName is required' });
+    // The service must already exist in the caller's organization. Nothing is
+    // created here: an unknown id or name, and another organization's
+    // service, get the same answer.
+    const { rows: found } = body.service_id
+      ? await pool.query(
+          'SELECT id, name FROM services WHERE id = $1 AND organization_id = $2',
+          [body.service_id, orgId]
+        )
+      : await pool.query(
+          `SELECT id, name FROM services
+            WHERE LOWER(name) = LOWER($1) AND organization_id = $2
+            ORDER BY created_at DESC LIMIT 1`,
+          [name, orgId]
+        );
+    if (found.length === 0) {
+      res.status(400).json({ success: false, error: RECORD_MESSAGES.chooseExistingService });
       return;
     }
 
     // The controller only ever sees the allowlisted fields.
     req.body = {
-      service_id,
+      service_id: found[0].id,
       environment: body.environment,
       aws_region: body.aws_region || body.region || 'us-east-1',
-      status: 'deploying',
-      deployed_by: body.deployed_by || 'platform-portal',
+      status: body.status ?? 'deploying',
+      deployed_by: recordedBy,
+      metadata: { source: MANUAL_RECORD_SOURCE },
       // Zero is not a recorded cost.
       ...(body.cost_estimate ? { cost_estimate: body.cost_estimate } : {}),
       ...(body.resources || body.version
         ? { resources: { ...(body.resources || {}), ...(body.version ? { version: body.version } : {}) } }
         : {}),
     };
+    res.locals.serviceName = found[0].name;
 
     controller.create(req, res);
   } catch (err: any) {
     console.error('[Deployments/create]', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: RECORD_MESSAGES.notRecorded });
   }
 });
 
