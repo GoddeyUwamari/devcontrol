@@ -199,6 +199,13 @@ export function bannerContent(s: CostScanState, ctx: BannerContext = UNKNOWN_CON
 
 export type ToastKind = 'success' | 'info' | 'warning'
 
+// "Run cost analysis" result banner (light-lane layout, Nov 20): shown in the top banner slot in place of the
+// Latest analysis banner, never as a toast. A finished run's text is analyzeToast()'s (founder ruling 7).
+export const RUN_RUNNING = 'Cost analysis running. This can take a few minutes.'
+export const RUN_FAILED = "Cost analysis didn't finish."
+/** A finished run (success or info kind) hides itself after this long; a warning or a failure stays until closed. */
+export const RUN_RESULT_AUTO_HIDE_MS = 10_000
+
 /**
  * The toast after a successful "Run cost analysis" response: from its run state and counts, never recommendationsFound.
  * `stillDetected` is /hidden's still-detected count after the run (null when /hidden didn't answer): the resolved part

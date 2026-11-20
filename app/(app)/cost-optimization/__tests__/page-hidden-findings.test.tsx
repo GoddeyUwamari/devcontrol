@@ -188,7 +188,7 @@ describe('Still detected group', () => {
 
     // Placement (tidy mock): the left column, after the disclaimer, never collapsed; the review list follows it.
     expect(screen.getByTestId('findings-column')).toContainElement(group)
-    expect(screen.getByTestId('checks-rail')).not.toContainElement(group)
+    expect(screen.getByTestId('summary-column')).not.toContainElement(group)
     const disclaimer = screen.getByText(/Savings figures are estimated potential savings/)
     expect(disclaimer.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(group.compareDocumentPosition(screen.getByTestId('review-list')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -234,27 +234,26 @@ describe('Still detected group', () => {
   it('still-detected findings are NOT added to the ACTIVE KPI totals (they come from /stats only)', async () => {
     renderPage()
     await loaded()
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('0')).toBeInTheDocument())
-    expect(within(kpiCard('Estimated Monthly Savings')).getByText('$0')).toBeInTheDocument()
-    expect(within(kpiCard('Estimated Monthly Savings')).queryByText(/\$13/)).not.toBeInTheDocument()
-    expect(within(kpiCard('Estimated Annual Savings')).getByText('$0')).toBeInTheDocument()
+    // The KPI value itself: the card also holds the High / Medium / Low chips, whose counts are 0 here.
+    await waitFor(() => expect(kpiCard('Open opportunities').querySelector('.text-kpi')).toHaveTextContent(/^0$/))
+    expect(within(kpiCard('Estimated monthly savings')).getByText('$0')).toBeInTheDocument()
+    expect(within(kpiCard('Estimated monthly savings')).queryByText(/\$13/)).not.toBeInTheDocument()
   })
 
-  it('nothing open: the tidy empty sentence, with the group below it (no "No active recommendations" headline)', async () => {
+  it('nothing open: "Nothing to act on right now", with the group below it (no "No active recommendations" headline)', async () => {
     renderPage()
     await loaded()
     const empty = screen.getByTestId('empty-state')
-    expect(within(empty).getByTestId('empty-all-checks')).toHaveTextContent(
-      'The latest analysis ran all 9 active checks (listed under What DevControl checks) and found nothing new. Findings you resolved or dismissed are below.'
-    )
+    expect(within(empty).getByRole('heading', { name: 'Nothing to act on right now' })).toBeInTheDocument()
+    expect(within(empty).getByText('Your resources passed all 9 active checks in the last analysis. DevControl runs the checks again on a schedule and lists anything new here.')).toBeInTheDocument()
     expect(screen.queryByText(EMPTY_HEADLINE)).not.toBeInTheDocument()
     expect(empty.compareDocumentPosition(slot()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('KPI note: "+ n still detected (below)" under Active opportunities, from the /hidden summary', async () => {
+  it('KPI note: "+ n still detected (below)" under Open opportunities, from the /hidden summary', async () => {
     renderPage()
     await loaded()
-    expect(within(kpiCard('Active Opportunities')).getByTestId('kpi-still-detected')).toHaveTextContent(/^\+ 2 still detected \(below\)$/)
+    expect(within(kpiCard('Open opportunities')).getByTestId('kpi-still-detected')).toHaveTextContent(/^\+ 2 still detected \(below\)$/)
   })
 
   it('KPI note is absent when nothing is still detected, and while /hidden is loading or failed', async () => {
@@ -470,7 +469,7 @@ describe('/hidden failed: C27, never empty', () => {
     renderPage()
     await waitFor(() => expect(screen.getByText(C27)).toBeInTheDocument())
     const card = await screen.findByTestId('empty-state')
-    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^The latest analysis ran all 9 active checks \(listed under What DevControl checks\) and found nothing new\.$/)
+    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^Nothing to act on right nowYour resources passed all 9 active checks in the last analysis\. DevControl runs the checks again on a schedule and lists anything new here\.See what's checkedView costs →$/)
     expect(card.textContent).not.toMatch(/below/)
   })
 
@@ -498,11 +497,11 @@ describe('truly empty (no active, nothing still detected)', () => {
     svc.getAnalysisRuns.mockResolvedValue([run()])
   })
 
-  it('one sentence (tidy mock), left-aligned, count from the run; no "below" pointer with nothing decided; the banner is not repeated', async () => {
+  it('"Nothing to act on right now" (light-lane layout), left-aligned, count from the run; no "below" pointer; the banner is not repeated', async () => {
     renderPage()
     await loaded()
     const card = await screen.findByTestId('empty-state')
-    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^The latest analysis ran all 9 active checks \(listed under What DevControl checks\) and found nothing new\.$/)
+    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^Nothing to act on right nowYour resources passed all 9 active checks in the last analysis\. DevControl runs the checks again on a schedule and lists anything new here\.See what's checkedView costs →$/)
     expect(within(card).queryByText(EMPTY_HEADLINE)).not.toBeInTheDocument()
     expect(card.className).not.toMatch(/text-center/)
     // The banner says it once.
@@ -515,7 +514,7 @@ describe('truly empty (no active, nothing still detected)', () => {
     svc.getAnalysisRuns.mockResolvedValue([run({ checks: run().checks!.slice(0, 3) })])
     renderPage()
     await loaded()
-    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent(/ran all 3 active checks/)
+    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent(/passed all 3 active checks/)
   })
 
   it('a partial run, or one that found something new since resolved, never says "ran all … found nothing new"', async () => {
@@ -697,8 +696,8 @@ describe('Reopen and Dismiss', () => {
     svc.getAll.mockResolvedValue([{ id: 'active-new', issue: 'Idle Instance', resourceId: 'i-placeholder0001', status: 'ACTIVE', potentialSavings: 12.5, metadata: { savings_basis: 'estimated:cloudwatch_cpu' } }])
     fireEvent.click(within(slot()).getAllByRole('button', { name: /reopen/i })[0])
     await waitFor(() => expect(within(slot()).getByTestId('still-detected-heading')).toHaveTextContent(/^Still detected \(1\)$/))
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('1')).toBeInTheDocument())
-    expect(screen.getByText('1 active opportunity')).toBeInTheDocument()
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('1')).toBeInTheDocument())
+    expect(screen.getByRole('heading', { name: 'Opportunities (1)' })).toBeInTheDocument()
   })
 
   it('C15 when reopened but not confirmed', async () => {
@@ -844,9 +843,9 @@ describe('stale responses never overwrite newer data', () => {
       { id: 'a2', issue: 'S3 Lifecycle Optimization', resourceId: 'b-1', status: 'ACTIVE', potentialSavings: 5, metadata: { savings_basis: 'ceiling:x' } },
     ])
     fireEvent.click(within(slot()).getAllByRole('button', { name: /reopen/i })[0])
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('2')).toBeInTheDocument())
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('2')).toBeInTheDocument())
     await waitFor(() => expect(screen.queryByRole('heading', { name: STILL_HEADING })).not.toBeInTheDocument())
-    expect(screen.getByText('2 active opportunities')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Opportunities (2)' })).toBeInTheDocument()
 
     // The older responses now arrive, carrying the pre-reopen state.
     await act(async () => {
@@ -856,8 +855,8 @@ describe('stale responses never overwrite newer data', () => {
     })
     await new Promise((r) => setTimeout(r, 50))
     expect(screen.queryByRole('heading', { name: STILL_HEADING })).not.toBeInTheDocument()
-    expect(within(kpiCard('Active Opportunities')).getByText('2')).toBeInTheDocument()
-    expect(screen.getByText('2 active opportunities')).toBeInTheDocument()
+    expect(within(kpiCard('Open opportunities')).getByText('2')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Opportunities (2)' })).toBeInTheDocument()
     expect(queryClient.getQueryData(['cost-recommendations-hidden'])).toEqual(NOTHING_HIDDEN)
   })
 
@@ -894,10 +893,11 @@ describe('mutation succeeds but a refresh fails', () => {
   it('/stats refresh fails: the KPIs say Unavailable, never the old totals', async () => {
     renderPage()
     await loaded()
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('0')).toBeInTheDocument())
+    // The KPI value itself: the card also holds the High / Medium / Low chips, whose counts are 0 here.
+    await waitFor(() => expect(kpiCard('Open opportunities').querySelector('.text-kpi')).toHaveTextContent(/^0$/))
     svc.getStats.mockRejectedValue(new Error('x'))
     fireEvent.click(within(slot()).getAllByRole('button', { name: /reopen/i })[0])
-    await waitFor(() => expect(within(kpiCard('Active Opportunities')).getByText('Unavailable')).toBeInTheDocument())
+    await waitFor(() => expect(within(kpiCard('Open opportunities')).getByText('Unavailable')).toBeInTheDocument())
     expect(screen.getByText("Totals couldn't load. This doesn't mean there are no savings.")).toBeInTheDocument()
   })
 
