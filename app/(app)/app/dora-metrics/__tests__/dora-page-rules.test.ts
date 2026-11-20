@@ -39,14 +39,19 @@ describe('precision (D5-D6): one decimal unless it would contradict the level sh
     [0.16, 'high', '0.2 / day'],
     [0.13, 'medium', '0.1 / day'],
     [0.03, 'medium', '0.03 / day'], // "0.0" would read as Low
-    [0.02, 'low', '0.0 / day'],
+    [0.02, 'low', '0.02 / day'], // non-zero never reads 0.0
+    [0.01, 'low', '0.01 / day'],
+    [0.05, 'medium', '0.1 / day'],
   ] as const)('frequency %s (%s) → %s', (value, level, text) => {
     expect(formatMetricValue('deploymentFrequency', value, band(level), DF, undefined)).toBe(text)
   })
 
   it.each([
     // change failure rate, bands elite <= 5, high > 5..10, medium > 10..15, low > 15
-    [0, 'elite', '0.0%'],
+    [0, 'elite', '0.0%'], // a real zero stays 0.0
+    [0.04, 'elite', '0.04%'], // non-zero never reads 0.0
+    [0.01, 'elite', '0.01%'],
+    [0.05, 'elite', '0.1%'],
     [4.96, 'elite', '5.0%'],
     [5, 'elite', '5.0%'],
     [5.01, 'high', '5.01%'], // "5.0" would read as Elite
@@ -59,6 +64,12 @@ describe('precision (D5-D6): one decimal unless it would contradict the level sh
     [25, 'low', '25.0%'],
   ] as const)('failure rate %s (%s) → %s', (value, level, text) => {
     expect(formatMetricValue('changeFailureRate', value, band(level), CFR, undefined)).toBe(text)
+  })
+
+  it('a non-zero value never reads 0.0, with or without a level or a target', () => {
+    expect(formatMetricValue('deploymentFrequency', 0.02, custom('low'), DF, 1)).toBe('0.02 / day')
+    expect(formatMetricValue('changeFailureRate', 0.03, custom('elite'), CFR, 2)).toBe('0.03%')
+    expect(formatMetricValue('deploymentFrequency', 0.04, band('low'), undefined, undefined)).toBe('0.04 / day')
   })
 
   it('with a custom target, two decimals only when one would flip "meets" / "misses"', () => {

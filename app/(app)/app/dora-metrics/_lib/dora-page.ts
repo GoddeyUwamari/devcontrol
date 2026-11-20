@@ -103,9 +103,10 @@ export function insideBand(band: DORABand, x: number): boolean {
 }
 
 /**
- * Display precision (founder ruling D5-D6): one decimal, unless the one-decimal
- * text would contradict the level shown beside it; then two (the API value is
- * already two decimals, and the level was graded on it).
+ * Display precision (founder rulings D5-D6 and its follow-up): one decimal,
+ * unless the one-decimal text would read 0.0 for a non-zero value or would
+ * contradict the level shown beside it; then two (the API value is already
+ * two decimals, and the level was graded on it).
  *   - Comparison band level: the 1-dp value must lie inside that level's served bounds.
  *   - Custom target: the 1-dp value must meet / miss the target as the chip says.
  */
@@ -118,6 +119,8 @@ export function displayDecimals(
 ): 1 | 2 {
   // The number the 1-decimal text shows (toFixed's own rounding, so the check matches the text).
   const shown = Number(value.toFixed(1))
+  // A non-zero value never reads as 0.0 (founder ruling, after D5-D6).
+  if (shown === 0 && value !== 0) return 2
   if (shown === value || level.benchmark == null) return 1
   if (level.isCustomBenchmark) {
     if (target === undefined) return 1
