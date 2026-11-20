@@ -32,7 +32,7 @@ export const COPY = {
   mergeText2: 'Starts at the merge because changes are squash-merged.',
   recoveryName: 'Failed deployment recovery time',
   recoveryNoFailures: 'No qualifying failures in this period',
-  recoveryText: 'DORA: time to recover from a deployment that impaired production. Counted only once DevControl can tell a production-impacting failure from a safely rolled-back deploy.',
+  recoveryText: 'DORA: time to recover from a deployment that impaired production. Counted only once DevControl can tell a production-impacting failure from one that never reached production.',
   planned: 'Planned',
   insufficient: 'fewer than 5 finished, so the level is indicative',
   meetsTarget: 'Meets your target',

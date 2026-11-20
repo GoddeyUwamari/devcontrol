@@ -106,7 +106,8 @@ describe('Engineering Intelligence — own account, populated', () => {
     const recovery = await card('failed-deployment-recovery-time')
     expect(within(recovery).getByText('Planned')).toBeInTheDocument()
     expect(within(recovery).getByText('No qualifying failures in this period')).toBeInTheDocument()
-    expect(recovery).toHaveTextContent('DORA: time to recover from a deployment that impaired production.')
+    expect(recovery).toHaveTextContent('DORA: time to recover from a deployment that impaired production. Counted only once DevControl can tell a production-impacting failure from one that never reached production.')
+    expect(document.body).not.toHaveTextContent(/rolled-back/)
   })
 
   it('header: subtitle, source line from the records (no render-time "Last updated"), exports enabled', async () => {
