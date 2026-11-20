@@ -7,8 +7,9 @@
  *   - Nothing records a deployment cost, so "$0.00" is never shown: the Cost
  *     column is hidden unless a row in view has a recorded cost, and a row
  *     without one shows a dash.
- *   - "No deployments recorded · Connect your CI" is only for an organization
- *     with no deployment at all. A filter or window that selects nothing says
+ *   - "No deployments recorded · Record a deployment after it happens" is
+ *     only for an organization with no deployment at all (D2: it no longer
+ *     says "Connect your CI"). A filter or window that selects nothing says
  *     exactly that.
  *
  * The real page, service and shared axios client, with only the client's
@@ -411,16 +412,18 @@ describe('Deployments page — empty states', () => {
     localStorage.clear()
   })
 
-  it('an organization with no deployment at all: "No deployments recorded" and "Connect your CI"', async () => {
+  it('an organization with no deployment at all: "No deployments recorded" and how to record one (never "Connect your CI")', async () => {
     rows = []
     renderPage()
 
     const top = await screen.findByTestId('deployments-empty-state')
     expect(top).toHaveTextContent('No deployments recorded')
-    expect(top).toHaveTextContent('Connect your CI')
+    expect(top).toHaveTextContent('Record a deployment after it happens. Success, failure and change failure rate appear here once one has been recorded.')
     const log = screen.getByTestId('deployment-log-empty')
     expect(log).toHaveAttribute('data-reason', 'none-recorded')
-    expect(log).toHaveTextContent('Connect your CI to record deployments.')
+    expect(log).toHaveTextContent('Record your first deployment once it has happened.')
+    expect(within(log).getByRole('button', { name: 'Record first deployment' })).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Connect your CI/)
     expect(screen.queryByTestId('deployment-pagination')).not.toBeInTheDocument()
   })
 

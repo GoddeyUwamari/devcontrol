@@ -15,8 +15,11 @@
  *     where an older schema still allows it, such a row is created and shown
  *     never to be returned or matched. Which applies is read from
  *     information_schema at setup.
- *   - POST /api/deployments and the GitHub webhook resolve a service name
- *     only within their own organization, and create it there when absent.
+ *   - POST /api/deployments resolves a service name only within the
+ *     caller's organization and never creates one (D2): an unknown name, or
+ *     another organization's, is 400 "Choose an existing service.". The
+ *     GitHub webhook resolves a repository name only within its own
+ *     organization, and creates it there when absent.
  *
  * Real routes over an in-process HTTP server against live Postgres. The test
  * role is not subject to RLS (see the precondition test), so every isolation
@@ -486,7 +489,7 @@ describe('ServicesRepository reads are confined to the given organization', () =
   });
 });
 
-describe('POST /api/deployments resolves a service name only within the caller\'s organization', () => {
+describe('POST /api/deployments resolves a service name only within the caller\'s organization, and never creates one', () => {
   it('matches the organization\'s own service by name, case-insensitively, and creates no second row', async () => {
     const name = `Services-Authz-Deploy-${uniqueSuffix()}`;
     const own = await insertService(orgA.orgId, name);
@@ -500,17 +503,18 @@ describe('POST /api/deployments resolves a service name only within the caller\'
     expect((await servicesNamed(name)).length).toBe(1);
   });
 
-  it('another organization\'s service of the same name is not matched: a new one is created in the caller\'s organization', async () => {
+  // D2-D5: was 201 + a new service in the caller's organization.
+  it('another organization\'s service of the same name is not matched: 400, and no service is created in either organization', async () => {
     const name = `services-authz-deploy-${uniqueSuffix()}`;
     const foreign = await insertService(orgB.orgId, name);
 
     const res = await as(orgA.admin, orgA.orgId).deploy({ serviceName: name });
-    expect(res.status).toBe(201);
-    const { data } = (await res.json()) as { data: { service_id: string; organization_id: string } };
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'Choose an existing service.' });
 
-    expect(data.service_id).not.toBe(foreign);
-    expect((await serviceRow(data.service_id)).organization_id).toBe(orgA.orgId);
-    expect(data.organization_id).toBe(orgA.orgId);
+    expect(await servicesNamed(name)).toEqual([{ id: foreign, organization_id: orgB.orgId }]);
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM deployments WHERE service_id = $1', [foreign]);
+    expect(rows[0].n).toBe(0);
   });
 
   it('a service with no organization of the same name: refused by the database, or not matched', async () => {
@@ -521,20 +525,22 @@ describe('POST /api/deployments resolves a service name only within the caller\'
     }
     const orphan = await insertService(null, name);
 
+    // D2-D5: was 201 + a new service in the caller's organization.
     const res = await as(orgA.admin, orgA.orgId).deploy({ serviceName: name });
-    expect(res.status).toBe(201);
-    const { data } = (await res.json()) as { data: { service_id: string } };
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'Choose an existing service.' });
 
-    expect(data.service_id).not.toBe(orphan);
-    expect((await serviceRow(data.service_id)).organization_id).toBe(orgA.orgId);
+    expect(await servicesNamed(name)).toEqual([{ id: orphan, organization_id: null }]);
     expect((await serviceRow(orphan)).organization_id).toBeNull();
   });
 
-  it('an unknown name creates the service in the caller\'s organization', async () => {
+  // D2-D5: was 201 + the service created in the caller's organization.
+  it.each(['owner', 'admin', 'member'] as const)('an unknown name is 400 for %s, and creates no service', async (role) => {
     const name = `services-authz-deploy-${uniqueSuffix()}`;
-    const res = await as(orgA.admin, orgA.orgId).deploy({ serviceName: name });
-    expect(res.status).toBe(201);
-    expect((await servicesNamed(name)).map((s) => s.organization_id)).toEqual([orgA.orgId]);
+    const res = await as(orgA[role], orgA.orgId).deploy({ serviceName: name });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'Choose an existing service.' });
+    expect(await servicesNamed(name)).toEqual([]);
   });
 
   it('who may post a deployment is unchanged: a member still can', async () => {

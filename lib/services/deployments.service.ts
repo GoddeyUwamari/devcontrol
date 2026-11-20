@@ -1,11 +1,11 @@
 import api, { handleApiResponse } from '../api';
 import type {
-  CreateDeploymentPayload,
   DeploymentFilters,
   ApiResponse,
 } from '../types';
 import { recordedCost } from '../deployments/status';
 import type { DeploymentPage, DeploymentStats, RecordedDeployment, StatsWindow } from '../deployments/status';
+import type { RecordedResult } from '../deployments/record';
 
 export const deploymentsService = {
   // Get all deployments with optional filters
@@ -102,29 +102,6 @@ export const deploymentsService = {
     };
   },
 
-  // Create new deployment
-  create: async (payload: CreateDeploymentPayload): Promise<RecordedDeployment> => {
-    const response = await api.post<ApiResponse<any>>('/api/deployments', payload);
-    const d = handleApiResponse(response);
-    
-    return {
-      id: d.id,
-      serviceId: d.service_id,
-      serviceName: d.service_name,
-      environment: d.environment,
-      awsRegion: d.aws_region,
-      status: d.status,
-      costEstimate: recordedCost(d.cost_estimate),
-      deployedBy: d.deployed_by,
-      deployedAt: d.deployed_at,
-      resources: d.resources,
-      logs: d.logs,
-      metadata: d.metadata,
-      createdAt: d.created_at,
-      updatedAt: d.updated_at,
-    };
-  },
-
   // Delete deployment
   delete: async (id: string): Promise<void> => {
     await api.delete(`/api/deployments/${id}`);
@@ -142,15 +119,18 @@ export const deploymentsService = {
     return response.data.stats;
   },
 
-  // Create deployment from modal (accepts serviceName instead of service_id)
-  createFromModal: async (payload: {
-    serviceName: string; environment: string; region: string; version?: string;
+  // Record a deployment that has already happened (the Deployments page's
+  // "Record a deployment" form, the only one). The server sets who recorded
+  // it (the signed-in user), when (now) and metadata.source = 'manual'; the
+  // service must already be registered in the organization.
+  record: async (payload: {
+    serviceId: string; environment: string; region: string; status: RecordedResult; version?: string;
   }): Promise<void> => {
     const response = await api.post<ApiResponse<any>>('/api/deployments', {
-      service_name:  payload.serviceName,
-      environment:   payload.environment,
-      aws_region:    payload.region,
-      deployed_by:   'platform-portal',
+      service_id:  payload.serviceId,
+      environment: payload.environment,
+      aws_region:  payload.region,
+      status:      payload.status,
       ...(payload.version ? { version: payload.version } : {}),
     });
     handleApiResponse(response);

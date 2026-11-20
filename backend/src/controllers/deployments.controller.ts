@@ -4,6 +4,7 @@ import { CreateDeploymentRequest, DeploymentFilters, ApiResponse } from '../type
 import { DeploymentEvents } from '../services/deploymentEvents';
 import { WebSocketServer } from '../websocket/server';
 import { emitOnboardingEvent } from '../services/onboardingEvents';
+import { RECORD_MESSAGES } from '../services/deployment-record';
 import {
   DEFAULT_PAGE_SIZE,
   DEPLOYMENT_ENVIRONMENTS,
@@ -164,13 +165,14 @@ export class DeploymentsController {
 
       const deployment = await repository.create({ ...deploymentData, organization_id: organizationId });
       if (!deployment) {
-        // Same answer whether the service doesn't exist or belongs to
-        // another organization.
+        // The insert re-checks the service in the same statement: it is gone
+        // or belongs to another organization. Same answer as the route's own
+        // lookup, so neither case can be told apart.
         const response: ApiResponse = {
           success: false,
-          error: 'Service not found',
+          error: RECORD_MESSAGES.chooseExistingService,
         };
-        res.status(404).json(response);
+        res.status(400).json(response);
         return;
       }
 
@@ -183,17 +185,29 @@ export class DeploymentsController {
         });
       }
 
-      // Emit WebSocket event for deployment started
+      // A finished record (success / failed) is announced as completed; only a
+      // row left 'deploying' is announced as started. DevControl performed
+      // neither: the event just tells open pages a row was recorded.
+      const serviceName: string = res.locals?.serviceName || 'Unknown Service';
+      const finished = deployment.status === 'success' || deployment.status === 'failed';
       try {
         const wsServer: WebSocketServer = req.app.get('wsServer');
         if (wsServer) {
           const deploymentEvents = new DeploymentEvents(wsServer);
-          deploymentEvents.deploymentStarted(organizationId || 'default-org', {
-            id: deployment.id,
-            service_name: 'Unknown Service',
-            environment: deployment.environment,
-            deployed_by: deployment.deployed_by,
-          });
+          if (finished) {
+            deploymentEvents.deploymentCompleted(organizationId || 'default-org', {
+              id: deployment.id,
+              service_name: serviceName,
+              status: deployment.status,
+            });
+          } else {
+            deploymentEvents.deploymentStarted(organizationId || 'default-org', {
+              id: deployment.id,
+              service_name: serviceName,
+              environment: deployment.environment,
+              deployed_by: deployment.deployed_by,
+            });
+          }
         }
       } catch (wsError) {
         console.error('Error emitting WebSocket event:', wsError);
@@ -203,15 +217,17 @@ export class DeploymentsController {
       const response: ApiResponse = {
         success: true,
         data: deployment,
-        message: 'Deployment created successfully',
+        message: finished ? 'Deployment recorded' : 'Deployment created successfully',
       };
 
       res.status(201).json(response);
     } catch (error) {
       console.error('Error creating deployment:', error);
+      // Same approved copy as the route's catch (E7, docs/API.md); the
+      // database error stays in the log.
       const response: ApiResponse = {
         success: false,
-        error: 'Failed to create deployment',
+        error: RECORD_MESSAGES.notRecorded,
       };
       res.status(500).json(response);
     }

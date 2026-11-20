@@ -575,8 +575,9 @@ describe('deployment creation requires the service to belong to the organization
     const withMissing = mockReqRes(orgA, body(randomUUID()));
     await deploymentsController.create(withMissing.req, withMissing.res);
 
-    expect(withForeign.status).toHaveBeenCalledWith(404);
-    expect(withForeign.json).toHaveBeenCalledWith({ success: false, error: 'Service not found' });
+    // D2-D5: was 404 "Service not found"; now the same 400 the route gives an unknown service.
+    expect(withForeign.status).toHaveBeenCalledWith(400);
+    expect(withForeign.json).toHaveBeenCalledWith({ success: false, error: 'Choose an existing service.' });
     expect(withForeign.status.mock.calls).toEqual(withMissing.status.mock.calls);
     expect(withForeign.json.mock.calls).toEqual(withMissing.json.mock.calls);
     expect(await deploymentCount(foreign)).toBe(0);
@@ -593,7 +594,7 @@ describe('deployment creation requires the service to belong to the organization
 
     const attack = mockReqRes(orgA, body(foreign, { organization_id: orgB }));
     await deploymentsController.create(attack.req, attack.res);
-    expect(attack.status).toHaveBeenCalledWith(404);
+    expect(attack.status).toHaveBeenCalledWith(400); // D2-D5: was 404
     expect(await deploymentCount(foreign)).toBe(0);
 
     const mislabeled = mockReqRes(orgA, body(own, { organization_id: orgB }));

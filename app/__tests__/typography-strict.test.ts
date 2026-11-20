@@ -129,7 +129,8 @@ const SM = [
 ]
 
 // The DevOps pages (DEVOPS): DORA (/app/dora-metrics), Deployments (log, new, detail) and Dependencies, plus every
-// components/dependencies file and components/deployments/LiveLogViewer (only these pages use them). The other
+// components/dependencies file and components/deployments/LiveLogViewer and record-deployment-modal (only these
+// pages use them). The other
 // components/deployments files have no importer (typography plan §1.8) and stay out until the unused-component
 // cleanup. A self-check below keeps this list equal to that. Observability, monitoring, SLOs and status wait for
 // the Observability redesign.
@@ -150,6 +151,7 @@ const DEVOPS = [
   'app/(app)/deployments/[id]/page.tsx',
   'app/(app)/dependencies/page.tsx',
   'components/deployments/LiveLogViewer.tsx',
+  'components/deployments/record-deployment-modal.tsx',
   'components/dependencies/AddDependencyDialog.tsx',
   'components/dependencies/DependencyGraph.tsx',
   'components/dependencies/DependencyList.tsx',
@@ -520,12 +522,11 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'app/(app)/app/dora-metrics/page.tsx', match: 'text-xl', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The decorative 🔒 emoji in the Enterprise benchmark gate.' },
   { file: 'app/(app)/deployments/page.tsx', match: 'text-lg', rule: 'Tailwind size scale (use a role token)', count: 1, reason: 'The decorative ⚠️ emoji in the deployment-limit upgrade prompt.' },
   { file: 'app/(app)/deployments/page.tsx', match: 'text-red-600', rule: 'text colour below AA on light surfaces', count: 3, reason: "Status icons: the error banner's AlertTriangle and the failed row's XCircle (phone and desktop)." },
-  { file: 'app/(app)/deployments/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 4, reason: 'Decorative: the loading RefreshCw and empty-state Rocket icons, the aria-hidden "…" page gap, and the icon-only modal close button (X).' },
+  { file: 'app/(app)/deployments/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 3, reason: 'Decorative: the loading RefreshCw and empty-state Rocket icons, and the aria-hidden "…" page gap.' },
   { file: 'app/(app)/deployments/page.tsx', match: 'color: statusColor', rule: 'inline text style', count: 3, reason: 'Not a style once (destructuring color from lib/deployments/status); twice the status pill on its own tint (phone, desktop).' },
   { file: 'app/(app)/deployments/page.tsx', match: 'color: envColor', rule: 'inline text style', count: 2, reason: 'The environment pill on its own tint (phone, desktop); kept (listed for the colour/TG PR).' },
   { file: 'app/(app)/deployments/page.tsx', match: 'opacity-40', variant: 'disabled:', rule: 'opacity on content', count: 2, reason: 'Previous / Next at the first or last page; the solid disabled style is deferred.' },
-  { file: 'app/(app)/deployments/new/page.tsx', match: 'text-[#635BFF]', rule: 'arbitrary text colour', count: 1, reason: 'The decorative Rocket icon in the form card title.' },
-  { file: 'app/(app)/deployments/new/page.tsx', match: 'text-base', rule: 'Tailwind size scale (use a role token)', count: 2, reason: 'The Deployed By input keeps its 16 px text (one class per branch of the error ternary).' },
+  { file: 'components/deployments/record-deployment-modal.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'Decorative: the icon-only close button (X) of the Record a deployment form.' },
   { file: 'components/deployments/LiveLogViewer.tsx', match: 'text-green-400', rule: 'text colour below AA on light surfaces', count: 1, reason: 'Log text on the black terminal surface (light on dark).' },
   { file: 'components/deployments/LiveLogViewer.tsx', match: 'text-gray-500', rule: 'text colour below AA on light surfaces', count: 2, reason: 'The placeholder and timestamps inside the black terminal surface, not on a light one.' },
   { file: 'app/(app)/dependencies/page.tsx', match: 'text-amber-600', rule: 'text colour below AA on light surfaces', count: 1, reason: "The slow-load notice's aria-hidden Clock icon." },

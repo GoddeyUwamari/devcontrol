@@ -352,7 +352,7 @@ export const quickActions: NavItem[] = [
   },
   {
     label: 'Record Deployment',
-    href: '/deployments/new',
+    href: '/deployments?record=1',
     icon: Rocket,
   },
   {

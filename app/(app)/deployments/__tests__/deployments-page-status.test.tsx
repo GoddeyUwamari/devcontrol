@@ -175,7 +175,7 @@ describe('Deployments page', () => {
     // The last finished deployment is still reported, with its recorded status.
     expect(within(card('last-deployment')).getByText('Failed')).toBeInTheDocument()
   })
-  it('with nothing ever recorded: says so and asks to connect CI -- no cards of zeros', async () => {
+  it('with nothing ever recorded: says so and how to record one -- no cards of zeros', async () => {
     listRows = []
     statsOverride = {
       window_days: 30, total: 0, success: 0, failed: 0, in_progress: 0, no_completion_recorded: 0, unknown: 0,
@@ -185,7 +185,8 @@ describe('Deployments page', () => {
 
     const empty = await screen.findByTestId('deployments-empty-state')
     expect(empty).toHaveTextContent('No deployments recorded')
-    expect(empty).toHaveTextContent('Connect your CI')
+    expect(empty).toHaveTextContent('Record a deployment after it happens.')
+    expect(empty).not.toHaveTextContent(/Connect your CI/)
     expect(screen.queryByTestId('deployment-card-succeeded')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-card-failed-deploys')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-card-change-failure-rate')).not.toBeInTheDocument()
