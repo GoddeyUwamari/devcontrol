@@ -34,6 +34,7 @@ import deploymentsRoutes from '../deployments.routes';
 import { errorHandler } from '../../middleware/error-handler';
 import { authService } from '../../services/auth.service';
 import { DORAMetricsRepository } from '../../repositories/dora-metrics.repository';
+import { DeploymentsRepository } from '../../repositories/deployments.repository';
 import { DORAMetricsService } from '../../services/dora-metrics.service';
 import { pool as appPool } from '../../config/database';
 
@@ -395,6 +396,44 @@ describe('provenance is set by the server', () => {
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ success: false, error: 'The deployment could not be recorded.' });
     expect(await deploymentRows(org.orgId)).toEqual([]);
+  });
+
+  it("a 500 from the controller's insert says the same, with no internal text", async () => {
+    const org = await buildOrg();
+    // The lookup succeeds (by id); the NUL byte in version only reaches
+    // Postgres in the INSERT's jsonb resources, which refuses \u0000: the
+    // controller's own catch, not the route's.
+    const res = await record(org, { service_id: org.serviceId, status: 'success', version: 'a\u0000b' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'The deployment could not be recorded.' });
+    expect(JSON.stringify(res.body)).not.toMatch(/unicode|jsonb|0x00|\\u0000|failed to create|syntax|postgres/i);
+    expect(console.error).toHaveBeenCalledWith('Error creating deployment:', expect.anything());
+    expect(await deploymentRows(org.orgId)).toEqual([]);
+    expect(emitToOrganization).not.toHaveBeenCalled();
+  });
+});
+
+// ─── two organization checks, each pinned ────────────────────────────────────
+
+describe("the route's own lookup is scoped to the caller's organization", () => {
+  // The INSERT re-checks the service's organization too, so a foreign service
+  // gets the same 400 with either check alone. This pins the route's check:
+  // another organization's service is refused before any insert is tried.
+  it.each([
+    ['service_id', () => ({ service_id: orgB.serviceId })],
+    ['serviceName', () => ({ serviceName: orgB.serviceName })],
+  ] as const)("another organization's service by %s never reaches the insert", async (_label, body) => {
+    const insert = jest.spyOn(DeploymentsRepository.prototype, 'create');
+    const org = await buildOrg();
+
+    const res = await record(org, { ...body(), status: 'success' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ success: false, error: 'Choose an existing service.' });
+    expect(insert).not.toHaveBeenCalled();
+
+    // The spy is live: an own service does reach the insert.
+    expect((await record(org, { service_id: org.serviceId, status: 'success' })).status).toBe(201);
+    expect(insert).toHaveBeenCalledTimes(1);
   });
 });
 

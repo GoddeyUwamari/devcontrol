@@ -223,9 +223,11 @@ export class DeploymentsController {
       res.status(201).json(response);
     } catch (error) {
       console.error('Error creating deployment:', error);
+      // Same approved copy as the route's catch (E7, docs/API.md); the
+      // database error stays in the log.
       const response: ApiResponse = {
         success: false,
-        error: 'Failed to create deployment',
+        error: RECORD_MESSAGES.notRecorded,
       };
       res.status(500).json(response);
     }
