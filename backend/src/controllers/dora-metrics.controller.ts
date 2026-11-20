@@ -1,13 +1,15 @@
 import { Request, Response } from 'express';
 import { DORAMetricsService } from '../services/dora-metrics.service';
 import { DORAMetricsFilters } from '../repositories/dora-metrics.repository';
+import { DoraFilterError, normalizeDoraFilters } from '../services/dora-filters';
 
 export class DORAMetricsController {
   constructor(private service: DORAMetricsService) {}
 
   /**
    * GET /api/metrics/dora
-   * Get comprehensive DORA metrics
+   * DORA metrics for the request's own organization (never a client-supplied
+   * one). Response fields are documented in dora-metrics.routes.ts.
    */
   async getDORAMetrics(req: Request, res: Response): Promise<void> {
     try {
@@ -35,20 +37,17 @@ export class DORAMetricsController {
         filters.dateRange = dateRange as '7d' | '30d' | '90d';
       }
 
-      // Set service filter
-      if (req.query.service_id) {
-        filters.serviceId = req.query.service_id as string;
-      }
-
-      // Set team filter
-      if (req.query.team_id) {
-        filters.teamId = req.query.team_id as string;
-      }
-
-      // Set environment filter
-      if (req.query.environment) {
-        filters.environment = req.query.environment as string;
-      }
+      // Service, team and environment: checked before anything is queried,
+      // so a bad value is a plain 400, never a database error. Absent, empty
+      // or environment=all means "all" and adds no key.
+      const normalized = normalizeDoraFilters({
+        serviceId: req.query.service_id,
+        teamId: req.query.team_id,
+        environment: req.query.environment,
+      });
+      if (normalized.serviceId) filters.serviceId = normalized.serviceId;
+      if (normalized.teamId) filters.teamId = normalized.teamId;
+      if (normalized.environment) filters.environment = normalized.environment;
 
       const metrics = await this.service.getComprehensiveMetrics(filters);
 
@@ -57,11 +56,15 @@ export class DORAMetricsController {
         data: metrics,
       });
     } catch (error) {
+      if (error instanceof DoraFilterError) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      // The error is logged, never returned: its text can carry database detail.
       console.error('Error fetching DORA metrics:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to fetch DORA metrics',
-        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }

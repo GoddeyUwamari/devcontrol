@@ -8,21 +8,8 @@ export interface DORAMetricsFilters {
   organizationId?: string;
 }
 
-export interface DeploymentFrequencyResult {
-  totalDeployments: number;
-  deploymentsPerDay: number;
-  breakdown: { [key: string]: number };
-}
-
 export interface LeadTimeResult {
   averageLeadTimeHours: number;
-  breakdown: { [key: string]: number };
-}
-
-export interface ChangeFailureRateResult {
-  totalDeployments: number;
-  failedDeployments: number;
-  failureRate: number;
   breakdown: { [key: string]: number };
 }
 
@@ -32,102 +19,134 @@ export interface MTTRResult {
   breakdown: { [key: string]: number };
 }
 
+/**
+ * What every query of one GET /api/metrics/dora request is scoped to: the
+ * authenticated organization plus the normalized filters (null = all).
+ */
+export interface DoraQueryScope {
+  organizationId: string;
+  environment: string | null;
+  serviceId: string | null;
+  teamId: string | null;
+}
+
+/** Finished deployments of one UTC day on one side of the period boundary. */
+export interface DoraDayCountRow {
+  /** UTC date, YYYY-MM-DD. */
+  day: string;
+  /** True for the current period, false for the previous one. */
+  isCurrent: boolean;
+  succeeded: number;
+  failed: number;
+}
+
+export interface DoraServiceCountRow {
+  serviceName: string;
+  succeeded: number;
+  failed: number;
+}
+
 export class DORAMetricsRepository {
   constructor(private pool: Pool) {}
 
   /**
-   * Calculate Deployment Frequency
-   * How often a deployment succeeds. Only rows recorded as 'success' count:
-   * failed deployments, ones with no completion on record and unrecognised
-   * statuses did not deliver anything.
+   * The one place the scope becomes SQL, so every query of a request filters
+   * identically. Expects `deployments d JOIN services s` in the FROM clause.
+   * The organization always comes first and is never optional.
    */
-  async calculateDeploymentFrequency(
-    filters: DORAMetricsFilters
-  ): Promise<DeploymentFrequencyResult> {
-    const days = this.getDaysFromDateRange(filters.dateRange || '30d');
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    let query = `
-      WITH deployment_counts AS (
-        SELECT
-          s.name as service_name,
-          COUNT(d.id) as deployment_count
-        FROM deployments d
-        JOIN services s ON d.service_id = s.id
-        WHERE d.status = 'success'
-          AND d.deployed_at >= $1
-          AND d.organization_id = $2
-    `;
-
-    const params: any[] = [startDate, filters.organizationId];
-    let paramIndex = 3;
-
-    if (filters.environment) {
-      query += ` AND d.environment = $${paramIndex}`;
-      params.push(filters.environment);
-      paramIndex++;
+  private scopeClause(scope: DoraQueryScope, firstParam: number): { sql: string; params: unknown[] } {
+    if (!scope.organizationId) {
+      throw new Error('DORAMetricsRepository: an organization is required');
     }
-
-    if (filters.serviceId) {
-      query += ` AND d.service_id = $${paramIndex}`;
-      params.push(filters.serviceId);
-      paramIndex++;
-    }
-
-    if (filters.teamId) {
-      query += ` AND s.team_id = $${paramIndex}`;
-      params.push(filters.teamId);
-      paramIndex++;
-    }
-
-    query += `
-        GROUP BY s.name
-      ),
-      totals AS (
-        SELECT
-          SUM(deployment_count) as total,
-          $${paramIndex} as days
-        FROM deployment_counts
-      )
-      SELECT
-        dc.service_name,
-        dc.deployment_count,
-        t.total,
-        t.days
-      FROM deployment_counts dc
-      CROSS JOIN totals t
-      ORDER BY dc.deployment_count DESC
-    `;
-
-    params.push(days);
-
-    const result = await this.pool.query(query, params);
-
-    if (result.rows.length === 0) {
-      return {
-        totalDeployments: 0,
-        deploymentsPerDay: 0,
-        breakdown: {},
-      };
-    }
-
-    const totalDeployments = parseInt(result.rows[0].total) || 0;
-    const deploymentsPerDay = totalDeployments / days;
-
-    const breakdown: { [key: string]: number } = {};
-    result.rows.forEach((row) => {
-      breakdown[row.service_name] = parseFloat(
-        (row.deployment_count / days).toFixed(2)
-      );
-    });
-
-    return {
-      totalDeployments,
-      deploymentsPerDay: parseFloat(deploymentsPerDay.toFixed(2)),
-      breakdown,
+    const params: unknown[] = [scope.organizationId];
+    let sql = `d.organization_id = $${firstParam}`;
+    const add = (column: string, value: string | null) => {
+      if (value === null) return;
+      params.push(value);
+      sql += ` AND ${column} = $${firstParam + params.length - 1}`;
     };
+    add('d.environment', scope.environment);
+    add('d.service_id', scope.serviceId);
+    add('s.team_id', scope.teamId);
+    return { sql, params };
   }
+
+  /**
+   * Finished deployments ('success' / 'failed' only; 'deploying' and unknown
+   * statuses never count) grouped by UTC date and by period, for
+   * [previousStartAt, endAt). Rows at or after currentStartAt are current.
+   *
+   * `AT TIME ZONE 'UTC'` turns the timestamptz into UTC wall time whatever
+   * the session TimeZone, and to_char returns the date as text so the pg
+   * driver never turns it into a local-midnight Date. A UTC day that the
+   * period boundary cuts appears once per side.
+   */
+  async countFinishedByUtcDay(
+    scope: DoraQueryScope,
+    bounds: { previousStartAt: Date; currentStartAt: Date; endAt: Date }
+  ): Promise<DoraDayCountRow[]> {
+    const where = this.scopeClause(scope, 4);
+    const result = await this.pool.query<{ day: string; is_current: boolean; succeeded: number; failed: number }>(
+      `SELECT to_char(d.deployed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+              (d.deployed_at >= $2::timestamptz) AS is_current,
+              (COUNT(*) FILTER (WHERE d.status = 'success'))::int AS succeeded,
+              (COUNT(*) FILTER (WHERE d.status = 'failed'))::int AS failed
+         FROM deployments d
+         JOIN services s ON s.id = d.service_id
+        WHERE ${where.sql}
+          AND d.status IN ('success', 'failed')
+          AND d.deployed_at >= $1::timestamptz
+          AND d.deployed_at <  $3::timestamptz
+        GROUP BY 1, 2
+        ORDER BY 1, 2`,
+      [
+        bounds.previousStartAt.toISOString(),
+        bounds.currentStartAt.toISOString(),
+        bounds.endAt.toISOString(),
+        ...where.params,
+      ]
+    );
+    return result.rows.map((row) => ({
+      day: row.day,
+      isCurrent: row.is_current,
+      succeeded: Number(row.succeeded),
+      failed: Number(row.failed),
+    }));
+  }
+
+  /**
+   * Finished deployments per service name in [startAt, endAt), for the
+   * per-service breakdowns. Same scope and status rules as countFinishedByUtcDay.
+   */
+  async countFinishedByService(
+    scope: DoraQueryScope,
+    bounds: { startAt: Date; endAt: Date }
+  ): Promise<DoraServiceCountRow[]> {
+    const where = this.scopeClause(scope, 3);
+    const result = await this.pool.query<{ service_name: string; succeeded: number; failed: number }>(
+      `SELECT s.name AS service_name,
+              (COUNT(*) FILTER (WHERE d.status = 'success'))::int AS succeeded,
+              (COUNT(*) FILTER (WHERE d.status = 'failed'))::int AS failed
+         FROM deployments d
+         JOIN services s ON s.id = d.service_id
+        WHERE ${where.sql}
+          AND d.status IN ('success', 'failed')
+          AND d.deployed_at >= $1::timestamptz
+          AND d.deployed_at <  $2::timestamptz
+        GROUP BY s.name
+        ORDER BY s.name`,
+      [bounds.startAt.toISOString(), bounds.endAt.toISOString(), ...where.params]
+    );
+    return result.rows.map((row) => ({
+      serviceName: row.service_name,
+      succeeded: Number(row.succeeded),
+      failed: Number(row.failed),
+    }));
+  }
+
+  // calculateLeadTime / calculateMTTR below are not called by anything: lead
+  // time and time to restore are reported as not tracked (D6 / D7). They are
+  // left as they were and do not follow the bounded-window rules above.
 
   /**
    * Calculate Lead Time for Changes
@@ -223,111 +242,6 @@ export class DORAMetricsRepository {
 
     return {
       averageLeadTimeHours: parseFloat(averageLeadTimeHours.toFixed(2)),
-      breakdown,
-    };
-  }
-
-  /**
-   * Calculate Change Failure Rate
-   * Failed deployments as a share of finished ones (success + failed).
-   * totalDeployments is that finished count; rows with no completion on
-   * record or an unrecognised status are in neither side of the ratio.
-   */
-  async calculateChangeFailureRate(
-    filters: DORAMetricsFilters
-  ): Promise<ChangeFailureRateResult> {
-    const days = this.getDaysFromDateRange(filters.dateRange || '30d');
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    let query = `
-      WITH deployment_stats AS (
-        SELECT
-          s.name as service_name,
-          COUNT(*) as total_deployments,
-          COUNT(*) FILTER (WHERE d.status = 'failed') as failed_deployments
-        FROM deployments d
-        JOIN services s ON d.service_id = s.id
-        WHERE d.status IN ('success', 'failed')
-          AND d.deployed_at >= $1
-          AND d.organization_id = $2
-    `;
-
-    const params: any[] = [startDate, filters.organizationId];
-    let paramIndex = 3;
-
-    if (filters.environment) {
-      query += ` AND d.environment = $${paramIndex}`;
-      params.push(filters.environment);
-      paramIndex++;
-    }
-
-    if (filters.serviceId) {
-      query += ` AND d.service_id = $${paramIndex}`;
-      params.push(filters.serviceId);
-      paramIndex++;
-    }
-
-    if (filters.teamId) {
-      query += ` AND s.team_id = $${paramIndex}`;
-      params.push(filters.teamId);
-      paramIndex++;
-    }
-
-    query += `
-        GROUP BY s.name
-      ),
-      totals AS (
-        SELECT
-          SUM(total_deployments) as total,
-          SUM(failed_deployments) as failed
-        FROM deployment_stats
-      )
-      SELECT
-        ds.service_name,
-        ds.total_deployments,
-        ds.failed_deployments,
-        CASE
-          WHEN ds.total_deployments > 0
-          THEN (ds.failed_deployments::float / ds.total_deployments::float * 100)
-          ELSE 0
-        END as failure_rate,
-        t.total,
-        t.failed
-      FROM deployment_stats ds
-      CROSS JOIN totals t
-      ORDER BY failure_rate DESC
-    `;
-
-    const result = await this.pool.query(query, params);
-
-    if (result.rows.length === 0) {
-      return {
-        totalDeployments: 0,
-        failedDeployments: 0,
-        failureRate: 0,
-        breakdown: {},
-      };
-    }
-
-    const totalDeployments = parseInt(result.rows[0].total) || 0;
-    const failedDeployments = parseInt(result.rows[0].failed) || 0;
-    const failureRate =
-      totalDeployments > 0
-        ? (failedDeployments / totalDeployments) * 100
-        : 0;
-
-    const breakdown: { [key: string]: number } = {};
-    result.rows.forEach((row) => {
-      breakdown[row.service_name] = parseFloat(
-        parseFloat(row.failure_rate).toFixed(2)
-      );
-    });
-
-    return {
-      totalDeployments,
-      failedDeployments,
-      failureRate: parseFloat(failureRate.toFixed(2)),
       breakdown,
     };
   }
@@ -437,22 +351,6 @@ export class DORAMetricsRepository {
       averageMTTRMinutes: parseFloat(averageMTTRMinutes.toFixed(2)),
       incidents,
       breakdown,
-    };
-  }
-
-  /**
-   * Get date range period info
-   */
-  async getDateRangePeriod(dateRange: string = '30d') {
-    const days = this.getDaysFromDateRange(dateRange);
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0],
-      days,
     };
   }
 
