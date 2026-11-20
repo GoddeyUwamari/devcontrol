@@ -12,6 +12,8 @@ import routes from './routes';
 import apiKeysRouter from './routes/api-keys.routes'
 import webhooksRouter from './routes/webhooks.routes'
 import githubWebhookRouter from './routes/github-webhook.routes'
+import githubAppWebhookRouter from './routes/github-app-webhook.routes'
+import githubAppConnectionRouter from './routes/github-app-connection.routes'
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { corsMiddleware } from './middleware/cors';
@@ -183,6 +185,9 @@ app.use('/api/slos', createSloRoutes(pool))
 // Mounted before the generic /api/webhooks router since Express matches in
 // registration order and /api/webhooks/github is the more specific path.
 app.use('/api/webhooks/github', githubWebhookRouter)
+// GitHub App (D8a): its own path, signature-verified, before the generic router.
+app.use('/api/webhooks/github-app', githubAppWebhookRouter)
+app.use('/api/integrations/github', githubAppConnectionRouter)
 app.use('/api/webhooks', webhooksRouter)
 
 // Anomaly detection routes (needs to be registered before 404 handler)
