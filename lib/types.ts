@@ -446,14 +446,6 @@ export interface Deployment {
   updatedAt: string;
 }
 
-export interface CreateDeploymentPayload {
-  serviceId: string;
-  environment: DeploymentEnvironment;
-  awsRegion: string;
-  deployedBy: string;
-  resources?: Record<string, unknown>;
-}
-
 // Infrastructure Types
 export type ResourceType = 'ec2' | 'rds' | 'vpc' | 's3' | 'lambda' | 'cloudfront' | 'elb' | 'ecs' | 'eks' | 'dynamodb' | 'api-gateway' | 'elasticache' | 'aurora' | 'sqs' | 'sns';
 export type ResourceStatus = 'running' | 'stopped' | 'terminated' | 'pending';

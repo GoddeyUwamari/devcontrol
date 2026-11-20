@@ -27,7 +27,9 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
-import { Rocket, RefreshCw, ArrowRight, XCircle, X, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { isManualRecord } from '@/lib/deployments/record'
+import { RecordDeploymentModal } from '@/components/deployments/record-deployment-modal'
+import { Rocket, RefreshCw, ArrowRight, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
 
@@ -152,33 +154,23 @@ function DeploymentsContent() {
     if (error && (error as any).response?.status === 402) setShowUpgradePrompt(true)
   }, [error])
 
-  const [showModal,      setShowModal]      = useState(false)
-  const [modalForm,      setModalForm]      = useState({ serviceName: '', environment: 'production', region: 'us-east-1', version: '' })
-  const [modalSubmitting, setModalSubmitting] = useState(false)
-  const [modalError,     setModalError]     = useState<string | null>(null)
-  const [modalSuccess,   setModalSuccess]   = useState<string | null>(null)
+  // "Record a deployment" (components/deployments/record-deployment-modal.tsx):
+  // the only form that creates deployment rows. Mounted only while open, so
+  // every opening starts empty.
+  const [showModal, setShowModal] = useState(false)
+  const openRecordModal = () => setShowModal(true)
 
-  const handleNewDeploymentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!modalForm.serviceName.trim()) { setModalError('Service name is required'); return }
-    setModalSubmitting(true); setModalError(null)
-    try {
-      await deploymentsService.createFromModal({
-        serviceName: modalForm.serviceName.trim(),
-        environment: modalForm.environment,
-        region:      modalForm.region,
-        version:     modalForm.version.trim() || undefined,
-      })
-      setModalSuccess(`Deployment of ${modalForm.serviceName} to ${modalForm.environment} started`)
-      queryClient.invalidateQueries({ queryKey: ['deployments'] })
-      queryClient.invalidateQueries({ queryKey: ['deployment-stats'] })
-      setModalForm({ serviceName: '', environment: 'production', region: 'us-east-1', version: '' })
-      setTimeout(() => { setShowModal(false); setModalSuccess(null) }, 2000)
-    } catch (err: any) {
-      if (err.response?.status === 402) { setShowModal(false); setShowUpgradePrompt(true) }
-      else setModalError(err.message || 'Failed to create deployment')
-    } finally { setModalSubmitting(false) }
-  }
+  // /deployments?record=1 (from /deployments/new, "+ New", the command
+  // palette and onboarding) opens the form once; the parameter is then
+  // dropped so a refresh or Back doesn't open it again.
+  useEffect(() => {
+    if (searchParams.get('record') !== '1') return
+    setShowModal(true)
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('record')
+    const queryString = params.toString()
+    router.replace(`/deployments${queryString ? `?${queryString}` : ''}`)
+  }, [searchParams])
 
   // Demo mode has no API: the same filters, window and paging over the demo
   // fixtures.
@@ -240,7 +232,7 @@ function DeploymentsContent() {
         <div>
           <h1 className={`${PAGE_TITLE_CLASS} mb-1`}>Deployment History</h1>
           <p className={PAGE_SUBTITLE_CLASS}>
-            Track all service deployments across environments · Status as recorded by your pipeline
+            Track all service deployments across environments · Status as recorded by your pipeline or by hand.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -251,10 +243,10 @@ function DeploymentsContent() {
             <RefreshCw size={14} /> Refresh
           </button>
           <button
-            onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
+            onClick={openRecordModal}
             className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-ui font-semibold border-none cursor-pointer transition-colors whitespace-nowrap"
           >
-            <Rocket size={14} /> New Deployment
+            <Plus size={14} /> Record deployment
           </button>
         </div>
       </div>
@@ -265,7 +257,7 @@ function DeploymentsContent() {
           <div className="flex items-center gap-2.5">
             <span className="text-lg">⚠️</span>
             <span className="text-ui font-medium text-amber-900">
-              You've reached your monthly deployment limit on the <strong>{tier}</strong> plan. Upgrade to continue deploying.
+              You've reached the monthly limit of recorded deployments on the <strong>{tier}</strong> plan. Upgrade to keep recording deployments.
             </span>
           </div>
           <a href="/settings/billing/upgrade" className="shrink-0 text-label text-white bg-amber-500 hover:bg-amber-600 rounded-lg px-4 py-2 no-underline whitespace-nowrap transition-colors">
@@ -292,7 +284,7 @@ function DeploymentsContent() {
           </div>
           <div>
             <p className="text-ui font-semibold text-slate-900 mb-1">No deployments recorded</p>
-            <p className="text-ui text-ink-muted leading-relaxed m-0">Connect your CI to record deployments. Success, failure and change failure rate appear here once a deployment has been recorded.</p>
+            <p className="text-ui text-ink-muted leading-relaxed m-0">Record a deployment after it happens. Success, failure and change failure rate appear here once one has been recorded.</p>
           </div>
         </div>
       ) : (<>
@@ -485,12 +477,12 @@ function DeploymentsContent() {
               <Rocket size={22} className="text-slate-400" />
             </div>
             <p className="text-card-title text-slate-900 mb-1.5">No deployments recorded</p>
-            <p className="text-ui text-ink-muted mb-6 leading-relaxed max-w-sm mx-auto">Connect your CI to record deployments.</p>
+            <p className="text-ui text-ink-muted mb-6 leading-relaxed max-w-sm mx-auto">Record your first deployment once it has happened.</p>
             <button
-              onClick={() => { setShowModal(true); setModalError(null); setModalSuccess(null) }}
+              onClick={openRecordModal}
               className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors"
             >
-              <Rocket size={14} /> Create First Deployment
+              <Plus size={14} /> Record first deployment
             </button>
           </div>
         ) : filteredDeployments.length === 0 ? (
@@ -511,6 +503,8 @@ function DeploymentsContent() {
             const { label: statusLabel, color: statusColor, background: statusBg } = deploymentStatusDisplay(d.status, d.createdAt)
             const envColor    = d.environment === 'production' ? '#059669' : d.environment === 'staging' ? '#D97706' : '#64748B'
             const envBg       = d.environment === 'production' ? '#F0FDF4' : d.environment === 'staging' ? '#FFFBEB' : '#F8FAFC'
+            // A failure recorded by hand has no pipeline logs to open.
+            const manualRecord = isManualRecord(d)
 
             return (
               <div key={d.id} className="border-b border-slate-50 last:border-b-0">
@@ -536,11 +530,11 @@ function DeploymentsContent() {
                     <div className="mt-2.5 px-3 py-2 bg-red-50 rounded-lg border border-red-100 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
                         <XCircle size={12} className="text-red-600 shrink-0" />
-                        <span className="text-meta text-red-800 font-medium">Deployment failed · Check logs</span>
+                        <span className="text-meta text-red-800 font-medium">{manualRecord ? 'Recorded by hand · no logs attached' : 'Deployment failed · Check logs'}</span>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
                         {/* No /logs or /rollback page exists: logs go to the deployment's detail page; rollback isn't built. */}
-                        <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>
+                        {!manualRecord && <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2 py-1 rounded">Logs</a>}
                         <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2 py-1 rounded cursor-not-allowed">Rollback · Coming soon</button>
                       </div>
                     </div>
@@ -575,10 +569,10 @@ function DeploymentsContent() {
                   <div className="hidden sm:flex mx-7 mb-2 px-3.5 py-2.5 bg-red-50 rounded-lg border border-red-100 items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <XCircle size={13} className="text-red-600 shrink-0" />
-                      <span className="text-meta text-red-800 font-medium">Deployment failed · Check logs and consider rolling back to previous version</span>
+                      <span className="text-meta text-red-800 font-medium">{manualRecord ? 'Recorded by hand · no logs attached' : 'Deployment failed · Check logs and consider rolling back to previous version'}</span>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>
+                      {!manualRecord && <a href={`/deployments/${d.id}`} className="text-label text-ink-danger no-underline bg-white border border-red-200 px-2.5 py-1 rounded-lg">View Logs</a>}
                       <button type="button" disabled title="Coming soon" className="text-label text-ink-muted bg-white border border-slate-200 px-2.5 py-1 rounded-lg cursor-not-allowed">Rollback · Coming soon</button>
                     </div>
                   </div>
@@ -641,101 +635,16 @@ function DeploymentsContent() {
         )}
       </div>
 
-      {/* ── NEW DEPLOYMENT MODAL ── */}
+      {/* ── RECORD A DEPLOYMENT MODAL ── */}
       {showModal && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4"
-          onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
-        >
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 sm:p-8 w-full sm:max-w-lg shadow-2xl">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-section text-slate-900 mb-1">New Deployment</h2>
-                <p className="text-meta text-ink-muted m-0">Deploy a service to an environment</p>
-              </div>
-              <button onClick={() => setShowModal(false)} className="bg-transparent border-none cursor-pointer text-slate-400 hover:text-slate-600 p-1 transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-
-            {modalSuccess ? (
-              <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
-                <p className="text-ui font-semibold text-ink-success m-0">{modalSuccess}</p>
-              </div>
-            ) : (
-              <form method="post" onSubmit={handleNewDeploymentSubmit} className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-label text-slate-700 mb-1.5">Service Name</label>
-                  <input
-                    type="text"
-                    value={modalForm.serviceName}
-                    onChange={e => setModalForm(f => ({ ...f, serviceName: e.target.value }))}
-                    placeholder="e.g. api-gateway, auth-service"
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-label text-slate-700 mb-1.5">Environment</label>
-                  <select
-                    value={modalForm.environment}
-                    onChange={e => setModalForm(f => ({ ...f, environment: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 transition-all"
-                  >
-                    <option value="production">Production</option>
-                    <option value="staging">Staging</option>
-                    <option value="development">Development</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-label text-slate-700 mb-1.5">Region</label>
-                  <select
-                    value={modalForm.region}
-                    onChange={e => setModalForm(f => ({ ...f, region: e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 transition-all"
-                  >
-                    <option value="us-east-1">us-east-1 (N. Virginia)</option>
-                    <option value="us-west-2">us-west-2 (Oregon)</option>
-                    <option value="eu-west-1">eu-west-1 (Ireland)</option>
-                    <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
-                    <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
-                    <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-label text-slate-700 mb-1.5">
-                    Version <span className="font-normal text-ink-muted">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={modalForm.version}
-                    onChange={e => setModalForm(f => ({ ...f, version: e.target.value }))}
-                    placeholder="e.g. v2.4.1, main@a1b2c3d"
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-ui text-slate-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
-                  />
-                </div>
-                {modalError && (
-                  <div className="px-3.5 py-2.5 bg-red-50 rounded-lg border border-red-100">
-                    <p className="text-meta text-ink-danger m-0">{modalError}</p>
-                  </div>
-                )}
-                <div className="flex gap-3 justify-end pt-1">
-                  <button type="button" onClick={() => setShowModal(false)}
-                    className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-ui font-medium cursor-pointer hover:bg-slate-50 transition-colors">
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={modalSubmitting}
-                    className={`px-5 py-2.5 rounded-lg text-white text-ui font-semibold border-none inline-flex items-center gap-2 transition-colors ${modalSubmitting ? 'bg-violet-400 cursor-default' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
-                    {modalSubmitting
-                      ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Deploying...</>
-                      : <><Rocket size={13} /> Deploy</>
-                    }
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+        <RecordDeploymentModal
+          onClose={() => setShowModal(false)}
+          onRecorded={() => {
+            queryClient.invalidateQueries({ queryKey: ['deployments'] })
+            queryClient.invalidateQueries({ queryKey: ['deployment-stats'] })
+          }}
+          onPlanLimit={() => { setShowModal(false); setShowUpgradePrompt(true) }}
+        />
       )}
     </div>
   )

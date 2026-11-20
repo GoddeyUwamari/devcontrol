@@ -348,8 +348,9 @@ export class OnboardingService {
       },
       log_deployment: {
         action: 'navigate_to_deployments',
-        cta: 'Log First Deployment',
-        route: '/deployments',
+        cta: 'Record first deployment',
+        // ?record=1 opens the Record a deployment form on the Deployments page.
+        route: '/deployments?record=1',
       },
       connect_aws: {
         action: 'navigate_to_aws_settings',

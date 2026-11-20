@@ -1,6 +1,6 @@
 /**
- * /deployments/new and /infrastructure/new pick a service from the
- * organization's registered services (GET /api/services/registered): their
+ * /infrastructure/new picks a service from the organization's registered
+ * services (GET /api/services/registered): its
  * service_id references the services table. "No services found. Please
  * create a service first." appears only when that list is really empty --
  * not while it loads, and not when services exist.
@@ -11,7 +11,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { render, screen, act, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import NewDeploymentPage from '../(app)/deployments/new/page'
 import NewInfrastructurePage from '../(app)/infrastructure/new/page'
 import { AuthProvider } from '@/lib/contexts/auth-context'
 import api from '@/lib/api'
@@ -20,7 +19,7 @@ import { organizationsService } from '@/lib/services/organizations.service'
 
 vi.mock('next/navigation', () => {
   const router = { push: () => {}, replace: () => {}, refresh: () => {}, back: () => {}, forward: () => {}, prefetch: () => {} }
-  return { useRouter: () => router, usePathname: () => '/deployments/new', useSearchParams: () => new URLSearchParams() }
+  return { useRouter: () => router, usePathname: () => '/infrastructure/new', useSearchParams: () => new URLSearchParams() }
 })
 
 const ORG = { id: '00000000-0000-4000-8000-00000000000a', name: 'Org A', slug: 'org-a' }
@@ -67,8 +66,10 @@ async function mount(Page: () => React.ReactElement) {
   await act(async () => {})
 }
 
+// /deployments/new is a redirect to /deployments?record=1 (D2-D9): its
+// picker is the Record a deployment form's, tested in
+// app/(app)/deployments/__tests__/deployments-record.test.tsx.
 describe.each([
-  ['/deployments/new', NewDeploymentPage],
   ['/infrastructure/new', NewInfrastructurePage],
 ])('%s service dropdown', (_path, Page) => {
   it('lists the registered services', async () => {

@@ -266,10 +266,12 @@ export default function DashboardPage() {
       toast.info(`Deployment started: ${data.serviceName}`, { description: `Environment: ${data.environment} | By: ${data.deployedBy}` })
       invalidateAll()
     })
+    // Sent when someone records a finished deployment (Deployments page):
+    // DevControl didn't run it, and there is no duration or log to show.
     socket.on('deployment:completed', (data) => {
       if (!shouldUpdate('deployment:completed')) return
       const isSuccess = data.status === 'success'
-      toast[isSuccess ? 'success' : 'error'](`Deployment ${isSuccess ? 'succeeded' : 'failed'}: ${data.serviceName}`, { description: isSuccess ? `Duration: ${data.duration}` : 'Check logs for details' })
+      toast[isSuccess ? 'success' : 'error'](`Deployment recorded: ${data.serviceName}`, { description: isSuccess ? 'Succeeded' : 'Failed' })
       invalidateAll()
     })
     socket.on('service:health', (data) => {

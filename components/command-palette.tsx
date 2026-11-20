@@ -248,7 +248,7 @@ export function CommandPalette() {
                 Create Service
               </CommandItem>
               <CommandItem onSelect={() =>
-                runCommand(() => router.push('/deployments'))}>
+                runCommand(() => router.push('/deployments?record=1'))}>
                 <Rocket className="mr-2 h-4 w-4" />
                 Record Deployment
               </CommandItem>
