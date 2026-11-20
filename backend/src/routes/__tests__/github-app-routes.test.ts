@@ -136,13 +136,14 @@ describe('/api/integrations/github', () => {
     }
   });
 
-  it('feature off -> 503 for install and claim; GET still answers configured:false', async () => {
+  it('feature off -> 503 for install and claim; GET answers configured:false only (zero-query proof: github-app-flag-off.test.ts)', async () => {
     process.env.GITHUB_APP_ENABLED = 'false';
     try {
       expect((await harness.sendAs(A.orgId, A.owner, 'POST', '/integrations/github/install', {})).status).toBe(503);
       expect((await harness.sendAs(A.orgId, A.owner, 'POST', '/integrations/github/claim', { state: STATE })).status).toBe(503);
       const get = await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github');
-      expect((await get.json()).data).toMatchObject({ configured: false, installations: [] });
+      expect(get.status).toBe(200);
+      expect((await get.json()).data).toEqual({ configured: false });
     } finally {
       process.env.GITHUB_APP_ENABLED = 'true';
     }

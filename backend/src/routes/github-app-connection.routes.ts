@@ -15,6 +15,12 @@ import { defaultSource, withOrgClient } from '../services/github-app/db';
 // screen is D8b). Every route authenticates; changes are owner/admin only and
 // refused for the demo workspace. The organization is always the
 // authenticated one: request bodies are strict and carry no organization id.
+//
+// Feature off (GITHUB_APP_ENABLED unset, or the configuration incomplete):
+// right after authentication, before any role, demo or table check, GET /
+// answers { configured: false } and every other route answers 503
+// github_app_not_configured. Nothing here reads a D8a table while it is off,
+// so the code is safe to deploy before the admin migration is applied.
 const router = Router();
 router.use(authenticateToken);
 
@@ -56,7 +62,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const invalid = (res: Response) => res.status(400).json({ success: false, error: 'invalid_request' });
 
 // POST /api/integrations/github/install -> { install_url, state }
-router.post('/install', requireAdmin, refuseDemo, refuseUnconfigured, async (req, res, next) => {
+router.post('/install', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
   try {
     const { organizationId, userId } = orgAndUser(req);
     const result = await startInstall(organizationId, userId);
@@ -67,7 +73,7 @@ router.post('/install', requireAdmin, refuseDemo, refuseUnconfigured, async (req
 });
 
 // POST /api/integrations/github/claim { state, code, installation_id, setup_action }
-router.post('/claim', requireAdmin, refuseDemo, refuseUnconfigured, async (req, res, next) => {
+router.post('/claim', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
   const parsed = claimBody.safeParse(req.body);
   if (!parsed.success) {
     invalid(res);
@@ -93,7 +99,7 @@ router.post('/claim', requireAdmin, refuseDemo, refuseUnconfigured, async (req, 
 });
 
 // POST /api/integrations/github/claim/retry { state }
-router.post('/claim/retry', requireAdmin, refuseDemo, refuseUnconfigured, async (req, res, next) => {
+router.post('/claim/retry', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
   const parsed = retryBody.safeParse(req.body);
   if (!parsed.success) {
     invalid(res);
@@ -109,21 +115,24 @@ router.post('/claim/retry', requireAdmin, refuseDemo, refuseUnconfigured, async 
 
 // GET /api/integrations/github -> connection state (any member of the organization)
 router.get('/', async (req, res, next) => {
+  if (!readGitHubAppConfig().enabled) {
+    res.json({ success: true, data: { configured: false } });
+    return;
+  }
   try {
-    const configured = readGitHubAppConfig().enabled;
     const { organizationId } = orgAndUser(req);
     const data = await withOrgClient(defaultSource, organizationId, async (client) => ({
       installations: await listInstallations(client, organizationId),
       last_event_at: await lastEventReceivedAt(client, organizationId),
     }));
-    res.json({ success: true, data: { configured, ...data } });
+    res.json({ success: true, data: { configured: true, ...data } });
   } catch (error) {
     next(error);
   }
 });
 
 // GET /api/integrations/github/repositories
-router.get('/repositories', async (req, res, next) => {
+router.get('/repositories', refuseUnconfigured, async (req, res, next) => {
   try {
     const { organizationId } = orgAndUser(req);
     const repositories = await withOrgClient(defaultSource, organizationId, (client) => listRepositories(client, organizationId));
@@ -135,7 +144,7 @@ router.get('/repositories', async (req, res, next) => {
 
 // PUT /api/integrations/github/repositories/:id/service { service_id | null }
 // Maps a repository to one of the organization's own services. Never creates one.
-router.put('/repositories/:id/service', requireAdmin, refuseDemo, async (req, res, next) => {
+router.put('/repositories/:id/service', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
   const parsed = serviceBody.safeParse(req.body);
   if (!parsed.success || !UUID.test(req.params.id)) {
     invalid(res);

@@ -1385,9 +1385,12 @@ It is additive and safe under the release already running:
   "Already recorded";
 - `aws_region` stays set on every row the running release writes.
 
-Apply it **before** merging D8a. The code is also inert without it while
-`GITHUB_APP_ENABLED` is unset: every GitHub App route answers "not
-configured" and touches no table.
+Apply it **before** merging D8a. Without it, the code is still safe while
+`GITHUB_APP_ENABLED` is unset. Right after authentication, and before any
+role, demo or table check, `GET /api/integrations/github` answers
+`{ configured: false }` and every other GitHub App route answers 503 "not
+configured". The webhook answers 503 before its signature check. No D8a table
+is read or written.
 
 **Ordering:** this migration depends on `demo_workspace_refuse_row()`. Roll
 it back **before** `202611141200_demo_workspace_foundation_rollback.sql`.
