@@ -30,6 +30,17 @@ const ROLLBACK_SQL = fs.readFileSync(path.join(ADMIN_DIR, ROLLBACK_FILE), 'utf8'
 // Other suites may hold row locks on these tables briefly; the 3 s production
 // lock timeout is asserted statically below and widened only for these runs.
 const relaxed = (sql: string) => sql.replace("SET LOCAL lock_timeout = '3s';", "SET LOCAL lock_timeout = '60s';");
+// Later admin migrations whose objects depend on this one (D8a attaches
+// demo_workspace_refuse_row to its four tables). Rolled back first and
+// re-applied after, in that order, exactly as production must.
+const D8A_MIGRATION_SQL = fs.readFileSync(path.join(ADMIN_DIR, '202611201200_create_github_app_ingestion.sql'), 'utf8');
+const D8A_ROLLBACK_SQL = fs.readFileSync(path.join(ADMIN_DIR, '202611201200_create_github_app_ingestion_rollback.sql'), 'utf8');
+async function rollBackDependents(client: { query: (sql: string) => Promise<unknown> }): Promise<void> {
+  await client.query(relaxed(D8A_ROLLBACK_SQL));
+}
+async function reapplyDependents(client: { query: (sql: string) => Promise<unknown> }): Promise<void> {
+  await client.query(relaxed(D8A_MIGRATION_SQL));
+}
 const MARKER = '[202611141200_demo_workspace_foundation]';
 const INTEGRATION_TABLES = [
   'organization_invitations', 'scheduled_reports', 'observability_collection_scopes', 'aws_org_external_ids', 'aws_connection_checks',
@@ -447,8 +458,10 @@ describe('202611141200_demo_workspace_foundation: the demo AWS row (aws_accounts
   it('with aws_accounts present, the demo row must be the placeholder with no External ID; real rows are unaffected', async () => {
     await inTransaction(async (client) => {
       // The bootstrap ran before the fixture table existed: re-apply so the trigger attaches, as in production.
+      await rollBackDependents(client);
       await client.query(relaxed(ROLLBACK_SQL));
       await client.query(relaxed(MIGRATION_SQL));
+      await reapplyDependents(client);
       const { rows: trig } = await client.query(
         `SELECT count(*)::int AS n FROM pg_trigger WHERE tgrelid = 'aws_accounts'::regclass AND tgname = 'demo_workspace_constrain_aws_account'`);
       expect(trig[0].n).toBe(1);
@@ -472,6 +485,7 @@ describe('202611141200_demo_workspace_foundation: rollback, re-apply, refusal', 
   it('the rollback restores the previous schema exactly (only marked objects go) and removes its ledger row; re-apply restores it', async () => {
     await inTransaction(async (client) => {
       await client.query(`INSERT INTO schema_migrations (migration_name, checksum) VALUES ($1, 'test') ON CONFLICT (migration_name) DO NOTHING`, [MIGRATION_FILE]);
+      await rollBackDependents(client);
       const applied = await schemaShape(client);
       expect(applied.filter(isDemoObject).length).toBeGreaterThan(10);
 
