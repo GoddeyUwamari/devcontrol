@@ -9,7 +9,9 @@
  *            in /user/installations -> that user must be the installer (sender of the
  *            signed installation.created delivery, or the personal account itself)
  *            -> one transaction: claim row (global primary key) + release held deliveries
- *  retry  -> same user + state, while installation.created is still on its way
+ *  retry  -> same user + state, while installation.created is still on its way;
+ *            the last allowed retry that still finds none refuses with
+ *            INSTALL_EVENT_MISSING (it was never received, or was lost)
  *
  * The organization always comes from the authenticated request, never from
  * the body. No token, code or state value is stored or logged.
@@ -62,6 +64,19 @@ export function hashState(state: string): Buffer {
 
 const NOT_CONFIGURED: ClaimResult = { status: 503, body: { success: false, error: 'github_app_not_configured' } };
 const INVALID_STATE: ClaimResult = { status: 400, body: { success: false, error: 'invalid_state' } };
+/**
+ * No installation.created for the installation, and no retry left to wait
+ * for it (d8a-build.md §15, review S-2). GitHub does not resend a failed
+ * delivery by itself; the founder's wording.
+ */
+const INSTALL_EVENT_MISSING: ClaimResult = {
+  status: 409,
+  body: {
+    success: false,
+    error: 'install_event_not_received',
+    message: "We didn't receive the install event from GitHub. Redeliver it from your GitHub App's Advanced settings (within 3 days), or uninstall and reinstall the App.",
+  },
+};
 
 export async function startInstall(organizationId: string, userId: string, deps: ClaimDeps = defaultClaimDeps): Promise<ClaimResult> {
   const config = deps.readConfig();
@@ -107,7 +122,7 @@ export async function claimInstallation(input: ClaimInput, deps: ClaimDeps = def
     if (!accessible.some((i) => i.id === installationId)) {
       return logged(deps, installationId, { status: 403, body: { success: false, error: 'installation_not_accessible' } }, 'not_accessible');
     }
-    return await completeClaim(deps, github, { organizationId, userId, stateHash, githubUserId: githubUser.id, installationId, firstAttempt: true });
+    return await completeClaim(deps, github, { organizationId, userId, stateHash, githubUserId: githubUser.id, installationId, firstAttempt: true, lastRetry: false });
   } catch (error) {
     return githubFailure(deps, installationId, error);
   }
@@ -134,7 +149,7 @@ export async function retryClaim(
 async function completeClaim(
   deps: ClaimDeps,
   github: GitHubAppClient,
-  c: { organizationId: string; userId: string; stateHash: Buffer; githubUserId: number; installationId: number; firstAttempt: boolean }
+  c: { organizationId: string; userId: string; stateHash: Buffer; githubUserId: number; installationId: number; firstAttempt: boolean; lastRetry: boolean }
 ): Promise<ClaimResult> {
   const { organizationId, installationId, githubUserId } = c;
   const details = await github.getInstallation(installationId);
@@ -143,6 +158,7 @@ async function completeClaim(
   const isInstaller = installer === githubUserId || (installer === null && personalAccount);
   if (!isInstaller) {
     if (installer === null) {
+      if (c.lastRetry) return logged(deps, installationId, INSTALL_EVENT_MISSING, 'install_event_missing');
       if (c.firstAttempt) {
         await withOrgClient(deps.source, organizationId, (client) =>
           recordVerifiedIdentity(client, organizationId, c.userId, c.stateHash, githubUserId, installationId));

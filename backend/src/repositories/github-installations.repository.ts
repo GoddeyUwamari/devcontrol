@@ -115,16 +115,21 @@ export async function takeClaimRetry(
   organizationId: string,
   userId: string,
   stateHash: Buffer
-): Promise<{ githubUserId: number; installationId: number } | null> {
-  const { rows } = await client.query<{ github_user_id: string; installation_id: string }>(
+): Promise<{ githubUserId: number; installationId: number; lastRetry: boolean } | null> {
+  const { rows } = await client.query<{ github_user_id: string; installation_id: string; retry_count: number }>(
     `UPDATE github_install_states SET retry_count = retry_count + 1
       WHERE organization_id = $1 AND user_id = $2 AND state_hash = $3
         AND verified_at IS NOT NULL AND expires_at > NOW() AND retry_count < $4
-      RETURNING verified_github_user_id::text AS github_user_id, verified_installation_id::text AS installation_id`,
+      RETURNING verified_github_user_id::text AS github_user_id, verified_installation_id::text AS installation_id, retry_count`,
     [organizationId, userId, stateHash, MAX_CLAIM_RETRIES]
   );
   if (rows.length !== 1) return null;
-  return { githubUserId: Number(rows[0].github_user_id), installationId: Number(rows[0].installation_id) };
+  return {
+    githubUserId: Number(rows[0].github_user_id),
+    installationId: Number(rows[0].installation_id),
+    // This retry used the last one: there is no later retry to wait for.
+    lastRetry: Number(rows[0].retry_count) >= MAX_CLAIM_RETRIES,
+  };
 }
 
 // ─── Installations ────────────────────────────────────────────────────────────

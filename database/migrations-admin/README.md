@@ -1346,14 +1346,19 @@ organization. One transaction, all or nothing, as `postgres`, 3 s lock timeout:
 - **`github_held_deliveries`**: deliveries of installations no organization has
   claimed yet. No organization column; RLS enabled and forced with **no**
   policy; `devcontrol` has **no** privilege on it. It is reached only through
-  the functions below. Retention: 7 days.
+  the functions below. Retention: 7 days, **except `installation.created`**.
+  That row is the installer record a claim needs, and GitHub does not resend
+  it, so it is never time-purged: it stays until the claim releases it or a
+  held `installation.deleted` for the same installation removes it.
 - **Five SECURITY DEFINER functions**, `postgres`-owned, `SET search_path =
   pg_catalog, pg_temp`, schema-qualified, EXECUTE revoked from `PUBLIC` and
   granted to `devcontrol`. They are the only paths past row level security:
   - `github_installation_org(bigint) → uuid`: installation id → organization
     id, nothing else;
   - `github_hold_delivery(…) → text`: holds one delivery (`held` / `duplicate`
-    / `claimed`). It takes a transaction advisory lock on the installation id;
+    / `claimed`). It takes a transaction advisory lock on the installation id.
+    Holding an `installation.deleted` also deletes that installation's held
+    `installation.created`;
   - `github_installer_of(bigint) → bigint`: the `sender.id` of the signed
     `installation.created` delivery;
   - `github_release_held_deliveries(bigint) → integer`: moves held deliveries
@@ -1361,7 +1366,7 @@ organization. One transaction, all or nothing, as `postgres`, 3 s lock timeout:
     organization holding the claim. It takes the same advisory lock, so a hold
     racing a claim is never left behind;
   - `github_purge_held_deliveries() → integer`: 7-day retention, at most 5,000
-    rows per call.
+    rows per call. It never deletes a held `installation.created`.
 - **`deployments`**:
   - `deployments_github_job_uidx`, UNIQUE
     `(organization_id, (metadata->>'github_job_id')) WHERE metadata ?

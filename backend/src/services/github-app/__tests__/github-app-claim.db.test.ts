@@ -13,7 +13,7 @@ import { processEvent } from '../process';
 import { holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
 import { normalizeDelivery } from '../normalize';
 import { createFixtures, enabledConfig, CLIENT_SECRET, WEBHOOK_SECRET } from './fixtures/db';
-import { installationCreated, signedDelivery, uniqueId, workflowJobCompleted } from './fixtures/payloads';
+import { installationCreated, installationEvent, signedDelivery, uniqueId, workflowJobCompleted } from './fixtures/payloads';
 import { EXPECTED_PERMISSIONS } from '../permissions';
 
 const fx = createFixtures('d8a-claim');
@@ -203,6 +203,63 @@ describe('claim', () => {
     const retried = await retryClaim({ organizationId: orgA, userId: userA, state }, deps(f));
     expect(retried.status).toBe(200);
     expect(await owner(inst)).toEqual([{ org: orgA }]);
+  });
+
+  it('installation.created never arrives: retries wait (202), the last allowed retry refuses with the redeliver message, nothing is claimed', async () => {
+    const inst = fx.installationId();
+    const f = { githubUserId: INSTALLER, accessible: [inst] };
+    const state = await newState(orgA, userA, f);
+    expect((await claimInstallation({ organizationId: orgA, userId: userA, state, code: CODE, installationId: inst }, deps(f))).status).toBe(202);
+    const statuses: number[] = [];
+    let last: Awaited<ReturnType<typeof retryClaim>> | undefined;
+    for (let i = 0; i < 10; i++) {
+      last = await retryClaim({ organizationId: orgA, userId: userA, state }, deps(f));
+      statuses.push(last.status);
+    }
+    expect(statuses).toEqual([202, 202, 202, 202, 202, 202, 202, 202, 202, 409]);
+    expect(last).toEqual({
+      status: 409,
+      body: {
+        success: false,
+        error: 'install_event_not_received',
+        message: "We didn't receive the install event from GitHub. Redeliver it from your GitHub App's Advanced settings (within 3 days), or uninstall and reinstall the App.",
+      },
+    });
+    expect(logs).toContain(`[github-app] claim installation=${inst} outcome=install_event_missing status=409`);
+    // No retry is left after the refusal.
+    expect((await retryClaim({ organizationId: orgA, userId: userA, state }, deps(f))).status).toBe(400);
+    expect(await owner(inst)).toEqual([]);
+  });
+
+  it('the purge keeps a held installation.created past 7 days (the installer can still claim); other held events are purged', async () => {
+    const inst = fx.installationId();
+    await deliver('installation', installationCreated(inst, INSTALLER));
+    await deliver('workflow_job', workflowJobCompleted(inst, uniqueId()));
+    await fx.admin.query(`UPDATE github_held_deliveries SET received_at = now() - interval '8 days' WHERE installation_id = $1`, [inst]);
+    // Called as the application role, as the D8a-2 purge job will.
+    await fx.app.query('SELECT github_purge_held_deliveries()');
+    const held = async () => (await fx.admin.query(
+      'SELECT event, action FROM github_held_deliveries WHERE installation_id = $1 ORDER BY event', [inst])).rows;
+    expect(await held()).toEqual([{ event: 'installation', action: 'created' }]);
+
+    const f = { githubUserId: INSTALLER, accessible: [inst] };
+    const state = await newState(orgB, userB, f);
+    const result = await claimInstallation({ organizationId: orgB, userId: userB, state, code: CODE, installationId: inst }, deps(f));
+    expect(result.status).toBe(200);
+    expect(await owner(inst)).toEqual([{ org: orgB }]);
+    expect(await held()).toEqual([]);
+  });
+
+  it('a held installation.deleted removes the held installation.created (other held events are left to the 7-day purge)', async () => {
+    const inst = fx.installationId();
+    await deliver('installation', installationCreated(inst, INSTALLER));
+    await deliver('workflow_job', workflowJobCompleted(inst, uniqueId()));
+    const deleted = await deliver('installation', installationEvent(inst, 'deleted'));
+    expect(deleted.status).toBe(202);
+    const held = (await fx.admin.query(
+      'SELECT event, action FROM github_held_deliveries WHERE installation_id = $1 ORDER BY event, action', [inst])).rows;
+    expect(held).toEqual([{ event: 'installation', action: 'deleted' }, { event: 'workflow_job', action: 'completed' }]);
+    expect((await fx.app.query('SELECT github_installer_of($1::bigint)::text AS i', [inst])).rows[0].i).toBeNull();
   });
 
   it('a retry whose installer turns out to be someone else -> 403, and a never-verified state cannot be retried', async () => {

@@ -251,6 +251,9 @@ $$;
 -- release by a transaction advisory lock on the installation id, so a
 -- delivery is either released by the claim or reported 'claimed' here (the
 -- caller then stores it for the organization) -- never left behind.
+-- A held installation.deleted ends the installation on GitHub (ids are never
+-- reused), so its held installation.created rows (the installer record,
+-- which the purge keeps) are deleted with it.
 CREATE FUNCTION public.github_hold_delivery(
   p_delivery_id UUID, p_installation_id BIGINT, p_event TEXT, p_action TEXT, p_github_repo_id BIGINT,
   p_event_key TEXT, p_occurred_at TIMESTAMPTZ, p_normalizer_version SMALLINT, p_facts JSONB, p_payload_sha256 TEXT
@@ -276,6 +279,10 @@ BEGIN
     (p_delivery_id, p_installation_id, p_github_repo_id, p_event, p_action, p_event_key, p_occurred_at, p_normalizer_version, p_facts, p_payload_sha256)
   ON CONFLICT (delivery_id) DO NOTHING;
   GET DIAGNOSTICS inserted = ROW_COUNT;
+  IF inserted = 1 AND p_event = 'installation' AND p_action = 'deleted' THEN
+    DELETE FROM public.github_held_deliveries
+     WHERE installation_id = p_installation_id AND event = 'installation' AND action = 'created';
+  END IF;
   RETURN CASE WHEN inserted = 1 THEN 'held' ELSE 'duplicate' END;
 END $$;
 
@@ -330,6 +337,9 @@ BEGIN
 END $$;
 
 -- Retention for held deliveries (d8a-build.md D8-D15: 7 days), at most 5,000 per call.
+-- Never installation.created: it is the installer record a claim needs
+-- (github_installer_of), and GitHub does not resend it. It stays until the
+-- claim releases it or a held installation.deleted removes it.
 CREATE FUNCTION public.github_purge_held_deliveries() RETURNS INTEGER
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
@@ -338,6 +348,7 @@ BEGIN
   DELETE FROM public.github_held_deliveries
    WHERE delivery_id IN (SELECT delivery_id FROM public.github_held_deliveries
                           WHERE received_at < pg_catalog.now() - interval '7 days'
+                            AND NOT (event = 'installation' AND action = 'created')
                           ORDER BY received_at LIMIT 5000);
   GET DIAGNOSTICS purged = ROW_COUNT;
   RETURN purged;
@@ -426,14 +437,14 @@ COMMENT ON TABLE public.pipeline_repositories IS
 COMMENT ON TABLE public.pipeline_events IS
   '[202611201200_create_github_app_ingestion] GitHub App deliveries for an organization: named fields only, never a raw payload, commit message, email or PR body. 180-day retention.';
 COMMENT ON TABLE public.github_held_deliveries IS
-  '[202611201200_create_github_app_ingestion] Deliveries of installations no organization has claimed. No application access; definer functions only. 7-day retention.';
+  '[202611201200_create_github_app_ingestion] Deliveries of installations no organization has claimed. No application access; definer functions only. 7-day retention, except installation.created (kept until claimed or until installation.deleted).';
 COMMENT ON FUNCTION public.github_installation_org(BIGINT) IS '[202611201200_create_github_app_ingestion] installation id -> organization id.';
 COMMENT ON FUNCTION public.github_hold_delivery(UUID, BIGINT, TEXT, TEXT, BIGINT, TEXT, TIMESTAMPTZ, SMALLINT, JSONB, TEXT) IS
-  '[202611201200_create_github_app_ingestion] Holds a delivery of an unclaimed installation.';
+  '[202611201200_create_github_app_ingestion] Holds a delivery of an unclaimed installation; a held installation.deleted removes its held installation.created.';
 COMMENT ON FUNCTION public.github_installer_of(BIGINT) IS '[202611201200_create_github_app_ingestion] Sender id of installation.created.';
 COMMENT ON FUNCTION public.github_release_held_deliveries(BIGINT) IS
   '[202611201200_create_github_app_ingestion] Releases held deliveries to the claiming (tagged) organization.';
-COMMENT ON FUNCTION public.github_purge_held_deliveries() IS '[202611201200_create_github_app_ingestion] 7-day retention for held deliveries.';
+COMMENT ON FUNCTION public.github_purge_held_deliveries() IS '[202611201200_create_github_app_ingestion] 7-day retention for held deliveries, except installation.created.';
 COMMENT ON FUNCTION public.pipeline_repositories_service_same_org() IS
   '[202611201200_create_github_app_ingestion] A repository maps only to a service of its own organization.';
 COMMENT ON INDEX public.deployments_github_job_uidx IS
