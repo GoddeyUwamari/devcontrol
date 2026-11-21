@@ -187,23 +187,28 @@ export async function insertPipelineDeployment(client: PoolClient, row: Pipeline
   return rows[0]?.id ?? null;
 }
 
-/** The organization's deployment row carrying this job or deployment id, or null. */
-export async function findPipelineDeploymentId(
+export interface PipelineDeploymentRef {
+  id: string;
+  status: string;
+}
+
+/** The organization's deployment row carrying this job or deployment id (its id and status), or null. */
+export async function findPipelineDeployment(
   client: PoolClient,
   organizationId: string,
   key: PipelineDeploymentKey,
   value: number
-): Promise<string | null> {
+): Promise<PipelineDeploymentRef | null> {
   // The predicate repeats the partial index's own (metadata ? key) so the index applies.
-  const { rows } = await client.query<{ id: string }>(
+  const { rows } = await client.query<PipelineDeploymentRef>(
     key === 'github_job_id'
-      ? `SELECT id::text AS id FROM deployments
+      ? `SELECT id::text AS id, status FROM deployments
           WHERE organization_id = $1 AND metadata ? 'github_job_id' AND metadata ->> 'github_job_id' = $2 LIMIT 1`
-      : `SELECT id::text AS id FROM deployments
+      : `SELECT id::text AS id, status FROM deployments
           WHERE organization_id = $1 AND metadata ? 'github_deployment_id' AND metadata ->> 'github_deployment_id' = $2 LIMIT 1`,
     [organizationId, String(value)]
   );
-  return rows[0]?.id ?? null;
+  return rows[0] ?? null;
 }
 
 /**
