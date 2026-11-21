@@ -22,6 +22,8 @@ const MAX_ENVIRONMENT_MAP_ENTRIES = 50;
 const name = z.string().trim().min(1).max(200).regex(/^[^\u0000-\u001f\u007f]+$/);
 const branchName = z.string().trim().min(1).max(255).regex(/^[^\u0000-\u001f\u007f\s]+$/);
 const environment = z.enum(DEPLOYMENT_ENVIRONMENTS);
+/** A GitHub environment name: 1-255 characters once trimmed (the transform trims it). */
+const environmentKey = z.string().refine((k) => k.trim().length >= 1 && k.trim().length <= 255);
 /** Same shape POST /api/deployments accepts (deployments.routes.ts). */
 const awsRegion = z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/).nullable().default(null);
 
@@ -42,12 +44,39 @@ const jobRule = z.object({
   }
 });
 
+/**
+ * The environment_map keys that are the same name once trimmed and
+ * lower-cased (review N-4), e.g. ["Prod", "prod"]; empty when there are none.
+ * Names are matched without case, so two such keys would silently replace
+ * each other.
+ */
+export function caseDuplicateEnvironmentNames(map: unknown): string[] {
+  if (map === null || typeof map !== 'object' || Array.isArray(map)) return [];
+  const byName = new Map<string, string[]>();
+  for (const key of Object.keys(map)) {
+    const name = key.trim().toLowerCase();
+    byName.set(name, [...(byName.get(name) ?? []), key]);
+  }
+  return [...byName.values()].filter((keys) => keys.length > 1).flat();
+}
+
+/** The 400 message for a deploy-rule body whose environment_map has case-duplicate names, or null. */
+export function environmentMapProblem(body: unknown): string | null {
+  if (body === null || typeof body !== 'object') return null;
+  const duplicates = caseDuplicateEnvironmentNames((body as { environment_map?: unknown }).environment_map);
+  if (duplicates.length === 0) return null;
+  return `environment_map names GitHub environments that differ only in letter case (${duplicates.map((k) => JSON.stringify(k)).join(', ')}). `
+    + 'Names are matched without case, so keep one of each.';
+}
+
 const environmentsRule = z.object({
   mode: z.literal('github_deployments'),
   /** GitHub environment name (any case) -> DevControl environment. Wins over the default names. */
-  environment_map: z.record(z.string().trim().min(1).max(255), environment).default({})
+  // Keys are checked as sent and trimmed in the transform, so " prod" and "prod" are seen as the duplicates they are.
+  environment_map: z.record(environmentKey, environment).default({})
     .refine((m) => Object.keys(m).length <= MAX_ENVIRONMENT_MAP_ENTRIES, { message: 'at most 50 environment names' })
-    .transform((m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k.toLowerCase(), v]))),
+    .refine((m) => caseDuplicateEnvironmentNames(m).length === 0, { message: 'environment names that differ only in letter case' })
+    .transform((m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k.trim().toLowerCase(), v]))),
   aws_region: awsRegion,
 }).strict();
 

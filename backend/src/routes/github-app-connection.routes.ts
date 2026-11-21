@@ -16,7 +16,7 @@ import {
 } from '../repositories/pipeline-repositories.repository';
 import { STATE_PATTERN, claimInstallation, retryClaim, startInstall } from '../services/github-app/claim';
 import { defaultSource, withOrgClient } from '../services/github-app/db';
-import { deployRuleBody, storedDeployRule } from '../services/github-app/deploy-rule';
+import { deployRuleBody, environmentMapProblem, storedDeployRule } from '../services/github-app/deploy-rule';
 import { MAPPING_REPLAY, replayRepository, RULE_REPLAY } from '../services/github-app/replay';
 
 // /api/integrations/github -- the GitHub App connection (D8a-1; the setup
@@ -187,6 +187,11 @@ router.put('/repositories/:id/service', refuseUnconfigured, requireAdmin, refuse
 router.put('/repositories/:id/deploy-rule', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
   const parsed = deployRuleBody.safeParse(req.body);
   if (!parsed.success || !UUID.test(req.params.id)) {
+    const problem = parsed.success ? null : environmentMapProblem(req.body);
+    if (problem) {
+      res.status(400).json({ success: false, error: 'invalid_request', message: problem });
+      return;
+    }
     invalid(res);
     return;
   }
