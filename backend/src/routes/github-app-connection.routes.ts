@@ -7,9 +7,17 @@ import { authenticateToken } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
 import { listInstallations } from '../repositories/github-installations.repository';
 import { lastEventReceivedAt } from '../repositories/pipeline-events.repository';
-import { listRepositories, setRepositoryService } from '../repositories/pipeline-repositories.repository';
+import {
+  githubRepoIdOf,
+  listJobsSeen,
+  listRepositories,
+  setRepositoryDeployRule,
+  setRepositoryService,
+} from '../repositories/pipeline-repositories.repository';
 import { STATE_PATTERN, claimInstallation, retryClaim, startInstall } from '../services/github-app/claim';
 import { defaultSource, withOrgClient } from '../services/github-app/db';
+import { deployRuleBody, storedDeployRule } from '../services/github-app/deploy-rule';
+import { MAPPING_REPLAY, replayRepository, RULE_REPLAY } from '../services/github-app/replay';
 
 // /api/integrations/github -- the GitHub App connection (D8a-1; the setup
 // screen is D8b). Every route authenticates; changes are owner/admin only and
@@ -152,13 +160,70 @@ router.put('/repositories/:id/service', refuseUnconfigured, requireAdmin, refuse
   }
   try {
     const { organizationId } = orgAndUser(req);
-    const updated = await withOrgClient(defaultSource, organizationId, (client) =>
-      setRepositoryService(client, organizationId, req.params.id, parsed.data.service_id));
-    if (!updated) {
+    const githubRepoId = await withOrgClient(defaultSource, organizationId, async (client) =>
+      (await setRepositoryService(client, organizationId, req.params.id, parsed.data.service_id))
+        ? githubRepoIdOf(client, organizationId, req.params.id)
+        : null);
+    if (githubRepoId === null) {
       res.status(404).json({ success: false, error: 'not_found' });
       return;
     }
-    res.json({ success: true });
+    // D8a-2: events held back while the repository was unmapped are recorded now.
+    const replay = parsed.data.service_id === null
+      ? { considered: 0, recorded: 0 }
+      : await replayRepository(organizationId, githubRepoId, MAPPING_REPLAY);
+    res.json({ success: true, data: { replay } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/integrations/github/repositories/:id/deploy-rule
+//   { mode: 'none' }
+//   { mode: 'job', workflow_name, job_name, environment?, branch?, branch_name?, aws_region? }
+//   { mode: 'github_deployments', environment_map?, aws_region? }
+// Which of the repository's events are deployments (D8a-2). Stored events
+// the new rule decides are replayed; existing deployment rows never change.
+router.put('/repositories/:id/deploy-rule', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
+  const parsed = deployRuleBody.safeParse(req.body);
+  if (!parsed.success || !UUID.test(req.params.id)) {
+    invalid(res);
+    return;
+  }
+  try {
+    const { organizationId } = orgAndUser(req);
+    const stored = storedDeployRule(parsed.data);
+    const githubRepoId = await withOrgClient(defaultSource, organizationId, (client) =>
+      setRepositoryDeployRule(client, organizationId, req.params.id, stored));
+    if (githubRepoId === null) {
+      res.status(404).json({ success: false, error: 'not_found' });
+      return;
+    }
+    const replay = await replayRepository(organizationId, githubRepoId, RULE_REPLAY);
+    res.json({ success: true, data: { deploy_rule: stored, replay } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/integrations/github/repositories/:id/jobs-seen (any member of the organization)
+// Completed jobs received for the repository in the last 30 days: the deploy-job picker.
+router.get('/repositories/:id/jobs-seen', refuseUnconfigured, async (req, res, next) => {
+  if (!UUID.test(req.params.id)) {
+    invalid(res);
+    return;
+  }
+  try {
+    const { organizationId } = orgAndUser(req);
+    const jobs = await withOrgClient(defaultSource, organizationId, async (client) => {
+      const githubRepoId = await githubRepoIdOf(client, organizationId, req.params.id);
+      return githubRepoId === null ? null : listJobsSeen(client, organizationId, githubRepoId);
+    });
+    if (jobs === null) {
+      res.status(404).json({ success: false, error: 'not_found' });
+      return;
+    }
+    res.json({ success: true, data: { jobs } });
   } catch (error) {
     next(error);
   }

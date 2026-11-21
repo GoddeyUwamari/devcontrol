@@ -71,6 +71,8 @@ describe.each([
   ['GET', '/api/integrations/github', undefined, 200, { success: true, data: { configured: false } }],
   ['GET', '/api/integrations/github/repositories', undefined, 503, NOT_CONFIGURED],
   ['PUT', `/api/integrations/github/repositories/${REPO}/service`, { service_id: SERVICE }, 503, NOT_CONFIGURED],
+  ['PUT', `/api/integrations/github/repositories/${REPO}/deploy-rule`, { mode: 'none' }, 503, NOT_CONFIGURED],
+  ['GET', `/api/integrations/github/repositories/${REPO}/jobs-seen`, undefined, 503, NOT_CONFIGURED],
   ['POST', '/api/integrations/github/install', {}, 503, NOT_CONFIGURED],
   ['POST', '/api/integrations/github/claim', { state: STATE, code: 'abc', installation_id: '42' }, 503, NOT_CONFIGURED],
   ['POST', '/api/integrations/github/claim/retry', { state: STATE }, 503, NOT_CONFIGURED],
