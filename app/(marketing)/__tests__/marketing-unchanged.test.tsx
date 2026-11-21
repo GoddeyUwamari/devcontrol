@@ -127,7 +127,7 @@ const PAGES: Page[] = [
       expect(root.querySelector('main')).not.toBeNull()
       expect(root.querySelector('footer')).not.toBeNull()
       expect(root.querySelectorAll('h1')).toHaveLength(1)
-      expect(text(root.querySelector('h1')!)).toContain('Find the AWS waste hiding in your bill.')
+      expect(text(root.querySelector('h1')!)).toContain('Find the AWS waste and risks hiding in your account.')
       expect(root.querySelectorAll('section').length).toBeGreaterThanOrEqual(5)
       expect(slots(root, 'button')).toBeGreaterThan(0)
       expect(text(root)).toContain('All rights reserved')
