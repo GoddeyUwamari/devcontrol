@@ -554,7 +554,7 @@ function DeploymentsContent() {
                     </p>
                   </div>
                   <span className="text-label px-2.5 py-1 rounded-full w-fit" style={{ background: envBg, color: envColor }}>{d.environment}</span>
-                  <span className="text-meta text-ink-muted font-mono">{d.awsRegion || '—'}</span>
+                  <span className="text-meta text-ink-muted font-mono">{d.awsRegion || 'Not recorded'}</span>
                   <span className="text-meta text-ink-muted overflow-hidden text-ellipsis whitespace-nowrap">{d.deployedBy?.split('@')[0] || '—'}</span>
                   <span className="text-label px-2.5 py-1 rounded-full w-fit" style={{ background: statusBg, color: statusColor }}>{statusLabel}</span>
                   {showCost && (

@@ -115,11 +115,12 @@ describe('Deployments page', () => {
     expect(screen.queryByText('Running')).not.toBeInTheDocument()
   })
 
-  it('a row with no region recorded (GitHub App, D8-D8): the mobile card reads "Not recorded", the desktop row a dash', async () => {
+  it('a row with no region recorded (GitHub App, D8-D8): the mobile card and the desktop row both read "Not recorded"', async () => {
     listRows = [{ ...deployment('app', 'success', 2 * HOUR), aws_region: null }]
     renderPage()
     await screen.findAllByText('service-app')
-    expect(screen.getAllByText('Not recorded')).toHaveLength(1)
+    expect(screen.getAllByText('Not recorded')).toHaveLength(2)
+    expect(within(screen.getByTestId('deployment-row')).getByText('Not recorded')).toBeInTheDocument()
     expect(screen.queryByText('us-east-1')).not.toBeInTheDocument()
   })
 
