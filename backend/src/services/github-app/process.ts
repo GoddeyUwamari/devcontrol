@@ -1,18 +1,19 @@
 /**
- * Downstream processing of a stored GitHub App event (D8a-1): repository rows
- * and installation lifecycle only. No deployment is recorded here; D8a-2
- * consumes workflow_job and deployment_status events, which are left
- * 'pending' with reason deploy_detection_pending.
+ * Downstream processing of a stored GitHub App event: repository rows,
+ * installation lifecycle (D8a-1) and, for workflow_job and deployment_status,
+ * deploy detection and the deployment row (D8a-2: detect.ts, record.ts).
  *
  * Runs only after the event row is committed. A failure marks the event
  * 'failed' with a reason code and never deletes it.
  */
 import { PoolClient } from 'pg';
 import { EventToProcess, ProcessingStatus, setProcessingOutcome } from '../../repositories/pipeline-events.repository';
-import { markRepositoryRemoved, upsertRepository } from '../../repositories/pipeline-repositories.repository';
+import { findRepositoryForEvent, markRepositoryRemoved, upsertRepository } from '../../repositories/pipeline-repositories.repository';
 import { applyInstallationLifecycle } from '../../repositories/github-installations.repository';
 import { ConnectionSource, withOrgClient, withOrgTransaction } from './db';
 import { permissionsStateOf } from './permissions';
+import { detectDeployment } from './detect';
+import { recordDeployment } from './record';
 
 interface ProcessingOutcome {
   status: ProcessingStatus;
@@ -71,12 +72,33 @@ export const processEvent: EventProcessor = async (client, organizationId, ev) =
         });
       }
       if (facts.kind === 'workflow_job' || facts.kind === 'deployment_status') {
-        return { status: 'pending', reason: 'deploy_detection_pending' };
+        const repository = facts.repository ? await findRepositoryForEvent(client, organizationId, facts.repository.id) : null;
+        const detection = detectDeployment({
+          facts,
+          repository,
+          receivedAt: ev.receivedAt,
+          legacyWebhookOrganization: isLegacyWebhookOrganization(organizationId),
+        });
+        if (detection.kind === 'skip') return { status: detection.status, reason: detection.reason };
+        const recorded = await recordDeployment(client, organizationId, ev.id, facts, detection.candidate);
+        return { status: recorded.status, reason: recorded.reason };
       }
       return { status: 'processed', reason: null };
     }
   }
 };
+
+/**
+ * Ruling Q12: while the legacy repository webhook is configured
+ * (GITHUB_WEBHOOK_ORG_ID set, read at call time), the App path writes no
+ * deployment row for that organization; its events are kept as
+ * ignored / legacy_webhook_org. Keyed on the organization id alone, so a
+ * half-configured legacy webhook still blocks. D8c unsets the variable.
+ */
+export function isLegacyWebhookOrganization(organizationId: string): boolean {
+  const legacy = (process.env.GITHUB_WEBHOOK_ORG_ID ?? '').trim().toLowerCase();
+  return legacy !== '' && legacy === organizationId.toLowerCase();
+}
 
 /** Postgres SQLSTATE as a reason code, or a generic code. Never an error message. */
 function failureReason(error: unknown): string {

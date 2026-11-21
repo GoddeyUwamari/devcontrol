@@ -129,7 +129,8 @@ describe('organization from the installation claim only', () => {
     const d = signedDelivery('workflow_job', payload, WEBHOOK_SECRET);
     expect(await send(d)).toEqual({ status: 200, body: { received: true, stored: true, duplicate: false } });
     const { events } = await rowsFor(d.deliveryId);
-    expect(events).toEqual([{ org: orgA, processing_status: 'pending', processing_reason: 'deploy_detection_pending' }]);
+    // D8a-2: the repository was just created unmapped, so no deployment is recorded.
+    expect(events).toEqual([{ org: orgA, processing_status: 'unmapped', processing_reason: 'repository_not_mapped' }]);
     const facts = (await fx.admin.query('SELECT facts::text AS f FROM pipeline_events WHERE delivery_id = $1', [d.deliveryId])).rows[0].f;
     expect(facts).not.toContain(orgB);
     expect(facts).not.toContain(PLANTED.foreignOrg);

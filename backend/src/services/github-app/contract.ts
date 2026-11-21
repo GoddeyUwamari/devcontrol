@@ -126,7 +126,7 @@ interface DeploymentFacts extends Common {
   creator: GitHubUserRef | null;
 }
 
-interface DeploymentStatusFacts extends Common {
+export interface DeploymentStatusFacts extends Common {
   kind: 'deployment_status';
   status_id: number;
   deployment_id: number | null;

@@ -6,7 +6,7 @@
  * every statement here to that).
  *
  * Events are never deleted by processing: a failure only changes
- * processing_status. Deletion is the retention purge's job (D8a-2).
+ * processing_status. Deletion is the retention purge's job (D8a-3).
  */
 import { PoolClient } from 'pg';
 import {
@@ -88,6 +88,54 @@ export interface EventToProcess {
   facts: StoredPipelineEvent['facts'];
 }
 
+/** Links a processed event to the deployment row it recorded (or found already recorded). */
+export async function linkDeployment(client: PoolClient, organizationId: string, eventId: string, deploymentId: string): Promise<void> {
+  await client.query(
+    `UPDATE pipeline_events SET deployment_id = $3::uuid WHERE organization_id = $1 AND id = $2`,
+    [organizationId, eventId, deploymentId]
+  );
+}
+
+/** Which stored events a replay picks up (rulings Q11). */
+export interface ReplaySelection {
+  statuses: readonly ProcessingStatus[];
+  /** Also 'ignored' events with one of these reasons. */
+  ignoredReasons: readonly string[];
+}
+
+export const REPLAY_LIMIT = 1000;
+
+/**
+ * One repository's deployment-candidate events (workflow_job and
+ * deployment_status) in the selection, oldest first, at most REPLAY_LIMIT.
+ */
+export async function findReplayableEvents(
+  client: PoolClient,
+  organizationId: string,
+  githubRepoId: number,
+  selection: ReplaySelection,
+  limit = REPLAY_LIMIT
+): Promise<EventToProcess[]> {
+  const { rows } = await client.query(
+    `SELECT id, installation_id, event, action, occurred_at, received_at, facts
+       FROM pipeline_events
+      WHERE organization_id = $1 AND github_repo_id = $2 AND event IN ('workflow_job', 'deployment_status')
+        AND (processing_status = ANY($3::text[]) OR (processing_status = 'ignored' AND processing_reason = ANY($4::text[])))
+      ORDER BY occurred_at NULLS LAST, received_at, id
+      LIMIT $5`,
+    [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    installationId: String(r.installation_id),
+    event: r.event,
+    action: r.action,
+    occurredAt: r.occurred_at,
+    receivedAt: r.received_at,
+    facts: r.facts,
+  }));
+}
+
 /** Events not processed yet (e.g. just released from hold by a claim), oldest first. */
 export async function findUnprocessedEvents(
   client: PoolClient,
@@ -157,18 +205,31 @@ export class PipelineEventsReader {
     githubRepoId: number | string,
     mergeShas: readonly string[]
   ): Promise<StoredPipelineEvent<PullRequestFacts>[]> {
+    if (!mergeShas.some((s) => SHA_LIST.test(s))) return [];
+    return withOrgClient(this.source, organizationId, (client) =>
+      PipelineEventsReader.findMergedPullRequestsOn(client, organizationId, githubRepoId, mergeShas));
+  }
+
+  /**
+   * The same read on a connection the caller already holds (tagged for the
+   * organization), e.g. inside D8a-2's deployment transaction.
+   */
+  static async findMergedPullRequestsOn(
+    client: PoolClient,
+    organizationId: string,
+    githubRepoId: number | string,
+    mergeShas: readonly string[]
+  ): Promise<StoredPipelineEvent<PullRequestFacts>[]> {
     const shas = mergeShas.filter((s) => SHA_LIST.test(s));
     if (shas.length === 0) return [];
-    return withOrgClient(this.source, organizationId, async (client) => {
-      const { rows } = await client.query(
-        `SELECT ${STORED_COLUMNS} FROM pipeline_events
-          WHERE organization_id = $1 AND github_repo_id = $2 AND event = 'pull_request' AND action = 'closed'
-            AND facts ->> 'merged' = 'true' AND facts ->> 'merge_commit_sha' = ANY($3::text[])
-          ORDER BY occurred_at, id`,
-        [organizationId, String(githubRepoId), shas]
-      );
-      return rows.map((r) => toStored<PullRequestFacts>(r));
-    });
+    const { rows } = await client.query(
+      `SELECT ${STORED_COLUMNS} FROM pipeline_events
+        WHERE organization_id = $1 AND github_repo_id = $2 AND event = 'pull_request' AND action = 'closed'
+          AND facts ->> 'merged' = 'true' AND facts ->> 'merge_commit_sha' = ANY($3::text[])
+        ORDER BY occurred_at, id`,
+      [organizationId, String(githubRepoId), shas]
+    );
+    return rows.map((r) => toStored<PullRequestFacts>(r));
   }
 
   /** D6: merged pull requests received since `since`, all repositories. */

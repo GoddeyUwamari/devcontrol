@@ -119,7 +119,8 @@ describe('claim', () => {
       `SELECT event, organization_id::text AS org, held_at IS NOT NULL AS was_held, processing_status FROM pipeline_events WHERE installation_id = $1 ORDER BY event`, [inst])).rows;
     expect(events).toEqual([
       { event: 'installation', org: orgA, was_held: true, processing_status: 'processed' },
-      { event: 'workflow_job', org: orgA, was_held: true, processing_status: 'pending' },
+      // D8a-2: released into an unmapped repository -> kept, no deployment row.
+      { event: 'workflow_job', org: orgA, was_held: true, processing_status: 'unmapped' },
     ]);
     const repos = (await fx.admin.query('SELECT full_name, service_id FROM pipeline_repositories WHERE organization_id = $1 AND installation_id = $2 ORDER BY full_name', [orgA, inst])).rows;
     expect(repos).toEqual([{ full_name: 'acme/held-repo', service_id: null }, { full_name: 'acme/other', service_id: null }]);

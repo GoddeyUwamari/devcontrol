@@ -463,6 +463,14 @@ function resolveMaxUsers(
   return lowered ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers);
 }
 
+function resolveMaxDeploymentsPerMonth(
+  org: { max_deployments_per_month: number | null },
+  tier: SubscriptionTier,
+  lowered: boolean
+): number {
+  return lowered ? TIER_LIMITS.free.maxDeploymentsPerMonth : (org.max_deployments_per_month || TIER_LIMITS[tier].maxDeploymentsPerMonth);
+}
+
 /**
  * The tier the resource limits use: the effective tier (entitlementOf), and
  * whether it is below the stored one. While it is, the organization's own
@@ -522,6 +530,26 @@ export class SeatLimitReachedError extends Error {
     super(`This organization has reached its users limit (${currentUsage}/${maxLimit}).`);
     this.name = 'SeatLimitReachedError';
   }
+}
+
+/**
+ * The organization's monthly deployment limit (-1 = unlimited), resolved
+ * exactly as checkResourceLimit('deployments') resolves it, on an explicit
+ * executor. The GitHub App path (D8a-2) runs it inside its own tenant-tagged
+ * transaction, under its per-organization quota lock.
+ */
+export async function deploymentMonthlyLimit(executor: Pool | PoolClient, organizationId: string): Promise<number> {
+  const { rows } = await executor.query(
+    `SELECT subscription_tier, max_deployments_per_month,
+            billing_lifecycle_state, grace_period_ends_at, stripe_subscription_id, subscription_status, id
+     FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
+    [organizationId]
+  );
+  if (rows.length === 0) {
+    throw new Error('Organization not found');
+  }
+  const { tier, lowered } = limitsTierOf(rows[0]);
+  return resolveMaxDeploymentsPerMonth(rows[0], tier, lowered);
 }
 
 /**
@@ -588,7 +616,7 @@ async function getOrganizationLimits(organizationId: string): Promise<{
     limits: {
       maxServices: restricted ? TIER_LIMITS.free.maxServices : (org.max_services || TIER_LIMITS[tier].maxServices),
       maxUsers: resolveMaxUsers(org, tier, restricted),
-      maxDeploymentsPerMonth: restricted ? TIER_LIMITS.free.maxDeploymentsPerMonth : (org.max_deployments_per_month || TIER_LIMITS[tier].maxDeploymentsPerMonth),
+      maxDeploymentsPerMonth: resolveMaxDeploymentsPerMonth(org, tier, restricted),
       maxResources: TIER_LIMITS[tier].maxResources,
     },
     usage: {
