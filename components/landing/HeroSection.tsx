@@ -24,8 +24,22 @@ const SAMPLE_ROWS: SampleRow[] = [
   { title: 'Server running but idle', subtitle: 'Idle EC2 instance', monthly: 142 },
   { title: 'Storage attached to nothing', subtitle: 'Unattached EBS volume', monthly: 38 },
   { title: 'Old storage type, cheaper one exists', subtitle: 'gp2 to gp3 upgrade', monthly: 21 },
-  { title: 'Old database backup nobody uses', subtitle: 'Idle RDS snapshot', monthly: 64 },
+  { title: 'Steady server billed on demand', subtitle: 'Reserved Instance opportunity', monthly: 64 },
 ]
+
+/**
+ * The band's first card: the cost checks a first scan runs, by service. Each one
+ * is a real check (backend/src/config/optimization-rules.ts).
+ */
+const SCAN_CHECKS: { service: string; items: string }[] = [
+  { service: 'EC2', items: 'Low-activity instances · Unused Elastic IPs · Reserved Instance opportunities' },
+  { service: 'EBS', items: 'Unattached volumes · gp2-to-gp3 migration opportunities' },
+  { service: 'DynamoDB', items: 'Unused capacity · On-demand vs. provisioned capacity' },
+  { service: 'S3', items: 'Lifecycle optimization' },
+  { service: 'Lambda', items: 'Low-usage functions' },
+]
+
+const TIME_LINES = ['Read-only AWS access · No agents · No code changes', 'Revoke access anytime']
 
 /** The sum of the sample costs above, so the total can never disagree with its rows. */
 const SAMPLE_TOTAL = SAMPLE_ROWS.reduce((sum, row) => sum + row.monthly, 0)
@@ -113,12 +127,12 @@ export function HeroSection() {
             </p>
 
             <h1 className="mt-4 text-4xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
-              Find the <span className="text-[#7c3aed]">AWS waste</span> hiding in your bill.
+              Find the <span className="text-[#7c3aed]">AWS waste</span> and risks hiding in your account.
             </h1>
 
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-700">
-              Connect read-only and see idle resources, security risks and cost drivers across your AWS account. No
-              agents. No code changes.
+              Connect read-only to uncover idle resources, security risks and cloud cost drivers. No agents. No code
+              changes.
             </p>
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
@@ -162,13 +176,42 @@ export function HeroSection() {
           <SamplePanel />
         </div>
 
-        <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="hero-cards">
-          <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-outcome-card">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">What a first scan looks for</p>
-            <p className="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">4 cost checks</p>
-            <p className="m-0 mt-3 text-base leading-relaxed text-slate-700">
-              Low-activity EC2 instances, unattached EBS volumes, unused Elastic IPs and gp2 volumes, with an estimated monthly saving for each.
+        {/* One band of three cards under both columns: stacked below lg, then 1.55fr / 1fr / 1fr. */}
+        <div
+          className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)_minmax(0,1fr)]"
+          data-testid="hero-cards"
+        >
+          <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-scan-card">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">What your first scan checks</p>
+            <h2 className="m-0 mt-2 text-2xl font-bold tracking-tight text-slate-900">AWS cost optimization</h2>
+            <ul className="m-0 mt-4 list-none divide-y divide-slate-200 p-0">
+              {SCAN_CHECKS.map((check) => (
+                <li
+                  key={check.service}
+                  className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug"
+                  data-testid="hero-scan-row"
+                >
+                  <span className="font-semibold text-slate-900">{check.service}</span>
+                  <span className="text-slate-700">{check.items}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="m-0 mt-4 text-sm leading-normal text-slate-600">
+              See estimated monthly savings where the available data supports an estimate.
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-time-card">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">Time to first results</p>
+            <h2 className="m-0 mt-2 text-2xl font-bold tracking-tight text-slate-900">Initial findings in minutes</h2>
+            <ul className="m-0 mt-4 flex list-none flex-col gap-3 p-0">
+              {TIME_LINES.map((line) => (
+                <li key={line} className="flex items-start gap-2 text-base leading-snug text-slate-700">
+                  <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-[#7c3aed]" />
+                  {line}
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div className="rounded-2xl bg-slate-900 p-7" data-testid="hero-audit-card">

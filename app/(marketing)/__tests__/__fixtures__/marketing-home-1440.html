@@ -74,8 +74,8 @@
 <div class="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14" data-testid="hero-columns">
 <div data-testid="hero-copy">
 <p class="m-0 text-sm font-medium text-[#7c3aed]">AI-powered cloud operations &amp; infrastructure intelligence</p>
-<h1 class="mt-4 text-4xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">Find the <span class="text-[#7c3aed]">AWS waste</span> hiding in your bill.</h1>
-<p class="mt-6 max-w-xl text-lg leading-relaxed text-slate-700">Connect read-only and see idle resources, security risks and cost drivers across your AWS account. No agents. No code changes.</p>
+<h1 class="mt-4 text-4xl font-bold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">Find the <span class="text-[#7c3aed]">AWS waste</span> and risks hiding in your account.</h1>
+<p class="mt-6 max-w-xl text-lg leading-relaxed text-slate-700">Connect read-only to uncover idle resources, security risks and cloud cost drivers. No agents. No code changes.</p>
 <div class="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
 <a href="/register" class="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#7c3aed] px-7 py-4 font-semibold text-white shadow-lg shadow-[#7c3aed]/30 transition-[opacity,transform,translate] duration-150 motion-safe:hover:-translate-y-px hover:opacity-90 motion-reduce:transform-none motion-reduce:transition-none sm:w-auto">Find My AWS Waste<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true">
 <path d="M5 12h14">
@@ -139,8 +139,8 @@
 </li>
 <li class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-4" data-testid="hero-sample-panel-row">
 <div class="min-w-0">
-<p class="m-0 text-base font-semibold leading-snug text-slate-900">Old database backup nobody uses</p>
-<p class="m-0 text-sm leading-snug text-slate-600">Idle RDS snapshot</p>
+<p class="m-0 text-base font-semibold leading-snug text-slate-900">Steady server billed on demand</p>
+<p class="m-0 text-sm leading-snug text-slate-600">Reserved Instance opportunity</p>
 </div>
 <span class="shrink-0 text-lg font-bold text-[#047857]" data-testid="hero-sample-panel-row-value">$64/mo</span>
 </li>
@@ -153,11 +153,49 @@
 <p id="hero-sample-panel-caption" class="m-0 mt-3 px-1 text-sm leading-normal text-slate-600" data-testid="hero-sample-panel-caption">Illustrative example. Your own findings appear after your first scan.</p>
 </div>
 </div>
-<div class="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="hero-cards">
-<div class="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-outcome-card">
-<p class="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">What a first scan looks for</p>
-<p class="m-0 mt-2 text-4xl font-bold tracking-tight text-[#7c3aed]">4 cost checks</p>
-<p class="m-0 mt-3 text-base leading-relaxed text-slate-700">Low-activity EC2 instances, unattached EBS volumes, unused Elastic IPs and gp2 volumes, with an estimated monthly saving for each.</p>
+<div class="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)_minmax(0,1fr)]" data-testid="hero-cards">
+<div class="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-scan-card">
+<p class="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">What your first scan checks</p>
+<h2 class="m-0 mt-2 text-2xl font-bold tracking-tight text-slate-900">AWS cost optimization</h2>
+<ul class="m-0 mt-4 list-none divide-y divide-slate-200 p-0">
+<li class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug" data-testid="hero-scan-row">
+<span class="font-semibold text-slate-900">EC2</span>
+<span class="text-slate-700">Low-activity instances · Unused Elastic IPs · Reserved Instance opportunities</span>
+</li>
+<li class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug" data-testid="hero-scan-row">
+<span class="font-semibold text-slate-900">EBS</span>
+<span class="text-slate-700">Unattached volumes · gp2-to-gp3 migration opportunities</span>
+</li>
+<li class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug" data-testid="hero-scan-row">
+<span class="font-semibold text-slate-900">DynamoDB</span>
+<span class="text-slate-700">Unused capacity · On-demand vs. provisioned capacity</span>
+</li>
+<li class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug" data-testid="hero-scan-row">
+<span class="font-semibold text-slate-900">S3</span>
+<span class="text-slate-700">Lifecycle optimization</span>
+</li>
+<li class="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug" data-testid="hero-scan-row">
+<span class="font-semibold text-slate-900">Lambda</span>
+<span class="text-slate-700">Low-usage functions</span>
+</li>
+</ul>
+<p class="m-0 mt-4 text-sm leading-normal text-slate-600">See estimated monthly savings where the available data supports an estimate.</p>
+</div>
+<div class="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-time-card">
+<p class="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">Time to first results</p>
+<h2 class="m-0 mt-2 text-2xl font-bold tracking-tight text-slate-900">Initial findings in minutes</h2>
+<ul class="m-0 mt-4 flex list-none flex-col gap-3 p-0">
+<li class="flex items-start gap-2 text-base leading-snug text-slate-700">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check mt-0.5 h-4 w-4 shrink-0 text-[#7c3aed]" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Read-only AWS access · No agents · No code changes</li>
+<li class="flex items-start gap-2 text-base leading-snug text-slate-700">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check mt-0.5 h-4 w-4 shrink-0 text-[#7c3aed]" aria-hidden="true">
+<path d="M20 6 9 17l-5-5">
+</path>
+</svg>Revoke access anytime</li>
+</ul>
 </div>
 <div class="rounded-2xl bg-slate-900 p-7" data-testid="hero-audit-card">
 <h2 class="m-0 text-2xl font-bold tracking-tight text-white">Rather talk it through?</h2>

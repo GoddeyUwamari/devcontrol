@@ -19,8 +19,8 @@ describe('HeroSection copy', () => {
     const blocks = Array.from(copy.querySelectorAll(':scope > p, :scope > h1, :scope > div, :scope > ul')).map(text)
     expect(blocks).toEqual([
       'AI-powered cloud operations & infrastructure intelligence',
-      'Find the AWS waste hiding in your bill.',
-      'Connect read-only and see idle resources, security risks and cost drivers across your AWS account. No agents. No code changes.',
+      'Find the AWS waste and risks hiding in your account.',
+      'Connect read-only to uncover idle resources, security risks and cloud cost drivers. No agents. No code changes.',
       'Find My AWS WasteTake a product tour',
       'Read-only access · Takes a few minutes · Delete the role anytime',
       'Read-only accessNo agentsAES-256 encryption',
@@ -43,7 +43,7 @@ describe('HeroSection copy', () => {
       ['Server running but idle', 'Idle EC2 instance', '$142/mo'],
       ['Storage attached to nothing', 'Unattached EBS volume', '$38/mo'],
       ['Old storage type, cheaper one exists', 'gp2 to gp3 upgrade', '$21/mo'],
-      ['Old database backup nobody uses', 'Idle RDS snapshot', '$64/mo'],
+      ['Steady server billed on demand', 'Reserved Instance opportunity', '$64/mo'],
     ])
     for (const value of screen.getAllByTestId('hero-sample-panel-row-value')) {
       expect(value.className).toContain('text-[#047857]')
@@ -73,15 +73,38 @@ describe('HeroSection copy', () => {
     expect(screen.getByTestId('hero-sample-panel-caption').previousElementSibling).toBe(panel)
   })
 
-  it('renders both cards exactly', () => {
+  it('renders the three band cards exactly', () => {
     render(<HeroSection />)
-    const outcome = screen.getByTestId('hero-outcome-card')
-    expect(Array.from(outcome.children).map(text)).toEqual([
-      'What a first scan looks for',
-      '4 cost checks',
-      'Low-activity EC2 instances, unattached EBS volumes, unused Elastic IPs and gp2 volumes, with an estimated monthly saving for each.',
+    const scan = screen.getByTestId('hero-scan-card')
+    const scanBlocks = Array.from(scan.children)
+    expect(scanBlocks.map((el) => el.tagName)).toEqual(['P', 'H2', 'UL', 'P'])
+    expect(text(scanBlocks[0])).toBe('What your first scan checks')
+    expect(scanBlocks[0].className).toContain('uppercase')
+    expect(text(scanBlocks[1])).toBe('AWS cost optimization')
+    expect(
+      within(scan)
+        .getAllByTestId('hero-scan-row')
+        .map((row) => Array.from(row.children).map(text)),
+    ).toEqual([
+      ['EC2', 'Low-activity instances · Unused Elastic IPs · Reserved Instance opportunities'],
+      ['EBS', 'Unattached volumes · gp2-to-gp3 migration opportunities'],
+      ['DynamoDB', 'Unused capacity · On-demand vs. provisioned capacity'],
+      ['S3', 'Lifecycle optimization'],
+      ['Lambda', 'Low-usage functions'],
     ])
-    expect(outcome.firstElementChild?.className).toContain('uppercase')
+    expect(text(scanBlocks[3])).toBe('See estimated monthly savings where the available data supports an estimate.')
+
+    const time = screen.getByTestId('hero-time-card')
+    const timeBlocks = Array.from(time.children)
+    expect(timeBlocks.map((el) => el.tagName)).toEqual(['P', 'H2', 'UL'])
+    expect(text(timeBlocks[0])).toBe('Time to first results')
+    expect(timeBlocks[0].className).toContain('uppercase')
+    expect(text(timeBlocks[1])).toBe('Initial findings in minutes')
+    expect(within(time).getAllByRole('listitem').map(text)).toEqual([
+      'Read-only AWS access · No agents · No code changes',
+      'Revoke access anytime',
+    ])
+
     const audit = screen.getByTestId('hero-audit-card')
     expect(Array.from(audit.children).map(text)).toEqual([
       'Rather talk it through?',
@@ -101,6 +124,9 @@ describe('HeroSection copy', () => {
       'book a 15-min AWS audit',
       'Read-only IAM',
       'SOC 2',
+      'hiding in your bill',
+      '4 cost checks',
+      'Idle RDS snapshot',
     ]) {
       expect(all).not.toContain(gone)
     }
@@ -132,14 +158,15 @@ describe('HeroSection layout', () => {
     expect(Array.from(columns.children).map((el) => el.getAttribute('data-testid'))).toEqual(['hero-copy', 'hero-sample'])
   })
 
-  it('puts the two cards side by side from lg, stacked below, after the columns', () => {
+  it('puts the three band cards side by side from lg (1.55fr / 1fr / 1fr), stacked below, after the columns', () => {
     render(<HeroSection />)
     const cards = screen.getByTestId('hero-cards')
     expect(cards.className).toMatch(/(^| )grid-cols-1( |$)/)
-    expect(cards.className).toMatch(/(^| )lg:grid-cols-2( |$)/)
+    expect(cards.className).toMatch(/(^| )lg:grid-cols-\[minmax\(0,1\.55fr\)_minmax\(0,1fr\)_minmax\(0,1fr\)\]( |$)/)
     expect(cards.className).not.toMatch(/(^| )(sm|md):grid-cols-/)
     expect(Array.from(cards.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'hero-outcome-card',
+      'hero-scan-card',
+      'hero-time-card',
       'hero-audit-card',
     ])
     expect(screen.getByTestId('hero-columns').nextElementSibling).toBe(cards)
@@ -159,8 +186,10 @@ describe('HeroSection accessibility', () => {
     expect(levels[0]).toBe(1)
     for (let i = 1; i < levels.length; i++) expect(levels[i] - levels[i - 1]).toBeLessThanOrEqual(1)
     expect(screen.getAllByRole('heading').map(text)).toEqual([
-      'Find the AWS waste hiding in your bill.',
+      'Find the AWS waste and risks hiding in your account.',
       'Cost optimization',
+      'AWS cost optimization',
+      'Initial findings in minutes',
       'Rather talk it through?',
     ])
   })
@@ -168,7 +197,7 @@ describe('HeroSection accessibility', () => {
   it('hides every icon from assistive technology', () => {
     const { container } = render(<HeroSection />)
     const svgs = Array.from(container.querySelectorAll('svg'))
-    expect(svgs.length).toBe(5) // arrow, play, three checks
+    expect(svgs.length).toBe(7) // arrow, play, three badge checks, two time-card checks
     for (const svg of svgs) expect(svg).toHaveAttribute('aria-hidden', 'true')
   })
 
@@ -269,9 +298,9 @@ describe('HeroSection contrast (light theme)', () => {
     ['total label', 'slate-900', 'violet-100'],
     ['total value', 'violet-800', 'violet-100'],
     ['caption', 'slate-600', 'violet-50'],
-    ['outcome label', 'slate-600', 'white'],
-    ['outcome figure', '#7c3aed', 'white'],
-    ['outcome body', 'slate-700', 'white'],
+    ['band card label / scan footer', 'slate-600', 'white'],
+    ['time card check icon', '#7c3aed', 'white'],
+    ['scan rows / time card lines', 'slate-700', 'white'],
     ['audit heading', 'white', 'slate-900'],
     ['audit body', 'slate-300', 'slate-900'],
     ['audit button', 'slate-900', 'white'],

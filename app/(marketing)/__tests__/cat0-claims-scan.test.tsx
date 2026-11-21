@@ -181,7 +181,7 @@ interface Page {
 }
 
 const PAGES: Page[] = [
-  { name: 'home', path: '/', element: () => withAuth(<MarketingLayout><HomePage /></MarketingLayout>), mustShow: [HEADING, '4 cost checks', CHECK_LIST] },
+  { name: 'home', path: '/', element: () => withAuth(<MarketingLayout><HomePage /></MarketingLayout>), mustShow: [HEADING, CHECK_LIST, 'What your first scan checks'] },
   { name: 'solutions/scaleups', path: '/solutions/scaleups', element: () => <ScaleupsPage />, mustShow: [CHECK_SENTENCE, CHECK_LIST] },
   { name: 'solutions/mid-market', path: '/solutions/mid-market', element: () => <MidMarketPage />, mustShow: [HEADING, CHECK_LIST] },
   { name: 'platform/service-health', path: '/platform/service-health', element: () => <ServiceHealthPage />, mustShow: [] },
