@@ -13,3 +13,9 @@ export const AWS_NOT_CONNECTED_MESSAGE = 'No AWS account is connected.';
 
 /** A compliance scan asked for with no AWS connection. */
 export const COMPLIANCE_SCAN_NOT_CONNECTED_MESSAGE = 'Connect an AWS account to run a compliance scan.';
+
+/** A discovery scan asked for with no AWS connection (PR1 no-account guards, approved copy). */
+export const SCAN_NOT_CONNECTED_MESSAGE = 'Connect an AWS account before starting a scan.';
+
+/** A cost analysis asked for with no AWS connection (PR1 no-account guards, approved copy). */
+export const COST_ANALYSIS_NOT_CONNECTED_MESSAGE = 'Connect an AWS account before running cost analysis.';

@@ -66,6 +66,16 @@ export class AwsAccountAmbiguousError extends Error {
   }
 }
 
+/**
+ * Whether `err` is "no eligible account", by its class. Never by its message:
+ * AssumeRole failures (aws-client-factory.service.ts AwsAssumeRoleFailedError)
+ * and a row missing its external_id carry the same AWS_NOT_CONNECTED prefix,
+ * and those are a connected account's real failures.
+ */
+export function isAwsAccountNotConnected(err: unknown): err is AwsAccountNotConnectedError {
+  return err instanceof AwsAccountNotConnectedError;
+}
+
 export function isAwsAccountAmbiguous(err: unknown): err is AwsAccountAmbiguousError {
   return err instanceof AwsAccountAmbiguousError;
 }

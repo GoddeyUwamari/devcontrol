@@ -139,7 +139,12 @@ import {
   scanLeaseState,
   sleep,
 } from './scan-session';
-import { isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
+import {
+  AwsAccountNotConnectedError,
+  hasEligibleAwsAccount,
+  isAwsAccountAmbiguous,
+  isAwsAccountNotConnected,
+} from '../repositories/aws-accounts.repository';
 import { readBuiltInFrameworkSettings } from '../repositories/compliance-frameworks.repository';
 import { FrameworkApplicability, REGISTERED_FRAMEWORKS, resolveFrameworkApplicability } from '../utils/frameworkApplicability';
 import { FRAMEWORK_EVALUATOR_VERSION } from './framework-checks';
@@ -1499,6 +1504,16 @@ export class AWSResourceDiscoveryService {
         [organizationId]
       );
 
+      // The no-account guard (PR1): with no eligible (status 'active') AWS account
+      // the scan is refused here, before any AWS call and before anything is
+      // written (no job row, no lease). Every scan path comes through here: Scan now,
+      // the legacy discover, the cron, connect, a home region change, a join's retry.
+      // Only "none" is refused: more than one eligible account goes on to ScanContext
+      // and is recorded as a failed scan, as before.
+      if (!(await hasEligibleAwsAccount(client, organizationId))) {
+        throw new AwsAccountNotConnectedError(organizationId);
+      }
+
       // Get organization's subscription tier
       const tier = await this.getOrganizationTier(organizationId, client);
       const allowedTypes = this.getAllowedResourceTypes(tier);
@@ -1510,12 +1525,12 @@ export class AWSResourceDiscoveryService {
       // detectors, refreshed before it expires (scan-context.ts). It names the AWS
       // account the scan leases. A failure here is recorded as a failed job, as it
       // always was, under the scan lease (recordAccountContextFailure); nothing
-      // else is written.
+      // else is written. An account gone since the guard above records nothing.
       let scanContext: ScanContext;
       try {
         scanContext = await ScanContext.forOrg(organizationId);
       } catch (error: unknown) {
-        await this.recordAccountContextFailure(client, organizationId, allowedTypes, fatalDiscoveryErrorMessage(error));
+        await this.recordAccountContextFailure(client, organizationId, allowedTypes, error);
         throw error;
       }
 
@@ -2381,6 +2396,11 @@ export class AWSResourceDiscoveryService {
         console.log(`⏭️  [Discovery] A scan for org ${organizationId} is already running; this one did not start`);
         throw error;
       }
+      if (isAwsAccountNotConnected(error)) {
+        // Refused (PR1): nothing was written. The caller answers 409 NOT_CONNECTED.
+        console.log(`⏭️  [Discovery] Org ${organizationId} has no connected AWS account; the scan was not started, nothing written`);
+        throw error;
+      }
       if (isLeaseLost(error)) {
         // Another scan took over (or the lease expired, aged out, or the account
         // changed): nothing more is written. The scan's own rows record why.
@@ -2970,16 +2990,22 @@ export class AWSResourceDiscoveryService {
    * M4b F4) records its failed job row under the scan lease of the account the
    * database names (leaseTargetFor, the rule ScanContext uses), then releases
    * it. Another worker holding that lease is mid-scan: nothing is written, so
-   * its job stays the latest. With no account to lease (none, ambiguous, or an
-   * ARN that names none) no scan of this organization can hold a lease either,
-   * and the row is recorded as before.
+   * its job stays the latest. With no account to lease (ambiguous, or an ARN
+   * that names none) no scan of this organization can hold a lease either, and
+   * the row is recorded as before.
+   *
+   * No eligible account at all (AwsAccountNotConnectedError, by class: it went
+   * between runDiscovery's guard and ScanContext.forOrg) records nothing (PR1):
+   * a scan of no account is a refused request, not a failed scan.
    */
   private async recordAccountContextFailure(
     client: PoolClient,
     organizationId: string,
     allowedTypes: ResourceType[],
-    message: string
+    error: unknown
   ): Promise<void> {
+    if (isAwsAccountNotConnected(error)) return;
+    const message = fatalDiscoveryErrorMessage(error);
     const target = await leaseTargetFor(client, organizationId);
     if (!target) {
       await this.insertFailedJob(client, organizationId, allowedTypes, message);

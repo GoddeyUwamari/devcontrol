@@ -16,6 +16,7 @@ import { AWSResourceDiscoveryService, fatalDiscoveryErrorMessage } from '../awsR
 import { AWSClientFactory } from '../aws-client-factory.service';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
+import { AwsAccountNotConnectedError } from '../../repositories/aws-accounts.repository';
 import { CostRecommendationsController } from '../../controllers/cost-recommendations.controller';
 import { ResourceDiscoveryJob } from '../../jobs/resourceDiscovery.job';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
@@ -308,13 +309,16 @@ describe('F4 an AssumeRole failure before the scan lease', () => {
     }
   });
 
-  it('no account to lease (none connected): the failed job row is recorded as before, and no lease row exists', async () => {
+  // Changed by PR1 (no-account guards, 2026-11-21): this case used to record a failed job
+  // row. With no connected account a scan is now refused before AssumeRole and records nothing.
+  it('no account connected (changed by PR1: refused, no longer recorded as a failed scan): no AssumeRole, no failed job row, no lease row', async () => {
     const orgId = await insertOrg({ account: false });
-    jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(assumeRoleFailure());
+    const createClients = jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(assumeRoleFailure());
 
-    await expect(service().discoverAllResources(orgId)).rejects.toMatchObject({ name: 'AccessDenied' });
+    await expect(service().discoverAllResources(orgId)).rejects.toBeInstanceOf(AwsAccountNotConnectedError);
 
-    expect(await jobs(orgId)).toEqual([expect.objectContaining({ status: 'failed', error_message: fatalDiscoveryErrorMessage(assumeRoleFailure()) })]);
+    expect(createClients).not.toHaveBeenCalled();
+    expect(await jobs(orgId)).toEqual([]);
     expect(await leaseRow(orgId)).toBeUndefined();
   });
 });
