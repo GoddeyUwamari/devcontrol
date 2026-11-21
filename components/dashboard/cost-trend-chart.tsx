@@ -293,14 +293,18 @@ export function CostTrendChart({
     return row;
   });
 
+  // A period Cost Explorer is still updating: the same color, lighter.
+  // Today is never a finished day (TB-D2): lighter too, whatever its state.
+  const drawnLighter = (row: Record<string, unknown> | undefined) => isStillUpdating(row ?? {}) || row?.__today === true;
+  // The series amounts as drawn (byServiceDisplay or the categories), not the floored `total` (today-bar review L-1).
+  const rowHasAmount = (row: Record<string, unknown>) => series.some((s) => Number(row[s.key]) > 0);
+
   // Custom Bar shape: square on every side except the top-left/top-right corners
   // of the topmost non-zero segment in each stack, and no stroke — so stacked
   // segments touch with no gap/seam between them, matching a single rounded column.
   const StackedBarSegment = (props: any) => {
     const { x, y, width, height, fill, payload, dataKey } = props;
-    // A period Cost Explorer is still updating: the same color, lighter.
-    // Today is never a finished day (TB-D2): lighter too, whatever its state.
-    const fillOpacity = isStillUpdating(payload ?? {}) || payload?.__today ? UPDATING_BAR_OPACITY : undefined;
+    const fillOpacity = drawnLighter(payload) ? UPDATING_BAR_OPACITY : undefined;
     if (!(height > 0) || !(width > 0)) {
       // Recharts' shape prop requires a ReactElement, not null, even for a
       // zero-amount day — render nothing visible instead of skipping output.
@@ -331,11 +335,17 @@ export function CostTrendChart({
   // is still updating is a partial amount: both are left out of the average,
   // and so is today, never a finished day.
   const reported = shown.filter((d) => !isNotReportedYet(d) && !isStillUpdating(d) && !isToday(d.date));
-  // A lighter bar is drawn: a day still updating, or today with an amount.
-  const hasUpdating = shown.some((d) => isStillUpdating(d) || (isToday(d.date) && !isNotReportedYet(d) && d.total > 0));
+  // The series actually painted lighter (a visible segment with an amount on a lighter day), in
+  // stack order: the "Latest days still updating" entry shows only when there is one, and its
+  // swatch is those segments drawn the same way (an updating day at $0.00 paints nothing).
+  const lighterSeries = series.filter(
+    (s) => !hiddenSeries.has(s.key) && chartData.some((row) => drawnLighter(row) && Number(row[s.key]) > 0),
+  );
+  const hasUpdating = lighterSeries.length > 0;
   const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
   const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
-  const hasAmount = shown.some((d) => d.total > 0);
+  // Hidden series still count: hiding one must not take the legend (and its toggles) away.
+  const hasAmount = chartData.some(rowHasAmount);
   // The y-axis labels: dollars, or none at all when no drawn day has an amount (the fixed
   // [0, 1] scale only draws the hatched columns; founder screenshot review).
   const yTickLabel = hasAmount ? formatCurrency : () => '';
@@ -396,8 +406,10 @@ export function CostTrendChart({
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardHeader className="min-w-0">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
-          <div>
+        {/* The range tabs sit beside the title while the title keeps 16rem; otherwise they wrap
+            below it, and on a phone the tabs wrap inside their group: never clipped or scrolled away. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 min-w-0">
+          <div className="min-w-0 flex-1 basis-64">
             <CardTitle className="text-section">AWS Cost Trends</CardTitle>
             <CardDescription>
               {/* 6mo and 1yr are MONTHLY Cost Explorer buckets (AWSCostService trendPeriodUtc). */}
@@ -410,12 +422,12 @@ export function CostTrendChart({
                     : `Daily cost breakdown by service category over time · ${TREND_TOTALS_NOTE}`)}
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+          <div className="flex flex-wrap items-center gap-2 max-w-full min-w-0">
             {/* Date Range Selector */}
             {onDateRangeChange && (
               <div
-                className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto min-w-0 flex-1 [&::-webkit-scrollbar]:hidden"
-                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                className="flex flex-wrap items-center gap-1 bg-gray-100 rounded-lg p-1 max-w-full min-w-0"
+                data-testid="cost-trend-range-tabs"
               >
                 {dateRangeOptions.map((option) => (
                   <Button
@@ -487,7 +499,9 @@ export function CostTrendChart({
               tick={CHART_TICK}
               tickLine={hasAmount}
             />
-            <Tooltip content={<CustomTooltip />} />
+            {/* The hover cursor: a faint band behind every day alike (recharts' default is a #ccc
+                full-height block, which showed through today's lighter bar). */}
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--app-chart-placeholder-fill)' }} />
 
             {notReportedDates.map((date) => (
               <ReferenceArea key={date} x1={date} x2={date} ifOverflow="hidden" shape={NotReportedPlaceholder} />
@@ -555,8 +569,14 @@ export function CostTrendChart({
               className="flex items-center gap-1.5 md:gap-1 px-2 py-1 md:px-1.5 md:py-1 text-label font-medium whitespace-nowrap shrink-0 text-ink-muted"
               data-testid="cost-trend-updating-legend"
             >
-              {/* A swatch, not text: gray-400 (#9ca3af) as light as the updating bars. */}
-              <span className="w-2.5 h-2.5 rounded-[2px] shrink-0" style={{ backgroundColor: `rgba(156, 163, 175, ${UPDATING_BAR_OPACITY})` }} />
+              {/* A swatch, not text: the lighter segments themselves, stacked as drawn (first series at
+                  the bottom), same fill and fill-opacity as the bars. */}
+              <svg className="w-2.5 h-2.5 rounded-[2px] shrink-0" viewBox="0 0 10 10" aria-hidden="true" data-testid="cost-trend-updating-swatch">
+                {lighterSeries.map((s, i) => {
+                  const band = 10 / lighterSeries.length;
+                  return <rect key={s.key} x={0} y={10 - (i + 1) * band} width={10} height={band} fill={s.color} fillOpacity={UPDATING_BAR_OPACITY} />;
+                })}
+              </svg>
               <span>{STILL_UPDATING_LEGEND}</span>
             </span>
           )}
