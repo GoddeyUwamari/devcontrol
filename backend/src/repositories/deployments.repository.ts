@@ -1,3 +1,4 @@
+import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { Deployment, DeploymentFilters, CreateDeploymentRequest } from '../types';
 import { DEFAULT_PAGE_SIZE, STATS_WINDOW_DAYS } from '../services/deployment-status';
@@ -146,4 +147,82 @@ export class DeploymentsRepository {
     );
     return parseInt(result.rows[0].count);
   }
+}
+
+/** The two unique deployment keys a pipeline row carries (admin migration 202611201200). */
+export type PipelineDeploymentKey = 'github_job_id' | 'github_deployment_id';
+
+export interface PipelineDeploymentInsert {
+  organizationId: string;
+  serviceId: string;
+  environment: string;
+  awsRegion: string | null;
+  status: 'success' | 'failed';
+  deployedBy: string;
+  deployedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Inserts a GitHub App deployment row on the caller's tenant-tagged client
+ * (D8a-2). Same guard as DeploymentsRepository.create: the service must be
+ * the organization's, checked and row-locked in the same statement. A row
+ * that already exists for the same job or deployment id is left alone (the
+ * partial unique indexes). Returns the new id, or null when nothing was
+ * inserted (service missing, or already recorded: the caller tells them apart).
+ * cost_estimate stays NULL: nothing recorded a cost.
+ */
+export async function insertPipelineDeployment(client: PoolClient, row: PipelineDeploymentInsert): Promise<string | null> {
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO deployments (service_id, environment, aws_region, status, cost_estimate, deployed_by, resources, metadata, organization_id, deployed_at)
+     SELECT s.id, $2::varchar, $3::varchar, $4::varchar, NULL, $5::varchar, '{}'::jsonb, $6::jsonb, s.organization_id, $8::timestamptz
+       FROM services s
+      WHERE s.id = $1::uuid AND s.organization_id = $7::uuid
+        FOR SHARE OF s
+     ON CONFLICT DO NOTHING
+     RETURNING id::text AS id`,
+    [row.serviceId, row.environment, row.awsRegion, row.status, row.deployedBy.slice(0, 255), JSON.stringify(row.metadata),
+      row.organizationId, row.deployedAt]
+  );
+  return rows[0]?.id ?? null;
+}
+
+export interface PipelineDeploymentRef {
+  id: string;
+  status: string;
+}
+
+/** The organization's deployment row carrying this job or deployment id (its id and status), or null. */
+export async function findPipelineDeployment(
+  client: PoolClient,
+  organizationId: string,
+  key: PipelineDeploymentKey,
+  value: number
+): Promise<PipelineDeploymentRef | null> {
+  // The predicate repeats the partial index's own (metadata ? key) so the index applies.
+  const { rows } = await client.query<PipelineDeploymentRef>(
+    key === 'github_job_id'
+      ? `SELECT id::text AS id, status FROM deployments
+          WHERE organization_id = $1 AND metadata ? 'github_job_id' AND metadata ->> 'github_job_id' = $2 LIMIT 1`
+      : `SELECT id::text AS id, status FROM deployments
+          WHERE organization_id = $1 AND metadata ? 'github_deployment_id' AND metadata ->> 'github_deployment_id' = $2 LIMIT 1`,
+    [organizationId, String(value)]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Deployments the organization has in the calendar month of `at` (ruling Q10):
+ * the same predicate shape as the quota count in subscription.middleware.ts,
+ * anchored on the row's own month so a replay into a past month counts there.
+ */
+export async function countDeploymentsInMonthOf(client: PoolClient, organizationId: string, at: string): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    `SELECT COUNT(*) AS n FROM deployments
+      WHERE organization_id = $1
+        AND deployed_at >= date_trunc('month', $2::timestamptz)
+        AND deployed_at < date_trunc('month', $2::timestamptz) + interval '1 month'`,
+    [organizationId, at]
+  );
+  return parseInt(rows[0].n, 10);
 }

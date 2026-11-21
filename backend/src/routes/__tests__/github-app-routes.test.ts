@@ -73,6 +73,7 @@ afterAll(async () => {
   await new Promise<void>((resolve) => webhookServer.close(() => resolve()));
   await harness.pool.query('DELETE FROM github_held_deliveries WHERE installation_id = ANY($1::bigint[])', [heldInstallations]);
   await harness.close(async (orgIds) => {
+    await harness.pool.query('DELETE FROM pipeline_events WHERE organization_id = ANY($1)', [orgIds]);
     await harness.pool.query('DELETE FROM pipeline_repositories WHERE organization_id = ANY($1)', [orgIds]);
     await harness.pool.query('DELETE FROM github_install_states WHERE organization_id = ANY($1)', [orgIds]);
     await harness.pool.query('DELETE FROM services WHERE organization_id = ANY($1)', [orgIds]);
@@ -84,12 +85,13 @@ afterEach(() => jest.restoreAllMocks());
 const STATE = crypto.randomBytes(32).toString('base64url');
 
 describe('/api/integrations/github', () => {
-  it.each(['viewer', 'member'] as const)('%s: install, claim, retry and mapping are refused (403)', async (role) => {
+  it.each(['viewer', 'member'] as const)('%s: install, claim, retry, mapping and deploy rules are refused (403)', async (role) => {
     for (const [method, path, body] of [
       ['POST', '/integrations/github/install', {}],
       ['POST', '/integrations/github/claim', { state: STATE }],
       ['POST', '/integrations/github/claim/retry', { state: STATE }],
       ['PUT', `/integrations/github/repositories/${repoA}/service`, { service_id: serviceA }],
+      ['PUT', `/integrations/github/repositories/${repoA}/deploy-rule`, { mode: 'none' }],
     ] as const) {
       const res = await harness.sendAs(A.orgId, A[role], method, path, body);
       expect(res.status).toBe(403);
@@ -129,6 +131,7 @@ describe('/api/integrations/github', () => {
       ['POST', '/integrations/github/install', {}],
       ['POST', '/integrations/github/claim', { state: STATE }],
       ['PUT', `/integrations/github/repositories/${repoA}/service`, { service_id: serviceA }],
+      ['PUT', `/integrations/github/repositories/${repoA}/deploy-rule`, { mode: 'none' }],
     ] as const) {
       const res = await harness.sendAs(A.orgId, A.owner, method, path, body);
       expect(res.status).toBe(403);
@@ -165,6 +168,71 @@ describe('/api/integrations/github', () => {
     expect(rows.every((r) => r.service_id === null)).toBe(true);
     // The organization id in the body is refused, never used.
     expect((await harness.sendAs(A.orgId, A.admin, 'PUT', `/integrations/github/repositories/${repoA}/service`, { service_id: serviceA, organization_id: B.orgId })).status).toBe(400);
+  });
+
+  it('deploy rule (D8a-2): an admin stores a validated, versioned rule on the organization\'s own repository; replay counts are returned', async () => {
+    const res = await harness.sendAs(A.orgId, A.admin, 'PUT', `/integrations/github/repositories/${repoA}/deploy-rule`,
+      { mode: 'job', workflow_name: 'CI', job_name: 'deploy-backend', aws_region: 'eu-west-1' });
+    expect(res.status).toBe(200);
+    const stored = { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy-backend', environment: 'production', branch: 'default', branch_name: null, aws_region: 'eu-west-1' };
+    expect(await res.json()).toEqual({ success: true, data: { deploy_rule: stored, replay: { considered: 0, recorded: 0 } } });
+    const row = (await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [repoA])).rows[0];
+    expect(row.deploy_rule).toEqual(stored);
+    const list = await (await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github/repositories')).json();
+    expect(list.data.repositories[0].deploy_rule).toEqual(stored);
+
+    // Another organization's repository -> 404, unchanged.
+    const other = await harness.sendAs(A.orgId, A.admin, 'PUT', `/integrations/github/repositories/${repoB}/deploy-rule`, { mode: 'none' });
+    expect(other.status).toBe(404);
+    expect((await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [repoB])).rows[0].deploy_rule).toBeNull();
+  });
+
+  it('deploy rule bodies are strict: an organization id, an unknown mode or field, a bad region -> 400 and nothing stored', async () => {
+    await harness.pool.query('UPDATE pipeline_repositories SET deploy_rule = NULL WHERE id = $1', [repoA]);
+    for (const body of [
+      { mode: 'none', organization_id: B.orgId },
+      { mode: 'auto' },
+      { mode: 'job', workflow_name: 'CI' },
+      { mode: 'job', workflow_name: 'CI', job_name: 'deploy', aws_region: 'nowhere' },
+      { mode: 'github_deployments', environment_map: { prod: 'prod' } },
+    ]) {
+      const res = await harness.sendAs(A.orgId, A.owner, 'PUT', `/integrations/github/repositories/${repoA}/deploy-rule`, body);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ success: false, error: 'invalid_request' });
+    }
+    const duplicate = await harness.sendAs(A.orgId, A.owner, 'PUT', `/integrations/github/repositories/${repoA}/deploy-rule`,
+      { mode: 'github_deployments', environment_map: { Prod: 'production', prod: 'staging' } });
+    expect(duplicate.status).toBe(400);
+    expect(await duplicate.json()).toEqual({
+      success: false,
+      error: 'invalid_request',
+      message: 'environment_map names GitHub environments that differ only in letter case ("Prod", "prod"). Names are matched without case, so keep one of each.',
+    });
+    expect((await harness.sendAs(A.orgId, A.owner, 'PUT', '/integrations/github/repositories/not-a-uuid/deploy-rule', { mode: 'none' })).status).toBe(400);
+    expect((await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [repoA])).rows[0].deploy_rule).toBeNull();
+  });
+
+  it('jobs seen: a viewer reads its own repository\'s completed jobs (30 days, distinct); another organization\'s repository -> 404', async () => {
+    const repoIdOf = async (id: string) => (await harness.pool.query('SELECT github_repo_id FROM pipeline_repositories WHERE id = $1', [id])).rows[0].github_repo_id;
+    const seed = async (org: string, repo: string, job: string, branch: string, daysAgo: number) => harness.pool.query(
+      `INSERT INTO pipeline_events (delivery_id, organization_id, installation_id, github_repo_id, event, action, normalizer_version, facts, received_at)
+       VALUES (gen_random_uuid(), $1, 1, $2, 'workflow_job', 'completed', 1, $3::jsonb, NOW() - make_interval(days => $4))`,
+      [org, await repoIdOf(repo), JSON.stringify({ kind: 'workflow_job', workflow_name: 'CI', job_name: job, head_branch: branch }), daysAgo]);
+    await seed(A.orgId, repoA, 'deploy-backend', 'main', 1);
+    await seed(A.orgId, repoA, 'deploy-backend', 'main', 2);
+    await seed(A.orgId, repoA, 'lint-and-build', 'feature', 3);
+    await seed(A.orgId, repoA, 'old-job', 'main', 40);
+    await seed(B.orgId, repoB, 'b-secret-job', 'main', 1);
+
+    const own = await harness.sendAs(A.orgId, A.viewer, 'GET', `/integrations/github/repositories/${repoA}/jobs-seen`);
+    expect(own.status).toBe(200);
+    const jobs = (await own.json()).data.jobs;
+    expect(jobs.map((j: { workflow_name: string; job_name: string; head_branch: string; runs: number }) => [j.workflow_name, j.job_name, j.head_branch, j.runs])).toEqual([
+      ['CI', 'deploy-backend', 'main', 2],
+      ['CI', 'lint-and-build', 'feature', 1],
+    ]);
+    expect((await harness.sendAs(A.orgId, A.viewer, 'GET', `/integrations/github/repositories/${repoB}/jobs-seen`)).status).toBe(404);
+    expect((await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github/repositories/x/jobs-seen')).status).toBe(400);
   });
 });
 

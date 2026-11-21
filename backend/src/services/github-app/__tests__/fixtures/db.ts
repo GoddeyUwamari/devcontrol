@@ -97,9 +97,28 @@ export function createFixtures(label: string) {
    * concurrently updated".
    */
   async function grantAppReads(): Promise<void> {
+    await grantRetried('GRANT SELECT ON services TO devcontrol');
+  }
+
+  /**
+   * D8a-2: production's devcontrol also reads organizations (plan limits),
+   * reads and inserts deployments (the legacy webhook does) and may lock a
+   * service row (the insert's SELECT ... FOR SHARE needs UPDATE on services,
+   * which the services routes have) and writes the deployment trigger's
+   * analytics row; the CI-built database grants none of it.
+   */
+  async function grantDeploymentWrites(): Promise<void> {
+    await grantRetried('GRANT SELECT, UPDATE ON services TO devcontrol');
+    await grantRetried('GRANT SELECT ON organizations TO devcontrol');
+    await grantRetried('GRANT SELECT, INSERT ON deployments TO devcontrol');
+    // trigger_track_deployment_created writes one analytics row per insert, on every path.
+    await grantRetried('GRANT SELECT, INSERT ON analytics_events TO devcontrol');
+  }
+
+  async function grantRetried(sql: string): Promise<void> {
     for (let attempt = 1; ; attempt += 1) {
       try {
-        await admin.query('GRANT SELECT ON services TO devcontrol');
+        await admin.query(sql);
         return;
       } catch (error) {
         if (attempt >= 5) throw error;
@@ -111,6 +130,7 @@ export function createFixtures(label: string) {
   async function close(): Promise<void> {
     await admin.query('DELETE FROM github_held_deliveries WHERE installation_id = ANY($1::bigint[])', [installationIds]);
     await admin.query('DELETE FROM pipeline_events WHERE organization_id = ANY($1::uuid[])', [orgIds]);
+    await admin.query('DELETE FROM deployments WHERE organization_id = ANY($1::uuid[])', [orgIds]);
     await admin.query('DELETE FROM pipeline_repositories WHERE organization_id = ANY($1::uuid[])', [orgIds]);
     await admin.query('DELETE FROM github_installations WHERE organization_id = ANY($1::uuid[])', [orgIds]);
     await admin.query('DELETE FROM github_install_states WHERE organization_id = ANY($1::uuid[])', [orgIds]);
@@ -124,5 +144,5 @@ export function createFixtures(label: string) {
     await admin.end();
   }
 
-  return { admin, app, org, user, service, installationId, claim, grantAppReads, close };
+  return { admin, app, org, user, service, installationId, claim, grantAppReads, grantDeploymentWrites, close };
 }

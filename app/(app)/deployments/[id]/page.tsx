@@ -126,7 +126,7 @@ export default function DeploymentDetailsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-section">{deployment.awsRegion}</p>
+            <p className="text-section" data-testid="deployment-region">{deployment.awsRegion || MANUAL_DETAIL_COPY.notRecorded}</p>
           </CardContent>
         </Card>
 
@@ -186,16 +186,19 @@ export default function DeploymentDetailsPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-section">Live Deployment Logs</h2>
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`https://console.aws.amazon.com/cloudwatch/home?region=${deployment.awsRegion}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View in AWS Console
-              <ExternalLink className="h-4 w-4 ml-2" />
-            </a>
-          </Button>
+          {/* No region recorded (a GitHub App row, D8-D8): no console link to a guessed region. */}
+          {deployment.awsRegion ? (
+            <Button variant="outline" size="sm" asChild>
+              <a
+                href={`https://console.aws.amazon.com/cloudwatch/home?region=${deployment.awsRegion}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View in AWS Console
+                <ExternalLink className="h-4 w-4 ml-2" />
+              </a>
+            </Button>
+          ) : null}
         </div>
 
         {/* Live Log Viewer Component */}

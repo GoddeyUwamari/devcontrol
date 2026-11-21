@@ -92,7 +92,7 @@ export const DATA_SOURCES: readonly DataSource[] = [
 
 /** D8a-1 (founder ruling, fix round 1): the five GitHub App ingestion tables. */
 const GITHUB_APP_PLUMBING =
-  'GitHub App ingestion plumbing; AI evidence comes from deployments, not raw pipeline events. Revisit in D8a-2.';
+  'GitHub App ingestion plumbing; AI evidence comes from deployments, not raw pipeline events (kept excluded in D8a-2, ruling Q18).';
 
 /** Tables that are not AI evidence by design, with why. */
 export const EXCLUDED_TABLES: Readonly<Record<string, string>> = {

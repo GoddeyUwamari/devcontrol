@@ -8,6 +8,7 @@
  * Row level security is forced; every statement also names organization_id.
  */
 import { PoolClient } from 'pg';
+import type { RepositoryForEvent } from '../services/github-app/detect';
 
 interface RepositoryUpsert {
   githubRepoId: number;
@@ -26,6 +27,7 @@ interface PipelineRepositoryRow {
   default_branch: string | null;
   service_id: string | null;
   service_name: string | null;
+  deploy_rule: Record<string, unknown> | null;
   access_state: 'accessible' | 'removed';
   removed_at: Date | null;
   last_event_at: Date | null;
@@ -82,7 +84,7 @@ export async function markRepositoryRemoved(
 export async function listRepositories(client: PoolClient, organizationId: string): Promise<PipelineRepositoryRow[]> {
   const { rows } = await client.query<PipelineRepositoryRow>(
     `SELECT r.id, r.github_repo_id::text AS github_repo_id, r.installation_id::text AS installation_id, r.full_name,
-            r.default_branch, r.service_id, s.name AS service_name, r.access_state, r.removed_at, r.last_event_at
+            r.default_branch, r.service_id, s.name AS service_name, r.deploy_rule, r.access_state, r.removed_at, r.last_event_at
        FROM pipeline_repositories r
        LEFT JOIN services s ON s.id = r.service_id AND s.organization_id = r.organization_id
       WHERE r.organization_id = $1
@@ -112,4 +114,86 @@ export async function setRepositoryService(
     [organizationId, repositoryRowId, serviceId]
   );
   return (rowCount ?? 0) === 1;
+}
+
+/** The mapping and rule the deploy detector needs for one repository (D8a-2), or null. */
+export async function findRepositoryForEvent(
+  client: PoolClient,
+  organizationId: string,
+  githubRepoId: number
+): Promise<RepositoryForEvent | null> {
+  const { rows } = await client.query(
+    `SELECT github_repo_id::text AS github_repo_id, service_id::text AS service_id, default_branch, deploy_rule
+       FROM pipeline_repositories
+      WHERE organization_id = $1 AND github_repo_id = $2`,
+    [organizationId, githubRepoId]
+  );
+  if (rows.length === 0) return null;
+  return {
+    githubRepoId: Number(rows[0].github_repo_id),
+    serviceId: rows[0].service_id,
+    defaultBranch: rows[0].default_branch,
+    deployRule: rows[0].deploy_rule,
+  };
+}
+
+/**
+ * Stores a validated deploy rule (deploy-rule.ts) on one of the organization's
+ * repositories. Returns the repository's GitHub id, or null when the row is
+ * not the organization's (the caller answers 404).
+ */
+export async function setRepositoryDeployRule(
+  client: PoolClient,
+  organizationId: string,
+  repositoryRowId: string,
+  storedRule: Record<string, unknown>
+): Promise<number | null> {
+  const { rows } = await client.query<{ github_repo_id: string }>(
+    `UPDATE pipeline_repositories
+        SET deploy_rule = $3::jsonb, updated_at = NOW()
+      WHERE organization_id = $1 AND id = $2::uuid
+      RETURNING github_repo_id::text AS github_repo_id`,
+    [organizationId, repositoryRowId, JSON.stringify(storedRule)]
+  );
+  return rows.length === 1 ? Number(rows[0].github_repo_id) : null;
+}
+
+/** The GitHub id of one of the organization's repository rows, or null. */
+export async function githubRepoIdOf(client: PoolClient, organizationId: string, repositoryRowId: string): Promise<number | null> {
+  const { rows } = await client.query<{ github_repo_id: string }>(
+    `SELECT github_repo_id::text AS github_repo_id FROM pipeline_repositories WHERE organization_id = $1 AND id = $2::uuid`,
+    [organizationId, repositoryRowId]
+  );
+  return rows.length === 1 ? Number(rows[0].github_repo_id) : null;
+}
+
+interface JobSeen {
+  workflow_name: string | null;
+  job_name: string | null;
+  head_branch: string | null;
+  runs: number;
+  last_seen_at: Date;
+}
+
+export const JOBS_SEEN_DAYS = 30;
+export const JOBS_SEEN_LIMIT = 50;
+
+/**
+ * Completed jobs DevControl has received for one repository in the last 30
+ * days (the deploy-job picker, D8b): distinct workflow, job and branch, newest
+ * first, at most 50.
+ */
+export async function listJobsSeen(client: PoolClient, organizationId: string, githubRepoId: number): Promise<JobSeen[]> {
+  const { rows } = await client.query(
+    `SELECT facts ->> 'workflow_name' AS workflow_name, facts ->> 'job_name' AS job_name, facts ->> 'head_branch' AS head_branch,
+            count(*)::int AS runs, max(received_at) AS last_seen_at
+       FROM pipeline_events
+      WHERE organization_id = $1 AND github_repo_id = $2 AND event = 'workflow_job'
+        AND received_at >= NOW() - make_interval(days => $3)
+      GROUP BY 1, 2, 3
+      ORDER BY max(received_at) DESC, 1, 2, 3
+      LIMIT $4`,
+    [organizationId, githubRepoId, JOBS_SEEN_DAYS, JOBS_SEEN_LIMIT]
+  );
+  return rows;
 }

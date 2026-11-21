@@ -1,8 +1,10 @@
 /**
  * What a deployments.status value means.
  *
- * The only writers are the GitHub deploy webhook ('success' / 'failed') and
- * POST /api/deployments ('deploying'). Nothing ever updates a row, so a
+ * The only writers are the GitHub deploy webhook ('success' / 'failed'), the
+ * GitHub App path (D8a-2: 'success' / 'failed', written once at the terminal
+ * event; no row for a job or deployment without a result) and POST
+ * /api/deployments ('deploying'). Nothing ever updates a row, so a
  * 'deploying' row is in progress only while it is recent; after that there is
  * simply no completion on record. Every other value (including the legacy
  * 'running' / 'stopped' of seed data) is unknown -- never guessed at.

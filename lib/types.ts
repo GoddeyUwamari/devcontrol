@@ -433,7 +433,8 @@ export interface Deployment {
   serviceId: string;
   serviceName?: string; // Joined from services table
   environment: DeploymentEnvironment;
-  awsRegion: string;
+  /** Null when no region was recorded: GitHub carries none (D8-D8). Shown as "Not recorded". */
+  awsRegion: string | null;
   status: DeploymentStatus;
   /** Null when no cost was recorded for the deployment. */
   costEstimate: number | null;

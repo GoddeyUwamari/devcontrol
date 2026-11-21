@@ -46,27 +46,43 @@ export function repository(id: number, fullName = `acme/repo-${id}`) {
 
 const sender = { id: 9001, login: 'octo-dev', avatar_url: 'https://avatars.example.com/u/9001', email: PLANTED.email };
 
-export function workflowJobCompleted(installationId: number, repoId: number, opts: { jobId?: number; fullName?: string; steps?: number; conclusion?: string } = {}) {
+export interface JobOptions {
+  jobId?: number;
+  fullName?: string;
+  steps?: number;
+  conclusion?: string | null;
+  /** D8a-2 overrides; the defaults are the D8a-1 values. */
+  jobName?: string;
+  workflowName?: string;
+  headBranch?: string;
+  headSha?: string;
+  completedAt?: string;
+  runAttempt?: number;
+  runId?: number;
+  senderLogin?: string;
+}
+
+export function workflowJobCompleted(installationId: number, repoId: number, opts: JobOptions = {}) {
   const jobId = opts.jobId ?? uniqueId();
   return {
     action: 'completed',
     organization_id: PLANTED.foreignOrg,
     installation: { id: installationId, node_id: 'MDIz' },
     repository: repository(repoId, opts.fullName),
-    sender,
+    sender: opts.senderLogin ? { ...sender, login: opts.senderLogin } : sender,
     workflow_job: {
       id: jobId,
-      run_id: jobId - 1,
-      run_attempt: 2,
-      name: 'deploy-backend',
-      workflow_name: 'CI',
-      head_sha: SHA_A,
-      head_branch: 'main',
+      run_id: opts.runId ?? jobId - 1,
+      run_attempt: opts.runAttempt ?? 2,
+      name: opts.jobName ?? 'deploy-backend',
+      workflow_name: opts.workflowName ?? 'CI',
+      head_sha: opts.headSha ?? SHA_A,
+      head_branch: opts.headBranch ?? 'main',
       status: 'completed',
-      conclusion: opts.conclusion ?? 'success',
+      conclusion: opts.conclusion === undefined ? 'success' : opts.conclusion,
       created_at: '2026-11-20T10:00:00Z',
       started_at: '2026-11-20T10:00:05Z',
-      completed_at: '2026-11-20T10:07:30Z',
+      completed_at: opts.completedAt ?? '2026-11-20T10:07:30Z',
       html_url: `https://github.com/acme/repo/actions/runs/${jobId - 1}/job/${jobId}`,
       runner_name: 'runner-1',
       labels: ['ubuntu-latest'],
@@ -116,7 +132,7 @@ export function workflowRunCompleted(installationId: number, repoId: number) {
   };
 }
 
-export function pullRequestClosed(installationId: number, repoId: number, opts: { merged?: boolean; prId?: number; title?: string } = {}) {
+export function pullRequestClosed(installationId: number, repoId: number, opts: { merged?: boolean; prId?: number; title?: string; mergeSha?: string } = {}) {
   const prId = opts.prId ?? uniqueId();
   const merged = opts.merged ?? true;
   return {
@@ -136,7 +152,7 @@ export function pullRequestClosed(installationId: number, repoId: number, opts: 
       closed_at: '2026-11-20T09:58:00Z',
       merged_at: merged ? '2026-11-20T09:58:00Z' : null,
       merged,
-      merge_commit_sha: SHA_MERGE,
+      merge_commit_sha: opts.mergeSha ?? SHA_MERGE,
       head: { sha: SHA_B, ref: 'feature' },
       base: { sha: SHA_A, ref: 'main' },
     },
@@ -157,14 +173,21 @@ export function deploymentCreated(installationId: number, repoId: number) {
   };
 }
 
-export function deploymentStatusCreated(installationId: number, repoId: number) {
+export function deploymentStatusCreated(
+  installationId: number,
+  repoId: number,
+  opts: { state?: string; environment?: string; deploymentId?: number; statusId?: number; createdAt?: string } = {}
+) {
   return {
     action: 'created',
     installation: { id: installationId },
     repository: repository(repoId),
     sender,
-    deployment_status: { id: uniqueId(), state: 'success', environment: 'production', created_at: '2026-11-20T10:09:00Z', description: 'not stored' },
-    deployment: { id: uniqueId(), sha: SHA_A, ref: 'main', environment: 'production' },
+    deployment_status: {
+      id: opts.statusId ?? uniqueId(), state: opts.state ?? 'success', environment: opts.environment ?? 'production',
+      created_at: opts.createdAt ?? '2026-11-20T10:09:00Z', description: 'not stored',
+    },
+    deployment: { id: opts.deploymentId ?? uniqueId(), sha: SHA_A, ref: 'main', environment: opts.environment ?? 'production' },
   };
 }
 
