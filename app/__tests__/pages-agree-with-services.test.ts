@@ -25,11 +25,11 @@ process.env.TZ = 'UTC'
 
 import { describe, it, expect } from 'vitest'
 import type { ServicesCoverage } from '@/lib/services/aws-services.service'
-import { R_NOW, tab2, tab3Throttled, tab5, tab8 } from '../(app)/services/__tests__/redesign-fixtures'
+import { R_NOW, mrRegion, tab1, tab2, tab3Throttled, tab5, tab8 } from '../(app)/services/__tests__/redesign-fixtures'
 import { tab12Coverage } from '../(app)/services/__tests__/home-region-fixtures'
 import { describeCoverageCard, describeNotChecked, homeRegionOf, multiRegionOf, organisingLine, redesignScanLine, scanBanner } from '../(app)/services/redesignModel'
 import { richText } from '../(app)/services/regionCoverage'
-import { describeCoverage } from '../(app)/services/coverage'
+import { describeCoverage, resourceExplorerOffText } from '../(app)/services/coverage'
 import { homeRegionCheck, regionGaps, scanIsRunning, scanState } from '../(app)/services/servicesTruth'
 import { describeOverview } from '../(app)/infrastructure/overview/overviewModel'
 import { attentionPage, inputs, ready } from '../(app)/infrastructure/__tests__/overview-fixtures'
@@ -391,5 +391,41 @@ describe('H-1 flagged: the region lines follow the Services banner and organisin
     expect(left).toBe(3)
     expect(securityCheckedLines({ status: 'ready', data: c }, NOW).filter((l) => l.key.startsWith('other-regions')).map((l) => l.label))
       .toEqual([`${regions(left)} still running or waiting`])
+  })
+})
+
+// Nov 21 founder ruling: flagged, last_scan.warnings is every scanned region's codes in one list (the scanner
+// shares one warnings array across regions); a Resource Explorer code is the home region's only when its own
+// row carries it. The input is the backend's shape: the code on other regions' rows AND in last_scan.warnings.
+describe('Nov 21: one home-region state on Connect AWS, Infrastructure and Services', () => {
+  /** Tab 1 with two other regions Partial (no Resource Explorer index) and the job's warnings as the scanner writes them. */
+  function reOffElsewhere(homeCode: string | null): ServicesCoverage {
+    const c = tab1()
+    const mr = c.multi_region
+    const home = mr.regions.find((r: any) => r.home)
+    if (homeCode) Object.assign(home, { error_code: homeCode, state: 'checked_with_warnings' })
+    for (const region of ['ap-northeast-1', 'eu-central-1']) {
+      mr.regions.push(mrRegion(region, { error_code: 'resource_explorer_no_index', state: 'checked_with_warnings', resources: 4 }))
+    }
+    Object.assign(mr.scan, { regions_total: mr.scan.regions_total + 2, regions_checked: mr.scan.regions_checked + 2, regions_with_resources: mr.scan.regions_with_resources + 2 })
+    c.last_scan.warnings = ['resource_explorer_no_index']
+    return c
+  }
+
+  it('the same scan input gives the same home-region state on all three pages (home clean, then home without an index)', () => {
+    for (const [homeCode, services, connect] of [[null, 'Complete', 'complete'], ['resource_explorer_no_index', 'Partial', 'partial']] as const) {
+      const c = reOffElsewhere(homeCode)
+      const home = homeRegionOf(c)!
+      // Services: the coverage card's home row.
+      expect(describeCoverageCard(c, NOW).rows.find((r) => r.kind === 'region' && r.home)!.status!.label).toBe(services)
+      // Connect AWS: the home row's Last scan cell, from the call ConnectedView makes.
+      const v = describeCoverage(c, NOW, [], { ...scanState(c, NOW), home: homeRegionCheck(c) })
+      expect(v.chips[0].note).toBe(`${c.scope.home_region!.count} · home · ${connect}`)
+      // Infrastructure: the Resource Explorer sentence names the home region only when the home region raised it.
+      const o = describeOverview(inputs({ coverage: ready(c), attention: ready(attentionPage([])), accountFindings: ready([]) }), NOW)
+      const sentence = o.checked.filter((l) => l.parts.join('') === resourceExplorerOffText(home))
+      expect(sentence.length).toBe(homeCode ? 1 : 0)
+      if (!homeCode) expect(JSON.stringify(o)).not.toContain(`Resource Explorer isn't turned on in ${home}`)
+    }
   })
 })

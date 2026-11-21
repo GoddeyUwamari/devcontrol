@@ -174,6 +174,21 @@ export function warningNotes(persisted: readonly string[], inTab: readonly strin
 }
 
 /**
+ * The scan warning codes that describe the home region (Nov 21 founder ruling: one home-region state on
+ * Connect AWS, Infrastructure and Services). Flag off, the job scanned the home region only, so its codes
+ * are the home region's: unchanged. Flagged, last_scan.warnings holds every scanned region's codes in one
+ * list (the scanner shares one warnings array across regions), so a Resource Explorer code is the home
+ * region's only when its own row carries it (multi_region.regions[home].error_code, RR-M2), as the Services
+ * coverage card reads it. Every other code is kept as it is.
+ */
+export function homeRegionWarnings(coverage: ServicesCoverage, codes: readonly string[]): string[] {
+  const mr = coverage.multi_region
+  if (!mr) return [...codes]
+  const homeCode = mr.regions.find((r) => r.home)?.error_code ?? null
+  return codes.filter((code) => !RESOURCE_EXPLORER_OFF_WARNINGS.includes(code) || code === homeCode)
+}
+
+/**
  * The home-region chip. Each state means one thing:
  * - scanning: a scan started within the hour is running;
  * - failed: the last scan failed (it may have refreshed part of the inventory),
@@ -269,7 +284,8 @@ export function describeCoverage(
     lastScan = failed + (lastSuccess ? `Last successful scan ${formatScanTime(lastSuccess, now)}` : 'No successful scan yet')
   }
 
-  const warnings = shownWarnings(last?.warnings ?? [])
+  // With the shared scan state (Connect AWS), only the warnings that describe the home region (homeRegionWarnings).
+  const warnings = shownWarnings(scan ? homeRegionWarnings(coverage, last?.warnings ?? []) : last?.warnings ?? [])
   const chips: CoverageChip[] = [homeChip(home, last, inProgress, lastFailed, warnings, scan ? scan.home ?? null : undefined)]
   // Stored counts are always shown; the scope (in or not in the last scan) only from a completed one.
   const { cloudfront, s3 } = coverage.scope
