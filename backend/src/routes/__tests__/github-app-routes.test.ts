@@ -200,6 +200,14 @@ describe('/api/integrations/github', () => {
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ success: false, error: 'invalid_request' });
     }
+    const duplicate = await harness.sendAs(A.orgId, A.owner, 'PUT', `/integrations/github/repositories/${repoA}/deploy-rule`,
+      { mode: 'github_deployments', environment_map: { Prod: 'production', prod: 'staging' } });
+    expect(duplicate.status).toBe(400);
+    expect(await duplicate.json()).toEqual({
+      success: false,
+      error: 'invalid_request',
+      message: 'environment_map names GitHub environments that differ only in letter case ("Prod", "prod"). Names are matched without case, so keep one of each.',
+    });
     expect((await harness.sendAs(A.orgId, A.owner, 'PUT', '/integrations/github/repositories/not-a-uuid/deploy-rule', { mode: 'none' })).status).toBe(400);
     expect((await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [repoA])).rows[0].deploy_rule).toBeNull();
   });

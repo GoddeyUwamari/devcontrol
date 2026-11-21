@@ -6,7 +6,8 @@
  * Covers: job and Environments modes, the status table, reruns, idempotency
  * (event and deployment level, and against legacy webhook rows), the legacy
  * organization guard, unmapped repositories (no service ever created), rule
- * and mapping replay, the monthly quota under concurrency, the row's own
+ * and mapping replay (paged past 1,000 events, and after the legacy guard is
+ * lifted), later final statuses, the monthly quota under concurrency, the row's own
  * month and a lowered plan, the D6 merge stamp at insert only, the region,
  * and organization isolation.
  */
@@ -174,6 +175,16 @@ describe('idempotency', () => {
     const app = await job(instA, r, { jobId: legacyJob });
     expect(await eventOf(app.deliveryId)).toMatchObject({ status: 'processed', reason: 'already_recorded', deployment_id: legacy });
 
+    // The legacy row says failed; the App's final status for the same job says success (review N-1).
+    const failedJob = uniqueId();
+    const failedRow = (await fx.admin.query(
+      `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, deployed_at, organization_id, metadata)
+       VALUES ($1, 'production', 'us-east-1', 'failed', 'octo-dev', '2026-11-20T10:07:30Z', $2, $3::jsonb) RETURNING id::text AS id`,
+      [r.serviceId, orgA, JSON.stringify({ source: 'github_actions', github_job_id: failedJob, workflow_name: 'deploy-backend' })])).rows[0].id;
+    const later = await job(instA, r, { jobId: failedJob, conclusion: 'success' });
+    expect(await eventOf(later.deliveryId)).toMatchObject({ status: 'processed', reason: 'later_final_status', deployment_id: failedRow });
+    expect((await fx.admin.query('SELECT status FROM deployments WHERE id = $1', [failedRow])).rows[0].status).toBe('failed');
+
     const appJob = uniqueId();
     await job(instA, r, { jobId: appJob });
     await expect(fx.admin.query(
@@ -181,8 +192,8 @@ describe('idempotency', () => {
        VALUES ($1, 'production', 'us-east-1', 'success', 'octo-dev', $2, $3::jsonb)`,
       [r.serviceId, orgA, JSON.stringify({ source: 'github_actions', github_job_id: appJob, workflow_name: 'deploy-backend' })],
     )).rejects.toMatchObject({ code: '23505', constraint: 'deployments_github_job_uidx' });
-    const rows = (await deploymentsOf(orgA)).filter((d) => [legacyJob, appJob].includes(d.metadata.github_job_id));
-    expect(rows).toHaveLength(2);
+    const rows = (await deploymentsOf(orgA)).filter((d) => [legacyJob, failedJob, appJob].includes(d.metadata.github_job_id));
+    expect(rows).toHaveLength(3);
   });
 });
 
@@ -217,9 +228,52 @@ describe('legacy webhook organization guard (ruling Q12)', () => {
     const r = await repo(orgA, instA, JOB_RULE);
     const res = await job(instA, r);
     expect(await eventOf(res.deliveryId)).toMatchObject({ status: 'ignored', reason: 'legacy_webhook_org', deployment_id: null });
-    // A rule replay does not lift it.
-    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 0, recorded: 0 });
+    // A rule replay while the variable is still set reads the event and holds it again.
+    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 1, recorded: 0 });
+    expect(await eventOf(res.deliveryId)).toMatchObject({ status: 'ignored', reason: 'legacy_webhook_org', deployment_id: null });
     expect((await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId)).toEqual([]);
+  });
+
+  it('guard on -> held; guard off and the rule re-saved -> the row is recorded once; again -> nothing new (review S-2)', async () => {
+    process.env.GITHUB_WEBHOOK_ORG_ID = orgA;
+    const r = await repo(orgA, instA, JOB_RULE);
+    const res = await job(instA, r);
+    expect(await eventOf(res.deliveryId)).toMatchObject({ status: 'ignored', reason: 'legacy_webhook_org', deployment_id: null });
+
+    delete process.env.GITHUB_WEBHOOK_ORG_ID;
+    await withOrgClient(fx.app, orgA, (c) => setRepositoryDeployRule(c, orgA, r.rowId, JOB_RULE));
+    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 1, recorded: 1 });
+    const rows = (await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId);
+    expect(rows).toHaveLength(1);
+    expect(await eventOf(res.deliveryId)).toMatchObject({ status: 'processed', reason: null, deployment_id: rows[0].id });
+
+    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 0, recorded: 0 });
+    expect((await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId)).toHaveLength(1);
+  });
+
+  it('a held job the legacy route already recorded -> already_recorded against the legacy row, no second row; mapping replay lifts held events too', async () => {
+    process.env.GITHUB_WEBHOOK_ORG_ID = orgA;
+    const r = await repo(orgA, instA, JOB_RULE);
+    const jobId = uniqueId();
+    const legacy = (await fx.admin.query(
+      `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, deployed_at, organization_id, metadata)
+       VALUES ($1, 'production', 'us-east-1', 'success', 'octo-dev', '2026-11-20T10:07:30Z', $2, $3::jsonb) RETURNING id::text AS id`,
+      [r.serviceId, orgA, JSON.stringify({ source: 'github_actions', github_job_id: jobId, workflow_name: 'deploy-backend' })])).rows[0].id;
+    const held = await job(instA, r, { jobId });
+    const unmapped = await repo(orgA, instA, JOB_RULE, false);
+    const heldUnmapped = await job(instA, unmapped);
+    expect(await eventOf(held.deliveryId)).toMatchObject({ status: 'ignored', reason: 'legacy_webhook_org' });
+    expect(await eventOf(heldUnmapped.deliveryId)).toMatchObject({ status: 'ignored', reason: 'legacy_webhook_org' });
+
+    delete process.env.GITHUB_WEBHOOK_ORG_ID;
+    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 1, recorded: 0 });
+    expect(await eventOf(held.deliveryId)).toMatchObject({ status: 'processed', reason: 'already_recorded', deployment_id: legacy });
+    expect((await deploymentsOf(orgA)).filter((d) => d.metadata.github_job_id === jobId)).toHaveLength(1);
+
+    await withOrgClient(fx.app, orgA, (c) => setRepositoryService(c, orgA, unmapped.rowId, unmapped.serviceId));
+    expect(await replayRepository(orgA, unmapped.repoId, MAPPING_REPLAY, fx.app)).toEqual({ considered: 1, recorded: 1 });
+    expect(await replayRepository(orgA, unmapped.repoId, MAPPING_REPLAY, fx.app)).toEqual({ considered: 0, recorded: 0 });
+    expect((await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === unmapped.repoId)).toHaveLength(1);
   });
 
   it('another organization is not affected', async () => {
@@ -262,6 +316,33 @@ describe('unmapped repositories and replay (rulings D8-D5, Q11)', () => {
     const rows = (await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId);
     expect(rows.map((d) => d.metadata.job_name).sort()).toEqual(['deploy-backend', 'lint-and-build']);
   });
+
+  it('a rule replay pages past 1,000 older events the rule does not match: the newer deploy is recorded; a second replay adds nothing (review S-1)', async () => {
+    const r = await repo(orgA, instA, null);
+    const lint = await job(instA, r, { jobName: 'lint-and-build' });
+    const lintId = (await eventOf(lint.deliveryId)).id;
+    // 1,001 older lint events, all received at the same instant (microseconds included),
+    // so the 1,000-row page boundary falls inside a tie and only the id orders it.
+    await fx.admin.query(`UPDATE pipeline_events SET received_at = date_trunc('second', now()) - interval '1 day' + interval '123456 microseconds' WHERE id = $1`, [lintId]);
+    await fx.admin.query(
+      `INSERT INTO pipeline_events (delivery_id, organization_id, installation_id, github_repo_id, event, action, event_key, occurred_at,
+                                    received_at, normalizer_version, facts, processing_status, processing_reason)
+       SELECT gen_random_uuid(), organization_id, installation_id, github_repo_id, event, action, NULL, occurred_at,
+              received_at, normalizer_version, facts, processing_status, processing_reason
+         FROM pipeline_events, generate_series(1, 1000) WHERE id = $1`, [lintId]);
+    const deploy = await job(instA, r);
+    expect(await eventOf(deploy.deliveryId)).toMatchObject({ status: 'ignored', reason: 'no_deploy_rule' });
+
+    await withOrgClient(fx.app, orgA, (c) => setRepositoryDeployRule(c, orgA, r.rowId, JOB_RULE));
+    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 1002, recorded: 1 });
+    expect((await eventOf(deploy.deliveryId)).status).toBe('processed');
+    const ignored = (await fx.admin.query(
+      `SELECT count(*)::int AS n FROM pipeline_events WHERE github_repo_id = $1 AND processing_reason = 'not_deploy_job'`, [r.repoId])).rows[0].n;
+    expect(ignored).toBe(1001);
+
+    expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 1001, recorded: 0 });
+    expect((await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId)).toHaveLength(1);
+  }, 180_000);
 });
 
 describe('monthly quota (rulings D8-D9, Q10)', () => {
@@ -369,7 +450,7 @@ describe('Environments mode (ruling Q5)', () => {
   const status = (inst: number, r: Repo, opts: Parameters<typeof deploymentStatusCreated>[2]) =>
     deliver('deployment_status', deploymentStatusCreated(inst, r.repoId, opts));
 
-  it('a terminal status -> one row with source github_deployments; unknown environment kept; inactive no row; a second terminal status -> already_recorded', async () => {
+  it('a terminal status -> one row with source github_deployments; unknown environment kept; inactive no row; a later different final status -> later_final_status', async () => {
     const r = await repo(orgA, instA, ENV_RULE);
     const deploymentId = uniqueId();
     const ok = await status(instA, r, { deploymentId, environment: 'Production', state: 'success' });
@@ -379,7 +460,7 @@ describe('Environments mode (ruling Q5)', () => {
     const jobInEnvMode = await job(instA, r);
 
     expect((await eventOf(ok.deliveryId)).status).toBe('processed');
-    expect(await eventOf(again.deliveryId)).toMatchObject({ status: 'processed', reason: 'already_recorded' });
+    expect(await eventOf(again.deliveryId)).toMatchObject({ status: 'processed', reason: 'later_final_status', deployment_id: (await eventOf(ok.deliveryId)).deployment_id });
     expect(await eventOf(unknown.deliveryId)).toMatchObject({ status: 'ignored', reason: 'unknown_environment' });
     expect(await eventOf(inactive.deliveryId)).toMatchObject({ status: 'ignored', reason: 'state_inactive' });
     expect(await eventOf(jobInEnvMode.deliveryId)).toMatchObject({ status: 'ignored', reason: 'other_mode' });
@@ -387,6 +468,44 @@ describe('Environments mode (ruling Q5)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ environment: 'production', status: 'success', aws_region: null });
     expect(rows[0].metadata).toMatchObject({ source: 'github_deployments', connection: 'github_app', github_deployment_id: deploymentId, github_environment: 'Production' });
+  });
+});
+
+describe('later final statuses (ruling 6, review N-1)', () => {
+  const status = (inst: number, r: Repo, opts: Parameters<typeof deploymentStatusCreated>[2]) =>
+    deliver('deployment_status', deploymentStatusCreated(inst, r.repoId, opts));
+  const reprocess = async (deliveryId: string) => {
+    const stored = (await fx.admin.query(
+      'SELECT id, installation_id, event, action, occurred_at, received_at, facts FROM pipeline_events WHERE delivery_id = $1', [deliveryId])).rows[0];
+    return processStoredEvent(fx.app, orgA, {
+      id: stored.id, installationId: String(stored.installation_id), event: stored.event, action: stored.action,
+      occurredAt: stored.occurred_at, receivedAt: stored.received_at, facts: stored.facts,
+    });
+  };
+
+  it('error then success: the row stays failed, the success is kept as later_final_status; reprocessing either event changes nothing', async () => {
+    const r = await repo(orgA, instA, ENV_RULE);
+    const deploymentId = uniqueId();
+    const first = await status(instA, r, { deploymentId, state: 'error' });
+    const later = await status(instA, r, { deploymentId, state: 'success' });
+    const row = (await eventOf(first.deliveryId)).deployment_id;
+    expect(await eventOf(first.deliveryId)).toMatchObject({ status: 'processed', reason: null });
+    expect(await eventOf(later.deliveryId)).toMatchObject({ status: 'processed', reason: 'later_final_status', deployment_id: row });
+
+    // A true redelivery (the same stored event processed again) stays already_recorded.
+    expect(await reprocess(first.deliveryId)).toEqual({ status: 'processed', reason: 'already_recorded' });
+    expect(await reprocess(later.deliveryId)).toEqual({ status: 'processed', reason: 'later_final_status' });
+    const rows = (await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId);
+    expect(rows.map((d) => [d.id, d.status])).toEqual([[row, 'failed']]);
+  });
+
+  it('the same final status again (a redelivered or repeated status) stays already_recorded', async () => {
+    const r = await repo(orgA, instA, ENV_RULE);
+    const deploymentId = uniqueId();
+    await status(instA, r, { deploymentId, state: 'success' });
+    const repeat = await status(instA, r, { deploymentId, state: 'success' });
+    expect(await eventOf(repeat.deliveryId)).toMatchObject({ status: 'processed', reason: 'already_recorded' });
+    expect((await deploymentsOf(orgA)).filter((d) => d.metadata.github_repo_id === r.repoId)).toHaveLength(1);
   });
 });
 

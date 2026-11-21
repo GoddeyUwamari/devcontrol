@@ -6,7 +6,7 @@
  */
 import { normalizeDelivery } from '../normalize';
 import { DeploymentStatusFacts, PullRequestFacts, WorkflowJobFacts } from '../contract';
-import { deployRuleBody, environmentFor, readStoredDeployRule, storedDeployRule } from '../deploy-rule';
+import { caseDuplicateEnvironmentNames, deployRuleBody, environmentFor, environmentMapProblem, readStoredDeployRule, storedDeployRule } from '../deploy-rule';
 import { deploymentStatus, detectDeployment, jobStatus, RepositoryForEvent } from '../detect';
 import { buildEnvironmentMetadata, buildJobMetadata, readPipelineMetadata } from '../deployment-metadata';
 import { PLANTED, SHA_A, deploymentStatusCreated, pullRequestClosed, workflowJobCompleted, JobOptions } from './fixtures/payloads';
@@ -153,6 +153,19 @@ describe('rule schema (PUT body)', () => {
       expect(deployRuleBody.safeParse(body).success).toBe(false);
     }
   });
+  it('environment names that differ only in case or surrounding spaces are rejected, with a message naming them (review N-4)', () => {
+    for (const map of [{ Prod: 'production', prod: 'staging' }, { ' prod': 'production', prod: 'production' }, { STAGE: 'staging', Stage: 'staging', dev: 'development' }]) {
+      expect(deployRuleBody.safeParse({ mode: 'github_deployments', environment_map: map }).success).toBe(false);
+    }
+    expect(caseDuplicateEnvironmentNames({ Prod: 'production', prod: 'staging', dev: 'development' })).toEqual(['Prod', 'prod']);
+    expect(environmentMapProblem({ mode: 'github_deployments', environment_map: { Prod: 'production', prod: 'staging' } })).toBe(
+      'environment_map names GitHub environments that differ only in letter case ("Prod", "prod"). Names are matched without case, so keep one of each.');
+    expect(environmentMapProblem({ mode: 'github_deployments', environment_map: { prod: 'production', stage: 'staging' } })).toBeNull();
+    expect(environmentMapProblem({ mode: 'job' })).toBeNull();
+    // Distinct names still pass and are stored trimmed and lower-cased.
+    expect(envRule({ environment_map: { ' Prod ': 'production', stage: 'staging' } }).environment_map).toEqual({ prod: 'production', stage: 'staging' });
+  });
+
   it('stores a versioned rule that reads back identically; map keys are lower-cased', () => {
     const stored = envRule({ environment_map: { 'GitHub-Pages': 'staging' } });
     expect(stored).toEqual({ v: 1, mode: 'github_deployments', environment_map: { 'github-pages': 'staging' }, aws_region: null });
