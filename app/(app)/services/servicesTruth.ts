@@ -32,6 +32,8 @@ import { homeRegionPromptShows } from './homeRegionModel'
 export { homeRegionOf, multiRegionOf, scanIsRunning }
 // PR 3d-2 (D4, D7): the shared needs-attention sentence and the links into Services.
 export { ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK } from './redesignModel'
+// Nov 21 founder ruling: the scan warnings that describe the home region (flagged: a Resource Explorer code only from its own row).
+export { homeRegionWarnings } from './coverage'
 
 // ── Scan state (D3) ──
 

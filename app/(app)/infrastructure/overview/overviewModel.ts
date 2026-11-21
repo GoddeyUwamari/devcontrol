@@ -39,7 +39,7 @@ import { lastCompletedScanIso as lastCompletedIso } from '@/lib/scan-time'
 import { NOT_CHECKED_COPY, unknownTagsText } from '../../services/notChecked'
 import {
   ATTENTION_DEFINITION, NEEDS_ATTENTION_HREF, REGION_COVERAGE_HREF, REGION_COVERAGE_LINK, coverageLine, homeRegionCheck, homeRegionOf,
-  multiRegionOf, notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts,
+  homeRegionWarnings, multiRegionOf, notCheckedLine, regionGaps, scanIsRunning, scanState, scanStateParts,
 } from '../../services/servicesTruth'
 
 export type Loadable<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T }
@@ -648,7 +648,8 @@ function checkedLines(c: ServicesCoverage, i: OverviewInputs, now: number): Line
   lines.push({ key: 'iam', parts: [OVERVIEW_COPY.iam] })
   lines.push({ key: 'alarms', parts: [OVERVIEW_COPY.alarms], link: { text: OVERVIEW_COPY.alarmsLink, href: OVERVIEW_COPY.alarmsHref } })
   lines.push({ key: 'other-types', parts: [NOT_CHECKED_COPY.otherTypes] })
-  for (const note of warningNotes(c.last_scan?.warnings ?? [], i.inTabWarnings, home === '—' ? null : home)) {
+  // Nov 21 founder ruling: only the warnings that describe the home region name it (servicesTruth homeRegionWarnings).
+  for (const note of warningNotes(homeRegionWarnings(c, c.last_scan?.warnings ?? []), homeRegionWarnings(c, i.inTabWarnings), home === '—' ? null : home)) {
     lines.push({ key: `warning-${note.key}`, parts: [note.body], tone: 'warn' })
   }
   return lines
