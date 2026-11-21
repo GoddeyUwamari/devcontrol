@@ -103,29 +103,50 @@ export interface ReplaySelection {
   ignoredReasons: readonly string[];
 }
 
-export const REPLAY_LIMIT = 1000;
+/** Events a replay reads per query; a replay pages until the selection is used up (review S-1). */
+export const REPLAY_BATCH = 1000;
 
 /**
- * One repository's deployment-candidate events (workflow_job and
- * deployment_status) in the selection, oldest first, at most REPLAY_LIMIT.
+ * Where the next page starts: the last row's (received_at, id). `at` is the
+ * database's own text form of received_at, so the microseconds a JS Date
+ * would drop survive the round trip and the cursor always moves forward.
+ */
+export interface ReplayCursor {
+  at: string;
+  id: string;
+}
+
+export interface ReplayPage {
+  events: EventToProcess[];
+  /** null when this page was the last one. */
+  next: ReplayCursor | null;
+}
+
+/**
+ * One page of a repository's deployment-candidate events (workflow_job and
+ * deployment_status) in the selection, in receipt order (received_at, id),
+ * strictly after `after`. pipeline_events has no created_at column:
+ * received_at (DEFAULT NOW()) is the row's creation time.
  */
 export async function findReplayableEvents(
   client: PoolClient,
   organizationId: string,
   githubRepoId: number,
   selection: ReplaySelection,
-  limit = REPLAY_LIMIT
-): Promise<EventToProcess[]> {
+  after: ReplayCursor | null = null,
+  limit = REPLAY_BATCH
+): Promise<ReplayPage> {
   const { rows } = await client.query(
-    `SELECT id, installation_id, event, action, occurred_at, received_at, facts
+    `SELECT id, installation_id, event, action, occurred_at, received_at, received_at::text AS cursor_at, facts
        FROM pipeline_events
       WHERE organization_id = $1 AND github_repo_id = $2 AND event IN ('workflow_job', 'deployment_status')
         AND (processing_status = ANY($3::text[]) OR (processing_status = 'ignored' AND processing_reason = ANY($4::text[])))
-      ORDER BY occurred_at NULLS LAST, received_at, id
+        AND ($6::timestamptz IS NULL OR (received_at, id) > ($6::timestamptz, $7::uuid))
+      ORDER BY received_at, id
       LIMIT $5`,
-    [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit]
+    [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit, after?.at ?? null, after?.id ?? null]
   );
-  return rows.map((r) => ({
+  const events = rows.map((r) => ({
     id: r.id,
     installationId: String(r.installation_id),
     event: r.event,
@@ -134,6 +155,8 @@ export async function findReplayableEvents(
     receivedAt: r.received_at,
     facts: r.facts,
   }));
+  const last = rows[rows.length - 1];
+  return { events, next: rows.length === limit ? { at: last.cursor_at, id: last.id } : null };
 }
 
 /** Events not processed yet (e.g. just released from hold by a claim), oldest first. */
