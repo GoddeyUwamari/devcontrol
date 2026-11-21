@@ -162,6 +162,8 @@ afterAll(async () => {
   await pool.query('DELETE FROM cost_recommendations WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM resource_discovery_jobs WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM cost_analysis_runs WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM aws_scan_leases WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM analytics_events WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query(
     'DELETE FROM organization_memberships WHERE organization_id = ANY($1) OR user_id = ANY($2)',
@@ -173,9 +175,22 @@ afterAll(async () => {
   await appPool.end();
 });
 
+/**
+ * One eligible row (PR1): ambiguity means eligible rows exist, so the no-account guard
+ * passes as it would for a real ambiguous organization; the second row is the stub.
+ */
+async function connectOne(orgId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, connected_at, status)
+     VALUES ($1, 'arn:aws:iam::123456789012:role/DevControlRole', $2, 'placeholder-external-id', 'us-east-1', NOW(), 'active')`,
+    [orgId, `amb-${orgId}`.slice(0, 32)]
+  );
+}
+
 describe('AWS_ACCOUNT_AMBIGUOUS answers 409 with the fixed message', () => {
   it('POST /api/services/discover', async () => {
     const caller = await buildOrg();
+    await connectOne(caller.orgId);
     jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new AwsAccountAmbiguousError(caller.orgId, 2));
 
     await expectAmbiguous(await send(caller, 'POST', '/services/discover'), caller);
@@ -183,6 +198,7 @@ describe('AWS_ACCOUNT_AMBIGUOUS answers 409 with the fixed message', () => {
 
   it('POST /api/cost-recommendations/analyze', async () => {
     const caller = await buildOrg();
+    await connectOne(caller.orgId);
     jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new AwsAccountAmbiguousError(caller.orgId, 2));
 
     await expectAmbiguous(await send(caller, 'POST', '/cost-recommendations/analyze'), caller);
