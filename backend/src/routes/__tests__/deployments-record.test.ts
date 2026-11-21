@@ -512,3 +512,56 @@ describe('the webhook path is unchanged, and manual rows are counted as webhook 
     });
   });
 });
+
+// ─── D8a: the legacy webhook under the unique job-id index ─────────────────────
+
+describe('legacy webhook: a duplicate job id that wins the race is "Already recorded" (deployments_github_job_uidx)', () => {
+  it('two deliveries of one job past the check-then-insert: one row, the second answers 200 Already recorded', async () => {
+    // Force both deliveries past the application-level check, as two concurrent redeliveries would be.
+    jest.spyOn(DeploymentsRepository.prototype, 'findByMetadataField').mockResolvedValue(null);
+    const jobId = Math.floor(Math.random() * 1e12);
+    const body = JSON.stringify({
+      action: 'completed',
+      workflow_job: { id: jobId, run_id: jobId - 1, name: 'deploy-backend', conclusion: 'success', completed_at: new Date().toISOString(), head_sha: 'abc123', html_url: 'https://example.com/run' },
+      repository: { name: 'devcontrol' },
+      sender: { login: 'deploy-record-bot' },
+    });
+    const signature = 'sha256=' + crypto.createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
+    const deliver = () => fetch(`${baseUrl}/webhooks/github`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-GitHub-Event': 'workflow_job', 'X-Hub-Signature-256': signature },
+      body,
+    });
+    const first = await deliver();
+    expect(first.status).toBe(201);
+    const second = await deliver();
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ success: true, message: 'Already recorded' });
+    const rows = (await deploymentRows(WEBHOOK_ORG_ID)).filter((r) => String(r.metadata.github_job_id) === String(jobId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it('any other unique violation stays an error (500), never "Already recorded"', async () => {
+    jest.spyOn(DeploymentsRepository.prototype, 'findByMetadataField').mockResolvedValue(null);
+    jest.spyOn(DeploymentsRepository.prototype, 'create').mockRejectedValue(
+      Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505', constraint: 'some_other_uidx' }));
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const jobId = Math.floor(Math.random() * 1e12);
+    const body = JSON.stringify({
+      action: 'completed',
+      workflow_job: { id: jobId, run_id: jobId - 1, name: 'deploy-backend', conclusion: 'success', completed_at: new Date().toISOString(), head_sha: 'abc123', html_url: 'https://example.com/run' },
+      repository: { name: 'devcontrol' },
+      sender: { login: 'deploy-record-bot' },
+    });
+    const signature = 'sha256=' + crypto.createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
+    const res = await fetch(`${baseUrl}/webhooks/github`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-GitHub-Event': 'workflow_job', 'X-Hub-Signature-256': signature },
+      body,
+    });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ success: false, error: 'Failed to record deployment' });
+    const rows = (await deploymentRows(WEBHOOK_ORG_ID)).filter((r) => String(r.metadata.github_job_id) === String(jobId));
+    expect(rows).toHaveLength(0);
+  });
+});

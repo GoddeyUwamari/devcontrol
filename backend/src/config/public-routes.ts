@@ -17,6 +17,7 @@
 import { requireMetricsToken } from '../routes/metrics.routes';
 import { stripeWebhookHandler } from '../routes/stripe.routes';
 import { githubWebhookHandler } from '../routes/github-webhook.routes';
+import { githubAppWebhookHandler } from '../routes/github-app-webhook.routes';
 import { showUnsubscribeConfirm, confirmUnsubscribe } from '../controllers/user-preferences.controller';
 
 /** Any middleware or handler; compared by identity only. */
@@ -75,6 +76,8 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
     reason: 'Stripe events; the handler verifies the Stripe signature before acting.' },
   { method: 'POST', path: '/api/webhooks/github', type: 'signature', guard: githubWebhookHandler, category: 'integration',
     reason: 'GitHub Actions events; the handler verifies the HMAC signature before acting.' },
+  { method: 'POST', path: '/api/webhooks/github-app', type: 'signature', guard: githubAppWebhookHandler, category: 'integration',
+    reason: 'GitHub App deliveries for every installation; the handler verifies the HMAC signature over the raw body before parsing, and takes the organization only from the installation claim.' },
   { method: 'GET', path: '/api/user/preferences/unsubscribe', type: 'token', guard: showUnsubscribeConfirm, category: 'integration',
     reason: 'Email unsubscribe link (required to work without login); shows a confirm page for a valid signed token.' },
   { method: 'POST', path: '/api/user/preferences/unsubscribe', type: 'token', guard: confirmUnsubscribe, category: 'integration',

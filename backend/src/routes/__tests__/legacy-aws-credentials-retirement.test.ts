@@ -22,6 +22,7 @@ import { sanitizerMiddleware } from '../../middleware/sanitizer';
 import { requestLogger } from '../../middleware/request-logger';
 import { metricsMiddleware } from '../../middleware/metrics';
 import { errorHandler, notFoundHandler } from '../../middleware/error-handler';
+import { GITHUB_APP_WEBHOOK_BODY_LIMIT, GITHUB_APP_WEBHOOK_PATH } from '../../middleware/body-parsing';
 
 function dbConfig() {
   return {
@@ -121,12 +122,18 @@ async function listen(app: express.Express): Promise<{ server: http.Server; url:
 
 /**
  * The global middleware server.ts runs on this path, in the same order (the
- * drift test below keeps the two in step). Left out: helmet and CORS (headers
- * only), the raw-body parsers (webhook paths only), the rate limiter (never
- * reads the body) and the /metrics route.
+ * drift test below keeps the two in step). The GitHub App webhook's raw-body
+ * mount is mounted exactly as body-parsing.ts mounts it (D8a). Left out:
+ * helmet and CORS (headers only), the Stripe and legacy GitHub raw-body
+ * parsers (webhook paths only), the rate limiter (never reads the body) and
+ * the /metrics route.
  */
 function fullStackApp(): express.Express {
   const app = express();
+  app.use(
+    GITHUB_APP_WEBHOOK_PATH,
+    express.raw({ type: 'application/json', limit: GITHUB_APP_WEBHOOK_BODY_LIMIT })
+  );
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(sanitizerMiddleware);
@@ -490,6 +497,7 @@ describe('the log-capture app mirrors the server middleware', () => {
     expect(used).toEqual([
       'helmet',
       'corsMiddleware',
+      'express.raw',
       'express.raw',
       'express.raw',
       'express.json',

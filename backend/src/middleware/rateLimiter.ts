@@ -8,6 +8,7 @@ import { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { SubscriptionTier, getOrganizationTier as getEffectiveTier } from './subscription.middleware';
 import { presentedUnsubscribeToken, verifyUnsubscribeToken } from '../services/unsubscribe-token';
+import { GITHUB_APP_WEBHOOK_PATH } from './body-parsing';
 
 // Extend Express Request type to include user data
 declare global {
@@ -277,6 +278,33 @@ export const weeklySummaryTriggerRateLimiter = rateLimit({
 
 const UNSUBSCRIBE_PATH = '/api/user/preferences/unsubscribe';
 
+/**
+ * The GitHub App webhook, with or without a trailing slash (Express routes
+ * both to the handler): exempt from standardRateLimiter, limited by
+ * githubAppWebhookRateLimiter.
+ */
+export function isGitHubAppWebhookRequest(req: Request): boolean {
+  const path = req.originalUrl.split('?')[0];
+  return req.method === 'POST' && (path === GITHUB_APP_WEBHOOK_PATH || path === `${GITHUB_APP_WEBHOOK_PATH}/`);
+}
+
+/**
+ * Flood guard for the GitHub App webhook (d8a-build.md D8-N4): 3,000
+ * requests per minute per IP, before the signature check. GitHub delivers
+ * every customer's events from shared IPs, and does not redeliver a failed
+ * delivery by itself, so the general limiter must never answer it with 429.
+ * In-memory: per backend process.
+ */
+export const githubAppWebhookRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req: Request, res: Response) => {
+    res.status(429).json({ received: false, error: 'rate_limited' });
+  },
+});
+
 /** GET or POST on exactly the public weekly summary unsubscribe endpoint. */
 function isUnsubscribeRequest(req: Request): boolean {
   return (req.method === 'GET' || req.method === 'POST') && req.originalUrl.split('?')[0] === UNSUBSCRIBE_PATH;
@@ -386,6 +414,8 @@ export const standardRateLimiter = rateLimit({
     ) {
       return true;
     }
+    // Limited by githubAppWebhookRateLimiter instead (D8-N4).
+    if (isGitHubAppWebhookRequest(req)) return true;
     // Limited by unsubscribeRateLimiter instead, which never blocks a valid
     // signed token and sends that route's no-store/noindex/no-referrer headers.
     return isUnsubscribeRequest(req);

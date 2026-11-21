@@ -90,6 +90,10 @@ export const DATA_SOURCES: readonly DataSource[] = [
   },
 ];
 
+/** D8a-1 (founder ruling, fix round 1): the five GitHub App ingestion tables. */
+const GITHUB_APP_PLUMBING =
+  'GitHub App ingestion plumbing; AI evidence comes from deployments, not raw pipeline events. Revisit in D8a-2.';
+
 /** Tables that are not AI evidence by design, with why. */
 export const EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   organizations: 'tenant record; its plan is read only through plan-entitlements.ts',
@@ -119,4 +123,9 @@ export const EXCLUDED_TABLES: Readonly<Record<string, string>> = {
   aws_preserved_customer_decisions: 'decisions kept across a reconnect; they reach AI through S6 and S7 once restored',
   nl_query_analytics: 'Ask AI usage analytics (the questions asked), never evidence',
   admin_migration_prior_state: 'administrative migration bookkeeping',
+  github_installations: GITHUB_APP_PLUMBING,
+  github_install_states: GITHUB_APP_PLUMBING,
+  pipeline_repositories: GITHUB_APP_PLUMBING,
+  pipeline_events: GITHUB_APP_PLUMBING,
+  github_held_deliveries: GITHUB_APP_PLUMBING,
 };

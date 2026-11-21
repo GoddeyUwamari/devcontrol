@@ -5,6 +5,7 @@
 
 import stripeService from '../services/stripe.service';
 import { parseAwsAccountId } from '../utils/awsAccountId';
+import { gitHubAppConfigWarning } from './github-app';
 
 /**
  * Validate required environment variables
@@ -74,6 +75,11 @@ export function validateEnv(): void {
       );
     }
   }
+
+  // GitHub App (D8a): optional. Half-configured never stops the server: the
+  // feature stays off and the warning names the variables, never a value.
+  const gitHubAppWarning = gitHubAppConfigWarning();
+  if (gitHubAppWarning) console.warn(`⚠️  WARNING: ${gitHubAppWarning}`);
 
   // Production-specific validations
   if (process.env.NODE_ENV === 'production') {

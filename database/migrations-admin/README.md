@@ -96,8 +96,9 @@ Currently: **`202608221231_enable_rls_on_anomaly_rules.sql`**,
 **`202611091300_harden_database_ownership.sql`**,
 **`202611101200_transfer_tenant_table_ownership.sql`**,
 **`202611111200_create_aws_connection_checks.sql`**,
-**`202611121200_add_users_previous_login_at.sql`**, and
-**`202611161200_add_aws_connection_checks_home_region_proposal.sql`**.
+**`202611121200_add_users_previous_login_at.sql`**,
+**`202611161200_add_aws_connection_checks_home_region_proposal.sql`**, and
+**`202611201200_create_github_app_ingestion.sql`**.
 
 `202611111200_create_aws_connection_checks.sql` (AWS connect PR D1a) creates
 the tenant table `aws_connection_checks`, one row per AWS connection: health
@@ -1311,3 +1312,110 @@ It loses every connection's home-region proposal and its state. It drops the
 three constraints and four columns only if every one carries the migration's
 marker, and its `schema_migrations` row. The home region itself
 (`aws_accounts.region`) and its change history (`audit_logs`) are not touched.
+
+## Classification -- `202611201200_create_github_app_ingestion.sql`
+
+The database half of the GitHub App connection (D8a): per-customer pipeline
+events arrive through one GitHub App, and each installation is claimed by one
+organization. One transaction, all or nothing, as `postgres`, 3 s lock timeout:
+
+- **Four tenant tables**, `postgres`-owned, row level security enabled and
+  forced, one tenant policy each (`organization_id` =
+  `app.current_organization_id`):
+  - `github_installations`: one row per installation. Its primary key is the
+    GitHub installation id, global, so one installation can never belong to two
+    organizations even though RLS hides other organizations' rows. `devcontrol`:
+    `SELECT, INSERT, UPDATE, DELETE` (DELETE for the D8b disconnect).
+  - `github_install_states`: install-flow states. Only `sha256(state)` is
+    stored, bound to one user and organization, single use, at most one hour
+    (15 minutes in code). `SELECT, INSERT, UPDATE, DELETE`.
+  - `pipeline_repositories`: one row per `(organization_id, github_repo_id)`,
+    keyed by GitHub's stable repository id, never by name. A plain foreign key
+    to `services(id)` (`ON DELETE SET NULL`), plus the trigger
+    `pipeline_repositories_service_same_org` (invoker rights): a repository maps
+    only to a service of its own organization. A composite foreign key
+    `(installation_id, organization_id)` to the claim. `SELECT, INSERT, UPDATE`;
+    no DELETE (history is kept).
+  - `pipeline_events`: one row per delivery. Named fields only (`facts` jsonb,
+    64 KB maximum): never a raw payload, commit message, email or PR body.
+    `UNIQUE (delivery_id)` is global, and `UNIQUE (organization_id, event_key)`
+    holds where `event_key` is set. Indexes include D6's
+    `(organization_id, github_repo_id, facts->>'merge_commit_sha')` for pull
+    requests. `SELECT, INSERT, UPDATE, DELETE` (DELETE for the 180-day
+    retention purge).
+- **`github_held_deliveries`**: deliveries of installations no organization has
+  claimed yet. No organization column; RLS enabled and forced with **no**
+  policy; `devcontrol` has **no** privilege on it. It is reached only through
+  the functions below. Retention: 7 days, **except `installation.created`**.
+  That row is the installer record a claim needs, and GitHub does not resend
+  it, so it is never time-purged: it stays until the claim releases it or a
+  held `installation.deleted` for the same installation removes it.
+- **Five SECURITY DEFINER functions**, `postgres`-owned, `SET search_path =
+  pg_catalog, pg_temp`, schema-qualified, EXECUTE revoked from `PUBLIC` and
+  granted to `devcontrol`. They are the only paths past row level security:
+  - `github_installation_org(bigint) → uuid`: installation id → organization
+    id, nothing else;
+  - `github_hold_delivery(…) → text`: holds one delivery (`held` / `duplicate`
+    / `claimed`). It takes a transaction advisory lock on the installation id.
+    Holding an `installation.deleted` also deletes that installation's held
+    `installation.created`;
+  - `github_installer_of(bigint) → bigint`: the `sender.id` of the signed
+    `installation.created` delivery;
+  - `github_release_held_deliveries(bigint) → integer`: moves held deliveries
+    to `pipeline_events`, only when the connection's tenant tag is the
+    organization holding the claim. It takes the same advisory lock, so a hold
+    racing a claim is never left behind;
+  - `github_purge_held_deliveries() → integer`: 7-day retention, at most 5,000
+    rows per call. It never deletes a held `installation.created`.
+- **`deployments`**:
+  - `deployments_github_job_uidx`, UNIQUE
+    `(organization_id, (metadata->>'github_job_id')) WHERE metadata ?
+    'github_job_id'`;
+  - `deployments_github_deployment_uidx`, the same for
+    `github_deployment_id`;
+  - `aws_region DROP NOT NULL`. NULL means not recorded: a pipeline record
+    carries no region.
+
+  The guard refuses to run if production already holds a duplicate job or
+  deployment id per organization. Locks: SHARE on `deployments` while each
+  index builds (no `CONCURRENTLY` inside `migrate.js`'s transaction), and a
+  brief ACCESS EXCLUSIVE lock for the catalog-only `DROP NOT NULL`.
+- **Demo workspace:** `demo_workspace_refuse_row('organization_id')` triggers
+  on the four tenant tables (202611141200).
+
+It is additive and safe under the release already running:
+- that release never reads the new objects;
+- the legacy GitHub webhook already stores `github_job_id`, and the unique
+  index only turns a concurrent duplicate into an error, which D8a maps to
+  "Already recorded";
+- `aws_region` stays set on every row the running release writes.
+
+Apply it **before** merging D8a. Without it, the code is still safe while
+`GITHUB_APP_ENABLED` is unset. Right after authentication, and before any
+role, demo or table check, `GET /api/integrations/github` answers
+`{ configured: false }` and every other GitHub App route answers 503 "not
+configured". The webhook answers 503 before its signature check. No D8a table
+is read or written.
+
+**Ordering:** this migration depends on `demo_workspace_refuse_row()`. Roll
+it back **before** `202611141200_demo_workspace_foundation_rollback.sql`.
+
+### Rollback
+
+`202611201200_create_github_app_ingestion_rollback.sql`, manual only, as
+`postgres`, in one transaction, **after** reverting the application to a
+release before D8a:
+
+```bash
+psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
+  -f 202611201200_create_github_app_ingestion_rollback.sql
+```
+
+It refuses, with nothing changed, while any deployment has `aws_region` NULL.
+Set those rows deliberately first.
+
+It loses every installation claim, install state, repository mapping, stored
+event and held delivery. Deployment rows are kept.
+
+It drops only objects that carry the migration's marker, never with CASCADE,
+restores `aws_region NOT NULL`, and deletes its `schema_migrations` row.

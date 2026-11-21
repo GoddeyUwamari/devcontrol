@@ -46,6 +46,7 @@ const SERIAL_TEST_FILES = [
   'src/services/__tests__/demo-workspace-foundation-migration.test.ts',
   'src/services/__tests__/drop-auto-detect-resource-ownership-migration.test.ts',
   'src/services/__tests__/framework-evaluation-persistence-migration.test.ts',
+  'src/services/__tests__/github-app-ingestion-migration.test.ts',
   'src/services/__tests__/harden-database-ownership-migration.test.ts',
   'src/services/__tests__/m5a-region-list.test.ts',
   'src/services/__tests__/m5b-region-scan-status.test.ts',
