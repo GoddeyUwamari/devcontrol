@@ -7,6 +7,8 @@ import { ApiResponse } from '../types/api.types';
 import { ResourceFilters } from '../types/aws-resources.types';
 import { ExportFormat, ExportColumn } from '../types/export.types';
 import { isScanAlreadyRunning } from '../services/scan-session';
+import { hasEligibleAwsAccount, isAwsAccountNotConnected } from '../repositories/aws-accounts.repository';
+import { AWS_NOT_CONNECTED_CODE, SCAN_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 
 export class AWSResourcesController {
   private repository: AWSResourcesRepository;
@@ -208,6 +210,14 @@ export class AWSResourcesController {
         return;
       }
 
+      // No eligible AWS account (PR1): refused before the scan is started, so the
+      // answer is never "started" for a scan that cannot run. The discovery guard
+      // (runDiscovery) refuses it too and writes nothing either way.
+      if (!(await hasEligibleAwsAccount(this.pool, organizationId))) {
+        res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, error: SCAN_NOT_CONNECTED_MESSAGE });
+        return;
+      }
+
       // Run discovery in background (don't await)
       this.discoveryService.discoverAllResources(organizationId)
         .then(result => {
@@ -220,6 +230,8 @@ export class AWSResourcesController {
             console.log(`[Discovery] Skipped for org ${organizationId}: a scan is already running`);
             return;
           }
+          // The account went between the check above and the scan: refused, nothing written.
+          if (isAwsAccountNotConnected(error)) return;
           console.error('[Discovery] Failed:', error);
         });
 

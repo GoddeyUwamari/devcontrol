@@ -14,7 +14,8 @@ import { OrganizationAccessError, requireCurrentRole } from '../services/organiz
 import { activeComplianceFindings, isActiveComplianceFinding } from '../utils/frameworkApplicability';
 import { lifecycleStateFor } from '../utils/resourceLifecycle';
 import { countEligibleAwsAccounts } from '../repositories/aws-accounts.repository';
-import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous, isAwsAccountNotConnected } from '../repositories/aws-accounts.repository';
+import { AWS_NOT_CONNECTED_CODE, SCAN_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 import { ScanRegionsChecked, isMultiRegionDiscoveryOn, readScanRegionsChecked } from '../repositories/multi-region-coverage.repository';
 import { INLINE_TAG_TYPES } from '../services/complianceScanner';
 import { displayIssue } from '../services/finding-display';
@@ -859,6 +860,13 @@ router.post('/discover', authenticateToken, requireMember, checkDiscoveryLimit, 
       ...(await discoverRegionsChecked(orgId, result.job_id)),
     });
   } catch (err: any) {
+    // No eligible AWS account (PR1): refused by the discovery guard before anything
+    // was written. By class, before the AWS_NOT_CONNECTED prefix branch below, which
+    // stays for a connected account's AssumeRole failure.
+    if (isAwsAccountNotConnected(err)) {
+      res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, error: SCAN_NOT_CONNECTED_MESSAGE });
+      return;
+    }
     console.error('[Services/discover]', err);
     if (isScanBusy(err)) {
       res.status(409).json({ success: false, error: SCAN_BUSY_MESSAGE });

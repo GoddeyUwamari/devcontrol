@@ -11,9 +11,11 @@
  *   - A 500 from POST /api/services/discover or GET /api/aws/costs/monthly
  *     carries a fixed message: no ARN, no account ID, no raw AWS message. The
  *     real error goes to the server log.
- *   - POST /api/services/discover still answers an organization that is not
- *     connected with its 409, and a discovery run that fails stores only a
- *     fixed error_message (the user reads it on GET /discovery/jobs).
+ *   - POST /api/services/discover refuses an organization with no connected
+ *     account with 409 NOT_CONNECTED and records nothing (PR1); a connected
+ *     organization whose AssumeRole fails still gets its 409, and a discovery
+ *     run that fails stores only a fixed error_message (the user reads it on
+ *     GET /discovery/jobs).
  *
  * Real routes over an in-process HTTP server against live Postgres. Stubbed:
  * authService.verifyToken (to choose the caller), AWSClientFactory.createClients
@@ -33,6 +35,8 @@ import { SloService, SloDefinition } from '../../services/slo.service';
 import { PlatformAwsCredentialsUnavailableError, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../../services/platform-sts';
 import { DISCOVERY_FAILED_MESSAGE } from '../../services/awsResourceDiscovery';
 import { pool as appPool } from '../../config/database';
+import { AWS_NOT_CONNECTED_CODE, SCAN_NOT_CONNECTED_MESSAGE } from '../../services/aws-connection-messages';
+import { ensureSharedFixtureTable } from './shared-fixture-tables';
 
 // Listeners issue their own fire-and-forget queries; irrelevant here.
 jest.mock('../../services/onboardingEvents', () => ({ emitOnboardingEvent: jest.fn() }));
@@ -81,6 +85,18 @@ async function buildOrg(): Promise<{ orgId: string; userId: string }> {
     [orgId, userId]
   );
   return { orgId, userId };
+}
+
+/**
+ * One eligible aws_accounts row: a scan runs only for a connected organization (PR1
+ * no-account guard), so every discover test that reaches the AWS failure under test has one.
+ */
+async function connect(orgId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO aws_accounts (org_id, role_arn, account_id, external_id, region, connected_at, status)
+     VALUES ($1, $2, $3, 'placeholder-external-id', 'us-east-1', NOW(), 'active')`,
+    [orgId, ROLE, `pau-${orgId}`.slice(0, 32)]
+  );
 }
 
 function send(caller: { orgId: string; userId: string }, method: string, path: string) {
@@ -133,6 +149,7 @@ let baseUrl: string;
 let createClients: jest.SpyInstance;
 
 beforeAll(async () => {
+  await ensureSharedFixtureTable(pool, 'aws_accounts');
   const app = express();
   app.use(express.json());
   app.use('/api/services', servicesRoutes);
@@ -158,6 +175,8 @@ afterEach(() => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.query('DELETE FROM resource_discovery_jobs WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM aws_scan_leases WHERE organization_id = ANY($1)', [createdOrgIds]);
+  await pool.query('DELETE FROM aws_accounts WHERE org_id = ANY($1)', [createdOrgIds]);
   await pool.query('DELETE FROM analytics_events WHERE organization_id = ANY($1)', [createdOrgIds]);
   await pool.query(
     'DELETE FROM organization_memberships WHERE organization_id = ANY($1) OR user_id = ANY($2)',
@@ -208,6 +227,7 @@ describe('the platform identity unavailable: 503, not "not connected"', () => {
 
   it('POST /api/services/discover, through the real discovery run', async () => {
     const caller = await buildOrg();
+    await connect(caller.orgId);
     createClients.mockRejectedValue(platformUnavailable());
 
     const res = await send(caller, 'POST', '/services/discover');
@@ -221,9 +241,24 @@ describe('the platform identity unavailable: 503, not "not connected"', () => {
   });
 });
 
-describe('POST /api/services/discover for an organization that is not connected: unchanged', () => {
-  it('409 aws_not_connected, and the failed run stores the fixed message', async () => {
+describe('POST /api/services/discover for an organization that is not connected', () => {
+  // Changed by PR1 (no-account guards, 2026-11-21): this case used to record a failed run and
+  // answer 409 aws_not_connected. With no connected account the scan is now refused and records nothing.
+  it('no account row (changed by PR1: refused, no longer recorded as a failed run): 409 NOT_CONNECTED, no AWS call, no run row', async () => {
     const caller = await buildOrg();
+
+    const res = await send(caller, 'POST', '/services/discover');
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ success: false, code: AWS_NOT_CONNECTED_CODE, error: SCAN_NOT_CONNECTED_MESSAGE });
+    expect(createClients).not.toHaveBeenCalled();
+    const { rows } = await pool.query('SELECT status, error_message FROM resource_discovery_jobs WHERE organization_id = $1', [caller.orgId]);
+    expect(rows).toEqual([]);
+  });
+
+  it('a connected organization whose AssumeRole fails (the AWS_NOT_CONNECTED text): unchanged 409 aws_not_connected, and the failed run stores the fixed message', async () => {
+    const caller = await buildOrg();
+    await connect(caller.orgId);
     createClients.mockRejectedValue(new Error(`AWS_NOT_CONNECTED: org ${caller.orgId} has not connected an AWS account`));
 
     const res = await send(caller, 'POST', '/services/discover');
@@ -238,6 +273,7 @@ describe('POST /api/services/discover for an organization that is not connected:
 describe('a 500 carries a fixed message, never the AWS error', () => {
   it('POST /api/services/discover', async () => {
     const caller = await buildOrg();
+    await connect(caller.orgId);
     createClients.mockRejectedValue(Object.assign(new Error(RAW_AWS_MESSAGE), { name: 'Throttling' }));
 
     const res = await send(caller, 'POST', '/services/discover');

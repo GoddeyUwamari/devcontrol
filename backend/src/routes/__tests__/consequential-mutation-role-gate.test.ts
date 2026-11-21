@@ -38,6 +38,7 @@ import { createAnomaliesRoutes } from '../anomalies.routes';
 import { errorHandler } from '../../middleware/error-handler';
 import { authService } from '../../services/auth.service';
 import costOptimizationService from '../../services/cost-optimization.service';
+import * as awsAccountsRepository from '../../repositories/aws-accounts.repository';
 import stripeService from '../../services/stripe.service';
 import { AWSClientFactory } from '../../services/aws-client-factory.service';
 import { SecurityHubSyncService } from '../../services/security-hub-sync.service';
@@ -208,6 +209,9 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {});
 
   factorySpy = jest.spyOn(AWSClientFactory, 'createClients').mockRejectedValue(new Error('AWS must not be reached'));
+  // Analyze is refused with no connected AWS account (PR1 no-account guard); this organization
+  // has no account row, and the gate is what is tested here: it counts as connected.
+  jest.spyOn(awsAccountsRepository, 'hasEligibleAwsAccount').mockResolvedValue(true);
   // Analyze saves nothing without a scan lease, and answers an error: give it an account to lease.
   jest.spyOn(scanSession, 'leaseTargetFor').mockResolvedValue({ awsAccountId: '123456789012', connection: 'placeholder-connection' });
   // The run's finish is fenced with the lease's connection (AWS connect PR B); this

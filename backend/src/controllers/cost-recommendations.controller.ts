@@ -2,7 +2,8 @@ import { Request, Response } from 'express';
 import { CostDecisionActor, CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import { auditRequestContext } from '../services/auditEvents.service';
 import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
-import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
+import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, hasEligibleAwsAccount, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
+import { AWS_NOT_CONNECTED_CODE, COST_ANALYSIS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 import costOptimizationService from '../services/cost-optimization.service';
 import { RemediationService, REGION_MISMATCH_PREFIX, SELF_PROTECTION_PUBLIC_MESSAGE } from '../services/remediation.service';
 import { STOP_NOT_ELIGIBLE_PUBLIC_MESSAGE, isStopRefusal } from '../services/stop-instance-eligibility';
@@ -450,6 +451,14 @@ export class CostRecommendationsController {
         return;
       }
       organizationIdForRun = organizationId;
+
+      // The no-account guard (PR1): with no eligible (status 'active') AWS account the
+      // analysis is refused before anything else: no run row, no lease, no AWS call.
+      // Only "none" is refused; every other failure below is unchanged.
+      if (!(await hasEligibleAwsAccount(pool, organizationId))) {
+        res.status(409).json({ success: false, code: AWS_NOT_CONNECTED_CODE, error: COST_ANALYSIS_NOT_CONNECTED_MESSAGE });
+        return;
+      }
 
       console.log(`Starting cost optimization analysis for org ${organizationId}...`);
 
