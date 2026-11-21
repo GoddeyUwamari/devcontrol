@@ -223,6 +223,25 @@ describe('source line (D5-D1) and deploying-only (G)', () => {
     expect(sourceLine(stats(), []).text).toMatch(/^Last finished record · /)
   })
 
+  it('GitHub App rows (D8a-2, ruling 7): "GitHub Actions · {workflow} › {job}"; legacy rows keep today\'s text', () => {
+    const app = (metadata: Record<string, unknown>) => sourceLine(stats(), [row({ metadata: { source: 'github_actions', connection: 'github_app', ...metadata } })])
+    const s = app({ workflow_name: 'CI', job_name: 'deploy-backend' })
+    expect(s.text).toMatch(/^Last record from GitHub Actions · CI › deploy-backend · Nov 1[89], \d{1,2}:\d{2} [AP]M$/)
+    expect(s.kind).toBe('github_actions')
+    expect(app({ workflow_name: null, job_name: 'deploy' }).text).toMatch(/^Last record from GitHub Actions · deploy · /)
+    expect(app({}).text).toMatch(/^Last record from GitHub Actions · Nov/)
+    // Legacy webhook row: workflow_name holds the job name, text unchanged.
+    expect(sourceLine(stats(), [row({ metadata: { source: 'github_actions', workflow_name: 'deploy-backend' } })]).text)
+      .toMatch(/^Last record from GitHub Actions \(deploy-backend job\) · /)
+  })
+
+  it('GitHub Environments rows read "GitHub Deployments", and the method sentence does not claim Actions', () => {
+    const s = sourceLine(stats(), [row({ metadata: { source: 'github_deployments', connection: 'github_app', github_environment: 'production' } })])
+    expect(s.text).toMatch(/^Last record from GitHub Deployments · Nov 1[89], /)
+    expect(s.kind).toBe('other')
+    expect(methodSourceSentence(s.kind, false)).not.toMatch(/GitHub Actions/)
+  })
+
   it('hollow dot when the workspace has no deployment at all; nothing when stats are missing', () => {
     expect(sourceLine(stats({ organization_has_deployments: false, last_deployment: null }), [])).toEqual({ dot: 'hollow', text: 'No deployment source connected', kind: 'none' })
     expect(sourceLine(undefined, [row()])).toEqual({ dot: 'none', text: null, kind: null })

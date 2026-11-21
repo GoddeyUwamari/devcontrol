@@ -523,7 +523,7 @@ function DeploymentsContent() {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-label px-2.5 py-0.5 rounded-full" style={{ background: envBg, color: envColor }}>{d.environment}</span>
-                    <span className="text-meta text-ink-muted font-mono">{d.awsRegion}</span>
+                    <span className="text-meta text-ink-muted font-mono">{d.awsRegion || 'Not recorded'}</span>
                     {recordedCost(d.costEstimate) !== null && <span className="text-meta font-semibold text-slate-700 ml-auto">{formatRecordedCost(d.costEstimate)}</span>}
                   </div>
                   {d.status === 'failed' && (

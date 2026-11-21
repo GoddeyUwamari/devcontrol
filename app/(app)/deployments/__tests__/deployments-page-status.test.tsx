@@ -115,6 +115,14 @@ describe('Deployments page', () => {
     expect(screen.queryByText('Running')).not.toBeInTheDocument()
   })
 
+  it('a row with no region recorded (GitHub App, D8-D8): the mobile card reads "Not recorded", the desktop row a dash', async () => {
+    listRows = [{ ...deployment('app', 'success', 2 * HOUR), aws_region: null }]
+    renderPage()
+    await screen.findAllByText('service-app')
+    expect(screen.getAllByText('Not recorded')).toHaveLength(1)
+    expect(screen.queryByText('us-east-1')).not.toBeInTheDocument()
+  })
+
   // CAT-3: there is no /deployments/:id/logs or /rollback page. Logs open the
   // deployment's detail page; Rollback stays visible, disabled, "Coming soon".
   it('a failed deployment: Logs open its detail page, Rollback is disabled and says Coming soon', async () => {

@@ -147,6 +147,24 @@ describe('Deployment detail page', () => {
     expect(document.body).not.toHaveTextContent(/Recorded by|Recorded at|Not recorded/)
   })
 
+  it('no region recorded (a GitHub App row, D8-D8): Region reads "Not recorded" and there is no console link', async () => {
+    reply = row({ aws_region: null, metadata: { source: 'github_actions', connection: 'github_app', github_job_id: 3 } })
+    renderPage()
+    await loaded()
+
+    expect(screen.getByTestId('deployment-region')).toHaveTextContent(/^Not recorded$/)
+    expect(screen.getByText('Live Deployment Logs')).toBeInTheDocument()
+    expect(screen.queryByText('View in AWS Console')).not.toBeInTheDocument()
+    expect(document.body.innerHTML).not.toMatch(/region=null|region=undefined/)
+  })
+
+  it('a recorded region is shown as before', async () => {
+    reply = PIPELINE
+    renderPage()
+    await loaded()
+    expect(screen.getByTestId('deployment-region')).toHaveTextContent(/^eu-west-1$/)
+  })
+
   it('a row with no metadata (older rows) is treated as before, not as hand-recorded', async () => {
     reply = row({ metadata: null })
     renderPage()

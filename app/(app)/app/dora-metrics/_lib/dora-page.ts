@@ -306,11 +306,25 @@ function sourceOf(row: RecordedDeployment | null): { kind: SourceKind; label: st
   const meta = (row?.metadata ?? null) as Record<string, unknown> | null
   if (!row || !meta) return null
   if (meta.source === 'github_actions') {
-    const job = typeof meta.workflow_name === 'string' && meta.workflow_name ? meta.workflow_name : null
+    if (meta.connection === 'github_app') {
+      // GitHub App rows (D8a-2) store the real workflow name and the job name apart.
+      const workflow = text(meta.workflow_name)
+      const job = text(meta.job_name)
+      const detail = workflow && job ? `${workflow} › ${job}` : (job ?? workflow)
+      return { kind: 'github_actions', label: detail ? `GitHub Actions · ${detail}` : 'GitHub Actions' }
+    }
+    // Legacy webhook rows: workflow_name holds the job name.
+    const job = text(meta.workflow_name)
     return { kind: 'github_actions', label: job ? `GitHub Actions (${job} job)` : 'GitHub Actions' }
   }
+  // GitHub Environments deploys may come from any tool, not only Actions.
+  if (meta.source === 'github_deployments') return { kind: 'other', label: 'GitHub Deployments' }
   if (meta.source === 'manual') return { kind: 'manual', label: 'entered by hand' }
   return null
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null
 }
 
 /**
@@ -330,7 +344,7 @@ export function sourceLine(
   const source = sourceOf(row)
   if (!source) return { dot: 'solid', text: `Last finished record · ${time}`, kind: 'other' }
   if (source.kind === 'manual') return { dot: 'solid', text: `Last record entered by hand · ${time}`, kind: 'manual' }
-  return { dot: 'solid', text: `Last record from ${source.label} · ${time}`, kind: 'github_actions' }
+  return { dot: 'solid', text: `Last record from ${source.label} · ${time}`, kind: source.kind }
 }
 
 /** The "Data and method" source sentence (approved §1.2-A). */
