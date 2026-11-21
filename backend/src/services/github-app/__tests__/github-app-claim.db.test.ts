@@ -205,7 +205,7 @@ describe('claim', () => {
     expect(await owner(inst)).toEqual([{ org: orgA }]);
   });
 
-  it('installation.created never arrives: retries wait (202), the last allowed retry refuses with the redeliver message, nothing is claimed', async () => {
+  it('installation.created never arrives: retries wait (202), the last allowed retry refuses with the reinstall message, nothing is claimed', async () => {
     const inst = fx.installationId();
     const f = { githubUserId: INSTALLER, accessible: [inst] };
     const state = await newState(orgA, userA, f);
@@ -222,7 +222,7 @@ describe('claim', () => {
       body: {
         success: false,
         error: 'install_event_not_received',
-        message: "We didn't receive the install event from GitHub. Redeliver it from your GitHub App's Advanced settings (within 3 days), or uninstall and reinstall the App.",
+        message: "We didn't receive the install event from GitHub. Uninstall the DevControl app from your GitHub settings, reinstall it, then try again.",
       },
     });
     expect(logs).toContain(`[github-app] claim installation=${inst} outcome=install_event_missing status=409`);

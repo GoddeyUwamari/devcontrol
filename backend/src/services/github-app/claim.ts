@@ -74,7 +74,7 @@ const INSTALL_EVENT_MISSING: ClaimResult = {
   body: {
     success: false,
     error: 'install_event_not_received',
-    message: "We didn't receive the install event from GitHub. Redeliver it from your GitHub App's Advanced settings (within 3 days), or uninstall and reinstall the App.",
+    message: "We didn't receive the install event from GitHub. Uninstall the DevControl app from your GitHub settings, reinstall it, then try again.",
   },
 };
 
