@@ -28,6 +28,7 @@ import { Pool } from 'pg';
 import { GetMetricDataCommand, GetMetricStatisticsCommand } from '@aws-sdk/client-cloudwatch';
 import { DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { AWSResourceDiscoveryService, MultiRegionTiming } from '../awsResourceDiscovery';
+import * as regionRunModule from '../region-run';
 import { AWSClientFactory } from '../aws-client-factory.service';
 import costOptimizationService from '../cost-optimization.service';
 import { DISCOVERY_INTERRUPTED_MESSAGE, LeaseTiming } from '../scan-session';
@@ -215,6 +216,20 @@ function service(timing: Partial<MultiRegionTiming> = {}): AWSResourceDiscoveryS
     ...timing,
   };
   return svc;
+}
+
+/**
+ * Gives `region` alone a `ms` deadline (never longer than the one the scan would give it). The
+ * other regions keep the service's (60 s by default): a real-clock deadline as short as 200 ms
+ * can also pass in a healthy region on a loaded CI runner, which then shows timed_out.
+ * Restored by the afterEach restoreAllMocks.
+ */
+function shortDeadlineIn(region: string, ms: number): void {
+  const RealRegionRun = regionRunModule.RegionRun;
+  jest.spyOn(regionRunModule, 'RegionRun').mockImplementation(
+    (name: string, options: regionRunModule.RegionRunOptions) =>
+      new RealRegionRun(name, name === region ? { ...options, deadlineMs: Math.min(options.deadlineMs, ms) } : options)
+  );
 }
 
 async function regionRows(orgId: string): Promise<Record<string, any>> {
@@ -405,7 +420,8 @@ describe('failure isolation: one region fails, the scan completes', () => {
     // must still not reconcile: the region did not finish.
     mockAws({ [EU]: { rds: { DescribeDBInstancesCommand: () => new Promise(() => undefined) } } });
 
-    await service({ regionDeadlineMs: 200 }).discoverAllResources(orgId);
+    shortDeadlineIn(EU, 200);
+    await service().discoverAllResources(orgId);
 
     const rows = await regionRows(orgId);
     expect(rows[EU]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'region_deadline', consecutive_failures: 1 });
@@ -436,7 +452,8 @@ describe('failure isolation: one region fails, the scan completes', () => {
       },
     });
     const reconcileRegions: Array<string | null> = [];
-    const svc = service({ regionDeadlineMs: 300 });
+    shortDeadlineIn(EU, 300);
+    const svc = service();
     const reconciliation = (svc as any).reconciliation;
     const realReconcile = reconciliation.reconcile.bind(reconciliation);
     jest.spyOn(reconciliation, 'reconcile').mockImplementation(async (...args: any[]) => {
@@ -846,7 +863,8 @@ describe('security groups per region; findings with no region resolved once, wit
     await seedFinding(orgId, 'k-eu', EU);
     mockAws({ [EU]: { rds: { DescribeDBInstancesCommand: () => new Promise(() => undefined) } } });
     const groups = jest.spyOn(ComplianceScannerService.prototype, 'checkSecurityGroups');
-    await service({ regionDeadlineMs: 200 }).discoverAllResources(orgId);
+    shortDeadlineIn(EU, 200);
+    await service().discoverAllResources(orgId);
     expect(groups.mock.calls.map((call) => call[1]).sort()).toEqual(SCAN_ORDER.filter((r) => r !== EU).sort());
     expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'timed_out', last_error_code: 'region_deadline' });
     expect(await status(orgId, 'k-eu')).toBe('active');
@@ -1388,7 +1406,8 @@ describe('M-2 (PR 1b): the whole-scan deadline bounds the steps after the region
       if (region === EU) now += (DEADLINE_MIN + 1) * 60_000;
       return regionClients(log, region, (answers as Record<string, RegionAnswers>)[region]);
     });
-    const svc = service({ regionPool: 3, regionDeadlineMs: 200, scanBudgetMs: 30 * 60_000, scanDeadlineMs: DEADLINE_MIN * 60_000, now: () => now });
+    shortDeadlineIn(HOME, 200);
+    const svc = service({ regionPool: 3, scanBudgetMs: 30 * 60_000, scanDeadlineMs: DEADLINE_MIN * 60_000, now: () => now });
 
     const result = await svc.discoverAllResources(orgId);
 
@@ -1743,7 +1762,8 @@ describe('PR 1b L-4: a home region whose listings never ran still blocks EC2 and
   it('control: a home region whose listings ran (even past its deadline) keeps its own listing errors, never the fixed text', async () => {
     const orgId = await insertOrg();
     mockAws({ [HOME]: { ec2: { DescribeVolumesCommand: () => new Promise(() => undefined) } } });
-    await service({ regionDeadlineMs: 200 }).discoverAllResources(orgId);
+    shortDeadlineIn(HOME, 200);
+    await service().discoverAllResources(orgId);
     const row = await job(orgId);
     expect(row.error_message).not.toContain('not listed');
     expect(row.error_message).toBe('RDS: REGION_DEADLINE: region us-east-1 ran past its deadline');

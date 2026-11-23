@@ -157,9 +157,14 @@ type TableFacts = {
 
 const admin = new Client(dbConfig());
 let facts: Map<string, TableFacts>;
+/** Every table in public, read in the same snapshot as `facts`. */
+let present: Set<string>;
 
 beforeAll(async () => {
   await admin.connect();
+  // Both catalog reads in one REPEATABLE READ snapshot: a table another test file creates on demand
+  // (aws_connect_sessions, shared-fixture-tables.ts) is then in both reads or in neither.
+  await admin.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
   const { rows } = await admin.query<TableFacts>(
     `SELECT c.relname AS table, pg_get_userbyid(c.relowner) AS owner, o.rolsuper AS owner_is_superuser,
             pg_has_role('devcontrol', c.relowner, 'MEMBER') AS devcontrol_owns,
@@ -175,6 +180,11 @@ beforeAll(async () => {
         AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname IN ('organization_id', 'org_id') AND NOT a.attisdropped)`
   );
   facts = new Map(rows.map((r) => [r.table, r]));
+  const tables = await admin.query(
+    `SELECT c.relname FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p')`
+  );
+  present = new Set(tables.rows.map((r) => r.relname as string));
+  await admin.query('COMMIT');
 });
 
 afterAll(async () => {
@@ -248,11 +258,7 @@ describe('T-OWN invariant: every tenant table is correct or on the reviewed allo
     }
   });
 
-  it('every listed name present in this schema is a tenant table; the non-tenant C-G2 tables have no organization column', async () => {
-    const { rows } = await admin.query(
-      `SELECT c.relname FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p')`
-    );
-    const present = new Set(rows.map((r) => r.relname as string));
+  it('every listed name present in this schema is a tenant table; the non-tenant C-G2 tables have no organization column', () => {
     expect(Object.keys(ALLOWLIST).filter((t) => present.has(t) && !facts.has(t))).toEqual([]);
     expect(NON_TENANT_C_G2.filter((t) => facts.has(t))).toEqual([]);
     expect(Object.values(REASONS).every((r) => r.length > 20)).toBe(true);

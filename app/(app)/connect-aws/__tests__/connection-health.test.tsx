@@ -8,7 +8,7 @@
  * module, so a changed string fails.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ConnectAwsPage from '../page'
 import { formatScanTime } from '../../services/coverage'
@@ -97,6 +97,19 @@ let checksAnswer: () => Promise<unknown>
 
 function serveChecks(body: Checks) {
   checksAnswer = () => Promise.resolve({ data: { success: true, data: body } })
+}
+
+/**
+ * A GET /checks the test answers itself. `asked` settles once the page has made the request. The
+ * fetch starts in a React effect that can run after the connected view is on screen, so releasing
+ * before `asked` would answer nothing and the saved checks would never arrive.
+ */
+function deferredChecks() {
+  let answer: (value: unknown) => void = () => {}
+  let requested: () => void = () => {}
+  const asked = new Promise<void>((resolve) => { requested = resolve })
+  checksAnswer = () => new Promise((resolve) => { answer = resolve; requested() })
+  return { asked, release: (value: unknown) => answer(value) }
 }
 
 beforeEach(() => {
@@ -238,8 +251,7 @@ describe('saved permission checks', () => {
 
   it('a connect response with an empty list: no "0 of 0" while the saved checks load, then F10', async () => {
     accountsBody = { success: true, data: [], connection: { state: 'not_connected' } }
-    let release: (value: unknown) => void = () => {}
-    checksAnswer = () => new Promise((resolve) => { release = resolve })
+    const saved = deferredChecks()
     mockPost.mockResolvedValue({ data: { success: true, data: ACCOUNT, permissionCheck: { checks: [] }, message: 'AWS account connected successfully' } })
     renderPage()
     await screen.findAllByTestId('external-id-field')
@@ -250,7 +262,8 @@ describe('saved permission checks', () => {
     await screen.findByTestId('connected-view')
     expect(screen.queryByTestId('fact-permissions')).toBeNull()
     expect(document.body.textContent).not.toMatch(/0 of 0/)
-    release({ data: { success: true, data: { ...checks({ permissionCheck: null }), ...OWNER } } })
+    await saved.asked
+    saved.release({ data: { success: true, data: { ...checks({ permissionCheck: null }), ...OWNER } } })
     await waitFor(() => expect(screen.getByTestId('fact-permissions').textContent).toBe('Permission checksNot saved for this connection yet. Use Check again to run them.'))
     expect(document.body.textContent).not.toMatch(/0 of 0/)
   })
@@ -259,8 +272,7 @@ describe('saved permission checks', () => {
     // Made before the page mounts: its relative time is read once, at mount.
     const savedAt = ago(1 * MIN)
     accountsBody = { success: true, data: [], connection: { state: 'not_connected' } }
-    let release: (value: unknown) => void = () => {}
-    checksAnswer = () => new Promise((resolve) => { release = resolve })
+    const saved = deferredChecks()
     mockPost.mockResolvedValue({ data: { success: true, data: ACCOUNT, permissionCheck: { checks: ALL_VERIFIED }, message: 'AWS account connected successfully' } })
     renderPage()
     await screen.findAllByTestId('external-id-field')
@@ -272,7 +284,8 @@ describe('saved permission checks', () => {
     expect((await screen.findByTestId('fact-permissions')).textContent).toMatch(/^Permission checks6 of 6 passed · checked /)
     expect(screen.queryByTestId('fact-health')).toBeNull()
     // The saved result arrives.
-    release({ data: { success: true, data: { ...checks({ permissionCheck: { checks: CE_DENIED, checkedAt: savedAt, trigger: 'connect' } }), ...OWNER } } })
+    await saved.asked
+    saved.release({ data: { success: true, data: { ...checks({ permissionCheck: { checks: CE_DENIED, checkedAt: savedAt, trigger: 'connect' } }), ...OWNER } } })
     await waitFor(() => expect(screen.getByTestId('fact-permissions').textContent).toBe(`Permission checks5 of 6 passed · checked ${at(savedAt)}`))
     expect(await healthFact()).toBeInTheDocument()
   })
@@ -514,12 +527,20 @@ describe('Check again', () => {
   })
 
   it('the cooldown ends: the button is enabled again', async () => {
-    const availableAt = new Date(Date.now() + 150).toISOString()
-    serveChecks({ ...checks(), checkAgain: { availableAt } })
-    renderPage()
-    expect(await button()).toBeDisabled()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).not.toBeDisabled(), { timeout: 2000 })
-    expect(screen.queryByTestId('check-again-cooldown')).toBeNull()
+    // Fake timers that still advance with real time (findBy/waitFor keep polling): the cooldown ends
+    // when the test moves the clock past it, never because a short real-clock window ran out first.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const availableAt = new Date(Date.now() + 60_000).toISOString()
+      serveChecks({ ...checks(), checkAgain: { availableAt } })
+      renderPage()
+      expect(await button()).toBeDisabled()
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).not.toBeDisabled())
+      expect(screen.queryByTestId('check-again-cooldown')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each(['ROLE_NOT_ASSUMABLE', 'ROLE_NOT_FOUND', 'ROLE_CHECK_FAILED'])('%s: B7 and the causes panel C5-C9, with the External ID for the owner; health refreshed', async (code) => {

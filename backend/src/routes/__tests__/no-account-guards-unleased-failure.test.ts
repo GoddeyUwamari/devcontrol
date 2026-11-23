@@ -27,6 +27,7 @@ import * as platformSts from '../../services/platform-sts';
 import * as accountsRepository from '../../repositories/aws-accounts.repository';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, AwsAccountAmbiguousError, hasEligibleAwsAccount } from '../../repositories/aws-accounts.repository';
 import { leaseTargetFor } from '../../services/scan-session';
+import { leaseHolder } from '../../services/scan-lease';
 import { DISCOVERY_FAILED_MESSAGE } from '../../services/discovery-job-messages';
 import { connectPlaceholderAccount, removePlaceholderAccounts } from '../../services/__tests__/helpers/scan-source';
 
@@ -51,10 +52,20 @@ const COUNTED_TABLES = [
 
 type Counts = Record<(typeof COUNTED_TABLES)[number], number>;
 
+/**
+ * `<hostname>:<pid>:` of this process's lease holders. job_leases is counted for this process only:
+ * another test file's all-organization cron pass (resourceDiscovery.job tests, triggerManualScan),
+ * in another jest worker on the same database, also leases this connected organization, and that
+ * completed lease row stays by design. Scan now runs in this process, so its leases still count.
+ */
+const OWN_HOLDER = ((holder) => holder.slice(0, holder.lastIndexOf(':') + 1))(leaseHolder());
+
 async function counts(orgId: string): Promise<Counts> {
   const result = {} as Counts;
   for (const table of COUNTED_TABLES) {
-    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE organization_id = $1`, [orgId]);
+    const { rows } = table === 'job_leases'
+      ? await pool.query(`SELECT count(*)::int AS n FROM job_leases WHERE organization_id = $1 AND starts_with(holder, $2)`, [orgId, OWN_HOLDER])
+      : await pool.query(`SELECT count(*)::int AS n FROM ${table} WHERE organization_id = $1`, [orgId]);
     result[table] = rows[0].n;
   }
   return result;
