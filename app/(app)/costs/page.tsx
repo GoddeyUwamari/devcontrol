@@ -312,7 +312,7 @@ export default function CostsPage() {
     if (isDemoActive) return null
     // The total is the server's de-duplicated per-type figure (two
     // recommendations can draw on the same instance's cost), not a client sum.
-    // No database entry: the only RDS detector (oversized instances) is retired.
+    // No database entry: idle RDS findings (C1) carry no dollar estimate.
     const summarize = (type: string) => {
       const recs = activeRecs.filter(r => r.resourceType === type)
       const total = recStats?.potentialSavingsByResourceType?.[type] ?? 0

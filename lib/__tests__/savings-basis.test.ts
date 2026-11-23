@@ -4,6 +4,7 @@ import {
   DEFAULT_PRICE_SOURCE,
   DEFAULT_PRICE_SUFFIX,
   describeCeilings,
+  describeCeilingsWithoutEstimate,
   formatRecommendationSavings,
   isDefaultPriceEstimate,
   NO_DOLLAR_ESTIMATE,
@@ -95,6 +96,24 @@ describe('describeCeilings', () => {
       'Plus up to $5/mo from Other upper-bound figures (not included above)',
     ])
     expect(describeCeilings({}, formatSavingsCurrency)).toEqual([])
+  })
+})
+
+describe('C1: the EBS Snapshot type and the idle RDS finding', () => {
+  it('an old-snapshot upper bound reads "Up to", and has its own line after S3 and DynamoDB', () => {
+    const snapshot = { potentialSavings: 25, metadata: { savings_basis: 'ceiling: volume size x the us-east-1 EBS snapshot standard storage list price; snapshots are incremental' } }
+    expect(formatRecommendationSavings(snapshot, formatSavingsCurrency)).toBe('Up to $25/mo')
+    expect(describeCeilings({ 'EBS Snapshot': 25, S3: 41.27, Other: 5 }, formatSavingsCurrency)).toEqual([
+      'Plus up to $41/mo if S3 data qualifies for Standard-IA (upper bound, not included above)',
+      'Plus up to $25/mo if old EBS snapshots were deleted (upper bound, not included above)',
+      'Plus up to $5/mo from Other upper-bound figures (not included above)',
+    ])
+    expect(describeCeilingsWithoutEstimate({ 'EBS Snapshot': 25 }, formatSavingsCurrency)).toEqual(['Up to $25/mo if old EBS snapshots were deleted (upper bound)'])
+  })
+
+  it('an idle RDS finding (0, no basis) and a snapshot with no regional price read "No dollar estimate"', () => {
+    expect(formatRecommendationSavings({ potentialSavings: 0, metadata: { savings_note: 'no_price_source' } }, formatSavingsCurrency)).toBe('No dollar estimate')
+    expect(formatRecommendationSavings({ potentialSavings: 0, metadata: { savings_note: 'no_price_for_region' } }, formatSavingsCurrency)).toBe('No dollar estimate')
   })
 })
 

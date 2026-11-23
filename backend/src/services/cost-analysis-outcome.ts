@@ -11,6 +11,8 @@ import { getOptimizationRules, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, ISSUE_RD
 import type { CreateRecommendationRequest } from '../types';
 import type { DetectorObservation } from './cost-optimization.service';
 import type { LowActivityCheckCounts } from './low-activity-evaluation';
+import type { RdsIdleCheckCounts } from './rds-idle-evaluation';
+import type { OldSnapshotCheckCounts } from './ebs-old-snapshot-evaluation';
 
 export type CheckOutcome = 'complete' | 'failed';
 export type CostAnalysisTerminalState = 'completed' | 'partial' | 'failed';
@@ -28,6 +30,13 @@ export interface CostAnalysisCheck {
    * (by reason). Counts only.
    */
   low_activity?: LowActivityCheckCounts;
+  /**
+   * The idle RDS check only (C1, Stage A §6): evaluated, flagged, not flagged
+   * by reason, couldn't check by reason, excluded by reason. Counts only.
+   */
+  rds_idle?: RdsIdleCheckCounts;
+  /** The old EBS snapshot check only (C1), in the same shape. Counts only. */
+  old_snapshots?: OldSnapshotCheckCounts;
 }
 
 /** How one reconciliation's findings ended. Reserved Instances use new, refreshed and duplicate only. */
@@ -94,6 +103,8 @@ export function summarizeDetectors(
       detected: observation.success ? observation.recommendations.length : 0,
       unknown: observation.unknownResourceIds?.length ?? 0,
       ...(observation.success && observation.lowActivity ? { low_activity: observation.lowActivity } : {}),
+      ...(observation.success && observation.rdsIdle ? { rds_idle: observation.rdsIdle } : {}),
+      ...(observation.success && observation.oldSnapshots ? { old_snapshots: observation.oldSnapshots } : {}),
     }));
   checks.push({
     rule_id: ruleIdForIssue(ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY),

@@ -45,9 +45,10 @@ export function formatRecommendationSavings(
 const CEILING_CONDITIONS: Record<string, string> = {
   S3: 'if S3 data qualifies for Standard-IA',
   DynamoDB: 'if DynamoDB provisioned capacity were cut to its observed peak',
+  'EBS Snapshot': 'if old EBS snapshots were deleted',
 }
 
-/** Positive ceilings, S3 and DynamoDB first, then others A-Z (the backend's order). */
+/** Positive ceilings, S3, DynamoDB and EBS Snapshot first, then others A-Z (the backend's order). */
 function orderedCeilings(ceilingByResourceType: Record<string, number>): [string, number][] {
   const order = (type: string) => { const i = Object.keys(CEILING_CONDITIONS).indexOf(type); return i === -1 ? Number.MAX_SAFE_INTEGER : i }
   return Object.entries(ceilingByResourceType)
@@ -57,7 +58,7 @@ function orderedCeilings(ceilingByResourceType: Record<string, number>): [string
 
 /**
  * One "Plus up to $X/<period> ..." line per resource type with a positive
- * ceiling (S3, DynamoDB, then others A-Z). Mirror of describeCeilings in
+ * ceiling (S3, DynamoDB, EBS Snapshot, then others A-Z). Mirror of describeCeilings in
  * backend/src/services/estimated-savings.ts. The weekly email no longer uses
  * these lines (executive brief redesign, 53a791e1).
  */

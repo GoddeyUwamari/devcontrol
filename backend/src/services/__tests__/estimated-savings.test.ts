@@ -24,6 +24,17 @@ describe('describeCeilingsWithoutEstimate (weekly email, no estimate to add to)'
     expect(describeCeilingsWithoutEstimate({}, fmt, 'month')).toEqual([]);
   });
 });
+describe('C1: the EBS Snapshot upper-bound line', () => {
+  const fmt = (n: number) => '$' + String(n);
+  it('says what it assumes, after S3 and DynamoDB, before other types', () => {
+    expect(describeCeilings({ Lambda: 5, 'EBS Snapshot': 25, DynamoDB: 40 }, fmt, 'month')).toEqual([
+      'Plus up to $40/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above)',
+      'Plus up to $25/month if old EBS snapshots were deleted (upper bound, not included above)',
+      'Plus up to $5/month from Lambda upper-bound figures (not included above)',
+    ]);
+    expect(describeCeilingsWithoutEstimate({ 'EBS Snapshot': 25 }, fmt, 'month')).toEqual(['Up to $25/month if old EBS snapshots were deleted (upper bound)']);
+  });
+});
 const CEILING = 'ceiling: assumes 100% of current Standard storage transitions to Standard-IA';
 
 function idle(instanceId: string, savings: number): SavingsRecommendation {

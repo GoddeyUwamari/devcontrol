@@ -26,6 +26,8 @@ import {
   ISSUE_LAMBDA_LOW_USAGE,
   ISSUE_DYNAMODB_CAPACITY,
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
+  ISSUE_RDS_IDLE_INSTANCE,
+  ISSUE_EBS_OLD_SNAPSHOT,
 } from '../config/optimization-rules';
 
 /** Open findings by what their dollar figure is (getActiveSavingsBreakdown). */
@@ -57,6 +59,8 @@ const NON_RI_ISSUES = [
   ISSUE_EBS_UNATTACHED_VOLUME,
   ISSUE_S3_LIFECYCLE_OPTIMIZATION,
   ISSUE_LAMBDA_LOW_USAGE,
+  ISSUE_RDS_IDLE_INSTANCE,
+  ISSUE_EBS_OLD_SNAPSHOT,
 ] as const;
 
 // Distinct from the migration runner's single-integer advisory lock
@@ -94,6 +98,9 @@ const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY,
   ISSUE_DYNAMODB_CAPACITY,
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
+  // C1: both list the home region only (DescribeDBInstances, DescribeSnapshots).
+  ISSUE_RDS_IDLE_INSTANCE,
+  ISSUE_EBS_OLD_SNAPSHOT,
 ]);
 
 /** The same issues as a list, for statements that take them as an array (home region change, HR-D11). */

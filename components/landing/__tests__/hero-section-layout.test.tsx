@@ -89,8 +89,8 @@ describe('HeroSection copy', () => {
         .map((row) => Array.from(row.children).map(text)),
     ).toEqual([
       ['Compute', 'Idle EC2 instances · Unused Elastic IPs · Reserved Instances'],
-      ['Storage', 'Unattached EBS · gp2 → gp3 · S3 lifecycle'],
-      ['Data & Serverless', 'DynamoDB capacity · Lambda usage'],
+      ['Storage', 'Unattached EBS · gp2 → gp3 · Old EBS snapshots · S3 lifecycle'],
+      ['Data & Serverless', 'Idle RDS · DynamoDB capacity · Lambda usage'],
     ])
     expect(text(scanBlocks[3])).toBe('Estimated monthly savings where supported by available data.')
 

@@ -203,11 +203,12 @@ export function aggregateEstimatedSavings(recs: SavingsRecommendation[]): Estima
 const CEILING_CONDITIONS: Record<string, string> = {
   S3: 'if S3 data qualifies for Standard-IA',
   DynamoDB: 'if DynamoDB provisioned capacity were cut to its observed peak',
+  'EBS Snapshot': 'if old EBS snapshots were deleted',
 };
 
 /**
  * One "Plus up to $X/<period> ..." line per resource type with a positive
- * ceiling (S3, then DynamoDB, then any other type alphabetically). Never
+ * ceiling (S3, then DynamoDB, then EBS Snapshot, then any other type alphabetically). Never
  * folds ceilings into one unexplained figure. Mirrored in lib/savings-basis.ts.
  */
 export function describeCeilings(ceilingByResourceType: Record<string, number>, format: (amount: number) => string, period: string): string[] {
