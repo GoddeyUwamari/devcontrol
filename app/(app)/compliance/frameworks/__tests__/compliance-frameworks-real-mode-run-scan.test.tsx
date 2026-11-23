@@ -29,6 +29,10 @@ class ResizeObserverStub {
 // F3b: real mode reads through React Query (seeded by renderSeeded from the state below) and starts runs through
 // the shared start hook's api.post.
 const mockApiPost = vi.fn()
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/api', () => {
   const api = { get: () => new Promise(() => {}), post: (...args: unknown[]) => mockApiPost(...args), put: vi.fn(), delete: vi.fn() }
   return { default: api, api, handleApiResponse: (r: { data: { data: unknown } }) => r.data.data }

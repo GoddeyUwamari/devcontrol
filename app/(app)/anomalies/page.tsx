@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { anomalyService } from '@/lib/services/anomaly.service';
 import { logError } from '@/lib/safe-log';
 import { usePlan } from '@/lib/hooks/use-plan';
@@ -17,6 +18,8 @@ import { toast } from 'sonner';
 import customAnomalyRulesService, { CustomAnomalyRule, CreateRulePayload } from '@/lib/services/custom-anomaly-rules.service';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { ANOMALY_DETECTION_ACTIVE, COMING_SOON } from '@/lib/features/coming-soon';
+import awsAccountsService from '@/lib/services/aws-accounts.service';
+import { NotConnectedCard } from '@/components/aws/not-connected';
 
 const severityConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {
   critical: { color: '#DC2626', bg: '#FEF2F2', border: '#FEE2E2', label: 'Critical' },
@@ -51,6 +54,20 @@ export default function AnomaliesPage() {
   const [rulesLoading, setRulesLoading] = useState(false);
   const [newRule, setNewRule] = useState<CreateRulePayload>({ name: '', metric: 'cost', condition: 'greater_than', threshold: 0, timeWindow: '1h', severity: 'warning' });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization), on every known plan. Not connected only when the server says so; a failed or ambiguous
+  // check is today's page. With no AWS account the card takes the plan lock's place; the lock is unchanged
+  // underneath and shows again once an account is connected.
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: plan.isKnown,
+  });
+  const notConnected = awsAccounts?.connection === 'not_connected';
+  const connectionLoading = plan.isKnown && awsAccounts === undefined && !accountsError;
 
   const loadAnomalies = useCallback(async () => {
     if (!isPro) return;
@@ -128,6 +145,37 @@ export default function AnomaliesPage() {
 
   if (plan.status === 'loading') return <PlanLoadingState />;
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
+  // Until the connection check answers: neither the plan lock, the card nor the page (PR4c).
+  if (connectionLoading) return <PlanLoadingState />;
+
+  // The page's title and subtitle: the page header, and the not-connected page's (PR4c).
+  const titleBlock = (
+        <div>
+          <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+            <h1 className={PAGE_TITLE_CLASS}>Anomaly Detection</h1>
+            {!ANOMALY_DETECTION_ACTIVE && (
+              <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">{COMING_SOON}</span>
+            )}
+          </div>
+          {/* No detector evaluates measured AWS data (backend AnomalyDetectionService /
+              CustomAnomalyRulesService return nothing), so the page must not claim monitoring. */}
+          <p className={PAGE_SUBTITLE_CLASS}>
+            {ANOMALY_DETECTION_ACTIVE
+              ? <>Anomaly detection on measured data isn&apos;t currently active. An empty list here doesn&apos;t mean no issues exist.</>
+              : 'Anomaly detection on measured AWS data is coming soon. Nothing is being monitored here yet.'}
+          </p>
+        </div>
+  );
+
+  // ── No AWS account, below the plan (PR4c): title, subtitle and the card in place of the plan lock ──
+  if ((!isPro || tierRequired) && notConnected) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
+        <div className="mb-5">{titleBlock}</div>
+        <NotConnectedCard />
+      </div>
+    );
+  }
 
   if (!isPro || tierRequired) {
     return (
@@ -162,21 +210,7 @@ export default function AnomaliesPage() {
 
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-5">
-        <div>
-          <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
-            <h1 className={PAGE_TITLE_CLASS}>Anomaly Detection</h1>
-            {!ANOMALY_DETECTION_ACTIVE && (
-              <span className="text-label font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">{COMING_SOON}</span>
-            )}
-          </div>
-          {/* No detector evaluates measured AWS data (backend AnomalyDetectionService /
-              CustomAnomalyRulesService return nothing), so the page must not claim monitoring. */}
-          <p className={PAGE_SUBTITLE_CLASS}>
-            {ANOMALY_DETECTION_ACTIVE
-              ? <>Anomaly detection on measured data isn&apos;t currently active. An empty list here doesn&apos;t mean no issues exist.</>
-              : 'Anomaly detection on measured AWS data is coming soon. Nothing is being monitored here yet.'}
-          </p>
-        </div>
+        {titleBlock}
         {/* The scan is a no-op while detection is inactive (backend anomalies.routes.ts
             POST /scan), so the button is hidden until it does something. */}
         {ANOMALY_DETECTION_ACTIVE && (
@@ -256,6 +290,10 @@ export default function AnomaliesPage() {
         </>)}
       </div>
 
+      {/* No AWS account (PR4c): the card below the tiles; the filter row, bulk actions and custom rules wait for a connection. */}
+      {notConnected && <NotConnectedCard className="mb-5" />}
+
+      {!notConnected && (<>
       {/* Filter row */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex bg-slate-50 rounded-lg p-0.5 gap-0.5">
@@ -299,6 +337,7 @@ export default function AnomaliesPage() {
         <button className="px-3 py-1 rounded-lg border border-violet-200 bg-violet-50 text-label font-medium text-violet-600 cursor-pointer">Assign selected</button>
         <span className="text-label text-slate-900 ml-auto">Priority Issues ({activeCount})</span>
       </div>
+      </>)}
 
       {/* Anomaly list */}
       <div className="flex flex-col gap-3">
@@ -462,6 +501,7 @@ export default function AnomaliesPage() {
       </div>
 
       {/* Custom Anomaly Rules */}
+      {!notConnected && (
       <div className="mt-8">
         <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-white border border-slate-200 rounded-t-xl border-b-0">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -557,6 +597,7 @@ export default function AnomaliesPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

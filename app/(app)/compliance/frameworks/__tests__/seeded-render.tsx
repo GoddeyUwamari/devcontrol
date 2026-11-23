@@ -12,9 +12,14 @@ import { FRAMEWORK_SCANS_LIMIT, type FrameworkResults } from '@/lib/compliance/u
 /** The page's query key for the mocked organization 'org-1'. */
 export const COMPLIANCE_QUERY_KEY = ['compliance', 'org-1', 'frameworks', FRAMEWORK_SCANS_LIMIT]
 
+/** GET /api/aws/accounts with one active row, as awsAccountsService parses it. */
+export const CONNECTED_ACCOUNTS = { accounts: [{ id: 1, status: 'active' }], connection: 'connected' }
+
 /** Renders with `results` already read; null leaves the read in flight (loading). */
 export function renderSeeded(ui: React.ReactElement, results: Omit<FrameworkResults, 'scansLimit'> | null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   if (results) client.setQueryData(COMPLIANCE_QUERY_KEY, { ...results, scansLimit: FRAMEWORK_SCANS_LIMIT })
+  // The AWS connection check (PR4c) already answered: connected, so the page is today's from the first render.
+  client.setQueryData(['aws-accounts'], CONNECTED_ACCOUNTS)
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Shield, Plus, RefreshCw, FileText, Info, Lock } from 'lucide-react';
@@ -25,6 +26,9 @@ import { EVALUATION_COPY, SEE_PLANS, START_PROBLEM_TEXT } from '@/lib/compliance
 import { FRAMEWORK_SCANS_LIMIT, useFrameworkEvaluations, type FrameworkResults } from '@/lib/compliance/useFrameworkEvaluations';
 import { useNowEachLocalDay } from '../../services/useNowEachLocalDay';
 import { ADMIN_ROLES, COMPLIANCE_COPY, MEMBER_ROLES, describeCompliance, describeSecurityHub, type Loadable } from './complianceModel';
+import awsAccountsService from '@/lib/services/aws-accounts.service';
+import { NotConnectedCard } from '@/components/aws/not-connected';
+import { PlanLoadingState } from '@/components/plan/plan-status';
 
 type DemoFramework = { id: string; name: string; complianceScore: number; status: 'passing' | 'in_progress' | 'failing'; rulesCount: number; lastScanAt: Date; isCustom?: boolean };
 
@@ -397,6 +401,19 @@ function ComplianceResultsPage() {
   const [detailsFramework, setDetailsFramework] = useState<ComplianceFramework | null>(null);
   const [scanResults, setScanResults] = useState<string | null>(null);
 
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization). Not connected only when the server says so; a failed or ambiguous check is today's page.
+  // With no AWS account: the card, and no plan notices, Security Hub status or actions that need AWS. The
+  // framework cards, SOC 2 readiness, the Security Hub explanation and the footer stay.
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const notConnected = awsAccounts?.connection === 'not_connected';
+  const connectionLoading = awsAccounts === undefined && !accountsError;
+
   // Q2: the server's floors (requireMember; requireAdmin for the Security Hub sync, security-hub.routes.ts:61). A role
   // not read yet fails closed.
   const canMember = role !== null && MEMBER_ROLES.includes(role);
@@ -486,6 +503,9 @@ function ComplianceResultsPage() {
     );
   };
 
+  // Until the connection check answers: neither the card nor the page (PR4c).
+  if (connectionLoading) return <PlanLoadingState />;
+
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
 
@@ -495,6 +515,8 @@ function ComplianceResultsPage() {
           <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Compliance</h1>
           <p className={PAGE_SUBTITLE_CLASS}>Track your compliance posture across industry standards and frameworks.</p>
         </div>
+        {/* No AWS account: no Add Framework (PR4c). */}
+        {!notConnected && (
         <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
           <button
             onClick={() => setCreateModalOpen(true)}
@@ -506,6 +528,7 @@ function ComplianceResultsPage() {
           </button>
           {isViewer && <p id="add-framework-reason" className={REASON}>{COMPLIANCE_COPY.viewerCantAddFrameworks}</p>}
         </div>
+        )}
       </div>
 
       {/* Part C: only when Security Hub reports not enabled; no banner in the other four states (F3c, Oct 28). */}
@@ -528,8 +551,9 @@ function ComplianceResultsPage() {
       {view.failed && (
         <div data-testid="compliance-failed-banner" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3.5 mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <p className="text-meta text-ink-danger leading-relaxed">{view.failed.text}</p>
+          {/* No AWS account: the banner's text only, no Try again, which needs AWS data (PR4c ruling). */}
           {view.failed.kind === 'one'
-            ? startControl(view.failed.frameworkId, COMPLIANCE_COPY.tryAgain, 'failed-banner')
+            ? (notConnected ? null : startControl(view.failed.frameworkId, COMPLIANCE_COPY.tryAgain, 'failed-banner'))
             : <a href="#evaluation-history" className={PLAN_LINK}>{COMPLIANCE_COPY.review}</a>}
         </div>
       )}
@@ -538,19 +562,20 @@ function ComplianceResultsPage() {
       {view.banner && (
         <div data-testid="compliance-stale-banner" className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3.5 mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <p className="text-meta text-ink-body leading-relaxed">{view.banner.text}</p>
+          {/* No AWS account: the banner's text only, no Re-evaluate now, which needs AWS data (PR4c ruling). */}
           {view.banner.kind === 'one'
-            ? startControl(view.banner.frameworkId, COMPLIANCE_COPY.reEvaluateNow, 'stale-banner')
+            ? (notConnected ? null : startControl(view.banner.frameworkId, COMPLIANCE_COPY.reEvaluateNow, 'stale-banner'))
             : <a href="#evaluation-history" className={PLAN_LINK}>{COMPLIANCE_COPY.review}</a>}
         </div>
       )}
 
       {/* KPI strip; below Enterprise, the plan (D7: the existing Enterprise upsell, never "Not yet evaluated"). */}
-      {view.status === 'plan' ? (
+      {view.status === 'plan' ? (notConnected ? null : (
         <div data-testid="compliance-plan" className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 mb-6 flex flex-col gap-1.5">
           <p className="text-ui text-ink-body">{COMPLIANCE_COPY.customFrameworksPlan}</p>
           <Link href={SEE_PLANS.href} className={PLAN_LINK}>{SEE_PLANS.label}</Link>
         </div>
-      ) : (
+      )) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
           {kpiCards.map(({ label, value, sub, note }) => (
             <div key={label} data-testid="compliance-tile" className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
@@ -562,6 +587,9 @@ function ComplianceResultsPage() {
           ))}
         </div>
       )}
+
+      {/* No AWS account: the card below the header and tiles (PR4c). */}
+      {notConnected && <NotConnectedCard className="mb-6" />}
 
       {/* Your Custom Frameworks: each starts its evaluation in place through the shared start hook (D5). */}
       {frameworks.length > 0 && (
@@ -579,7 +607,8 @@ function ComplianceResultsPage() {
                   {f.description && <p className="text-meta text-ink-muted">{f.description}</p>}
                 </div>
                 <div className="flex gap-2 flex-wrap items-start shrink-0">
-                  {startControl(f.id, COMPLIANCE_COPY.reEvaluateNow, 'custom-framework')}
+                  {/* No AWS account: no Re-evaluate now, which needs AWS data (PR4c ruling). */}
+                  {!notConnected && startControl(f.id, COMPLIANCE_COPY.reEvaluateNow, 'custom-framework')}
                   <button
                     onClick={() => setDetailsFramework(f)}
                     className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-none rounded-lg px-3.5 py-2 text-label cursor-pointer transition-colors whitespace-nowrap"
@@ -620,14 +649,15 @@ function ComplianceResultsPage() {
               <p className="text-label text-slate-600 mb-0.5">
                 {fw.attribution === 'security_hub' ? 'Security Hub-backed' : fw.attribution === 'soc2_evidence' ? 'Technical + customer evidence' : 'Not yet implemented'}
               </p>
-              {standardEntitlement && plan.lacksEntitlement(standardEntitlement) ? (
+              {/* No AWS account: a Security Hub framework shows its name and description only (PR4c). */}
+              {notConnected && standardEntitlement ? null : standardEntitlement && plan.lacksEntitlement(standardEntitlement) ? (
                 <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS[standardEntitlement]} testId={`standard-${fw.key}-plan-required`} className="mb-3" />
               ) : (
                 <p className="text-meta text-ink-muted mb-3">
                   {isCis ? cisSubtext : isPci ? pciSubtext : isNist ? nistSubtext : isSoc2 ? soc2Subtext : 'Future capability — supporting evidence and readiness, not a complete Type II audit'}
                 </p>
               )}
-              {isSoc2 ? (
+              {notConnected && !isSoc2 ? null : isSoc2 ? (
                 <button
                   type="button"
                   onClick={() => router.push('/compliance/frameworks/soc2')}
@@ -705,6 +735,8 @@ function ComplianceResultsPage() {
             </p>
           </div>
           <div className="flex flex-row sm:flex-col items-start sm:items-end gap-2 shrink-0">
+            {/* No AWS account: no status pill or Sync (PR4c); Learn more stays. */}
+            {!notConnected && (<>
             <span data-testid="security-hub-pill" className="inline-flex items-center gap-1 text-label px-2.5 py-1 rounded-full bg-slate-100 text-ink-muted uppercase tracking-[0.04em] whitespace-nowrap">
               <Lock size={10} /> {sh.pill}
             </span>
@@ -721,6 +753,7 @@ function ComplianceResultsPage() {
             {syncPlanRequired && syncPlanShown && (
               <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.securityHubSync} testId="security-hub-sync-plan-required" />
             )}
+            </>)}
             <a href="/docs" className="text-label text-violet-600 no-underline flex items-center gap-1 whitespace-nowrap">
               Learn more <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             </a>
@@ -750,7 +783,8 @@ function ComplianceResultsPage() {
                     <p className="text-ui text-slate-900">{row.text}</p>
                     {row.note && <p className="text-meta text-ink-muted">{row.note}</p>}
                   </div>
-                  {row.canReEvaluate && startControl(row.frameworkId, row.action, `history-${row.id}`)}
+                  {/* No AWS account: the row's text only, no Re-evaluate now or Try again, which need AWS data (PR4c rulings). */}
+                  {row.canReEvaluate && !notConnected && startControl(row.frameworkId, row.action, `history-${row.id}`)}
                 </div>
               ))}
             </div>

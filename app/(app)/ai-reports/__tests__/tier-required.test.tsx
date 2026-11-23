@@ -12,6 +12,10 @@ import { resourceLimitBody, tierRequiredBody } from '@/lib/plan/__tests__/tier-r
 import { toast } from 'sonner'
 import AIReportsPage from '../page'
 
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/ai-reports',

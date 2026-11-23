@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
@@ -19,6 +20,8 @@ import { toast } from 'sonner'
 import Link from 'next/link'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { NotConnectedCard } from '@/components/aws/not-connected'
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 
@@ -118,6 +121,20 @@ export default function AnomalyRulesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization), on every known plan. Not connected only when the server says so; a failed or ambiguous
+  // check is today's page. With no AWS account the card takes the plan lock's place; the lock is unchanged
+  // underneath and shows again once an account is connected. Rule counts are the user's own (kept).
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive && plan.isKnown,
+  })
+  const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
+  const connectionLoading = !isDemoActive && plan.isKnown && awsAccounts === undefined && !accountsError
+
   const loadRules = useCallback(async () => {
     if (isDemoActive) { setRules(DEMO_RULES); setIsLoading(false); return }
     if (!isEnterprise) return
@@ -196,6 +213,8 @@ export default function AnomalyRulesPage() {
   // ── Enterprise gate ──
   if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
   if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+  // Until the connection check answers: neither the plan lock, the card nor the page (PR4c).
+  if (connectionLoading) return <PlanLoadingState />
 
   if ((!isEnterprise || tierRequired) && !isDemoActive) {
     return (
@@ -204,6 +223,7 @@ export default function AnomalyRulesPage() {
           <h1 className={PAGE_TITLE_CLASS}>Custom Anomaly Rules</h1>
           <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>Define custom detection thresholds and conditions for your infrastructure.</p>
         </div>
+        {notConnected ? <NotConnectedCard /> : (
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
@@ -230,6 +250,7 @@ export default function AnomalyRulesPage() {
             </>
           )}
         </div>
+        )}
       </div>
     )
   }
@@ -249,12 +270,15 @@ export default function AnomalyRulesPage() {
           <Link href="/anomalies" className="text-ui font-medium text-slate-600 hover:text-violet-700 no-underline px-4 py-2 border border-slate-200 rounded-lg bg-white">
             ← View Anomalies
           </Link>
+          {/* No AWS account: no new rules until one is connected (PR4c). */}
+          {!notConnected && (
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-ui font-semibold transition-colors"
           >
             <Plus size={16} /> New Rule
           </button>
+          )}
         </div>
       </div>
 
@@ -272,6 +296,8 @@ export default function AnomalyRulesPage() {
           </div>
         ))}
       </div>
+
+      {notConnected && <NotConnectedCard className="mb-6" />}
 
       {/* ── CREATE RULE FORM ── */}
       {showForm && (
@@ -418,13 +444,16 @@ export default function AnomalyRulesPage() {
             <SlidersHorizontal className="w-5 h-5 text-violet-600" />
           </div>
           <h3 className="text-ui font-semibold text-slate-900 mb-2">No custom rules yet</h3>
-          <p className="text-ui text-ink-muted mb-5">Create your first rule to get alerted on custom thresholds.</p>
+          {/* No AWS account: no invitation to an action that isn't offered (PR4c ruling). */}
+          {!notConnected && <p className="text-ui text-ink-muted mb-5">Create your first rule to get alerted on custom thresholds.</p>}
+          {!notConnected && (
           <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center gap-2 bg-violet-700 text-white px-5 py-2.5 rounded-lg text-ui font-semibold"
           >
             <Plus size={16} /> Create First Rule
           </button>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

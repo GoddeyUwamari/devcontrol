@@ -7,6 +7,10 @@ import { vi } from 'vitest'
 import { describePlanStates } from '@/lib/contexts/__tests__/org-load-harness'
 
 const getReportHistory = vi.hoisted(() => vi.fn(async () => []))
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/services/ai-reports.service', () => ({
   aiReportsService: { getReportHistory, generateReport: vi.fn(), deleteReport: vi.fn(), bulkDeleteReports: vi.fn(), getReport: vi.fn() },
 }))

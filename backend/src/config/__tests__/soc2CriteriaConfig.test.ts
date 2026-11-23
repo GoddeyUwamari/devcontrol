@@ -27,6 +27,10 @@ describe('SOC2_V1_CRITERIA', () => {
     expect(cc61?.scope.sort()).toEqual(['aurora', 'ebs', 'ec2', 'rds', 's3']);
   });
 
+  it('CC6.1 says what DevControl checks, not that encryption is enabled (PR4c founder copy)', () => {
+    expect(getSoc2CriterionConfig('CC6.1')?.evidenceClaim).toBe('Checks whether encryption at rest is enabled, based on AWS discovery.');
+  });
+
   it('CC6.6 scopes exactly EC2/RDS/Aurora/S3', () => {
     const cc66 = getSoc2CriterionConfig('CC6.6');
     expect(cc66?.scope.sort()).toEqual(['aurora', 'ec2', 'rds', 's3']);

@@ -14,6 +14,10 @@ import {
 
 const list = vi.hoisted(() => vi.fn(async () => [] as unknown[]))
 const get = vi.hoisted(() => vi.fn())
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/services/remediation.service', () => ({
   remediationService: { list, get, approve: vi.fn(), reject: vi.fn(), execute: vi.fn(), rollback: vi.fn() },
 }))
