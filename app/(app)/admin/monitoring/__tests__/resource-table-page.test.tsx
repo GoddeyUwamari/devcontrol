@@ -473,7 +473,6 @@ describe('error and notices', () => {
   })
 
   it.each([
-    ['not_connected', 'Connect AWS to see resource checks.'],
     ['multiple_accounts', 'More than one AWS account is connected, so nothing is shown yet.'],
   ])('%s: one neutral line, no Retry in the table', async (status, text) => {
     render(<OperationalHealthV2 />)
@@ -482,5 +481,13 @@ describe('error and notices', () => {
     expect(screen.getByTestId('table-notice')).toHaveTextContent(text)
     expect(within(table()).queryByRole('button', { name: 'Retry' })).toBeNull()
     expect(within(table()).queryByRole('table')).toBeNull()
+  })
+
+  it('not_connected (PR3): no Resource checks section at all', async () => {
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle({ status: 'not_connected', region: null, account_count: 0 })
+    expect(screen.queryByTestId('table-notice')).toBeNull()
+    expect(screen.queryByTestId('resource-table')).toBeNull()
   })
 })

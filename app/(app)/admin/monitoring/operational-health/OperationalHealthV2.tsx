@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { SEE_PLANS } from '@/lib/plan/tier-required'
 import type { MonitoringRange, PlanInfo } from './observabilityTypes'
-import { bannerView, headerView, monitorView, tilesView, typeCards } from './operationalHealthModel'
+import { bannerView, headerView, isNotConnected, monitorView, tilesView, typeCards } from './operationalHealthModel'
 import { DEFAULT_RANGE } from './operationalHealthCopy'
 import { useOperationalHealthData } from './useOperationalHealthData'
 import { useSloSummary } from './useSloSummary'
@@ -38,6 +38,9 @@ export default function OperationalHealthV2() {
   const { slo, retry: retrySlo } = useSloSummary(plan)
 
   const monitor = monitorView(resources, alarms, slo, plan, SEE_PLANS)
+  // PR3: no AWS account. The header keeps its title and description, the tiles their "—", What we monitor its
+  // rows; Active alarms and Resource checks have nothing to list. (TODO: NotConnectedCard for the banner after PR2.)
+  const notConnected = isNotConnected(resources)
   // A new range starts the table at page 1; the search and filter are kept.
   const onRange = (next: MonitoringRange) => {
     setRange(next)
@@ -46,14 +49,14 @@ export default function OperationalHealthV2() {
   return (
     // The app's standard page width and gutters (as Infrastructure and Security), so the pages line up.
     <main data-testid="health-page" className="mx-auto flex max-w-[1320px] flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10">
-      <HealthHeader view={headerView(resources, alarms)} range={range} onRange={onRange} onRefresh={refresh} busy={busy} />
+      <HealthHeader view={headerView(resources, alarms)} range={range} onRange={onRange} onRefresh={refresh} busy={busy} notConnected={notConnected} />
       <HealthBanner banner={bannerView(resources, alarms)} onRetry={refresh} />
-      <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} onRetryAlarms={retryAlarms} />
-      <ActiveAlarms view={alarmsListView(alarms, resources)} onRetry={retryAlarms} />
+      <HealthTiles tiles={tilesView(resources, alarms)} onRetry={refresh} onRetryAlarms={retryAlarms} notConnected={notConnected} />
+      {!notConnected && <ActiveAlarms view={alarmsListView(alarms, resources)} onRetry={retryAlarms} />}
       <TypeCards cards={typeCards(resources)} />
-      <ResourceTable view={tableView(tableSource.source, tableSource.query, undefined, resources)} query={table} onQuery={setTable} onRetry={refresh} />
+      {!notConnected && <ResourceTable view={tableView(tableSource.source, tableSource.query, undefined, resources)} query={table} onQuery={setTable} onRetry={refresh} />}
       <ResponseTimeChart view={responseTimeView(resources)} />
-      <WhatWeMonitor groups={monitor.groups} planNote={monitor.planNote} seePlans={SEE_PLANS} onRetryAlarms={retryAlarms} onRetrySlo={retrySlo} />
+      <WhatWeMonitor groups={monitor.groups} planNote={monitor.planNote} seePlans={SEE_PLANS} onRetryAlarms={retryAlarms} onRetrySlo={retrySlo} notConnected={notConnected} />
       <RelatedLinks />
     </main>
   )

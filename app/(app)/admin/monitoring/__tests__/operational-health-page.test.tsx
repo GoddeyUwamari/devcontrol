@@ -330,6 +330,8 @@ describe('rendering', () => {
     await settle()
     expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'green')
     expect(screen.queryByTestId('health-plan-note') !== null).toBe(tier === 'free')
+    // Connected: the legend has no "Needs AWS" entry (PR3).
+    expect(screen.getByTestId('health-monitor-legend')).not.toHaveTextContent('Needs AWS')
   })
 
   it('connected and healthy: header, green banner with its scope, tiles, type card, console links', async () => {
@@ -394,6 +396,53 @@ describe('rendering', () => {
     expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'not_connected')
     expect(screen.getByRole('link', { name: 'Connect AWS →' })).toHaveAttribute('href', '/connect-aws')
     expect(screen.queryByRole('link', { name: 'Open in CloudWatch ↗' })).toBeNull()
+  })
+
+  it('PR3 not connected (Visibility plan): "Needs AWS" rows, no controls, pill, notes, lists or See plans; What we monitor kept', async () => {
+    m.plan = { status: 'known', tier: 'free' }
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')
+    render(<OperationalHealthV2 />)
+    await flush()
+    await settle(
+      { status: 'not_connected', account_count: 0, multiple_accounts: false, region: null, checked_at: null, type_summary: null, resources: null, pagination: null },
+      { ...ALARMS_OK, status: 'error', reason: 'not_connected', region: null, in_alarm: null, in_alarm_complete: null, configured_count: null, configured_count_complete: null, truncated: null }
+    )
+    // Header: title and description only.
+    expect(screen.getByRole('heading', { level: 1, name: 'Operational Health' })).toBeInTheDocument()
+    expect(screen.getByText("Which resources are healthy, which need attention, and what we can't see yet.")).toBeInTheDocument()
+    for (const id of ['health-controls', 'health-range', 'health-header-row2', 'health-pill', 'health-range-note']) expect(screen.queryByTestId(id)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
+    expect(document.body).not.toHaveTextContent('AWS not connected')
+    // Tiles keep "—" without the repeated line; the Region card has no explanation or coverage link.
+    for (const id of ['tile-checks', 'tile-telemetry', 'tile-alarms', 'tile-region']) expect(within(screen.getByTestId(id)).getByTestId('tile-dash')).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent('AWS isn’t connected.')
+    expect(screen.queryByTestId('region-caption')).toBeNull()
+    expect(within(screen.getByTestId('tile-region')).queryByRole('link')).toBeNull()
+    // Nothing to list.
+    expect(screen.queryByTestId('active-alarms')).toBeNull()
+    expect(screen.queryByTestId('resource-table')).toBeNull()
+    // What we monitor: "Needs AWS" (solid outline) where the reason is the connection; plan chips stay; no See plans.
+    for (const key of ['type:ec2', 'type:ebs', 'type:rds', 'alarms']) {
+      const row = screen.getByTestId(`monitor-${key}`)
+      expect(row).toHaveAttribute('data-state', 'needs_aws')
+      const chip = within(row).getByTestId('monitor-chip')
+      expect(chip).toHaveTextContent(/^Needs AWS$/)
+      expect(chip).toHaveAttribute('data-chip', 'needs_aws')
+      expect(chip.className).not.toContain('border-dashed')
+      expect(row).not.toHaveTextContent("Couldn't check")
+    }
+    expect(within(screen.getByTestId('monitor-type:lambda')).getByTestId('monitor-chip')).toHaveTextContent('Not included in your plan')
+    expect(within(screen.getByTestId('monitor-slos')).getByTestId('monitor-chip')).toHaveTextContent('On Revenue Protection')
+    expect(screen.queryByTestId('health-plan-note')).toBeNull()
+    expect(screen.queryByRole('link', { name: /See plans/ })).toBeNull()
+    // The legend gains "Needs AWS · connect AWS to check", styled as the other entries.
+    const legend = within(screen.getByTestId('health-monitor-legend')).getAllByRole('listitem')
+    expect(legend.map((item) => item.textContent)).toEqual(['Monitoredchecked now', 'None foundchecked, but you have none', "Not measured yetDevControl doesn't check this yet", 'Needs AWSconnect AWS to check'])
+    expect(within(legend[3]).getByTestId('monitor-chip')).toHaveAttribute('data-chip', 'needs_aws')
+    expect(legend[3].className).toBe(legend[0].className)
+    expect(screen.getByRole('link', { name: 'SLO report →' })).toBeInTheDocument()
+    vi.unstubAllEnvs()
   })
 
   it('Retry in the banner runs a cache-bypassing cycle', async () => {

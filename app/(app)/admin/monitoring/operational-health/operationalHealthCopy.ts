@@ -44,6 +44,8 @@ export const PAGE_COPY = {
     { kind: 'none', chip: 'None found', meaning: 'checked, but you have none' },
     { kind: 'not_measured', chip: 'Not measured yet', meaning: "DevControl doesn't check this yet" },
   ],
+  /** PR3: the fourth legend entry, shown only while no AWS account is connected. */
+  monitorLegendNeedsAws: { kind: 'needs_aws', chip: 'Needs AWS', meaning: 'connect AWS to check' },
   monitorLegendLabel: 'Status key',
   planNote:
     "On the Visibility plan, discovery covers EC2, EBS, RDS and S3 only. Lambda, load balancers, ECS, EKS, DynamoDB, CloudFront and Aurora aren't discovered.",
@@ -185,6 +187,7 @@ export const STATE_LABEL = {
   no_health_metric: 'No health metric',
   no_activity: 'No activity',
   couldnt_check: "Couldn't check",
+  needs_aws: 'Needs AWS',
   none_set: 'None set',
   not_in_plan: 'Not included in your plan',
   checking: 'Checking…',

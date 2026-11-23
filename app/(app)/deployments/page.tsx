@@ -27,6 +27,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
+import { Skeleton } from '@/components/ui/skeleton'
 import { isManualRecord } from '@/lib/deployments/record'
 import { RecordDeploymentModal } from '@/components/deployments/record-deployment-modal'
 import { Rocket, RefreshCw, ArrowRight, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
@@ -149,6 +150,13 @@ function DeploymentsContent() {
     queryFn: () => deploymentsService.getStats({ environment: environmentFilter, dateRange: statsWindow }),
     enabled: !isDemoActive,
   })
+  // Until the first stats answer, nothing says whether anything was ever recorded: neutral placeholders
+  // stand in for the summary, cards and DORA box, so none of them shows before the empty state. Later
+  // refetches (a window or environment change) keep today's cards with "—".
+  const [statsSeen, setStatsSeen] = useState(false)
+  useEffect(() => {
+    if (deploymentStats || statsError) setStatsSeen(true)
+  }, [deploymentStats, statsError])
 
   useEffect(() => {
     if (error && (error as any).response?.status === 402) setShowUpgradePrompt(true)
@@ -222,6 +230,7 @@ function DeploymentsContent() {
   // or window: say that, instead of a row of zeros that reads like data. An
   // environment or window with nothing in it is a different, narrower fact.
   const nothingRecorded = !!stats && !stats.organization_has_deployments
+  const firstStatsLoad = !isDemoActive && !statsSeen && !stats && !statsError
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
@@ -277,17 +286,14 @@ function DeploymentsContent() {
         </div>
       )}
 
-      {nothingRecorded ? (
-        <div className="bg-white rounded-xl px-5 py-6 border border-slate-200 mb-6 flex items-start gap-3.5" data-testid="deployments-empty-state">
-          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-            <Rocket size={14} className="text-slate-600" />
-          </div>
-          <div>
-            <p className="text-ui font-semibold text-slate-900 mb-1">No deployments recorded</p>
-            <p className="text-ui text-ink-muted leading-relaxed m-0">Record a deployment after it happens. Success, failure and change failure rate appear here once one has been recorded.</p>
+      {firstStatsLoad ? (
+        <div className="flex flex-col gap-4 mb-6" data-testid="deployments-loading" aria-busy="true">
+          <Skeleton className="h-[72px] w-full rounded-xl" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-[120px] rounded-xl" />)}
           </div>
         </div>
-      ) : (<>
+      ) : nothingRecorded ? null : (<>
       {/* ── SUMMARY (built from the recorded counts; not model output) ── */}
       <div className="bg-white rounded-xl px-5 py-4 border border-slate-100 mb-6 flex items-start gap-3.5" data-testid="deployment-summary">
         <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
@@ -379,7 +385,7 @@ function DeploymentsContent() {
       </>)}
 
       {/* ── DORA METRICS ── */}
-      {isDemoActive ? (
+      {firstStatsLoad ? null : isDemoActive ? (
         <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 mb-6">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -418,7 +424,7 @@ function DeploymentsContent() {
             <p className="text-ui text-ink-muted leading-relaxed m-0">{nothingRecorded ? 'Deployment frequency and change failure rate need recorded deployments.' : 'Deployment frequency and change failure rate are computed from these deployment records.'}</p>
           </div>
           <a href="/app/dora-metrics" className="text-ui font-semibold text-violet-600 no-underline flex items-center gap-1 shrink-0">
-            View DORA metrics <ArrowRight size={13} />
+            View Engineering Intelligence <ArrowRight size={13} />
           </a>
         </div>
       )}
@@ -438,8 +444,8 @@ function DeploymentsContent() {
                   : `${windowLabel} · ${totalDeployments} deployment${totalDeployments !== 1 ? 's' : ''}${environmentLabel}`}
             </p>
           </div>
-          {/* Environment filter */}
-          <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
+          {/* Environment filter: none until a deployment has been recorded */}
+          {!nothingRecorded && <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
             {(['all', 'production', 'staging', 'development'] as const).map(env => (
               <button
                 key={env}
@@ -451,18 +457,18 @@ function DeploymentsContent() {
                 {env === 'all' ? 'All' : env}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
 
-        {/* Desktop column headers */}
-        <div className={`hidden sm:grid ${rowGrid} px-7 py-2.5 bg-slate-50 border-b border-slate-100`} data-testid="deployment-log-columns">
+        {/* Desktop column headers: none until a deployment has been recorded */}
+        {!nothingRecorded && <div className={`hidden sm:grid ${rowGrid} px-7 py-2.5 bg-slate-50 border-b border-slate-100`} data-testid="deployment-log-columns">
           {['Service', 'Environment', 'Region', 'Deployed By', 'Status', ...(showCost ? ['Cost'] : [])].map(col => (
             <span key={col} className="text-label text-ink-muted uppercase tracking-[0.04em]">{col}</span>
           ))}
-        </div>
+        </div>}
 
-        {/* Rows */}
-        {pagePending ? (
+        {/* Rows. Until the first stats answer, an empty page can't yet say which empty state it is: still loading. */}
+        {pagePending || (firstStatsLoad && filteredDeployments.length === 0) ? (
           <div className="px-7 py-12 text-center" data-testid="deployment-log-loading">
             <RefreshCw size={20} className="text-slate-400 mx-auto mb-3" style={{ animation: 'spin 1s linear infinite' }} />
             <p className="text-ui text-ink-muted m-0">Loading deployments...</p>
@@ -477,13 +483,7 @@ function DeploymentsContent() {
               <Rocket size={22} className="text-slate-400" />
             </div>
             <p className="text-card-title text-slate-900 mb-1.5">No deployments recorded</p>
-            <p className="text-ui text-ink-muted mb-6 leading-relaxed max-w-sm mx-auto">Record your first deployment once it has happened.</p>
-            <button
-              onClick={openRecordModal}
-              className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2.5 rounded-lg text-ui font-semibold border-none cursor-pointer inline-flex items-center gap-2 transition-colors"
-            >
-              <Plus size={14} /> Record first deployment
-            </button>
+            <p className="text-ui text-ink-muted m-0 leading-relaxed max-w-sm mx-auto">Record your first deployment once it has happened.</p>
           </div>
         ) : filteredDeployments.length === 0 ? (
           // The filters select nothing. Whether the organization has

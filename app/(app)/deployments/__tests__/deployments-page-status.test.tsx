@@ -161,7 +161,8 @@ describe('Deployments page', () => {
   it('builds the summary from the real counts, without an "AI" label or the old wording', async () => {
     renderPage()
 
-    const summary = screen.getByTestId('deployment-summary')
+    // The summary appears once the first stats answer is in (neutral placeholders before it).
+    const summary = await screen.findByTestId('deployment-summary')
     await waitFor(() => expect(summary).toHaveTextContent(
       '196 of 200 finished deployments in the last 30 days succeeded and 4 failed (change failure rate 2%).'
     ))
@@ -184,7 +185,7 @@ describe('Deployments page', () => {
     // The last finished deployment is still reported, with its recorded status.
     expect(within(card('last-deployment')).getByText('Failed')).toBeInTheDocument()
   })
-  it('with nothing ever recorded: says so and how to record one -- no cards of zeros', async () => {
+  it('with nothing ever recorded: says so once, in the log -- no cards of zeros', async () => {
     listRows = []
     statsOverride = {
       window_days: 30, total: 0, success: 0, failed: 0, in_progress: 0, no_completion_recorded: 0, unknown: 0,
@@ -192,15 +193,59 @@ describe('Deployments page', () => {
     }
     renderPage()
 
-    const empty = await screen.findByTestId('deployments-empty-state')
+    // PR3: the log's empty state is the only one; the notice above the log is gone.
+    const empty = await screen.findByTestId('deployment-log-empty')
+    expect(empty).toHaveAttribute('data-reason', 'none-recorded')
     expect(empty).toHaveTextContent('No deployments recorded')
-    expect(empty).toHaveTextContent('Record a deployment after it happens.')
     expect(empty).not.toHaveTextContent(/Connect your CI/)
+    expect(screen.queryByTestId('deployments-empty-state')).not.toBeInTheDocument()
+    expect(screen.getAllByText('No deployments recorded')).toHaveLength(1)
     expect(screen.queryByTestId('deployment-card-succeeded')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-card-failed-deploys')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-card-change-failure-rate')).not.toBeInTheDocument()
     expect(screen.queryByTestId('deployment-summary')).not.toBeInTheDocument()
     expect(document.body).not.toHaveTextContent(/0%/)
+  })
+
+  it('PR3 no records: neutral placeholders until the stats answer, then one empty state, no tabs or headers; the box links to Engineering Intelligence', async () => {
+    listRows = []
+    let releaseStats: () => void = () => {}
+    const statsGate = new Promise<void>((resolve) => { releaseStats = resolve })
+    api.defaults.adapter = async (config) => {
+      if ((config.url ?? '').startsWith('/api/deployments/stats')) await statsGate
+      return adapter(config)
+    }
+    statsOverride = {
+      window_days: 30, total: 0, success: 0, failed: 0, in_progress: 0, no_completion_recorded: 0, unknown: 0,
+      change_failure_rate: null, organization_has_deployments: false, last_deployment: null,
+    }
+    renderPage()
+
+    // Loading: placeholders only -- no summary, cards, plan lock or DORA sentence before the empty state.
+    expect(await screen.findByTestId('deployments-loading')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByTestId('deployment-summary')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-card-succeeded')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Deployment frequency and change failure rate/)
+    // The list has answered (0 rows), but the log can't yet say which empty state it is.
+    await waitFor(() => expect(screen.getByTestId('deployment-log-count')).toHaveTextContent('0 deployments'))
+    expect(screen.getByTestId('deployment-log-loading')).toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-log-empty')).not.toBeInTheDocument()
+    // The header keeps Record deployment, Refresh and the subtitle throughout.
+    expect(screen.getByRole('button', { name: 'Record deployment' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+
+    releaseStats()
+    const empty = await screen.findByTestId('deployment-log-empty')
+    expect(screen.queryByTestId('deployments-loading')).not.toBeInTheDocument()
+    expect(screen.getAllByText('No deployments recorded')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Record first deployment' })).not.toBeInTheDocument()
+    expect(within(empty).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^production$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('deployment-log-columns')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /View Engineering Intelligence/ })).toHaveAttribute('href', '/app/dora-metrics')
+    expect(screen.queryByText(/View DORA metrics/)).not.toBeInTheDocument()
   })
 
   it('an empty window is not "nothing recorded" when an earlier deployment exists', async () => {

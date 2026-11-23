@@ -50,8 +50,10 @@ function RangeControl({ selected, onChange }: { selected: MonitoringRange; onCha
  * Below xl the description sits above the controls; on a phone the controls stack (range grid, then
  * Refresh and the console link on one row).
  */
-export function HealthHeader({ view, range, onRange, onRefresh, busy }: {
+export function HealthHeader({ view, range, onRange, onRefresh, busy, notConnected = false }: {
   view: HeaderView
+  /** No AWS account (PR3): the title and description only; no range, Refresh, pill or range note. */
+  notConnected?: boolean
   range: MonitoringRange
   onRange: (range: MonitoringRange) => void
   onRefresh: () => void
@@ -62,7 +64,7 @@ export function HealthHeader({ view, range, onRange, onRefresh, busy }: {
       <h1 className={cn(PAGE_TITLE_CLASS, 'm-0')}>{PAGE_COPY.title}</h1>
       <div data-testid="health-header-row1" className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between xl:gap-4">
         <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0 min-w-0')}>{PAGE_COPY.subtitle}</p>
-        <div data-testid="health-controls" className="flex flex-col gap-2 md:flex-row md:flex-nowrap md:items-center xl:shrink-0">
+        {!notConnected && <div data-testid="health-controls" className="flex flex-col gap-2 md:flex-row md:flex-nowrap md:items-center xl:shrink-0">
           <RangeControl selected={range} onChange={onRange} />
           <div className="flex flex-nowrap items-center gap-2">
             <button type="button" onClick={onRefresh} disabled={busy} aria-label={PAGE_COPY.refresh} className={cn(BUTTON, 'min-h-11 w-11 shrink-0 px-0 md:min-h-10 md:w-10')}>
@@ -74,9 +76,9 @@ export function HealthHeader({ view, range, onRange, onRefresh, busy }: {
               </a>
             )}
           </div>
-        </div>
+        </div>}
       </div>
-      <div data-testid="health-header-row2" className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+      {!notConnected && <div data-testid="health-header-row2" className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-body lg:shrink-0">
           {view.pill && (
             <span data-testid="health-pill" data-tone={view.pill.tone} className={cn('inline-flex items-center gap-1.5 rounded-full border px-2 py-px font-semibold', PILL[view.pill.tone])}>
@@ -88,7 +90,7 @@ export function HealthHeader({ view, range, onRange, onRefresh, busy }: {
           {view.incomplete && <span data-testid="health-incomplete">The latest check was incomplete.</span>}
         </div>
         <p data-testid="health-range-note" className="m-0 min-w-0 text-meta text-ink-muted lg:text-right">{PAGE_COPY.rangeNote}</p>
-      </div>
+      </div>}
     </header>
   )
 }

@@ -6,14 +6,19 @@ import type { MonitorGroup, MonitorState } from './operationalHealthModel'
 import { MONITOR_COLUMNS, PAGE_COPY } from './operationalHealthCopy'
 import { BUTTON, LINK } from './tones'
 
-/** The chip's look: green "checked now", grey "checked, but you have none", a dashed outline for "not checked yet", amber for "couldn't check". */
-export type ChipKind = 'monitored' | 'none' | 'not_measured' | 'warning'
+/**
+ * The chip's look: green "checked now", grey "checked, but you have none", a dashed outline for "not checked yet",
+ * amber for "couldn't check", and a solid grey outline with slate text for "Needs AWS" (nothing to check until AWS
+ * is connected; distinct from the dashed "Not measured yet").
+ */
+export type ChipKind = 'monitored' | 'none' | 'not_measured' | 'warning' | 'needs_aws'
 
 const CHIP: Record<ChipKind, string> = {
   monitored: 'border-green-200 bg-green-50 text-ink-success-strong',
   none: 'border-slate-200 bg-slate-50 text-ink-muted',
   not_measured: 'border-dashed border-slate-400 bg-white text-ink-muted',
   warning: 'border-amber-200 bg-amber-50 text-ink-warning-strong',
+  needs_aws: 'border-slate-400 bg-white text-slate-700',
 }
 
 /** Each state keeps its meaning (and its text from the model); only the chip's look is chosen here. */
@@ -23,6 +28,7 @@ export const STATE_CHIP: Record<MonitorState, ChipKind> = {
   not_measured: 'not_measured',
   no_activity: 'none',
   couldnt_check: 'warning',
+  needs_aws: 'needs_aws',
   none_set: 'none',
   not_in_plan: 'none',
   checking: 'none',
@@ -38,9 +44,11 @@ function Chip({ kind, children }: { kind: ChipKind; children: React.ReactNode })
 }
 
 /** Every row's state comes from a response (board G); none is inferred from a missing value. */
-export function WhatWeMonitor({ groups, planNote, seePlans, onRetryAlarms, onRetrySlo }: {
+export function WhatWeMonitor({ groups, planNote, seePlans, onRetryAlarms, onRetrySlo, notConnected = false }: {
   groups: MonitorGroup[]
   planNote: boolean
+  /** No AWS account (PR3): a "Needs AWS" legend entry, no plan note and no "See plans" link; the rows and their plan chips stay. */
+  notConnected?: boolean
   seePlans: { label: string; href: string }
   onRetryAlarms: () => void
   onRetrySlo: () => void
@@ -56,14 +64,14 @@ export function WhatWeMonitor({ groups, planNote, seePlans, onRetryAlarms, onRet
       <h2 id="health-monitor" className="m-0 text-card-title text-ink">{PAGE_COPY.monitorTitle}</h2>
       <p data-testid="health-monitor-intro" className="m-0 mt-1 text-body text-ink-body">{PAGE_COPY.monitorIntro}</p>
       <ul data-testid="health-monitor-legend" aria-label={PAGE_COPY.monitorLegendLabel} className="m-0 mt-3 flex list-none flex-wrap gap-x-5 gap-y-2 p-0">
-        {PAGE_COPY.monitorLegend.map((item) => (
+        {[...PAGE_COPY.monitorLegend, ...(notConnected ? [PAGE_COPY.monitorLegendNeedsAws] : [])].map((item) => (
           <li key={item.kind} className="flex flex-wrap items-center gap-2 text-meta text-ink-muted">
             <Chip kind={item.kind}>{item.chip}</Chip>
             <span>{item.meaning}</span>
           </li>
         ))}
       </ul>
-      {planNote && (
+      {planNote && !notConnected && (
         <p data-testid="health-plan-note" className="m-0 mt-3 text-meta text-ink-body">
           {PAGE_COPY.planNote} <Link href={seePlans.href} className="font-semibold text-ink-accent hover:underline">{seePlans.label} →</Link>
         </p>
@@ -85,7 +93,7 @@ export function WhatWeMonitor({ groups, planNote, seePlans, onRetryAlarms, onRet
                         <Chip kind={STATE_CHIP[row.state]}>{row.stateText}</Chip>
                       </div>
                       {row.reason && <span className="text-meta text-ink-muted">{row.reason}</span>}
-                      {row.link && <Link href={row.link.href} className={LINK}>{row.link.label}</Link>}
+                      {row.link && !(notConnected && row.state === 'on_plan') && <Link href={row.link.href} className={LINK}>{row.link.label}</Link>}
                       {row.retry && (
                         <button type="button" onClick={row.retry === 'slo' ? onRetrySlo : onRetryAlarms} className={cn(BUTTON, 'w-fit')}>{PAGE_COPY.retry}</button>
                       )}

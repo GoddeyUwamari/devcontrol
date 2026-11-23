@@ -277,15 +277,14 @@ describe('states', () => {
     expect(rowNames()).toEqual(['a'])
   })
 
-  it('not connected: one neutral line, no Retry, no table', async () => {
+  it('not connected (PR3): no Active alarms section at all', async () => {
     render(<OperationalHealthV2 />)
     await flush()
     await settle(
       { ...ALARMS_DENIED, reason: 'not_connected', region: null },
       { status: 'not_connected', region: null, account_count: 0 },
     )
-    expect(screen.getByTestId('alarms-notice')).toHaveTextContent('Connect AWS to see CloudWatch alarms.')
-    expect(within(section()).queryByRole('button', { name: 'Retry' })).toBeNull()
-    expect(within(section()).queryByRole('table')).toBeNull()
+    expect(screen.queryByTestId('active-alarms')).toBeNull()
+    expect(screen.queryByTestId('alarms-notice')).toBeNull()
   })
 })

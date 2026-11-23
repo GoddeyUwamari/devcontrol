@@ -270,11 +270,18 @@ export interface TilesView {
 
 const notMeasuredText = (f: Breakdown) => `Not measured: ${plural(f.not_measured, 'resource', 'resources')} (not counted)`
 
+/** The tiles' line when no AWS account is connected; the not-connected page leaves it out (PR3). */
+export const NOT_CONNECTED_REASON = 'AWS isn’t connected.'
+
+/** No AWS account is connected: the resources answer says so (the banner's own rule, D3). */
+export const isNotConnected = (resources: Source<ResourcesData>): boolean =>
+  resources.state === 'ok' && resources.data.status === 'not_connected'
+
 function unavailableFor(resources: Source<ResourcesData>): CountTile | null {
   if (resources.state === 'loading') return { state: 'loading' }
   if (resources.state === 'error') return { state: 'unavailable', reason: PAGE_COPY.checksError, retry: true }
   const d = resources.data
-  if (d.status === 'not_connected') return { state: 'unavailable', reason: 'AWS isn’t connected.', retry: false }
+  if (d.status === 'not_connected') return { state: 'unavailable', reason: NOT_CONNECTED_REASON, retry: false }
   if (d.status === 'multiple_accounts') return { state: 'unavailable', reason: 'More than one AWS account is connected.', retry: false }
   if (d.status === 'failed') return { state: 'unavailable', reason: PAGE_COPY.checksError, retry: true }
   return null
@@ -328,7 +335,7 @@ export function tilesView(resources: Source<ResourcesData>, alarms: Source<Alarm
     const resourcesAgree = resources.state === 'ok' && resources.data.status === reason
     alarmsTile =
       reason === 'not_connected'
-        ? { state: 'unavailable', reason: 'AWS isn’t connected.', detail: null, retry: !resourcesAgree }
+        ? { state: 'unavailable', reason: NOT_CONNECTED_REASON, detail: null, retry: !resourcesAgree }
         : reason === 'multiple_accounts'
           ? { state: 'unavailable', reason: 'More than one AWS account is connected.', detail: null, retry: !resourcesAgree }
           : {
@@ -408,6 +415,7 @@ export type MonitorState =
   | 'not_measured'
   | 'no_activity'
   | 'couldnt_check'
+  | 'needs_aws'
   | 'none_set'
   | 'not_in_plan'
   | 'checking'
@@ -449,12 +457,12 @@ function typeRow(type: string, resources: Source<ResourcesData>, plan: PlanInfo,
   }
 
   if (resources.state === 'loading') return row('checking', STATE_LABEL.checking)
+  // PR3 (Q5): nothing to check until AWS is connected: "Needs AWS", not a failure, and no reason line.
+  if (isNotConnected(resources)) return row('needs_aws', STATE_LABEL.needs_aws)
   const r = resourcesOk(resources)
   if (!r) {
     const reason =
-      resources.state === 'ok' && resources.data.status === 'not_connected'
-        ? 'AWS isn’t connected.'
-        : resources.state === 'ok' && resources.data.status === 'multiple_accounts'
+      resources.state === 'ok' && resources.data.status === 'multiple_accounts'
           ? 'More than one AWS account is connected.'
           : "Resource checks couldn't load."
     return row('couldnt_check', STATE_LABEL.couldnt_check, reason)
@@ -482,18 +490,17 @@ function alarmsRow(alarms: Source<AlarmsData>): MonitorRow {
   if (alarms.state === 'loading') return { ...base, state: 'checking', stateText: STATE_LABEL.checking, reason: null, retry: null }
   if (alarms.state === 'error') return { ...base, state: 'couldnt_check', stateText: STATE_LABEL.couldnt_check, reason: "Alarms couldn't be read.", retry: 'alarms' }
   const d = alarms.data
+  if (d.status === 'error' && d.reason === 'not_connected') return { ...base, state: 'needs_aws', stateText: STATE_LABEL.needs_aws, reason: null, retry: null }
   if (d.status === 'error') {
     const reason =
-      d.reason === 'not_connected'
-        ? 'AWS isn’t connected.'
-        : d.reason === 'multiple_accounts'
+      d.reason === 'multiple_accounts'
           ? 'More than one AWS account is connected.'
           : d.reason === 'access_denied'
             ? "DevControl's role isn't allowed to read alarms."
             : d.reason === 'throttled'
               ? 'AWS limited the request rate.'
               : "Alarms couldn't be read."
-    const retry = d.reason === 'not_connected' || d.reason === 'multiple_accounts' ? null : ('alarms' as const)
+    const retry = d.reason === 'multiple_accounts' ? null : ('alarms' as const)
     return { ...base, state: 'couldnt_check', stateText: STATE_LABEL.couldnt_check, reason, retry }
   }
   if (d.configured_count === 0 && d.configured_count_complete) return { ...base, state: 'none_set', stateText: STATE_LABEL.none_set, reason: null, retry: null }

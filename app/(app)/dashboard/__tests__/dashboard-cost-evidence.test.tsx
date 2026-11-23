@@ -474,21 +474,21 @@ describe('an organization with no AWS account stays on the dashboard', () => {
     expect(classes.filter((c) => /^(?:[\w-]+:)?(?:p|py|pt)-/.test(c) && c !== 'pt-page-top')).toEqual([])
   })
 
-  it('owner: the preview as the hero, with two Connect AWS buttons to /connect-aws, the strip, and nothing else', async () => {
+  it('owner: the preview as the hero, with two Connect AWS account buttons to /connect-aws, the strip, and nothing else', async () => {
     signInAs('owner')
     renderDashboard()
 
     const preview = await screen.findByTestId('dashboard-preview')
     const action = within(preview).getByTestId('preview-action')
-    expect(action.textContent).toBe('Connect AWS' + 'GCP soon' + 'Azure soon')
-    // Two ways to /connect-aws, both in the preview, both named "Connect AWS", and nothing else interactive.
-    const buttons = within(preview).getAllByRole('link', { name: 'Connect AWS' })
+    expect(action.textContent).toBe('Connect AWS account' + 'GCP soon' + 'Azure soon')
+    // Two ways to /connect-aws, both in the preview, both named "Connect AWS account", and nothing else interactive.
+    const buttons = within(preview).getAllByRole('link', { name: 'Connect AWS account' })
     expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual(['preview-connect', 'preview-band-connect'])
     expect(buttons[0].parentElement).toBe(action)
     expect(buttons[1].closest('[data-testid="preview-band"]')).not.toBeNull()
     for (const button of buttons) {
       expect(button).toHaveAttribute('href', '/connect-aws')
-      expect(button.textContent).toBe('Connect AWS')
+      expect(button.textContent).toBe('Connect AWS account')
       expect(button.className).toContain('min-h-[44px]')
       expect(button.className).toContain('focus-visible:ring-2')
     }
@@ -533,7 +533,7 @@ describe('an organization with no AWS account stays on the dashboard', () => {
     expectNoConnectedContent()
     // Said once, by the pill; "Connect AWS" appears only where the owner is named as the one to do it.
     expect(notConnectedMentions()).toBe(1)
-    expect(screen.queryByText('Connect AWS')).not.toBeInTheDocument()
+    expect(screen.queryByText('Connect AWS account')).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/connect-aws"]')).toBeNull()
     expect(screen.queryByRole('link', { name: /Connect AWS/ })).not.toBeInTheDocument()
     expect(document.querySelector('[class*="bg-[var(--text-accent)]"]')).toBeNull()

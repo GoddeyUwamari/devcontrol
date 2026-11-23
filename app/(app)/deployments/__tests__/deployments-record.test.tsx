@@ -283,12 +283,13 @@ describe('entry points', () => {
     expect(palette).toMatch(/router\.push\('\/deployments\?record=1'\)\)\}>\s*<Rocket[^>]*\/>\s*Record Deployment/)
   })
 
-  it('header and empty-state buttons, subtitle and empty-state copy', async () => {
+  it('header button, subtitle and empty-state copy (the empty state has no second button)', async () => {
     listRows = []
     await renderPage()
     expect(await screen.findByText('Track all service deployments across environments · Status as recorded by your pipeline or by hand.')).toBeInTheDocument()
     const empty = await screen.findByTestId('deployment-log-empty')
-    fireEvent.click(within(empty).getByRole('button', { name: 'Record first deployment' }))
+    expect(within(empty).queryByRole('button')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Record deployment' }))
     expect(await screen.findByTestId('record-deployment-modal')).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/New Deployment|Create First Deployment|Connect your CI/)
   })

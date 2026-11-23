@@ -11,22 +11,25 @@
  * stubbed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import api from '@/lib/api'
 import DORAMetricsPage from '../page'
+import { useBreadcrumbs } from '@/lib/hooks/useBreadcrumbs'
 
 // effective: the tier the server enforces (organization.effectiveTier); null = the same as the stored tier.
-const auth = vi.hoisted(() => ({ tier: 'pro' as string, effective: null as string | null, status: 'ready' as string }))
+// hold: organization.entitlementHold (a billing hold on a plan that includes the feature).
+const auth = vi.hoisted(() => ({ tier: 'pro' as string, effective: null as string | null, status: 'ready' as string, hold: null as string | null }))
 vi.mock('@/lib/contexts/auth-context', () => ({
   useAuth: () => ({
-    organization: { id: 'org-1', subscriptionTier: auth.tier, effectiveTier: auth.effective ?? auth.tier },
+    organization: { id: 'org-1', subscriptionTier: auth.tier, effectiveTier: auth.effective ?? auth.tier, entitlementHold: auth.hold ?? undefined },
     organizationStatus: auth.status,
     retryOrganizationLoad: async () => {},
     logout: async () => {},
   }),
 }))
+vi.mock('next/navigation', () => ({ usePathname: () => '/app/dora-metrics' }))
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({
   useSalesDemo: (selector: (state: { enabled: boolean }) => unknown) => selector({ enabled: false }),
@@ -63,6 +66,7 @@ describe('DORA page — plan', () => {
     requests.length = 0
     auth.status = 'ready'
     auth.effective = null
+    auth.hold = null
     localStorage.setItem('accessToken', 'test-access-token')
     api.defaults.adapter = adapter
   })
@@ -76,18 +80,54 @@ describe('DORA page — plan', () => {
     ['starter', 'starter', 'starter'],
     ['pro, restricted', 'pro', 'free'],
     ['enterprise, grace period ended', 'enterprise', 'free'],
-  ])('on %s: the upgrade state, and no DORA or benchmark request', async (_name, stored, enforced) => {
+  ])('on %s: the locked board, and no DORA or benchmark request', async (_name, stored, enforced) => {
     auth.tier = stored
     auth.effective = enforced
     renderPage()
 
-    const notice = screen.getByTestId('dora-plan-required')
-    expect(notice).toHaveTextContent('This feature is on the Optimization Engine plan.')
-    expect(screen.getByText('See plans').closest('a')).toHaveAttribute('href', '/settings/billing/upgrade')
+    // PR3: what the page will measure, in place of the one-line lock.
+    const board = screen.getByTestId('dora-locked-board')
+    expect(board).toHaveTextContent('Available on the Optimization Engine plan.')
+    expect(within(board).getByRole('link', { name: 'See plans →' })).toHaveAttribute('href', '/settings/billing/upgrade')
+    expect(screen.queryByTestId('dora-plan-required')).not.toBeInTheDocument()
     expect(screen.getByText('Engineering Intelligence')).toBeInTheDocument()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(asked('/api/metrics/dora')).toBe(false)
     expect(asked('/api/dora/benchmarks')).toBe(false)
+  })
+
+  it('PR3 lower plan: the locked board (four items, plan labels, one See plans), the breadcrumb; a billing hold keeps the billing notice', async () => {
+    auth.tier = 'starter'
+    const { unmount } = renderPage()
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Engineering Intelligence' })).toBeInTheDocument()
+    expect(screen.getByText('How often you ship and how often a deploy fails, from the deployment records DevControl holds.')).toBeInTheDocument()
+    const board = screen.getByTestId('dora-locked-board')
+    expect(within(board).getByRole('heading', { level: 2, name: "What you'll be able to measure" })).toBeInTheDocument()
+    expect(within(board).getByTestId('dora-board-plan')).toHaveTextContent(/^Optimization Engine$/)
+    expect(within(board).getAllByTestId('dora-board-item').map((item) => item.textContent)).toEqual([
+      'Deployment frequencyHow often your team ships changes.',
+      'Change failure rateHow often a deployment fails.',
+      'Performance levelsDirectional comparison bands informed by the DORA 2023 clusters.',
+      'Custom targetsRevenue ProtectionYour own goals for both metrics.',
+    ])
+    expect(within(board).getByText('Measured from your deployment records, from your pipeline or recorded by hand.')).toBeInTheDocument()
+    expect(within(board).getByTestId('dora-board-footer')).toHaveTextContent('Available on the Optimization Engine plan.See plans →')
+    expect(screen.getAllByRole('link', { name: /See plans/ })).toHaveLength(1)
+    expect(document.body).not.toHaveTextContent(/merge-to-production|recovery time/i)
+    expect(screen.queryByTestId('dora-plan-required')).not.toBeInTheDocument()
+    expect(renderHook(() => useBreadcrumbs()).result.current.map((c) => c.label)).toEqual(['Dashboard', 'DevOps', 'Engineering Intelligence'])
+    unmount()
+
+    // A Pro plan on a billing hold: the plan includes the metrics, so the billing notice, not the board.
+    auth.tier = 'pro'
+    auth.effective = 'free'
+    auth.hold = 'payment'
+    renderPage()
+    expect(screen.getByTestId('dora-plan-required')).toBeInTheDocument()
+    expect(screen.queryByTestId('dora-locked-board')).not.toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(asked('/api/metrics/dora')).toBe(false)
   })
 
   it('on pro: the metrics are requested; the benchmarks are not, and the existing lock is shown', async () => {

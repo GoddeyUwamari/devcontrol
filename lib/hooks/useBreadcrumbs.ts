@@ -19,7 +19,7 @@ const routeLabels: Record<string, string> = {
   'aws-resources': 'AWS Resources',
   teams: 'Teams',
   monitoring: 'Monitoring',
-  'dora-metrics': 'Engineering Performance',
+  'dora-metrics': 'Engineering Intelligence',
   'connect-aws': 'Connect AWS',
   'recommendations': 'Recommendations',
   'tenants': 'Tenants',
