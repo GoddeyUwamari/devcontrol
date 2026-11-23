@@ -4,6 +4,7 @@ import { INFRASTRUCTURE_POSTURE_LABEL } from '@/lib/infrastructure-posture'
 import { RESOURCE_CHECKS_TITLE } from './resource-checks-section'
 import { Num, PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
+import { PlanLabel } from '@/components/plan/plan-label'
 
 interface PreviewItem {
   /** The category tag above the title. */
@@ -157,14 +158,7 @@ function PreviewCard({ tag, title, subtitle, shows, planLabel }: PreviewItem) {
         >
           {tag}
         </span>
-        {planLabel && (
-          <span
-            className="text-label leading-none rounded-full px-3 py-1.5 bg-foreground text-background"
-            data-testid="preview-plan-label"
-          >
-            {planLabel}
-          </span>
-        )}
+        {planLabel && <PlanLabel testId="preview-plan-label">{planLabel}</PlanLabel>}
       </div>
       <h3 className="text-card-title text-ink mt-0 mb-1.5" data-testid="preview-title">{title}</h3>
       <p className="text-body text-ink-muted m-0" data-testid="preview-subtitle">{subtitle}</p>
@@ -274,7 +268,7 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
                   className={`${BUTTON} bg-[var(--text-accent)] dark:bg-[#7C3AED] text-white w-full sm:w-auto focus-visible:ring-[var(--text-accent)] focus-visible:ring-offset-[var(--surface-1)]`}
                   data-testid="preview-connect"
                 >
-                  Connect AWS
+                  Connect AWS account
                 </Link>
               ) : (
                 <span className={PILL} data-testid="preview-pill-aws" data-state="not-connected">AWS not connected</span>
@@ -318,7 +312,7 @@ export function DashboardUnconnectedPreview({ canConnectAws }: { canConnectAws: 
               className={`${BUTTON} bg-white text-[#1A1730] shrink-0 w-full md:w-auto focus-visible:ring-white focus-visible:ring-offset-[#1A1730]`}
               data-testid="preview-band-connect"
             >
-              Connect AWS
+              Connect AWS account
             </Link>
           ) : (
             <p className="text-body font-medium text-white m-0 md:max-w-xs md:text-right" data-testid="preview-band-ask-owner">{ASK_OWNER}</p>

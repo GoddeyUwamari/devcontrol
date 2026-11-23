@@ -37,6 +37,7 @@ import { WhatChanged } from './_components/WhatChanged';
 import { PerformanceLevels } from './_components/PerformanceLevels';
 import { LockedTargets, YourTargets, type CustomBenchmark } from './_components/YourTargets';
 import { DataAndMethod } from './_components/DataAndMethod';
+import { LockedBoard } from './_components/LockedBoard';
 
 function exportToCSV(metrics: DORAMetricsData, dateRange: string, demo: boolean) {
   const csv = doraCsvText(doraCsvRows(metrics), demo);
@@ -147,9 +148,14 @@ export default function DORAMetricsPage() {
             <h1 className={`${PAGE_TITLE_CLASS} mb-1.5`}>{COPY.title}</h1>
             <p className={`${PAGE_SUBTITLE_CLASS} mb-2 max-w-xl`}>{COPY.subtitle}</p>
           </div>
-          <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-10">
-            <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="dora-plan-required" />
-          </div>
+          {/* A billing hold on a plan that includes the metrics keeps the billing notice; a lower plan sees what it would get. */}
+          {plan.holdReasonFor(PLAN_ENTITLEMENTS.doraMetrics) ? (
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-10">
+              <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.doraMetrics} testId="dora-plan-required" />
+            </div>
+          ) : (
+            <LockedBoard />
+          )}
         </div>
       );
     }

@@ -55,6 +55,16 @@ export const COPY = {
   targetsSet: 'Set targets →',
   lockedTitle: 'Available on the Revenue Protection plan',
   lockedBody: 'Set your own deployment frequency and failure-rate targets instead of the comparison bands.',
+  // The lower plans' locked board (PR3, founder-approved copy): what the page measures, never a figure.
+  boardTitle: "What you'll be able to measure",
+  boardItems: [
+    { name: 'Deployment frequency', text: 'How often your team ships changes.', ownPlan: false },
+    { name: 'Change failure rate', text: 'How often a deployment fails.', ownPlan: false },
+    { name: 'Performance levels', text: 'Directional comparison bands informed by the DORA 2023 clusters.', ownPlan: false },
+    { name: 'Custom targets', text: 'Your own goals for both metrics.', ownPlan: true },
+  ],
+  boardSource: 'Measured from your deployment records, from your pipeline or recorded by hand.',
+  boardFooter: (plan: string) => `Available on the ${plan} plan.`,
   methodTitle: 'Data and method',
   methodCounted: 'Counted: finished deploys, succeeded or failed. Not counted: CI runs stopped before deploying, cancelled deploys.',
   methodPlanned: 'Planned: merge-to-production time, failed deployment recovery time.',

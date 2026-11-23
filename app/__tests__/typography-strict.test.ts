@@ -153,6 +153,7 @@ const DEVOPS = [
   'app/(app)/app/dora-metrics/_components/DataAndMethod.tsx',
   'app/(app)/app/dora-metrics/_components/HeaderParts.tsx',
   'app/(app)/app/dora-metrics/_components/LevelChip.tsx',
+  'app/(app)/app/dora-metrics/_components/LockedBoard.tsx',
   'app/(app)/app/dora-metrics/_components/MetricCards.tsx',
   'app/(app)/app/dora-metrics/_components/PerformanceLevels.tsx',
   'app/(app)/app/dora-metrics/_components/WhatChanged.tsx',
@@ -186,6 +187,8 @@ const STRICT = [
   // PR D1b: health, saved checks and Check again.
   'app/(app)/connect-aws/ConnectionChecksParts.tsx',
   'components/dashboard/dashboard-unconnected-preview.tsx',
+  // PR3: the plan label (the Dashboard preview and the Engineering Intelligence locked board).
+  'components/plan/plan-label.tsx',
   'components/ui/typography.tsx',
   // T2b: the shared components.
   'components/ui/alert-dialog.tsx',

@@ -412,17 +412,17 @@ describe('Deployments page — empty states', () => {
     localStorage.clear()
   })
 
-  it('an organization with no deployment at all: "No deployments recorded" and how to record one (never "Connect your CI")', async () => {
+  it('an organization with no deployment at all: "No deployments recorded" once, in the log, and how to record one (never "Connect your CI")', async () => {
     rows = []
     renderPage()
 
-    const top = await screen.findByTestId('deployments-empty-state')
-    expect(top).toHaveTextContent('No deployments recorded')
-    expect(top).toHaveTextContent('Record a deployment after it happens. Success, failure and change failure rate appear here once one has been recorded.')
-    const log = screen.getByTestId('deployment-log-empty')
+    // PR3: no notice above the log and no second record button; the header's Record deployment is the one.
+    const log = await screen.findByTestId('deployment-log-empty')
     expect(log).toHaveAttribute('data-reason', 'none-recorded')
+    expect(log).toHaveTextContent('No deployments recorded')
     expect(log).toHaveTextContent('Record your first deployment once it has happened.')
-    expect(within(log).getByRole('button', { name: 'Record first deployment' })).toBeInTheDocument()
+    expect(screen.queryByTestId('deployments-empty-state')).not.toBeInTheDocument()
+    expect(within(log).queryByRole('button')).not.toBeInTheDocument()
     expect(document.body).not.toHaveTextContent(/Connect your CI/)
     expect(screen.queryByTestId('deployment-pagination')).not.toBeInTheDocument()
   })

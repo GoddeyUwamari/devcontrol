@@ -84,9 +84,22 @@ describe('layout', () => {
     for (const id of ['preview-primary-row', 'preview-feature-row', 'preview-secondary-row']) expect(screen.queryByTestId(id)).not.toBeInTheDocument()
   })
 
-  it('an owner gets two "Connect AWS" buttons, both to the same route', () => {
+  it('PR3: both buttons read "Connect AWS account" (never the old "Connect AWS"); Security Posture stays unlabelled (free on every plan); the AI assistant keeps its plan label', () => {
     renderPreview()
-    const buttons = screen.getAllByRole('link', { name: 'Connect AWS' })
+    const buttons = screen.getAllByRole('link', { name: /^Connect AWS/ })
+    expect(buttons.map((button) => button.textContent)).toEqual(['Connect AWS account', 'Connect AWS account'])
+    const cards = screen.getAllByTestId('preview-card')
+    const security = cards.find((card) => within(card).getByTestId('preview-title').textContent === 'Security Posture')!
+    expect(within(security).queryByTestId('preview-plan-label')).toBeNull()
+    expect(screen.getAllByTestId('preview-plan-label').map((label) => label.textContent)).toEqual(['Optimization Engine'])
+    expect(screen.getByTestId('preview-plan-label').className).toBe('text-label leading-none rounded-full px-3 py-1.5 bg-foreground text-background')
+    for (const name of ['GCP', 'Azure']) expect(screen.getByTestId(`preview-pill-${name.toLowerCase()}`)).toHaveTextContent(`${name} soon`)
+    expect(screen.getByText('How connecting works')).toBeInTheDocument()
+  })
+
+  it('an owner gets two "Connect AWS account" buttons, both to the same route', () => {
+    renderPreview()
+    const buttons = screen.getAllByRole('link', { name: 'Connect AWS account' })
     expect(buttons).toHaveLength(2)
     expect(buttons.map((button) => button.getAttribute('href'))).toEqual(['/connect-aws', '/connect-aws'])
     expect(buttons[0].closest('[data-testid="preview-action"]')).not.toBeNull()
@@ -97,7 +110,7 @@ describe('layout', () => {
   it('anyone else gets no button or link: an "AWS not connected" pill, and who to ask (also in the band)', () => {
     renderPreview(false)
     expect(document.querySelector('a, button, [role="button"], [role="link"]')).toBeNull()
-    expect(screen.queryByText('Connect AWS')).not.toBeInTheDocument()
+    expect(screen.queryByText('Connect AWS account')).not.toBeInTheDocument()
     expect(screen.getByTestId('preview-action').textContent).toBe('AWS not connected' + 'GCP soon' + 'Azure soon')
     expect(screen.getByTestId('preview-ask-owner').textContent).toBe('Ask your organization owner to connect AWS.')
     expect(within(screen.getByTestId('preview-band')).getByTestId('preview-band-ask-owner').textContent).toBe('Ask your organization owner to connect AWS.')
@@ -289,7 +302,7 @@ describe('responsive behaviour', () => {
 
   it('buttons are full width on a phone, the band stacks, and nothing forces horizontal scrolling', () => {
     const { container } = renderPreview()
-    const [primary, band] = screen.getAllByRole('link', { name: 'Connect AWS' })
+    const [primary, band] = screen.getAllByRole('link', { name: 'Connect AWS account' })
     expect(primary.className).toMatch(/\bw-full\b.*\bsm:w-auto\b/)
     expect(band.className).toMatch(/\bw-full\b.*\bmd:w-auto\b/)
     expect(screen.getByTestId('preview-band').className).toMatch(/\bflex-col\b.*\bmd:flex-row\b/)
@@ -355,8 +368,8 @@ describe('accessibility', () => {
   it('buttons are named by their visible text, are at least 44px tall, and show a focus ring', () => {
     renderPreview()
     for (const button of screen.getAllByRole('link')) {
-      expect(button).toHaveAccessibleName('Connect AWS')
-      expect(button.textContent).toBe('Connect AWS')
+      expect(button).toHaveAccessibleName('Connect AWS account')
+      expect(button.textContent).toBe('Connect AWS account')
       expect(button).not.toHaveAttribute('aria-label')
       expect(button.className).toContain('min-h-[44px]')
       expect(button.className).toMatch(/focus-visible:ring-2/)
@@ -366,7 +379,7 @@ describe('accessibility', () => {
   it('the primary button has a visible focus ring in light and dark, offset by the page background', () => {
     renderPreview()
     const { light, dark } = tokens()
-    const [primary] = screen.getAllByRole('link', { name: 'Connect AWS' })
+    const [primary] = screen.getAllByRole('link', { name: 'Connect AWS account' })
     expect(primary.className).toContain('focus-visible:ring-[var(--text-accent)]')
     expect(primary.className).toContain('focus-visible:ring-offset-2')
     // The offset gap takes the page background (not the default white), and the ring stands out from it.
@@ -391,7 +404,7 @@ describe('accessibility', () => {
   it('contrast: text meets WCAG AA (4.5:1) on its background, in light and dark', () => {
     renderPreview()
     const { light, dark } = tokens()
-    const [primary, band] = screen.getAllByRole('link', { name: 'Connect AWS' })
+    const [primary, band] = screen.getAllByRole('link', { name: 'Connect AWS account' })
 
     // Primary button: white on the accent token in light mode, and on a fixed purple in dark mode
     // (the dark accent token is a light lilac, which white text would fail on).

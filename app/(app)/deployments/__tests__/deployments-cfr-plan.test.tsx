@@ -86,6 +86,8 @@ function renderPage() {
 }
 
 const card = (name: string) => screen.getByTestId(`deployment-card-${name}`)
+// The cards appear once the first stats answer is in (neutral placeholders before it).
+const findCard = (name: string) => screen.findByTestId(`deployment-card-${name}`)
 const doraRequested = () => requests.some((r) => (r.url ?? '').startsWith('/api/metrics/dora'))
 
 describe('Deployments page — change failure rate and the plan', () => {
@@ -110,7 +112,7 @@ describe('Deployments page — change failure rate and the plan', () => {
     setPlan(stored, enforced)
     renderPage()
 
-    expect(await within(card('succeeded')).findByText('8')).toBeInTheDocument()
+    expect(await within(await findCard('succeeded')).findByText('8')).toBeInTheDocument()
     expect(within(card('failed-deploys')).getByText('2')).toBeInTheDocument()
     expect(card('last-deployment')).toHaveTextContent('Succeeded')
 
@@ -136,7 +138,7 @@ describe('Deployments page — change failure rate and the plan', () => {
     auth.staleRate = true
     renderPage()
 
-    expect(await within(card('succeeded')).findByText('8')).toBeInTheDocument()
+    expect(await within(await findCard('succeeded')).findByText('8')).toBeInTheDocument()
     expect(within(card('change-failure-rate')).getByTestId('deployment-cfr-plan-required')).toBeInTheDocument()
     expect(card('change-failure-rate')).not.toHaveTextContent(/20%|\d+ of \d+/)
     expect(screen.getByText(/succeeded and 2 failed/).textContent).toBe('8 of 10 finished deployments in the last 30 days succeeded and 2 failed.')
@@ -147,7 +149,7 @@ describe('Deployments page — change failure rate and the plan', () => {
     setPlan(tier, tier)
     renderPage()
 
-    expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
+    expect(await within(await findCard('change-failure-rate')).findByText('20%')).toBeInTheDocument()
     expect(card('change-failure-rate')).toHaveTextContent('2 of 10 finished deployments failed')
     expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
     expect(screen.getByText(/\(change failure rate 20%\)\./)).toBeInTheDocument()
@@ -159,7 +161,7 @@ describe('Deployments page — change failure rate and the plan', () => {
     setPlan('pro', 'pro', status)
     renderPage()
 
-    expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
+    expect(await within(await findCard('change-failure-rate')).findByText('20%')).toBeInTheDocument()
     expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
     expect(doraRequested()).toBe(false)
   })
@@ -168,7 +170,7 @@ describe('Deployments page — change failure rate and the plan', () => {
     setPlan('free', 'free', status)
     renderPage()
 
-    expect(await within(card('succeeded')).findByText('8')).toBeInTheDocument()
+    expect(await within(await findCard('succeeded')).findByText('8')).toBeInTheDocument()
     const rate = card('change-failure-rate')
     expect(within(rate).queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
     expect(rate.textContent).toBe('Change Failure Rate—Last 30 days')
@@ -180,7 +182,7 @@ describe('Deployments page — change failure rate and the plan', () => {
   it('Pro organization: no upgrade state while the plan loads, nor once it is known', async () => {
     setPlan('pro', 'pro', 'loading')
     const { rerenderPage } = renderPage()
-    expect(await within(card('change-failure-rate')).findByText('20%')).toBeInTheDocument()
+    expect(await within(await findCard('change-failure-rate')).findByText('20%')).toBeInTheDocument()
     expect(screen.queryByTestId('deployment-cfr-plan-required')).not.toBeInTheDocument()
 
     setPlan('pro', 'pro', 'ready')

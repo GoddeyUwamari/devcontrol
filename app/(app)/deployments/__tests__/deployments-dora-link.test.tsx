@@ -61,9 +61,9 @@ describe('Deployments: DORA links', () => {
     expect(link.getAttribute('href')).toBe('/app/dora-metrics')
   })
 
-  it('real mode: View DORA metrics opens the app DORA page', async () => {
+  it('real mode: View Engineering Intelligence opens the app DORA page', async () => {
     renderPage()
-    const link = await screen.findByRole('link', { name: /view dora metrics/i })
+    const link = await screen.findByRole('link', { name: /view engineering intelligence/i })
     expect(link.getAttribute('href')).toBe('/app/dora-metrics')
   })
 })
