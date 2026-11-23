@@ -194,7 +194,11 @@ describe('a connected account: unchanged', () => {
     expect(res.body).toEqual(FAILED);
     expect(aws.createForOrg).toHaveBeenCalledTimes(1);
     expect(controllerErrors()).toEqual([
-      ['[Forecast Controller] Error:', expect.objectContaining({ message: expect.stringMatching(/^AWS_NOT_CONNECTED: /) })],
+      // This error's own message, which AwsAccountNotConnectedError's ("...org <id> has
+      // not connected an AWS account...") does not match.
+      ['[Forecast Controller] Error:', expect.objectContaining({
+        message: 'AWS_NOT_CONNECTED: no organization AWS credentials on this cost service instance',
+      })],
     ]);
   });
 

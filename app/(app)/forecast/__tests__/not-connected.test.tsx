@@ -205,6 +205,19 @@ describe('the account went after the check: 409 NOT_CONNECTED from /api/forecast
     expect(getForecast).toHaveBeenCalledTimes(1)
   })
 
+  it('the endpoints disagree (accounts keeps saying connected, forecast keeps 409): one request, one refetch, the card', async () => {
+    getConnection.mockResolvedValue('connected')
+    getForecast.mockRejectedValue(Object.assign(new Error('Failed to fetch forecast'), {
+      status: 409, body: { success: false, code: 'NOT_CONNECTED', error: 'Connect an AWS account before generating a forecast.' },
+    }))
+    renderPage()
+    await screen.findByTestId('not-connected-card')
+    await new Promise((r) => setTimeout(r, 500))
+    expect(getForecast).toHaveBeenCalledTimes(1)
+    expect(accountsCalls.n).toBe(2)
+    expectOnlyNotConnected()
+  })
+
   it('a 409 without the NOT_CONNECTED code is still the error card and toast', async () => {
     getConnection.mockResolvedValue('connected')
     getForecast.mockRejectedValue(Object.assign(new Error('x'), { status: 409, body: { success: false, error: 'Busy' } }))
