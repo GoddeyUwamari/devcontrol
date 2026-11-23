@@ -88,12 +88,13 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
     return (await service.detectLowUsageLambdaFunctions(`guard-org-${Date.now()}`, lambda, cw, config)).issues;
   },
   ebs_old_snapshots: async () => {
-    // C1: a 400-day-old 100 GB snapshot that no AMI, backup vault or DLM policy uses.
+    // C1: a 400-day-old 100 GB snapshot that no AMI, backup vault, DLM policy or lock uses.
     const ec2 = fakeClient((command: any) => {
       const name = command.constructor.name;
       if (name === 'DescribeSnapshotsCommand') {
         return { Snapshots: [{ SnapshotId: 'snap-0000000000000guard', State: 'completed', StorageTier: 'standard', StartTime: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000), VolumeId: 'vol-0000000000000guard', VolumeSize: 100 }] };
       }
+      if (name === 'DescribeLockedSnapshotsCommand') return { Snapshots: [] };
       return name === 'DescribeImagesCommand' ? { Images: [] } : { Volumes: [] };
     });
     const backup = fakeClient((command: any) => (command.constructor.name === 'ListBackupVaultsCommand' ? { BackupVaultList: [] } : { RecoveryPoints: [] }));

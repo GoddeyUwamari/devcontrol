@@ -122,6 +122,7 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   // snapshot and AMI descriptions are never read or stored.
   'client-ec2:DescribeSnapshotsCommand': metadataOnly('snapshot IDs, state, storage tier, start time, source volume ID and size, encryption flag, tags'),
   'client-ec2:DescribeImagesCommand': metadataOnly('AMI IDs and the snapshot IDs in their block device mappings'),
+  'client-ec2:DescribeLockedSnapshotsCommand': metadataOnly('snapshot IDs, owner account IDs, lock states, durations and dates'),
   'client-backup:ListBackupVaultsCommand': metadataOnly('backup vault names and ARNs'),
   'client-backup:ListRecoveryPointsByBackupVaultCommand': metadataOnly('recovery point ARNs (an EBS snapshot ARN for EBS), resource type, status and dates'),
   'client-iam:ListUsersCommand': metadataOnly('user names, IDs, ARNs and dates'),

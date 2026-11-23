@@ -6,7 +6,9 @@
  * and write IOPS thresholds (just under / at); missing, partial and failed
  * metrics (never a finding); the 30-day boundary (created before / inside the
  * window; window bounds); every scope exclusion; the rule id/version and
- * evidence shape; no dollar estimate; home region; listing failures.
+ * evidence shape; no dollar estimate; home region; listing failures; the Marker
+ * passed on to the next DescribeDBInstances page (C1 review N-1); the run's counts
+ * by reason (S-1).
  */
 import costOptimizationService from '../cost-optimization.service';
 import { AWSClientFactory } from '../aws-client-factory.service';
@@ -292,10 +294,72 @@ describe('idle RDS: listing', () => {
     expect(cloudWatch.send).not.toHaveBeenCalled();
   });
 
+  it('passes the Marker on to the next page', async () => {
+    const rds = fakeClient((command: any) =>
+      command.input.Marker === undefined ? { DBInstances: [db('quiet-db-1')], Marker: 'tok-db' }
+      : command.input.Marker === 'tok-db' ? { DBInstances: [db('quiet-db-2')] }
+      : { DBInstances: [], Marker: 'wrong-token' });
+    const result = await service.detectIdleRDSInstances({ rds, cloudWatch: fakeRdsCloudWatch({}) }, 'us-east-1', NOW);
+    expect(rds.send.mock.calls.map(([c]: any[]) => c.input.Marker)).toEqual([undefined, 'tok-db']);
+    expect(ids(result)).toEqual(['quiet-db-1', 'quiet-db-2']);
+  });
+
   it('an incomplete listing (page limit reached) fails the category', async () => {
     const rds = fakeClient(() => ({ DBInstances: [db('quiet-db')], Marker: 'more' }));
     const result = await service.detectIdleRDSInstances({ rds, cloudWatch: fakeRdsCloudWatch({}) }, 'us-east-1', NOW);
     expect(result).toEqual({ success: false, issues: [] });
+  });
+});
+
+describe('idle RDS: the run\'s counts by reason (C1 review S-1)', () => {
+  const total = (counts: any) =>
+    counts.flagged + [counts.not_flagged, counts.couldnt_check, counts.excluded].reduce((sum, group) => sum + Object.values(group as Record<string, number>).reduce((a, b) => a + b, 0), 0);
+
+  it('counts every listed instance once: flagged, not flagged, couldn\'t check and excluded by reason', async () => {
+    const { result } = await detect(
+      [
+        db('quiet-db'),
+        db('conn-db'), db('cpu-db'), db('read-db'), db('write-db'),
+        db('young-db', { InstanceCreateTime: new Date(WINDOW.start.getTime() + 1000) }),
+        db('gappy-db'), db('forbidden-db'),
+        db('modifying-db', { DBInstanceStatus: 'modifying' }),
+        db('aurora-db', { Engine: 'aurora-postgresql' }),
+        db('maz-db', { DBClusterIdentifier: 'placeholder-maz-cluster' }),
+        db('replica-db', { ReadReplicaSourceDBInstanceIdentifier: 'placeholder-source' }),
+        db('source-db', { ReadReplicaDBInstanceIdentifiers: ['placeholder-replica'] }),
+        db('custom-db', { Engine: 'custom-oracle-ee' }),
+        db('stopped-db', { DBInstanceStatus: 'stopped' }),
+        { ...db('x'), DBInstanceIdentifier: undefined }, // no identifier: not counted
+      ],
+      {
+        'conn-db': { connections: (h) => (h === 5 ? 1 : 0) },
+        'cpu-db': { cpu: () => 50 },
+        'read-db': { readIops: () => 25 },
+        'write-db': { writeIops: () => 25 },
+        'gappy-db': { cpu: (h) => (h === 9 ? null : 3) },
+        'forbidden-db': { status: 'Forbidden' },
+      }
+    );
+    expect(result.rdsIdle).toEqual({
+      evaluated: 15,
+      flagged: 1,
+      not_flagged: { connections: 1, cpu_peak: 1, read_iops: 1, write_iops: 1 },
+      couldnt_check: { not_available: 1, too_new: 1, cloudwatch_failed: 1, cloudwatch_incomplete: 1 },
+      excluded: { aurora: 1, db_cluster_member: 1, read_replica: 1, read_replica_source: 1, rds_custom: 1, stopped: 1 },
+    });
+    expect(total(result.rdsIdle)).toBe(result.rdsIdle.evaluated);
+    expect(result.rdsIdle.flagged).toBe(result.issues.length);
+    expect(Object.values(result.rdsIdle.couldnt_check).reduce((a: number, b) => a + (b as number), 0)).toBe(result.unknownResourceIds.length);
+  });
+
+  it('a failed CloudWatch call: every candidate counted as cloudwatch_failed', async () => {
+    const { result } = await detect([db('a'), db('b'), db('c', { DBInstanceStatus: 'stopped' })], accessDenied());
+    expect(result.rdsIdle).toMatchObject({ evaluated: 3, flagged: 0, couldnt_check: { cloudwatch_failed: 2 }, excluded: { stopped: 1 } });
+  });
+
+  it('no instances: zero counts; a failed listing: no counts (the category failed)', async () => {
+    expect((await detect([])).result.rdsIdle).toMatchObject({ evaluated: 0, flagged: 0 });
+    expect((await detect(accessDenied())).result.rdsIdle).toBeUndefined();
   });
 });
 
@@ -313,8 +377,10 @@ describe('C1 wiring in analyzeAllResources', () => {
     ]) {
       jest.spyOn(service, detector).mockResolvedValue({ success: true, issues: [] });
     }
-    const rds = jest.spyOn(service, 'detectIdleRDSInstances').mockResolvedValue({ success: true, issues: [], unknownResourceIds: ['placeholder-db-1'], endActiveForUnknown: true });
-    const snaps = jest.spyOn(service, 'detectOldEBSSnapshots').mockResolvedValue({ success: true, issues: [], unknownResourceIds: ['snap-0000000000000001'] });
+    const rdsCounts = { evaluated: 1, flagged: 0, not_flagged: {}, couldnt_check: { cloudwatch_failed: 1 }, excluded: {} };
+    const snapshotCounts = { evaluated: 1, flagged: 0, not_flagged: {}, couldnt_check: { ami_unreadable: 1 }, excluded: {} };
+    const rds = jest.spyOn(service, 'detectIdleRDSInstances').mockResolvedValue({ success: true, issues: [], unknownResourceIds: ['placeholder-db-1'], endActiveForUnknown: true, rdsIdle: rdsCounts });
+    const snaps = jest.spyOn(service, 'detectOldEBSSnapshots').mockResolvedValue({ success: true, issues: [], unknownResourceIds: ['snap-0000000000000001'], oldSnapshots: snapshotCounts });
 
     const analysis = await costOptimizationService.analyzeAllResources('org-c1-wiring');
 
@@ -322,10 +388,10 @@ describe('C1 wiring in analyzeAllResources', () => {
     expect(rds.mock.calls[0][1]).toBe('eu-west-1');
     expect(snaps.mock.calls[0][1]).toBe('eu-west-1');
     expect(analysis.observations.find((o) => o.issue === ISSUE_RDS_IDLE_INSTANCE)).toEqual({
-      issue: ISSUE_RDS_IDLE_INSTANCE, success: true, recommendations: [], unknownResourceIds: ['placeholder-db-1'], endActiveForUnknown: true,
+      issue: ISSUE_RDS_IDLE_INSTANCE, success: true, recommendations: [], unknownResourceIds: ['placeholder-db-1'], endActiveForUnknown: true, rdsIdle: rdsCounts,
     });
     expect(analysis.observations.find((o) => o.issue === ISSUE_EBS_OLD_SNAPSHOT)).toEqual({
-      issue: ISSUE_EBS_OLD_SNAPSHOT, success: true, recommendations: [], unknownResourceIds: ['snap-0000000000000001'],
+      issue: ISSUE_EBS_OLD_SNAPSHOT, success: true, recommendations: [], unknownResourceIds: ['snap-0000000000000001'], oldSnapshots: snapshotCounts,
     });
   });
 });

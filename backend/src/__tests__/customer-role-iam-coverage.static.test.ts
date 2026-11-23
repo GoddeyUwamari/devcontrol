@@ -93,6 +93,8 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-ec2:DescribeImagesCommand': read('ec2:DescribeImages'),
   'client-backup:ListBackupVaultsCommand': read('backup:ListBackupVaults'),
   'client-backup:ListRecoveryPointsByBackupVaultCommand': read('backup:ListRecoveryPointsByBackupVault'),
+  // C1 review S-3: locked snapshots are excluded (SecurityAudit ec2:Describe*, ViewOnlyAccess names it).
+  'client-ec2:DescribeLockedSnapshotsCommand': read('ec2:DescribeLockedSnapshots'),
   'client-iam:ListUsersCommand': read('iam:ListUsers'),
   'client-iam:ListMFADevicesCommand': read('iam:ListMFADevices'),
   'client-iam:GetLoginProfileCommand': read('iam:GetLoginProfile'),

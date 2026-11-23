@@ -6,11 +6,12 @@
  * OwnerIds=['self'] on every DescribeSnapshots call (non-owned snapshots are never
  * listed); deleted / existing / unrecorded source volume evidence; regional pricing,
  * a region with no price and no size (no estimate); the upper-bound calculation and
- * label; the Medium severity cap; rule id/version; failed exclusion reads (never a
- * finding); listing failures.
+ * label; the Medium severity cap; rule id/version; failed or incomplete exclusion
+ * reads (never a finding); locked snapshots (C1 review S-3); the next-page token on
+ * every paged listing; the run's counts by reason (S-1); listing failures.
  */
 import costOptimizationService from '../cost-optimization.service';
-import { snapshotIdFromRecoveryPointArn, snapshotSeverity, sourceVolumeState } from '../ebs-old-snapshot-evaluation';
+import { lockPreventsDeletion, snapshotIdFromRecoveryPointArn, snapshotSeverity, sourceVolumeState } from '../ebs-old-snapshot-evaluation';
 import { EBS_OLD_SNAPSHOT_RULE } from '../../config/ebs-old-snapshot-rule';
 import { ISSUE_EBS_OLD_SNAPSHOT } from '../../config/optimization-rules';
 import { classifySavingsBasis, aggregateEstimatedSavings, countSavingsFindings } from '../estimated-savings';
@@ -42,6 +43,7 @@ interface World {
   vaults?: string[] | Error;
   recoveryPoints?: Record<string, string[]> | Error;
   volumes?: string[] | Error;
+  locks?: Array<{ SnapshotId: string; LockState: string }> | Error;
 }
 
 function fakes(world: World) {
@@ -58,6 +60,10 @@ function fakes(world: World) {
     if (name === 'DescribeVolumesCommand') {
       if (world.volumes instanceof Error) throw world.volumes;
       return { Volumes: (world.volumes ?? []).map((VolumeId) => ({ VolumeId })) };
+    }
+    if (name === 'DescribeLockedSnapshotsCommand') {
+      if (world.locks instanceof Error) throw world.locks;
+      return { Snapshots: (world.locks ?? []).map((lock) => ({ OwnerId: '111122223333', ...lock })) };
     }
     throw new Error(`unexpected ${name}`);
   });
@@ -94,6 +100,7 @@ describe('old EBS snapshots: what is listed', () => {
         return page === 1 ? { Snapshots: [snap('snap-0000000000000001')], NextToken: 'next' } : { Snapshots: [snap('snap-0000000000000002')] };
       }
       if (command.constructor.name === 'DescribeImagesCommand') return { Images: [] };
+      if (command.constructor.name === 'DescribeLockedSnapshotsCommand') return { Snapshots: [] };
       return { Volumes: [] };
     });
     const { backup } = fakes({});
@@ -114,6 +121,7 @@ describe('old EBS snapshots: what is listed', () => {
         const all = [snap('snap-0000000000000001'), snap('snap-00000000000000ff', { OwnerId: '444455556666' })];
         return { Snapshots: command.input.OwnerIds?.includes('self') ? all.filter((s) => s.OwnerId === '111122223333') : all };
       }
+      if (command.constructor.name === 'DescribeLockedSnapshotsCommand') return { Snapshots: [] };
       return command.constructor.name === 'DescribeImagesCommand' ? { Images: [] } : { Volumes: [] };
     });
     const result = await service.detectOldEBSSnapshots({ ec2, backup: fakes({}).backup }, 'us-east-1', NOW);
@@ -124,6 +132,13 @@ describe('old EBS snapshots: what is listed', () => {
     const { ec2 } = await detect({ snapshots: [snap('snap-0000000000000001')] });
     const images = ec2.send.mock.calls.map(([c]: any[]) => c).find((c: any) => c.constructor.name === 'DescribeImagesCommand');
     expect(images.input).toMatchObject({ Owners: ['self'], IncludeDeprecated: true, IncludeDisabled: true });
+  });
+
+  it('asks for every snapshot lock in the region, unfiltered', async () => {
+    const { ec2 } = await detect({ snapshots: [snap('snap-0000000000000001')] });
+    const locks = ec2.send.mock.calls.map(([c]: any[]) => c).filter((c: any) => c.constructor.name === 'DescribeLockedSnapshotsCommand');
+    expect(locks).toHaveLength(1);
+    expect(locks[0].input).toEqual({ MaxResults: 1000, NextToken: undefined });
   });
 
   it('asks AWS Backup for EBS recovery points in every vault', async () => {
@@ -199,6 +214,27 @@ describe('old EBS snapshots: exclusions', () => {
     expect(ids(result)).toEqual(['snap-0000000000000001']);
   });
 
+  it.each(['compliance', 'governance', 'compliance-cooloff'])('locked (%s): excluded', async (LockState) => {
+    const { result } = await detect({
+      snapshots: [snap('snap-0000000000000001'), snap('snap-0000000000000002')],
+      locks: [{ SnapshotId: 'snap-0000000000000001', LockState }],
+    });
+    expect(ids(result)).toEqual(['snap-0000000000000002']);
+    expect(result.unknownResourceIds).toEqual([]);
+  });
+
+  it('a lock in a state AWS has not documented yet: excluded (fails safe)', async () => {
+    const { result } = await detect({ snapshots: [snap('snap-0000000000000001')], locks: [{ SnapshotId: 'snap-0000000000000001', LockState: 'some-future-state' }] });
+    expect(result.issues).toEqual([]);
+    expect(lockPreventsDeletion(undefined)).toBe(true);
+  });
+
+  it('an expired lock no longer prevents deletion: still a finding', async () => {
+    const { result } = await detect({ snapshots: [snap('snap-0000000000000001')], locks: [{ SnapshotId: 'snap-0000000000000001', LockState: 'expired' }] });
+    expect(ids(result)).toEqual(['snap-0000000000000001']);
+    expect(lockPreventsDeletion('expired')).toBe(false);
+  });
+
   it('reads the snapshot id from an EBS recovery point ARN only', () => {
     expect(snapshotIdFromRecoveryPointArn('arn:aws:ec2:us-east-1::snapshot/snap-05f426fd8a1b4224')).toBe('snap-05f426fd8a1b4224');
     expect(snapshotIdFromRecoveryPointArn('arn:aws:backup:us-east-1:111122223333:recovery-point:00000000-0000-4000-8000-00000000000a')).toBeNull();
@@ -213,6 +249,7 @@ describe('old EBS snapshots: a failed exclusion read never produces a finding', 
     ['DescribeImages fails', { images: accessDenied() }],
     ['ListBackupVaults fails', { vaults: accessDenied() }],
     ['ListRecoveryPointsByBackupVault fails', { recoveryPoints: accessDenied() }],
+    ['DescribeLockedSnapshots fails', { locks: accessDenied() }],
     ['DescribeVolumes fails', { volumes: accessDenied() }],
   ])('%s: every candidate couldn\'t check', async (_label, world) => {
     const { result } = await detect({ snapshots: old, ...(world as World) });
@@ -236,6 +273,57 @@ describe('old EBS snapshots: a failed exclusion read never produces a finding', 
     const result = await service.detectOldEBSSnapshots({ ec2, backup }, 'us-east-1', NOW);
     expect(result.issues).toEqual([]);
     expect(result.unknownResourceIds).toHaveLength(2);
+  });
+
+  // C1 review S-2: a listing cut off at the page limit is not the complete set. Each fake
+  // answers every page with a next-page token, so listAllPages stops at its limit.
+  const endless = (answer: Record<string, unknown>) => ({ ...answer, NextToken: 'more' });
+
+  it('an incomplete AMI listing (page limit reached): couldn\'t check, never a finding', async () => {
+    // Page 1 holds an AMI using snap-…01; the AMI that uses snap-…02 would be on a page never read.
+    const ec2 = fakeClient((command: any) => {
+      const name = command.constructor.name;
+      if (name === 'DescribeSnapshotsCommand') return { Snapshots: old };
+      if (name === 'DescribeImagesCommand') return endless({ Images: [{ ImageId: 'ami-0placeholder', BlockDeviceMappings: [{ Ebs: { SnapshotId: 'snap-0000000000000001' } }] }] });
+      if (name === 'DescribeLockedSnapshotsCommand') return { Snapshots: [] };
+      return { Volumes: [] };
+    });
+    const result = await service.detectOldEBSSnapshots({ ec2, backup: fakes({}).backup }, 'us-east-1', NOW);
+    expect(ec2.count('DescribeImagesCommand')).toBeGreaterThan(1);
+    expect(result.success).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(result.unknownResourceIds).toEqual(['snap-0000000000000001', 'snap-0000000000000002']);
+    expect(result.oldSnapshots.couldnt_check.ami_unreadable).toBe(2);
+  });
+
+  it('an incomplete volume listing (page limit reached): couldn\'t check, never a finding', async () => {
+    const ec2 = fakeClient((command: any) => {
+      const name = command.constructor.name;
+      if (name === 'DescribeSnapshotsCommand') return { Snapshots: old };
+      if (name === 'DescribeImagesCommand') return { Images: [] };
+      if (name === 'DescribeLockedSnapshotsCommand') return { Snapshots: [] };
+      return endless({ Volumes: [{ VolumeId: 'vol-0exists0000000001' }] });
+    });
+    const result = await service.detectOldEBSSnapshots({ ec2, backup: fakes({}).backup }, 'us-east-1', NOW);
+    expect(ec2.count('DescribeVolumesCommand')).toBeGreaterThan(1);
+    expect(result.issues).toEqual([]);
+    expect(result.unknownResourceIds).toEqual(['snap-0000000000000001', 'snap-0000000000000002']);
+    expect(result.oldSnapshots.couldnt_check.volumes_unreadable).toBe(2);
+  });
+
+  it('an incomplete lock listing (page limit reached): couldn\'t check, never a finding', async () => {
+    const ec2 = fakeClient((command: any) => {
+      const name = command.constructor.name;
+      if (name === 'DescribeSnapshotsCommand') return { Snapshots: old };
+      if (name === 'DescribeImagesCommand') return { Images: [] };
+      if (name === 'DescribeLockedSnapshotsCommand') return endless({ Snapshots: [] });
+      return { Volumes: [] };
+    });
+    const result = await service.detectOldEBSSnapshots({ ec2, backup: fakes({}).backup }, 'us-east-1', NOW);
+    expect(ec2.count('DescribeLockedSnapshotsCommand')).toBeGreaterThan(1);
+    expect(result.issues).toEqual([]);
+    expect(result.unknownResourceIds).toEqual(['snap-0000000000000001', 'snap-0000000000000002']);
+    expect(result.oldSnapshots.couldnt_check.locks_unreadable).toBe(2);
   });
 
   it('a failed DescribeSnapshots fails the category', async () => {
@@ -276,7 +364,7 @@ describe('old EBS snapshots: savings, severity and identity', () => {
     });
     expect(finding.potentialSavings).toBeCloseTo(27, 10); // 500 GB x $0.054
     const m = finding.metadata;
-    expect(m.rule_version).toBe(1);
+    expect(m.rule_version).toBe(2);
     expect(m.rule).toEqual(JSON.parse(JSON.stringify(EBS_OLD_SNAPSHOT_RULE)));
     expect(m.price_per_gb_month).toBe(0.054);
     expect(m.price_region).toBe('eu-central-1');
@@ -293,8 +381,11 @@ describe('old EBS snapshots: savings, severity and identity', () => {
       source_volume: 'deleted',
       storage_tier: 'standard',
       encrypted: true,
-      exclusion_checks: { ami: 'checked', aws_backup: 'checked', dlm_tags: 'checked' },
+      exclusion_checks: { ami: 'checked', aws_backup: 'checked', dlm_tags: 'checked', locks: 'checked' },
     });
+    // C1 review: an AMI in the Recycle Bin is not listed, so the copy claims registered AMIs only.
+    expect(finding.description).toContain('no registered AMI, AWS Backup plan or Data Lifecycle Manager policy uses it.');
+    expect(finding.description).not.toMatch(/\bno AMI\b/);
   });
 
   it('the upper bound goes into the upper-bound total, never the firm total', async () => {
@@ -335,5 +426,114 @@ describe('old EBS snapshots: savings, severity and identity', () => {
   it('never returns High', () => {
     expect(snapshotSeverity(10_000)).toBe('MEDIUM');
     expect(snapshotSeverity(null)).toBe('LOW');
+  });
+});
+
+describe('old EBS snapshots: every paged listing passes the next-page token on (C1 review N-1)', () => {
+  it('DescribeSnapshots, DescribeImages, DescribeLockedSnapshots, DescribeVolumes, ListBackupVaults and ListRecoveryPointsByBackupVault', async () => {
+    // Each fake answers page 2 only when asked with page 1's token; without it, page 1
+    // repeats until the page limit and the listing is incomplete.
+    const paged = (token: string | undefined, key: string, first: unknown[], second: unknown[]) =>
+      token === undefined ? { [key]: first, NextToken: `tok-${key}` } : token === `tok-${key}` ? { [key]: second } : { [key]: [], NextToken: 'wrong-token' };
+    const ec2 = fakeClient((command: any) => {
+      const t = command.input.NextToken;
+      switch (command.constructor.name) {
+        case 'DescribeSnapshotsCommand':
+          return paged(t, 'Snapshots', [snap('snap-0000000000000001'), snap('snap-0000000000000002')], [snap('snap-0000000000000003'), snap('snap-0000000000000004'), snap('snap-0000000000000005', { VolumeId: 'vol-0exists0000000001' })]);
+        case 'DescribeImagesCommand':
+          return paged(t, 'Images', [], [{ ImageId: 'ami-0placeholder', BlockDeviceMappings: [{ Ebs: { SnapshotId: 'snap-0000000000000002' } }] }]);
+        case 'DescribeLockedSnapshotsCommand':
+          return paged(t, 'Snapshots', [], [{ SnapshotId: 'snap-0000000000000003', LockState: 'governance' }]);
+        case 'DescribeVolumesCommand':
+          return paged(t, 'Volumes', [], [{ VolumeId: 'vol-0exists0000000001' }]);
+        default:
+          throw new Error('unexpected');
+      }
+    });
+    const backup = fakeClient((command: any) => {
+      const t = command.input.NextToken;
+      if (command.constructor.name === 'ListBackupVaultsCommand') return paged(t, 'BackupVaultList', [{ BackupVaultName: 'Default' }], [{ BackupVaultName: 'placeholder-vault' }]);
+      if (command.input.BackupVaultName !== 'placeholder-vault') return { RecoveryPoints: [] };
+      return paged(t, 'RecoveryPoints', [], [{ RecoveryPointArn: 'arn:aws:ec2:us-east-1::snapshot/snap-0000000000000004', ResourceType: 'EBS' }]);
+    });
+
+    const result = await service.detectOldEBSSnapshots({ ec2, backup }, 'us-east-1', NOW);
+
+    const tokens = (client: any, name: string) =>
+      client.send.mock.calls.map(([c]: any[]) => c).filter((c: any) => c.constructor.name === name).map((c: any) => c.input.NextToken);
+    expect(tokens(ec2, 'DescribeSnapshotsCommand')).toEqual([undefined, 'tok-Snapshots']);
+    expect(tokens(ec2, 'DescribeImagesCommand')).toEqual([undefined, 'tok-Images']);
+    expect(tokens(ec2, 'DescribeLockedSnapshotsCommand')).toEqual([undefined, 'tok-Snapshots']);
+    expect(tokens(ec2, 'DescribeVolumesCommand')).toEqual([undefined, 'tok-Volumes']);
+    expect(tokens(backup, 'ListBackupVaultsCommand')).toEqual([undefined, 'tok-BackupVaultList']);
+    expect(tokens(backup, 'ListRecoveryPointsByBackupVaultCommand')).toEqual([undefined, undefined, 'tok-RecoveryPoints']);
+    // What only page 2 held took effect: snap-…02 AMI, snap-…03 locked, snap-…04 AWS Backup, vol-…01 exists.
+    expect(ids(result)).toEqual(['snap-0000000000000001', 'snap-0000000000000005']);
+    expect(result.issues[1].metadata.ebs_old_snapshot.source_volume).toBe('exists');
+    expect(result.unknownResourceIds).toEqual([]);
+  });
+});
+
+describe('old EBS snapshots: the run\'s counts by reason (C1 review S-1)', () => {
+  const total = (counts: any) =>
+    counts.flagged + [counts.not_flagged, counts.couldnt_check, counts.excluded].reduce((sum, group) => sum + Object.values(group as Record<string, number>).reduce((a, b) => a + b, 0), 0);
+
+  it('counts every listed snapshot once: flagged, not flagged, excluded by reason', async () => {
+    const { result } = await detect({
+      snapshots: [
+        snap('snap-0000000000000001'), // flagged
+        snap('snap-0000000000000002'), // flagged
+        snap('snap-0000000000000003', { State: 'pending' }),
+        snap('snap-0000000000000004', { StorageTier: 'archive' }),
+        snap('snap-0000000000000005', { StartTime: daysAgo(30) }),
+        snap('snap-0000000000000006', { StartTime: daysAgo(31) }),
+        snap('snap-0000000000000007', { Tags: [{ Key: 'aws:dlm:lifecycle-policy-id', Value: 'policy-0placeholder' }] }),
+        snap('snap-0000000000000008'), // AMI
+        snap('snap-0000000000000009'), // AWS Backup
+        snap('snap-000000000000000a'), // locked
+        { ...snap('x'), SnapshotId: undefined }, // no id: not counted
+      ],
+      images: [{ ImageId: 'ami-0placeholder', BlockDeviceMappings: [{ Ebs: { SnapshotId: 'snap-0000000000000008' } }] }],
+      recoveryPoints: { Default: ['arn:aws:ec2:us-east-1::snapshot/snap-0000000000000009'] },
+      locks: [{ SnapshotId: 'snap-000000000000000a', LockState: 'compliance' }],
+    });
+    expect(result.oldSnapshots).toEqual({
+      evaluated: 10,
+      flagged: 2,
+      not_flagged: { not_completed: 1, archive_tier: 1, too_recent: 2 },
+      couldnt_check: { ami_unreadable: 0, aws_backup_unreadable: 0, locks_unreadable: 0, volumes_unreadable: 0 },
+      excluded: { ami: 1, aws_backup: 1, dlm: 1, locked: 1 },
+    });
+    expect(total(result.oldSnapshots)).toBe(result.oldSnapshots.evaluated);
+    expect(result.oldSnapshots.flagged).toBe(result.issues.length);
+  });
+
+  it.each([
+    ['DescribeImages', { images: accessDenied() }, 'ami_unreadable'],
+    ['AWS Backup', { vaults: accessDenied() }, 'aws_backup_unreadable'],
+    ['DescribeLockedSnapshots', { locks: accessDenied() }, 'locks_unreadable'],
+    ['DescribeVolumes', { volumes: accessDenied() }, 'volumes_unreadable'],
+  ])('a failed %s read: every candidate couldn\'t check under its reason', async (_label, world, reason) => {
+    const { result } = await detect({ snapshots: [snap('snap-0000000000000001'), snap('snap-0000000000000002'), snap('snap-0000000000000003', { StartTime: daysAgo(5) })], ...(world as World) });
+    expect(result.oldSnapshots.couldnt_check[reason as string]).toBe(2);
+    expect(result.oldSnapshots.not_flagged.too_recent).toBe(1);
+    expect(result.oldSnapshots.flagged).toBe(0);
+    expect(total(result.oldSnapshots)).toBe(3);
+    expect(Object.values(result.oldSnapshots.couldnt_check).reduce((a: number, b) => a + (b as number), 0)).toBe(result.unknownResourceIds.length);
+  });
+
+  it('two failed reads: counted once, under the first in the documented order', async () => {
+    const { result } = await detect({ snapshots: [snap('snap-0000000000000001')], locks: accessDenied(), volumes: accessDenied() });
+    expect(result.oldSnapshots.couldnt_check).toEqual({ ami_unreadable: 0, aws_backup_unreadable: 0, locks_unreadable: 1, volumes_unreadable: 0 });
+  });
+
+  it('no candidates: counts without any exclusion read', async () => {
+    const { result } = await detect({ snapshots: [snap('snap-0000000000000001', { StartTime: daysAgo(1) })] });
+    expect(result.oldSnapshots).toMatchObject({ evaluated: 1, flagged: 0, not_flagged: { too_recent: 1 } });
+  });
+
+  it('a failed DescribeSnapshots records no counts (the category failed)', async () => {
+    const { result } = await detect({ snapshots: accessDenied() });
+    expect(result.oldSnapshots).toBeUndefined();
   });
 });

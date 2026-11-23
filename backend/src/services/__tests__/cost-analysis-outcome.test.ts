@@ -1,5 +1,7 @@
 import { addReconcileCounts, EMPTY_RECONCILE_COUNTS, summarizeDetectors } from '../cost-analysis-outcome';
-import { getOptimizationRules, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, ISSUE_RDS_OVERSIZED_INSTANCE } from '../../config/optimization-rules';
+import { getOptimizationRules, ISSUE_EBS_OLD_SNAPSHOT, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, ISSUE_RDS_IDLE_INSTANCE, ISSUE_RDS_OVERSIZED_INSTANCE } from '../../config/optimization-rules';
+import { emptyRdsIdleCounts } from '../rds-idle-evaluation';
+import { emptyOldSnapshotCounts } from '../ebs-old-snapshot-evaluation';
 import type { DetectorObservation } from '../cost-optimization.service';
 import type { CreateRecommendationRequest } from '../../types';
 
@@ -71,6 +73,37 @@ describe('summarizeDetectors', () => {
     const lowActivity = { evaluated: 0, low_activity: 0, not_low_activity: { cpu_peak: 0, network: 0, load_balancer: 0, auto_scaling: 0 }, couldnt_check: { too_new_or_restarted: 0, cloudwatch_failed: 0, cloudwatch_incomplete: 0, topology_unreadable: 0 } };
     const { checks } = summarizeDetectors([{ ...bad('Idle Instance'), lowActivity }], true, []);
     expect(checks[0]).not.toHaveProperty('low_activity');
+  });
+
+  it('C1 review S-1: the idle RDS and old snapshot checks add their counts by reason -- counts only, no resource IDs', () => {
+    const rdsIdle = emptyRdsIdleCounts();
+    Object.assign(rdsIdle, { evaluated: 3, flagged: 1 });
+    rdsIdle.couldnt_check.cloudwatch_failed = 1;
+    rdsIdle.excluded.aurora = 1;
+    const oldSnapshots = emptyOldSnapshotCounts();
+    Object.assign(oldSnapshots, { evaluated: 4, flagged: 1 });
+    oldSnapshots.not_flagged.too_recent = 1;
+    oldSnapshots.excluded.locked = 1;
+    oldSnapshots.excluded.ami = 1;
+    const { checks } = summarizeDetectors([
+      { ...ok(ISSUE_RDS_IDLE_INSTANCE, [], ['placeholder-db-1']), rdsIdle },
+      { ...ok(ISSUE_EBS_OLD_SNAPSHOT, [], []), oldSnapshots },
+    ], true, []);
+    expect(checks[0]).toEqual({ rule_id: 'rds_idle', issue: ISSUE_RDS_IDLE_INSTANCE, outcome: 'complete', detected: 0, unknown: 1, rds_idle: rdsIdle });
+    expect(checks[1]).toEqual({ rule_id: 'ebs_old_snapshots', issue: ISSUE_EBS_OLD_SNAPSHOT, outcome: 'complete', detected: 0, unknown: 0, old_snapshots: oldSnapshots });
+    expect(JSON.stringify(checks)).not.toContain('placeholder-db-1');
+    // Every reason Stage A §6 names is a key, even at zero.
+    expect(Object.keys(rdsIdle.excluded).sort()).toEqual(['aurora', 'db_cluster_member', 'rds_custom', 'read_replica', 'read_replica_source', 'stopped']);
+    expect(Object.keys(oldSnapshots.excluded).sort()).toEqual(['ami', 'aws_backup', 'dlm', 'locked']);
+  });
+
+  it('a failed idle RDS or old snapshot check records no counts', () => {
+    const { checks } = summarizeDetectors([
+      { ...bad(ISSUE_RDS_IDLE_INSTANCE), rdsIdle: emptyRdsIdleCounts() },
+      { ...bad(ISSUE_EBS_OLD_SNAPSHOT), oldSnapshots: emptyOldSnapshotCounts() },
+    ], true, []);
+    expect(checks[0]).not.toHaveProperty('rds_idle');
+    expect(checks[1]).not.toHaveProperty('old_snapshots');
   });
 
   it('every implemented rule can be named by a check', () => {

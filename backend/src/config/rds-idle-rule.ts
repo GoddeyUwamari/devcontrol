@@ -31,7 +31,7 @@
  * RDS_IDLE_RULE is copied verbatim into every finding it produces
  * (metadata.rule), so a finding stays reconstructable after the rule changes.
  * Any change to it must bump `version`: the snapshot test in
- * config/__tests__/rds-idle-rule.test.ts enforces that.
+ * config/__tests__/c1-rule-identity.test.ts enforces that.
  *
  * Pure data: no AWS calls, no database.
  */

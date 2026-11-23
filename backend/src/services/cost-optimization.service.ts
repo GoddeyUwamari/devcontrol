@@ -11,10 +11,12 @@ import {
   DescribeVolumesCommand,
   DescribeSnapshotsCommand,
   DescribeImagesCommand,
+  DescribeLockedSnapshotsCommand,
   Instance,
   Reservation,
   Snapshot,
   Image,
+  LockedSnapshotsInfo,
   Volume,
 } from '@aws-sdk/client-ec2';
 import { DescribeDBInstancesCommand, DBInstance } from '@aws-sdk/client-rds';
@@ -45,6 +47,7 @@ import { RDS_IDLE_RULE } from '../config/rds-idle-rule';
 import { EBS_OLD_SNAPSHOT_RULE, EBS_SNAPSHOT_RESOURCE_TYPE } from '../config/ebs-old-snapshot-rule';
 import {
   RDS_IDLE_METRIC_NAMES,
+  emptyRdsIdleCounts,
   judgeRdsIdleMetrics,
   judgeRdsIdleScope,
   rdsIdleDescription,
@@ -53,14 +56,20 @@ import {
   type RdsMetric,
   type RdsMetricReading,
   type RdsMetricReadings,
+  type RdsIdleCheckCounts,
 } from './rds-idle-evaluation';
 import {
+  countSnapshotExclusion,
+  emptyOldSnapshotCounts,
   judgeOldSnapshot,
+  lockPreventsDeletion,
   judgeSnapshotBasics,
   snapshotDescription,
   snapshotIdFromRecoveryPointArn,
   snapshotSeverity,
   snapshotUpperBound,
+  type OldSnapshotCheckCounts,
+  type SnapshotCouldntCheckReason,
 } from './ebs-old-snapshot-evaluation';
 import { pool } from '../config/database';
 import {
@@ -260,6 +269,10 @@ interface DetectorResult {
   endActiveForUnknown?: boolean;
   /** See DetectorObservation.lowActivity. */
   lowActivity?: LowActivityCheckCounts;
+  /** See DetectorObservation.rdsIdle. */
+  rdsIdle?: RdsIdleCheckCounts;
+  /** See DetectorObservation.oldSnapshots. */
+  oldSnapshots?: OldSnapshotCheckCounts;
 }
 
 // One entry per non-RI detector category, tagged with the fixed `issue`
@@ -285,6 +298,10 @@ export interface DetectorObservation {
   endActiveForUnknown?: boolean;
   /** The low-activity rule's checked / couldn't-check counts by reason (no resource IDs). */
   lowActivity?: LowActivityCheckCounts;
+  /** The idle RDS rule's counts by reason (no resource IDs). */
+  rdsIdle?: RdsIdleCheckCounts;
+  /** The old EBS snapshot rule's counts by reason (no resource IDs). */
+  oldSnapshots?: OldSnapshotCheckCounts;
 }
 
 /** Every private IPv4 and IPv6 address on an instance's network interfaces. */
@@ -476,8 +493,15 @@ class CostOptimizationService {
           recommendations: idleRDS.issues.map(toRequest),
           unknownResourceIds: idleRDS.unknownResourceIds,
           endActiveForUnknown: idleRDS.endActiveForUnknown,
+          rdsIdle: idleRDS.rdsIdle,
         },
-        { issue: ISSUE_EBS_OLD_SNAPSHOT, success: oldSnapshots.success, recommendations: oldSnapshots.issues.map(toRequest), unknownResourceIds: oldSnapshots.unknownResourceIds },
+        {
+          issue: ISSUE_EBS_OLD_SNAPSHOT,
+          success: oldSnapshots.success,
+          recommendations: oldSnapshots.issues.map(toRequest),
+          unknownResourceIds: oldSnapshots.unknownResourceIds,
+          oldSnapshots: oldSnapshots.oldSnapshots,
+        },
       ];
 
       return {
@@ -651,14 +675,20 @@ class CostOptimizationService {
 
     const issues: OptimizationIssue[] = [];
     const unknownResourceIds: string[] = [];
-    const done = (): DetectorResult => ({ success: true, issues, unknownResourceIds, endActiveForUnknown: true });
+    const counts = emptyRdsIdleCounts();
+    const done = (): DetectorResult => ({ success: true, issues, unknownResourceIds, endActiveForUnknown: true, rdsIdle: counts });
 
     const candidates: Array<DBInstance & { DBInstanceIdentifier: string }> = [];
     for (const db of listing.items) {
       if (!db.DBInstanceIdentifier) continue;
+      counts.evaluated += 1;
       const scope = judgeRdsIdleScope(db);
-      if (scope.kind === 'excluded') continue;
+      if (scope.kind === 'excluded') {
+        counts.excluded[scope.reason] += 1;
+        continue;
+      }
       if (scope.kind === 'couldnt_check') {
+        counts.couldnt_check[scope.reason] += 1;
         unknownResourceIds.push(db.DBInstanceIdentifier);
         continue;
       }
@@ -694,11 +724,16 @@ class CostOptimizationService {
     candidates.forEach((db, i) => {
       const readings = Object.fromEntries(metricKeys.map(([metric, prefix]) => [metric, reading(`${prefix}${i}`)])) as RdsMetricReadings;
       const verdict = judgeRdsIdleMetrics(readings, db.InstanceCreateTime, window);
-      if (verdict.kind === 'not_idle') return;
+      if (verdict.kind === 'not_idle') {
+        counts.not_flagged[verdict.reason] += 1;
+        return;
+      }
       if (verdict.kind === 'couldnt_check') {
+        counts.couldnt_check[verdict.reason] += 1;
         unknownResourceIds.push(db.DBInstanceIdentifier);
         return;
       }
+      counts.flagged += 1;
       const nameTag = db.TagList?.find((tag) => tag.Key === 'Name');
       issues.push({
         resourceId: db.DBInstanceIdentifier,
@@ -730,9 +765,11 @@ class CostOptimizationService {
    * standard tier, older than 180 days, no DLM system tag) are the exclusion
    * reads made: the account's AMIs (DescribeImages, Owners ['self'], deprecated
    * and disabled included), AWS Backup's EBS recovery points in every vault of
-   * the region, and the region's volumes. If any of those reads fails or is
-   * incomplete, every remaining candidate is "couldn't check" -- never a
-   * finding. Rows of unknown snapshots are kept as they are.
+   * the region, the region's snapshot locks (DescribeLockedSnapshots) and the
+   * region's volumes. If any of those reads fails or is incomplete, every
+   * remaining candidate is "couldn't check" -- never a finding. Rows of unknown
+   * snapshots are kept as they are. The run's counts by reason go on the
+   * result (oldSnapshots).
    *
    * Savings: an upper bound (savings_basis 'ceiling:'), volume size x the
    * region's standard snapshot price; no price for the region or no size: no
@@ -760,23 +797,46 @@ class CostOptimizationService {
     if (!listing.complete) return { success: false, issues: [] };
 
     const issues: OptimizationIssue[] = [];
-    const candidates = listing.items
-      .filter((snapshot): snapshot is Snapshot & { SnapshotId: string } => !!snapshot.SnapshotId)
-      .filter((snapshot) => judgeSnapshotBasics(snapshot, now).kind === 'candidate');
-    if (candidates.length === 0) return { success: true, issues, unknownResourceIds: [] };
+    const unknownResourceIds: string[] = [];
+    const counts = emptyOldSnapshotCounts();
+    const done = (): DetectorResult => ({ success: true, issues, unknownResourceIds, oldSnapshots: counts });
 
-    const [amiSnapshotIds, backupSnapshotIds, existingVolumeIds] = await Promise.all([
+    const owned = listing.items.filter((snapshot): snapshot is Snapshot & { SnapshotId: string } => !!snapshot.SnapshotId);
+    counts.evaluated = owned.length;
+    const candidates: Array<Snapshot & { SnapshotId: string }> = [];
+    for (const snapshot of owned) {
+      const basics = judgeSnapshotBasics(snapshot, now);
+      if (basics.kind === 'excluded') countSnapshotExclusion(counts, basics.reason);
+      else candidates.push(snapshot);
+    }
+    if (candidates.length === 0) return done();
+
+    const [amiSnapshotIds, backupSnapshotIds, lockedSnapshotIds, existingVolumeIds] = await Promise.all([
       this.readOwnAmiSnapshotIds(clients.ec2),
       this.readBackupSnapshotIds(clients.backup),
+      this.readLockedSnapshotIds(clients.ec2),
       this.readVolumeIds(clients.ec2),
     ]);
-    if (amiSnapshotIds === null || backupSnapshotIds === null || existingVolumeIds === null) {
-      return { success: true, issues, unknownResourceIds: candidates.map((snapshot) => snapshot.SnapshotId) };
+    // Any exclusion read that could not answer: every candidate couldn't check
+    // (counted under the first unreadable read, in this order), never a finding.
+    if (amiSnapshotIds === null || backupSnapshotIds === null || lockedSnapshotIds === null || existingVolumeIds === null) {
+      const unreadable: SnapshotCouldntCheckReason =
+        amiSnapshotIds === null ? 'ami_unreadable'
+        : backupSnapshotIds === null ? 'aws_backup_unreadable'
+        : lockedSnapshotIds === null ? 'locks_unreadable'
+        : 'volumes_unreadable';
+      counts.couldnt_check[unreadable] += candidates.length;
+      unknownResourceIds.push(...candidates.map((snapshot) => snapshot.SnapshotId));
+      return done();
     }
 
     for (const snapshot of candidates) {
-      const verdict = judgeOldSnapshot(snapshot, now, { amiSnapshotIds, backupSnapshotIds, existingVolumeIds });
-      if (verdict.kind !== 'old') continue;
+      const verdict = judgeOldSnapshot(snapshot, now, { amiSnapshotIds, backupSnapshotIds, lockedSnapshotIds, existingVolumeIds });
+      if (verdict.kind !== 'old') {
+        countSnapshotExclusion(counts, verdict.reason);
+        continue;
+      }
+      counts.flagged += 1;
 
       const sizeGb = typeof snapshot.VolumeSize === 'number' && snapshot.VolumeSize > 0 ? snapshot.VolumeSize : null;
       const upperBound = snapshotUpperBound(snapshot.VolumeSize, region);
@@ -803,7 +863,7 @@ class CostOptimizationService {
             source_volume: verdict.sourceVolume,
             storage_tier: snapshot.StorageTier ?? null,
             encrypted: typeof snapshot.Encrypted === 'boolean' ? snapshot.Encrypted : null,
-            exclusion_checks: { ami: 'checked', aws_backup: 'checked', dlm_tags: 'checked' },
+            exclusion_checks: { ami: 'checked', aws_backup: 'checked', dlm_tags: 'checked', locks: 'checked' },
           },
           ...(upperBound
             ? {
@@ -816,7 +876,7 @@ class CostOptimizationService {
         },
       });
     }
-    return { success: true, issues, unknownResourceIds: [] };
+    return done();
   }
 
   /** Every snapshot id the account's own AMIs use (deprecated and disabled AMIs too), or null when the listing is not complete. */
@@ -877,6 +937,25 @@ class CostOptimizationService {
       return ids;
     } catch (error) {
       console.error('[OldSnapshots] AWS Backup read failed; candidates are reported as not checked:', (error as Error)?.name ?? 'Error');
+      return null;
+    }
+  }
+
+  /**
+   * Every own snapshot id under a lock that still prevents deletion (any lock
+   * state but `expired`, see lockPreventsDeletion), or null when the listing is
+   * not complete or fails.
+   */
+  private async readLockedSnapshotIds(ec2Client: EC2Client): Promise<Set<string> | null> {
+    try {
+      const listing = await listAllPages('old EBS snapshots: DescribeLockedSnapshots', async (token) => {
+        const page = await ec2Client.send(new DescribeLockedSnapshotsCommand({ MaxResults: 1000, NextToken: token }));
+        return { items: page.Snapshots || [], nextToken: page.NextToken };
+      });
+      if (!listing.complete) return null;
+      return new Set((listing.items as LockedSnapshotsInfo[]).flatMap((lock) => (lock.SnapshotId && lockPreventsDeletion(lock.LockState) ? [lock.SnapshotId] : [])));
+    } catch (error) {
+      console.error('[OldSnapshots] DescribeLockedSnapshots failed; candidates are reported as not checked:', (error as Error)?.name ?? 'Error');
       return null;
     }
   }

@@ -5,7 +5,8 @@
  * finding and records "still detected" evidence, a resource the detector could
  * not check keeps (snapshots) or drops (idle RDS, endActiveForUnknown) its ACTIVE
  * row while its decision stays open, both issues are reconciled in the home
- * region only, and one organization's scan never touches another's rows.
+ * region only, and one organization's scan never touches another's rows. The
+ * run record stores both checks' counts by reason (C1 review S-1).
  *
  * Live database, real reconcile under a real scan lease. Placeholders only.
  */
@@ -15,6 +16,9 @@ import { ISSUE_EBS_OLD_SNAPSHOT, ISSUE_RDS_IDLE_INSTANCE } from '../../config/op
 import type { DetectorObservation } from '../../services/cost-optimization.service';
 import type { CreateRecommendationRequest } from '../../types';
 import { TestLeases } from '../../services/__tests__/helpers/scan-source';
+import { fakeClient, accessDenied } from '../../services/__tests__/helpers/low-activity-aws';
+import costOptimizationService from '../../services/cost-optimization.service';
+import { summarizeDetectors } from '../../services/cost-analysis-outcome';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -170,5 +174,85 @@ describe('C1 findings in the occurrence lifecycle', () => {
       ['placeholder-db-1', 'ACTIVE'],
     ]));
     expect(await rows(mine)).toEqual([]);
+  });
+});
+
+describe('C1 counts on the run record (C1 review S-1)', () => {
+  let leaseOffset = 0;
+  async function insertRun(orgId: string, checks: unknown[]): Promise<string> {
+    leaseOffset += 1;
+    const { rows: inserted } = await pool.query(
+      `INSERT INTO cost_analysis_runs (organization_id, status, source, checks, lease_acquired_at, created_at, completed_at)
+       VALUES ($1, 'completed', 'discovery', $2::jsonb, NOW() + make_interval(secs => $3::int), NOW(), NOW()) RETURNING id`,
+      [orgId, JSON.stringify(checks), leaseOffset]
+    );
+    return inserted[0].id;
+  }
+
+  it('the run stores evaluated / flagged / not flagged / couldn\'t check / excluded by reason for both checks, with no resource IDs', async () => {
+    const org = await insertOrg();
+    const now = new Date();
+    const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
+    const service = costOptimizationService as any;
+
+    // Idle RDS: one Aurora (excluded), one stopped (excluded), two available whose metrics can't be read.
+    const rds = fakeClient(() => ({ DBInstances: [
+      { DBInstanceIdentifier: 'placeholder-db-aurora', Engine: 'aurora-postgresql', DBInstanceStatus: 'available' },
+      { DBInstanceIdentifier: 'placeholder-db-stopped', Engine: 'postgres', DBInstanceStatus: 'stopped' },
+      { DBInstanceIdentifier: 'placeholder-db-1', Engine: 'postgres', DBInstanceStatus: 'available', InstanceCreateTime: daysAgo(400) },
+      { DBInstanceIdentifier: 'placeholder-db-2', Engine: 'mysql', DBInstanceStatus: 'available', InstanceCreateTime: daysAgo(400) },
+    ] }));
+    const cloudWatch = fakeClient(() => { throw accessDenied(); });
+    const idleRDS = await service.detectIdleRDSInstances({ rds, cloudWatch }, HOME, now);
+
+    // Old snapshots: one flagged, one locked, one too recent.
+    const ec2 = fakeClient((command: any) => {
+      switch (command.constructor.name) {
+        case 'DescribeSnapshotsCommand':
+          return { Snapshots: [
+            { SnapshotId: 'snap-0000000000000001', State: 'completed', StorageTier: 'standard', StartTime: daysAgo(400), VolumeId: 'vol-0deleted000000001', VolumeSize: 10 },
+            { SnapshotId: 'snap-0000000000000002', State: 'completed', StorageTier: 'standard', StartTime: daysAgo(400), VolumeId: 'vol-0deleted000000001', VolumeSize: 10 },
+            { SnapshotId: 'snap-0000000000000003', State: 'completed', StorageTier: 'standard', StartTime: daysAgo(3), VolumeId: 'vol-0deleted000000001', VolumeSize: 10 },
+          ] };
+        case 'DescribeLockedSnapshotsCommand':
+          return { Snapshots: [{ SnapshotId: 'snap-0000000000000002', LockState: 'governance' }] };
+        case 'DescribeImagesCommand':
+          return { Images: [] };
+        default:
+          return { Volumes: [] };
+      }
+    });
+    const backup = fakeClient((command: any) => (command.constructor.name === 'ListBackupVaultsCommand' ? { BackupVaultList: [] } : { RecoveryPoints: [] }));
+    const oldSnapshots = await service.detectOldEBSSnapshots({ ec2, backup }, HOME, now);
+
+    const toRequest = (issue: any): CreateRecommendationRequest => ({
+      resource_id: issue.resourceId, resource_name: issue.resourceName, resource_type: issue.resourceType, issue: issue.issue,
+      description: issue.description, potential_savings: issue.potentialSavings, severity: issue.severity, aws_region: issue.awsRegion, metadata: issue.metadata,
+    });
+    const observations: DetectorObservation[] = [
+      { issue: ISSUE_RDS_IDLE_INSTANCE, success: idleRDS.success, recommendations: idleRDS.issues.map(toRequest), unknownResourceIds: idleRDS.unknownResourceIds, endActiveForUnknown: idleRDS.endActiveForUnknown, rdsIdle: idleRDS.rdsIdle },
+      { issue: ISSUE_EBS_OLD_SNAPSHOT, success: oldSnapshots.success, recommendations: oldSnapshots.issues.map(toRequest), unknownResourceIds: oldSnapshots.unknownResourceIds, oldSnapshots: oldSnapshots.oldSnapshots },
+    ];
+    const runId = await insertRun(org, summarizeDetectors(observations, true, []).checks);
+    await repository.reconcileActiveRecommendations(org, observations, { homeRegion: HOME }, leases.of(org), runId);
+
+    const { rows: stored } = await pool.query('SELECT checks FROM cost_analysis_runs WHERE id = $1', [runId]);
+    const rdsCheck = stored[0].checks.find((c: any) => c.issue === ISSUE_RDS_IDLE_INSTANCE);
+    const snapshotCheck = stored[0].checks.find((c: any) => c.issue === ISSUE_EBS_OLD_SNAPSHOT);
+    expect(rdsCheck).toMatchObject({ rule_id: 'rds_idle', outcome: 'complete', detected: 0, unknown: 2 });
+    expect(rdsCheck.rds_idle).toEqual({
+      evaluated: 4, flagged: 0,
+      not_flagged: { connections: 0, cpu_peak: 0, read_iops: 0, write_iops: 0 },
+      couldnt_check: { not_available: 0, too_new: 0, cloudwatch_failed: 2, cloudwatch_incomplete: 0 },
+      excluded: { aurora: 1, db_cluster_member: 0, read_replica: 0, read_replica_source: 0, rds_custom: 0, stopped: 1 },
+    });
+    expect(snapshotCheck).toMatchObject({ rule_id: 'ebs_old_snapshots', outcome: 'complete', detected: 1, unknown: 0 });
+    expect(snapshotCheck.old_snapshots).toEqual({
+      evaluated: 3, flagged: 1,
+      not_flagged: { not_completed: 0, archive_tier: 0, too_recent: 1 },
+      couldnt_check: { ami_unreadable: 0, aws_backup_unreadable: 0, locks_unreadable: 0, volumes_unreadable: 0 },
+      excluded: { ami: 0, aws_backup: 0, dlm: 0, locked: 1 },
+    });
+    expect(JSON.stringify(stored[0].checks)).not.toMatch(/snap-|placeholder-db|vol-/);
   });
 });

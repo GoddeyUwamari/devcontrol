@@ -55,6 +55,23 @@ const PINNED_SNAPSHOT: Record<number, unknown> = {
     },
     savings: { basis: 'ceiling', price: 'regional_standard_snapshot_storage', missing_price: 'no_estimate', severity_cap: 'MEDIUM' },
   },
+  // C1 review S-3: locked snapshots are excluded (any lock state but expired).
+  2: {
+    id: 'ebs_old_snapshots',
+    version: 2,
+    owner_ids: ['self'],
+    min_age_days: 180,
+    state: 'completed',
+    excluded_storage_tiers: ['archive'],
+    exclusions: {
+      ami: { owners: ['self'], include_deprecated: true, include_disabled: true },
+      aws_backup: { source: 'recovery_point_in_backup_vault', resource_type: 'EBS' },
+      dlm: { tag_keys: ['aws:dlm:lifecycle-policy-id', 'aws:dlm:lifecycle-schedule-name'], tag_key_prefix: 'aws:dlm:' },
+      locked: { source: 'describe_locked_snapshots', deletable_lock_states: ['expired'] },
+      on_read_failure: 'couldnt_check',
+    },
+    savings: { basis: 'ceiling', price: 'regional_standard_snapshot_storage', missing_price: 'no_estimate', severity_cap: 'MEDIUM' },
+  },
 };
 
 describe('RDS_IDLE_RULE identity', () => {

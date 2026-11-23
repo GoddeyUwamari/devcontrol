@@ -113,6 +113,30 @@ export interface RdsWorstDays {
 export type RdsNotIdleReason = 'connections' | 'cpu_peak' | 'read_iops' | 'write_iops';
 export type RdsCouldntCheckReason = 'not_available' | 'too_new' | 'cloudwatch_failed' | 'cloudwatch_incomplete';
 
+/**
+ * What one run of the rule decided, by reason (Stage A §6), stored on the run's
+ * check as `rds_idle`. Counts only, never instance identifiers. Every listed DB
+ * instance is counted exactly once: evaluated = flagged + not_flagged +
+ * couldnt_check + excluded (each summed over its reasons).
+ */
+export interface RdsIdleCheckCounts {
+  evaluated: number;
+  flagged: number;
+  not_flagged: Record<RdsNotIdleReason, number>;
+  couldnt_check: Record<RdsCouldntCheckReason, number>;
+  excluded: Record<RdsExclusionReason, number>;
+}
+
+export function emptyRdsIdleCounts(): RdsIdleCheckCounts {
+  return {
+    evaluated: 0,
+    flagged: 0,
+    not_flagged: { connections: 0, cpu_peak: 0, read_iops: 0, write_iops: 0 },
+    couldnt_check: { not_available: 0, too_new: 0, cloudwatch_failed: 0, cloudwatch_incomplete: 0 },
+    excluded: { aurora: 0, db_cluster_member: 0, read_replica: 0, read_replica_source: 0, rds_custom: 0, stopped: 0 },
+  };
+}
+
 export type RdsMetricVerdict =
   | { kind: 'not_idle'; reason: RdsNotIdleReason }
   | { kind: 'couldnt_check'; reason: Exclude<RdsCouldntCheckReason, 'not_available'> }

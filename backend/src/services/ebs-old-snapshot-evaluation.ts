@@ -13,13 +13,56 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** The volume id AWS gives a snapshot that was copied or imported: no source volume is recorded. */
 export const UNRECORDED_SOURCE_VOLUME_ID = 'vol-ffffffff';
 
-export type SnapshotExclusionReason = 'not_completed' | 'archive_tier' | 'too_recent' | 'ami' | 'aws_backup' | 'dlm';
+/** Out of scope from DescribeSnapshots alone: not a candidate at all. */
+export type SnapshotNotFlaggedReason = 'not_completed' | 'archive_tier' | 'too_recent';
+/** Something manages or protects the snapshot, so deleting it is not the advice. */
+export type SnapshotExcludedReason = 'ami' | 'aws_backup' | 'dlm' | 'locked';
+export type SnapshotExclusionReason = SnapshotNotFlaggedReason | SnapshotExcludedReason;
+/**
+ * The exclusion read that could not answer. When more than one fails, the
+ * candidates are counted under the first in this order: ami, aws_backup,
+ * locks, volumes.
+ */
+export type SnapshotCouldntCheckReason = 'ami_unreadable' | 'aws_backup_unreadable' | 'locks_unreadable' | 'volumes_unreadable';
+
+/**
+ * What one run of the rule decided, by reason (Stage A §6/§7), stored on the
+ * run's check as `old_snapshots`. Counts only, never snapshot identifiers.
+ * Every listed own snapshot is counted exactly once: evaluated = flagged +
+ * not_flagged + couldnt_check + excluded (each summed over its reasons).
+ */
+export interface OldSnapshotCheckCounts {
+  evaluated: number;
+  flagged: number;
+  not_flagged: Record<SnapshotNotFlaggedReason, number>;
+  couldnt_check: Record<SnapshotCouldntCheckReason, number>;
+  excluded: Record<SnapshotExcludedReason, number>;
+}
+
+export function emptyOldSnapshotCounts(): OldSnapshotCheckCounts {
+  return {
+    evaluated: 0,
+    flagged: 0,
+    not_flagged: { not_completed: 0, archive_tier: 0, too_recent: 0 },
+    couldnt_check: { ami_unreadable: 0, aws_backup_unreadable: 0, locks_unreadable: 0, volumes_unreadable: 0 },
+    excluded: { ami: 0, aws_backup: 0, dlm: 0, locked: 0 },
+  };
+}
+
+/** Counts one verdict that is not a finding under its reason. */
+export function countSnapshotExclusion(counts: OldSnapshotCheckCounts, reason: SnapshotExclusionReason): void {
+  if (reason === 'not_completed' || reason === 'archive_tier' || reason === 'too_recent') counts.not_flagged[reason] += 1;
+  else counts.excluded[reason] += 1;
+}
+
 export type SourceVolumeState = 'deleted' | 'exists' | 'not_recorded';
 
 /** What the exclusion reads found. Each is the complete answer for the home region. */
 export interface SnapshotExclusionFacts {
   amiSnapshotIds: ReadonlySet<string>;
   backupSnapshotIds: ReadonlySet<string>;
+  /** Own snapshots under a lock that still prevents deletion (any lock state but `expired`). */
+  lockedSnapshotIds: ReadonlySet<string>;
   existingVolumeIds: ReadonlySet<string>;
 }
 
@@ -63,12 +106,24 @@ export function judgeOldSnapshot(snapshot: Snapshot & { SnapshotId: string }, no
   if (basics.kind === 'excluded') return basics;
   if (facts.amiSnapshotIds.has(snapshot.SnapshotId)) return { kind: 'excluded', reason: 'ami' };
   if (facts.backupSnapshotIds.has(snapshot.SnapshotId)) return { kind: 'excluded', reason: 'aws_backup' };
+  if (facts.lockedSnapshotIds.has(snapshot.SnapshotId)) return { kind: 'excluded', reason: 'locked' };
   return { kind: 'old', ageDays: basics.ageDays, sourceVolume: sourceVolumeState(snapshot.VolumeId, facts.existingVolumeIds) };
 }
 
 export function sourceVolumeState(volumeId: string | undefined, existingVolumeIds: ReadonlySet<string>): SourceVolumeState {
   if (!volumeId || volumeId === UNRECORDED_SOURCE_VOLUME_ID) return 'not_recorded';
   return existingVolumeIds.has(volumeId) ? 'exists' : 'deleted';
+}
+
+/**
+ * Whether a DescribeLockedSnapshots entry still prevents deletion. AWS
+ * (LockedSnapshotsInfo): compliance, governance and compliance-cooloff
+ * snapshots "can't be deleted"; an `expired` lock "is not locked and can be
+ * deleted". Any other or missing state is treated as locked, so a state AWS adds
+ * later never turns into a deletion recommendation.
+ */
+export function lockPreventsDeletion(lockState: string | undefined): boolean {
+  return !(EBS_OLD_SNAPSHOT_RULE.exclusions.locked.deletable_lock_states as readonly string[]).includes(lockState ?? '');
 }
 
 /**
@@ -103,5 +158,5 @@ export function snapshotDescription(input: { ageDays: number; sizeGb: number | n
     input.sourceVolume === 'deleted' ? 'The volume it was taken from no longer exists.'
     : input.sourceVolume === 'exists' ? 'The volume it was taken from still exists; check whether newer snapshots replace this one.'
     : 'It was copied or imported, so AWS records no source volume.';
-  return `This ${size}snapshot is ${input.ageDays} days old, and no AMI, AWS Backup plan or Data Lifecycle Manager policy uses it. ${source} Check with its owner before deleting it. Snapshots are incremental: deleting one frees only the data no other snapshot shares, so the real saving is usually lower than the upper bound shown.`;
+  return `This ${size}snapshot is ${input.ageDays} days old, and no registered AMI, AWS Backup plan or Data Lifecycle Manager policy uses it. ${source} Check with its owner before deleting it. Snapshots are incremental: deleting one frees only the data no other snapshot shares, so the real saving is usually lower than the upper bound shown.`;
 }
