@@ -17,6 +17,10 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     resetOptimizationRuleConfiguration: vi.fn(),
   },
 }))
+// Connected (GET /api/aws/accounts: one active row), so a non-Enterprise plan gets today's lock (PR4b).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/',

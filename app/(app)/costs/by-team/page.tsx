@@ -14,6 +14,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCostSummary } from '@/lib/hooks/useCostSummary'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { NotConnectedCard } from '@/components/aws/not-connected'
 
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -103,13 +104,18 @@ export default function CostsByTeamPage() {
 
   // The server's connection state (GET /api/aws/accounts `connection`), never the
   // row count or the spend figure: historical spend from an earlier connection does
-  // not make the account connected. Loading or a failed check shows the
-  // not-connected wording, as before.
-  const { data: awsConnection } = useQuery({
+  // not make the account connected. A failed or ambiguous check shows today's page
+  // (the plan lock, or the not-connected wording). Read on every known plan: the
+  // route is not plan-gated, and no AWS account takes precedence over the plan
+  // lock (PR4b), which shows again once an account is connected.
+  const { data: awsConnection, isError: accountsError } = useQuery({
     queryKey: ['aws-accounts'],
     queryFn: awsAccountsService.getAccountsAndConnection,
-    enabled: !isDemoActive && entitled,
+    enabled: !isDemoActive && plan.isKnown,
   })
+  // PR4b empty states: not connected only when the server says so.
+  const notConnected = !isDemoActive && awsConnection?.connection === 'not_connected'
+  const connectionLoading = !isDemoActive && plan.isKnown && awsConnection === undefined && !accountsError
 
   const data = isDemoActive ? DEMO_DATA : null
   const totalCost = data?.total_monthly_cost ?? 0
@@ -118,6 +124,29 @@ export default function CostsByTeamPage() {
 
   if (!isDemoActive && plan.status === 'loading') return <PlanLoadingState />
   if (!isDemoActive && plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+  // Until the connection check answers: neither the plan lock nor the page (PR4b).
+  if (connectionLoading) return <PlanLoadingState />
+
+  // Kept with no AWS account connected (founder ruling, PR4 Stage A item 20).
+  const spendByServiceLink = (
+    <Link href="/costs" className="text-label font-semibold text-violet-700 no-underline mt-4">
+      See spend by AWS service →
+    </Link>
+  )
+
+  // ── No AWS account (PR4b): on every plan, in place of the plan lock or the not-available block ──
+  if (notConnected) {
+    return (
+      <div className="max-w-[1320px] mx-auto px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 min-h-screen">
+        <div className="mb-8">
+          <h1 className={PAGE_TITLE_CLASS}>Cost Attribution</h1>
+          <p className={cn(PAGE_SUBTITLE_CLASS, 'mt-1.5')}>Attribution of AWS spend to teams, services, and resource types.</p>
+        </div>
+        <NotConnectedCard />
+        <div className="flex justify-center">{spendByServiceLink}</div>
+      </div>
+    )
+  }
 
   // ── Free gate ──
   if (!entitled && !isDemoActive) {
@@ -304,9 +333,7 @@ export default function CostsByTeamPage() {
                   ? 'DevControl does not yet allocate your AWS bill to teams or services, so no per-team or per-service amounts are shown. The figure above is your account total, not split by owner.'
                   : 'Connect your AWS account to see your AWS spend. Allocation to teams and services is not available yet.'}
               </p>
-              <Link href="/costs" className="text-label font-semibold text-violet-700 no-underline mt-4">
-                See spend by AWS service →
-              </Link>
+              {spendByServiceLink}
             </div>
           </div>
         </>

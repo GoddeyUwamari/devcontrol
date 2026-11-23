@@ -20,6 +20,8 @@ import { useAuth } from '@/lib/contexts/auth-context'
 import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { anomalyService } from '@/lib/services/anomaly.service'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected'
 import type { InfrastructureResource } from '@/lib/types'
 import { isNotRunning } from './idle'
 import type { AnomalyDetection } from '@/types/anomaly.types'
@@ -226,12 +228,14 @@ const NOT_RUNNING_LABEL = 'Stopped or Starting Resources'
 const NOT_RUNNING_CAVEAT = 'Estimated at running rates; AWS charges less while instances are stopped.'
 
 function KPICard({
-  label, value, delta, prefix = '', suffix = '', accent = false, note,
+  label, value, delta, prefix = '', suffix = '', accent = false, note, unmeasured = false,
 }: {
   label: string; value: number | string; delta?: number
   prefix?: string; suffix?: string; accent?: boolean
   /** Where the figure came from, or why it is missing. */
   note?: string
+  /** No AWS account connected: the label and "—" only, nothing under it (PR4b). */
+  unmeasured?: boolean
 }) {
   const isPositiveDelta = (delta ?? 0) > 0
   const deltaColor = label === NOT_RUNNING_LABEL
@@ -241,6 +245,7 @@ function KPICard({
   return (
     <div style={{ background: '#fff', border: accent ? '1.5px solid #e5e7eb' : '1.5px solid #e5e7eb', borderRadius: '10px', padding: '16px', borderLeft: accent ? '3px solid #7c3aed' : undefined }}>
       <p className="text-label font-normal text-ink-muted uppercase tracking-[0.04em]" style={{ marginBottom: '8px' }}>{label}</p>
+      {unmeasured ? <UnmeasuredValue className="text-section" /> : (<>
       <p className="text-section text-ink tabular-nums leading-none" style={{ marginBottom: '8px' }}>
         {prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}
       </p>
@@ -252,6 +257,7 @@ function KPICard({
         </div>
       )}
       {note && <p className="text-meta text-ink-muted" style={{ margin: 0 }}>{note}</p>}
+      </>)}
     </div>
   )
 }
@@ -380,6 +386,19 @@ export default function EfficiencyPage() {
     refetchOnWindowFocus: false,
     enabled: !isDemoActive && planKnown && plan.isPro,
   })
+
+  // PR4b empty states: the server's connection state, the same query (and cache entry) as Costs and
+  // Cost Optimization. Not connected only when the server says so; a failed or ambiguous check is
+  // today's page, unchanged.
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive && planKnown,
+  })
+  const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
+  const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError
 
   // ── Derived real data ──
   // Source B — still used for cost-per-resource (no source-A equivalent exists for
@@ -549,6 +568,7 @@ export default function EfficiencyPage() {
           <h1 className={PAGE_TITLE_CLASS} style={{ margin: '0 0 6px' }}>Cloud Efficiency Overview</h1>
           <p className={PAGE_SUBTITLE_CLASS}>Resource efficiency, spend breakdown, and cost-to-value analysis across your AWS environment.</p>
         </div>
+        {connectionLoading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : (
         <div className="flex items-center gap-2 shrink-0">
           <Link href="/cost-optimization" className="text-ui font-semibold text-white" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#7C3AED', padding: '9px 18px', borderRadius: '8px', textDecoration: 'none' }}>
             <Zap size={14} /> Review Optimizations
@@ -557,7 +577,10 @@ export default function EfficiencyPage() {
             <Download size={14} /> Export
           </button>
         </div>
+        )}
       </div>
+
+      {connectionLoading ? <NotConnectedLoading tiles={4} /> : (<>
 
       {/* ── KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -570,14 +593,18 @@ export default function EfficiencyPage() {
           </>
         ) : (
           <>
-            <KPICard label={realKpis.totalSpend.label} value={realKpis.totalSpend.value} note={realKpis.totalSpend.note} accent />
-            <KPICard label="Cost Per Resource"  value={realKpis.costPerResource.value} note={realKpis.costPerResource.note} />
-            <KPICard label={NOT_RUNNING_LABEL} value={realKpis.idleCost.value}        note={realKpis.idleCost.note} />
-            <KPICard label="Est. Savings Opportunity" value={realKpis.savings.value}   note={realKpis.savings.note} />
+            <KPICard label={realKpis.totalSpend.label} value={realKpis.totalSpend.value} note={realKpis.totalSpend.note} accent unmeasured={notConnected} />
+            <KPICard label="Cost Per Resource"  value={realKpis.costPerResource.value} note={realKpis.costPerResource.note} unmeasured={notConnected} />
+            <KPICard label={NOT_RUNNING_LABEL} value={realKpis.idleCost.value}        note={realKpis.idleCost.note} unmeasured={notConnected} />
+            <KPICard label="Est. Savings Opportunity" value={realKpis.savings.value}   note={realKpis.savings.note} unmeasured={notConnected} />
           </>
         )}
       </div>
 
+      {notConnected && <NotConnectedCard />}
+
+      {/* No AWS account: everything below waits for a connection (PR4b). */}
+      {!notConnected && (<>
       {/* ── CHARTS ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 
@@ -870,6 +897,8 @@ export default function EfficiencyPage() {
           </Link>
         </div>
       )}
+      </>)}
+      </>)}
 
     </div>
   )

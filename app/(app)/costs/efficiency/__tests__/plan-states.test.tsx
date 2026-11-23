@@ -22,6 +22,10 @@ vi.mock('@/lib/services/platform-stats.service', () => ({
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getAll: getAllResources } }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({ costRecommendationsService: { getStats } }))
 vi.mock('@/lib/services/anomaly.service', () => ({ anomalyService: { getAnomalies } }))
+// Connected (GET /api/aws/accounts: one active row): today's page (PR4b).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/costs/efficiency',
