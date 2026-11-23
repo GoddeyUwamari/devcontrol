@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, FileQuestion, RefreshCw } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -17,6 +18,8 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { cn } from '@/lib/utils';
 import { formatLocalWhen } from '@/lib/utils/localTime';
+import awsAccountsService from '@/lib/services/aws-accounts.service';
+import { NotConnectedCard } from '@/components/aws/not-connected';
 
 /** A zero count is muted, never coloured: contradict is red only above 0. */
 function countClass(count: number, nonZeroClass: string): string {
@@ -50,6 +53,20 @@ export default function Soc2ReadinessDetailPage() {
   // either one, not useDemoMode() alone.
   const isDemoActive = demoMode || salesDemoMode;
 
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization). Not connected only when the server says so; a failed or ambiguous check is today's page.
+  // With no AWS account: the card under the subtitle, and no technical evaluation or AWS-observed evidence;
+  // the criteria, their descriptions and Customer-Provided Evidence stay.
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive,
+  });
+  const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected';
+  const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError;
+
   const selected = criteria?.find((c) => c.criterionId === (activeCriterionId ?? criteria?.[0]?.criterionId));
 
   return (
@@ -65,7 +82,7 @@ export default function Soc2ReadinessDetailPage() {
       <div className="mb-6">
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>SOC 2 Readiness</h1>
         <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-2xl')}>
-          Technical evidence DevControl observes from your connected AWS account, and supporting evidence your
+          Technical evidence DevControl observes from your AWS account, and supporting evidence your
           organization provides. This is supplementary readiness evidence — not a SOC 2 certification, Type II audit,
           or auditor approval.
         </p>
@@ -76,7 +93,10 @@ export default function Soc2ReadinessDetailPage() {
         )}
       </div>
 
-      {isLoading ? (
+      {notConnected && <NotConnectedCard className="mb-6" />}
+
+      {/* Until the connection check answers, the same grey blocks as while the criteria load (PR4c). */}
+      {isLoading || connectionLoading ? (
         <div className="space-y-3">
           <Skeleton className="h-10 w-full max-w-xl" />
           <Skeleton className="h-64 w-full" />
@@ -124,7 +144,8 @@ export default function Soc2ReadinessDetailPage() {
                 <p className="text-meta text-slate-700 leading-relaxed mb-1.5">{c.evidenceClaim}</p>
                 <p className="text-meta text-ink-muted leading-relaxed mb-4">{c.limitation}</p>
 
-                {c.evaluated && c.evidenceSummary ? (
+                {/* No AWS account: no technical evaluation line (PR4c). */}
+                {notConnected ? null : c.evaluated && c.evidenceSummary ? (
                   <div className="text-meta text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
                     <span className={countClass(c.evidenceSummary.supports, 'font-semibold text-emerald-700')}>
                       {c.evidenceSummary.supports} support
@@ -150,8 +171,9 @@ export default function Soc2ReadinessDetailPage() {
               {/* AWS-Observed Evidence */}
               <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-7">
                 <p className="text-label text-blue-600 uppercase tracking-[0.04em] mb-1">AWS-Observed Evidence</p>
-                <p className="text-meta text-ink-muted mb-4">Technical facts DevControl observed directly from your connected AWS account.</p>
-                <Soc2ObservedEvidenceList criterionId={c.criterionId} />
+                <p className={cn('text-meta text-ink-muted', !notConnected && 'mb-4')}>Technical facts DevControl observes directly from your AWS account.</p>
+                {/* No AWS account: no observed-evidence list or its empty state (PR4c). */}
+                {!notConnected && <Soc2ObservedEvidenceList criterionId={c.criterionId} />}
               </div>
 
               {/* Customer-Provided Evidence (Enterprise-gated) */}

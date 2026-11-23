@@ -12,6 +12,8 @@ import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
 import { usePlanNotice } from '@/lib/plan/use-plan-notice';
 import { remediationService, RemediationWorkflow, WorkflowStatus } from '@/lib/services/remediation.service';
 import { logError } from '@/lib/safe-log';
+import awsAccountsService from '@/lib/services/aws-accounts.service';
+import { NotConnectedCard, UnmeasuredValue } from '@/components/aws/not-connected';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -375,6 +377,20 @@ export default function RemediationPage() {
   // The last failed action's message, for the workflow it was about.
   const [actionError, setActionError] = useState<{ workflowId: string; message: string } | null>(null);
 
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization), on every known plan. Not connected only when the server says so; a failed or ambiguous
+  // check is today's page. With no AWS account the card takes the plan lock's place (the lock is unchanged
+  // underneath); the workflow counts are the user's own (kept) and Savings recovered is "—".
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: plan.isKnown,
+  });
+  const notConnected = awsAccounts?.connection === 'not_connected';
+  const connectionLoading = plan.isKnown && awsAccounts === undefined && !accountsError;
+
   const queryKey = ['remediation', tab];
   const listQuery = useQuery<RemediationWorkflow[]>({
     queryKey,
@@ -448,6 +464,28 @@ export default function RemediationPage() {
 
   if (plan.status === 'loading') return <PlanLoadingState />;
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
+  // Until the connection check answers: neither the plan lock, the card nor the page (PR4c).
+  if (connectionLoading) return <PlanLoadingState />;
+
+  // The page's title and subtitle: the page header, and the not-connected page's (PR4c).
+  const titleBlock = (
+        <div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>Auto-Remediation Workflows</h1>
+          <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#6B7280', margin: 0 }}>
+            Approval-based infrastructure remediation. Every AWS action requires explicit human approval.
+          </p>
+        </div>
+  );
+
+  // ── No AWS account, below the plan (PR4c): title, subtitle and the card in place of the plan lock ──
+  if ((!isEnterprise || tierRequired) && notConnected) {
+    return (
+      <div style={{ maxWidth: 1320, margin: '0 auto', padding: '40px 56px 64px', background: '#F9FAFB', minHeight: '100vh' }}>
+        <div style={{ marginBottom: 32 }}>{titleBlock}</div>
+        <NotConnectedCard />
+      </div>
+    );
+  }
 
   // ── Non-enterprise locked state ──────────────────────────────────────────
   if (!isEnterprise || tierRequired) {
@@ -491,12 +529,7 @@ export default function RemediationPage() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
-        <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>Auto-Remediation Workflows</h1>
-          <p style={{ fontSize: '0.75rem', fontWeight: 500, color: '#6B7280', margin: 0 }}>
-            Approval-based infrastructure remediation. Every AWS action requires explicit human approval.
-          </p>
-        </div>
+        {titleBlock}
         <button
           onClick={() => refetch()}
           style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #E5E7EB', color: '#374151', padding: '9px 16px', borderRadius: 8, fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer' }}
@@ -523,13 +556,19 @@ export default function RemediationPage() {
               {icon}
               <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
             </div>
-            <div style={{ fontSize: '2rem', fontWeight: 700, color, letterSpacing: '-0.03em' }}>{value}</div>
+            {/* No AWS account: Savings recovered is "—"; the four workflow counts stay real (PR4c). */}
+            {notConnected && label === 'Savings Recovered'
+              ? <UnmeasuredValue />
+              : <div style={{ fontSize: '2rem', fontWeight: 700, color, letterSpacing: '-0.03em' }}>{value}</div>}
           </div>
         ))}
       </div>
 
-      {/* Filter tabs */}
+      {notConnected && <NotConnectedCard className="mb-5" />}
+
+      {/* Filter tabs (no AWS account: the count only, PR4c) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        {!notConnected && (
         <div style={{ display: 'flex', background: '#F3F4F6', borderRadius: 8, padding: 4, gap: 2 }}>
           {TABS.map(({ key, label }) => (
             <button
@@ -547,6 +586,7 @@ export default function RemediationPage() {
             </button>
           ))}
         </div>
+        )}
         <p style={{ fontSize: '0.78rem', color: '#6B7280', margin: 0 }}>
           {workflows.length} workflow{workflows.length !== 1 ? 's' : ''}
         </p>

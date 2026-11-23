@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
@@ -13,6 +14,8 @@ import { awsResourcesService, AWSResource } from '@/lib/services/aws-resources.s
 import { Plus, Trash2, Lock, Target, AlertTriangle, HelpCircle, PlugZap } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { ConnectAwsHeaderButton, NotConnectedCard, UnmeasuredValue } from '@/components/aws/not-connected'
 
 // Kept in sync with backend/src/services/slo-evaluation.ts by construction — every
 // choice below is validated server-side (slo.service.ts's validateCreatePayload)
@@ -71,6 +74,20 @@ export default function SLODashboardPage() {
 
   const [resourceOptions, setResourceOptions] = useState<AWSResource[]>([])
   const [resourceOptionsLoading, setResourceOptionsLoading] = useState(false)
+
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization), on every known plan. Not connected only when the server says so; a failed or ambiguous
+  // check is today's page. With no AWS account the card takes the plan lock's place (the lock is unchanged
+  // underneath); SLOs defined stays a real count, and what CloudWatch would measure is "—".
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: plan.isKnown,
+  })
+  const notConnected = awsAccounts?.connection === 'not_connected'
+  const connectionLoading = plan.isKnown && awsAccounts === undefined && !accountsError
 
   const loadSlos = useCallback(async () => {
     if (!isEnterprise) return
@@ -149,6 +166,8 @@ export default function SLODashboardPage() {
 
   if (plan.status === 'loading') return <PlanLoadingState />
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+  // Until the connection check answers: neither the plan lock, the card nor the page (PR4c).
+  if (connectionLoading) return <PlanLoadingState />
 
   // ── Enterprise gate — UX only. The real security boundary is requireEnterprise on
   // every /api/slos route (backend/src/routes/slo.routes.ts); this just avoids showing
@@ -160,6 +179,7 @@ export default function SLODashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900">SLO Dashboard &amp; Management</h1>
           <p className="text-xs text-gray-500 font-medium mt-1.5">Define and track Service Level Objectives across your infrastructure.</p>
         </div>
+        {notConnected ? <NotConnectedCard /> : (
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
@@ -186,6 +206,7 @@ export default function SLODashboardPage() {
             </>
           )}
         </div>
+        )}
       </div>
     )
   }
@@ -205,12 +226,14 @@ export default function SLODashboardPage() {
             Live evaluation against real CloudWatch telemetry — EC2 availability, ALB average latency, ALB and Lambda error rate, over a 24-hour or 7-day window. Averages, not percentiles; not application-level uptime.
           </p>
         </div>
+        {notConnected ? <ConnectAwsHeaderButton /> : (
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shrink-0"
         >
           <Plus size={16} /> New SLO
         </button>
+        )}
       </div>
 
       {/* KPI cards */}
@@ -221,17 +244,19 @@ export default function SLODashboardPage() {
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
           <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-3">Healthy</p>
-          <div className="text-2xl font-bold text-emerald-600">{healthyCount}</div>
+          {notConnected ? <UnmeasuredValue /> : <div className="text-2xl font-bold text-emerald-600">{healthyCount}</div>}
         </div>
-        <div className={`rounded-xl p-4 sm:p-5 border ${breachedCount > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+        <div className={`rounded-xl p-4 sm:p-5 border ${breachedCount > 0 && !notConnected ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
           <p className="text-xs font-bold text-red-600 uppercase tracking-widest mb-3">Breached</p>
-          <div className="text-2xl font-bold text-red-600">{breachedCount}</div>
+          {notConnected ? <UnmeasuredValue /> : <div className="text-2xl font-bold text-red-600">{breachedCount}</div>}
         </div>
         <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Unknown / No Data</p>
-          <div className="text-2xl font-bold text-slate-500">{unknownCount}</div>
+          {notConnected ? <UnmeasuredValue /> : <div className="text-2xl font-bold text-slate-500">{unknownCount}</div>}
         </div>
       </div>
+
+      {notConnected && <NotConnectedCard className="mb-6" />}
 
       {/* Create form */}
       {showForm && (
@@ -321,11 +346,13 @@ export default function SLODashboardPage() {
         </div>
       )}
 
-      {/* SLO list */}
+      {/* SLO list. No AWS account: the user's own SLOs only, without the CloudWatch line or the empty
+          state's invitation; nothing at all when there are none (PR4c). */}
+      {!(notConnected && !isLoading && !loadError && items.length === 0) && (
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-5 sm:px-7 py-4 border-b border-slate-100">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Service Level Objectives</p>
-          <p className="text-xs text-slate-500">{items.length} SLOs · evaluated live against CloudWatch on each load</p>
+          {!notConnected && <p className="text-xs text-slate-500">{items.length} SLOs · evaluated live against CloudWatch on each load</p>}
         </div>
 
         {isLoading ? (
@@ -335,7 +362,7 @@ export default function SLODashboardPage() {
             <AlertTriangle size={20} className="text-red-400 mx-auto mb-3" />
             <p className="text-sm text-slate-600">{loadError}</p>
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !notConnected ? (
           <div className="p-10 sm:p-16 text-center">
             <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-4"><Target size={20} className="text-slate-300" /></div>
             <p className="text-sm font-semibold text-slate-900 mb-2">No SLOs configured</p>
@@ -420,6 +447,7 @@ export default function SLODashboardPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

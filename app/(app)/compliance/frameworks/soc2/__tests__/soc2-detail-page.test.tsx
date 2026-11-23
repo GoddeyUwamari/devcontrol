@@ -10,7 +10,16 @@
  * the backend.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// The page reads the AWS connection state with react-query (PR4c), so it renders inside a client.
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The connection check already answered (connected), as the mock below says: today's page from the first render.
+  client.setQueryData(['aws-accounts'], { accounts: [{ id: 1, status: 'active' }], connection: 'connected' })
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 import Soc2ReadinessDetailPage from '../page'
 
 // Radix Select (used by Soc2CustomerEvidenceForm) calls these DOM APIs, which jsdom
@@ -26,6 +35,10 @@ beforeAll(() => {
 })
 
 const mockPush = vi.fn()
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }))
@@ -42,7 +55,7 @@ type CriterionFixture = {
 }
 
 const SIX_CRITERIA: CriterionFixture[] = [
-  { criterionId: 'CC6.1', name: 'Encryption at rest', evidenceClaim: 'Encryption at rest is enabled.', limitation: 'Does not establish KMS key-policy adequacy.', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
+  { criterionId: 'CC6.1', name: 'Encryption at rest', evidenceClaim: 'Checks whether encryption at rest is enabled, based on AWS discovery.', limitation: 'Does not establish KMS key-policy adequacy.', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
   { criterionId: 'CC6.6', name: 'Public network exposure', evidenceClaim: 'No public exposure detected.', limitation: 'Absence of a finding is not proof.', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
   { criterionId: 'CC6.2', name: 'IAM console-user MFA', evidenceClaim: 'MFA is enabled.', limitation: 'Covers console-password users only.', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
   { criterionId: 'CC6.3', name: 'IAM access-key age', evidenceClaim: 'Key has not exceeded threshold.', limitation: 'Age-based signal only.', dispositionClass: 'A_OBSERVABLE', evaluated: false, evidenceSummary: null, computedAt: null },
@@ -171,7 +184,7 @@ describe('readiness — six criteria', () => {
 
   it('renders evidenceClaim, limitation, and disposition for the active criterion', () => {
     renderPage()
-    expect(screen.getByText('Encryption at rest is enabled.')).toBeInTheDocument()
+    expect(screen.getByText('Checks whether encryption at rest is enabled, based on AWS discovery.')).toBeInTheDocument()
     expect(screen.getByText('Does not establish KMS key-policy adequacy.')).toBeInTheDocument()
     expect(screen.getByText('Directly Observable')).toBeInTheDocument()
   })

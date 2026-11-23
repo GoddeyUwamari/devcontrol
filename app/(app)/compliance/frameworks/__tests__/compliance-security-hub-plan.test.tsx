@@ -26,6 +26,10 @@ class ResizeObserverStub {
 ;(globalThis as any).ResizeObserver ??= ResizeObserverStub
 
 const calls = vi.hoisted(() => ({ get: [] as string[], post: [] as string[] }))
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/api', () => {
   const answer = (url: string) => {
     if (url === '/api/security-hub/capability') {

@@ -9,10 +9,23 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// The page reads the AWS connection state with react-query (PR4c), so it renders inside a client.
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The connection check already answered (connected), as the mock below says: today's page from the first render.
+  client.setQueryData(['aws-accounts'], { accounts: [{ id: 1, status: 'active' }], connection: 'connected' })
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 import SLODashboardPage from '../page'
 
 const mockUsePlan = vi.fn()
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => mockUsePlan() }))
 
 const mockEvaluateAll = vi.fn()

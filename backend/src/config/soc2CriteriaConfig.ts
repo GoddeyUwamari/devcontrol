@@ -45,7 +45,7 @@ export const SOC2_V1_CRITERIA: readonly Soc2CriterionConfig[] = [
     name: 'Encryption at rest',
     scope: ['ec2', 'ebs', 'rds', 'aurora', 's3'],
     dispositionClass: 'A_OBSERVABLE',
-    evidenceClaim: 'Encryption at rest is enabled for this resource, as observed by AWS discovery.',
+    evidenceClaim: 'Checks whether encryption at rest is enabled, based on AWS discovery.',
     limitation: 'Does not establish KMS key-policy adequacy, per-object encryption overrides, or that encryption was continuously enabled over any period.',
   },
   {

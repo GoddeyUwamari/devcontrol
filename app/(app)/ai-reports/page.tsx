@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import { useAIReports } from '@/lib/hooks/useAIReports'
 import { GeneratedReport, ReportHistoryItem } from '@/lib/services/ai-reports.service'
 import {
@@ -18,6 +19,8 @@ import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { NotConnectedCard, UnmeasuredValue } from '@/components/aws/not-connected'
 
 type NormalizedType = 'cost_analysis' | 'security' | 'infrastructure' | 'executive'
 
@@ -174,6 +177,20 @@ export default function AIReportsPage() {
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
+
+  // PR4c empty states: the server's connection state (the same query and cache entry as Costs and Cost
+  // Optimization), on every known plan. Not connected only when the server says so; a failed or ambiguous
+  // check is today's page. With no AWS account the card takes the plan lock's place (the lock is unchanged
+  // underneath) and nothing offers to generate a report.
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive && plan.isKnown,
+  })
+  const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
+  const connectionLoading = !isDemoActive && plan.isKnown && awsAccounts === undefined && !accountsError
   const displayReports = isDemoActive ? DEMO_REPORTS : (reportHistory || [])
   const visibleReports = showAllReports ? displayReports : displayReports.slice(0, 5)
 
@@ -194,6 +211,26 @@ export default function AIReportsPage() {
 
   if (plan.status === 'loading') return <PlanLoadingState />
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+  // Until the connection check answers: neither the plan lock, the card nor the page (PR4c).
+  if (connectionLoading) return <PlanLoadingState />
+
+  // The page's title and subtitle: the page header, and the not-connected page's (PR4c).
+  const titleBlock = (
+        <div>
+          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>Generate executive-ready AI reports with actionable recommendations your team can use immediately.</p>
+        </div>
+  )
+
+  // ── No AWS account, below the plan (PR4c): title, subtitle and the card in place of the plan lock ──
+  if ((!isPro || tierRequired) && notConnected) {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10 max-w-[1320px] mx-auto">
+        <div className="mb-8">{titleBlock}</div>
+        <NotConnectedCard />
+      </div>
+    )
+  }
 
   if (!isPro || tierRequired) {
     return (
@@ -230,14 +267,14 @@ export default function AIReportsPage() {
 
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
-        <div>
-          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Uncover Cost Savings, Risks, and Insights Across Your AWS — in Minutes</h1>
-          <p className={PAGE_SUBTITLE_CLASS}>Generate executive-ready AI reports with actionable recommendations your team can use immediately.</p>
-        </div>
+        {titleBlock}
+        {/* No AWS account: none of the eight Generate buttons (PR4c). */}
+        {!notConnected && (
         <button onClick={() => handleGenerateReport()} disabled={generatingType !== null}
           className={`flex items-center gap-2 bg-white text-violet-600 px-4 py-2.5 rounded-lg text-ui font-semibold border border-violet-200 whitespace-nowrap shrink-0 transition-colors ${generatingType !== null ? 'cursor-not-allowed opacity-70' : 'hover:bg-violet-50 cursor-pointer'}`}>
           {generatingType === 'weekly_summary' ? <><RefreshCw size={14} className="animate-spin" /> Generating...</> : <><Sparkles size={14} /> Generate Executive Summary</>}
         </button>
+        )}
       </div>
 
       {/* 3 KPI cards */}
@@ -256,10 +293,12 @@ export default function AIReportsPage() {
                 <p className="text-ui font-semibold text-slate-900">Security Risk Report</p>
               </div>
               <p className="text-ui text-slate-600 leading-relaxed mb-3">{reportsThisMonth === 0 ? 'No reports generated yet — start here' : 'Run a security scan to check for active risks'}</p>
+              {!notConnected && (
               <button onClick={() => handleGenerateReport('security')} disabled={generatingType !== null}
                 className={`bg-red-600 hover:bg-red-700 text-white border-none rounded-lg px-4 py-2 text-label inline-flex items-center gap-1.5 transition-colors ${generatingType !== null ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                 Generate security report →
               </button>
+              )}
             </div>
             {/* Last outcome */}
             <div className="bg-white rounded-xl p-5 border border-slate-200">
@@ -275,14 +314,19 @@ export default function AIReportsPage() {
               ) : (
                 <div className="flex flex-col gap-2">
                   <p className="text-ui text-ink-muted leading-relaxed">No insights yet — generate your first report to surface key findings</p>
+                  {!notConnected && (
                   <button onClick={() => handleGenerateReport()} disabled={generatingType !== null} className="bg-transparent border border-slate-200 rounded-lg px-3 py-1.5 text-label text-violet-600 cursor-pointer w-fit hover:bg-violet-50 transition-colors">Generate first report →</button>
+                  )}
                 </div>
               )}
             </div>
             {/* Report activity */}
             <div className="bg-white rounded-xl p-5 border border-slate-200">
               <p className="text-label text-ink-muted uppercase tracking-[0.04em] mb-3">Report Activity</p>
+              {/* No AWS account: "—", never 0 (PR4c). */}
+              {notConnected ? <UnmeasuredValue className="mb-2" /> : (
               <div className="text-kpi tabular-nums text-slate-900 tracking-tight leading-none mb-2">{reportsThisMonth}</div>
+              )}
               <p className="text-ui text-slate-600 mb-2.5">Reports generated this month</p>
               <div className="flex flex-wrap gap-1.5">
                 {(['cost_analysis', 'security', 'infrastructure', 'executive'] as const).map(t => {
@@ -295,6 +339,8 @@ export default function AIReportsPage() {
           </div>
         )
       })()}
+
+      {notConnected && <NotConnectedCard className="mb-4" />}
 
       {/* Report type cards */}
       <div className="mb-4">
@@ -324,11 +370,13 @@ export default function AIReportsPage() {
                   </div>
                   {badge && <span className="text-label px-2.5 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ background: badgeBg!, color: badgeColor! }}>{badge}</span>}
                 </div>
+                {!notConnected && (
                 <button onClick={() => handleGenerateReport(type)} disabled={generatingType !== null}
                   className={`self-start flex items-center gap-1.5 text-white border-none px-4 py-1.5 rounded-lg text-label transition-all ${generatingType !== null ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
                   style={{ background: generatingType === type ? tc.color : '#7C3AED' }}>
                   {generatingType === type ? <><RefreshCw size={11} className="animate-spin" /> Generating...</> : 'Generate →'}
                 </button>
+                )}
               </div>
             )
           })}
@@ -359,11 +407,13 @@ export default function AIReportsPage() {
               <div key={item} className="text-meta text-ink-muted bg-white rounded-lg px-3.5 py-2.5 border border-violet-100">{item}</div>
             ))}
           </div>
+          {!notConnected && (<>
           <button onClick={() => handleGenerateReport()} disabled={generatingType !== null}
             className={`text-white px-7 py-3 rounded-xl text-ui font-semibold border-none inline-flex items-center gap-2 transition-colors ${generatingType !== null ? 'bg-violet-400 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700 cursor-pointer'}`}>
             {generatingType !== null ? <><RefreshCw size={13} className="animate-spin" /> Generating...</> : <><Sparkles size={13} /> Generate My First AI Report</>}
           </button>
           <p className="text-meta text-ink-muted mt-3">Takes ~2 minutes · No setup required · Read-only access</p>
+          </>)}
         </div>
       ) : (
         <div>

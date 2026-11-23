@@ -23,6 +23,10 @@ import {
   SCANS_PATH, failWith, framework, newClient, ok, renderWith, scan, settled, type Harness, type Route,
 } from '../../../security/__tests__/security-v2-fixtures'
 
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/api', async () => (await import('../../../security/__tests__/security-v2-fixtures')).apiModule(m.h as never))
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
 vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => m.role }))

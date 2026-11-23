@@ -254,7 +254,7 @@ export const DEMO_SOC2_READINESS: Soc2ReadinessCriterion[] = [
   {
     criterionId: 'CC6.1',
     name: 'Encryption at rest',
-    evidenceClaim: 'Encryption at rest is enabled for this resource, as observed by AWS discovery.',
+    evidenceClaim: 'Checks whether encryption at rest is enabled, based on AWS discovery.',
     limitation: 'Does not establish KMS key-policy adequacy, per-object encryption overrides, or that encryption was continuously enabled over any period.',
     dispositionClass: 'A_OBSERVABLE',
     evaluated: true,

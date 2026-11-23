@@ -12,6 +12,10 @@ import {
 const getAnomalies = vi.hoisted(() => vi.fn(async () => ({ anomalies: [], stats: { active: 0, critical: 0, warning: 0, info: 0 } })))
 const getLastScan = vi.hoisted(() => vi.fn(async () => null))
 const getRules = vi.hoisted(() => vi.fn(async () => []))
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/services/anomaly.service', () => ({
   anomalyService: { getAnomalies, getLastScan, triggerScan: vi.fn(), acknowledge: vi.fn(), resolve: vi.fn(), markFalsePositive: vi.fn() },
 }))

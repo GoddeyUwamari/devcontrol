@@ -10,6 +10,10 @@ const getRules = vi.hoisted(() => vi.fn(async () => [{
   id: 'r1', name: 'Nightly spend', metric: 'cost', condition: 'greater_than', threshold: 5,
   timeWindow: '1h', severity: 'warning', enabled: true, createdAt: '2026-10-01T00:00:00Z',
 }]))
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/services/custom-anomaly-rules.service', () => ({
   default: { getRules, createRule: vi.fn(), toggleRule: vi.fn(), deleteRule: vi.fn() },
 }))

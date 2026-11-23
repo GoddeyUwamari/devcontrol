@@ -8,6 +8,10 @@ import { describePlanStates } from '@/lib/contexts/__tests__/org-load-harness'
 
 const evaluateAll = vi.hoisted(() => vi.fn(async () => []))
 const getResources = vi.hoisted(() => vi.fn(async () => ({ resources: [] })))
+// Connected (GET /api/aws/accounts: one active row, as the service parses it): today's page (PR4c).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 vi.mock('@/lib/services/slo.service', () => ({
   default: { evaluateAll, listSlos: vi.fn(), createSlo: vi.fn(), updateSlo: vi.fn(), deleteSlo: vi.fn(), getOptions: vi.fn() },
   SLI_RESOURCE_TYPE: { ec2_availability: 'ec2', alb_latency_avg: 'load-balancer', alb_error_rate: 'load-balancer', lambda_error_rate: 'lambda' },
