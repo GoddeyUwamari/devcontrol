@@ -105,7 +105,7 @@ describe('C1: coverage comes from the registry', () => {
     expect(names).toEqual(expect.arrayContaining(['Idle RDS instances', 'Old EBS snapshots']))
     const how = within(screen.getByTestId('how-checks-work'))
     expect(how.getByText('No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; no dollar estimate')).toBeInTheDocument()
-    expect(how.getByText('Your own snapshots older than 180 days that no AMI, AWS Backup plan or Data Lifecycle Manager policy uses; savings shown as an upper bound')).toBeInTheDocument()
+    expect(how.getByText('Your own snapshots older than 180 days that no registered AMI, AWS Backup plan or Data Lifecycle Manager policy uses; locked snapshots are excluded; savings shown as an upper bound')).toBeInTheDocument()
 
     const planned = within(screen.getByTestId('planned-checks'))
     expect(planned.getByText('Planned / Coming soon (22)')).toBeInTheDocument()

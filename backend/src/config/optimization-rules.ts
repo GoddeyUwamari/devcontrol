@@ -150,7 +150,7 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     id: 'ebs_old_snapshots',
     service: 'EBS',
     name: 'Old EBS snapshots',
-    detail: 'Your own snapshots older than 180 days that no AMI, AWS Backup plan or Data Lifecycle Manager policy uses; savings shown as an upper bound',
+    detail: 'Your own snapshots older than 180 days that no registered AMI, AWS Backup plan or Data Lifecycle Manager policy uses; locked snapshots are excluded; savings shown as an upper bound',
     status: 'implemented',
     issue: ISSUE_EBS_OLD_SNAPSHOT,
   },
