@@ -68,7 +68,9 @@ describe('HeroSection copy', () => {
     const tag = screen.getByTestId('hero-sample-panel-tag')
     expect(text(tag)).toBe('Sample data')
     expect(tag.className).toContain('uppercase')
-    expect(panel).toHaveAccessibleDescription('Illustrative example. Your own findings appear after your first scan.')
+    expect(panel).toHaveAccessibleDescription(
+      'Illustrative example. Actual findings and savings estimates depend on your AWS account data.',
+    )
     // The caption sits directly under the panel, outside its card.
     expect(screen.getByTestId('hero-sample-panel-caption').previousElementSibling).toBe(panel)
   })
@@ -86,13 +88,11 @@ describe('HeroSection copy', () => {
         .getAllByTestId('hero-scan-row')
         .map((row) => Array.from(row.children).map(text)),
     ).toEqual([
-      ['EC2', 'Low-activity instances · Unused Elastic IPs · Reserved Instance opportunities'],
-      ['EBS', 'Unattached volumes · gp2-to-gp3 migration opportunities'],
-      ['DynamoDB', 'Unused capacity · On-demand vs. provisioned capacity'],
-      ['S3', 'Lifecycle optimization'],
-      ['Lambda', 'Low-usage functions'],
+      ['Compute', 'Idle EC2 instances · Unused Elastic IPs · Reserved Instances'],
+      ['Storage', 'Unattached EBS · gp2 → gp3 · S3 lifecycle'],
+      ['Data & Serverless', 'DynamoDB capacity · Lambda usage'],
     ])
-    expect(text(scanBlocks[3])).toBe('See estimated monthly savings where the available data supports an estimate.')
+    expect(text(scanBlocks[3])).toBe('Estimated monthly savings where supported by available data.')
 
     const time = screen.getByTestId('hero-time-card')
     const timeBlocks = Array.from(time.children)
@@ -127,6 +127,9 @@ describe('HeroSection copy', () => {
       'hiding in your bill',
       '4 cost checks',
       'Idle RDS snapshot',
+      'Low-activity instances',
+      'gp2-to-gp3 migration opportunities',
+      'Your own findings appear after your first scan',
     ]) {
       expect(all).not.toContain(gone)
     }

@@ -28,15 +28,13 @@ const SAMPLE_ROWS: SampleRow[] = [
 ]
 
 /**
- * The band's first card: the cost checks a first scan runs, by service. Each one
+ * The band's first card: the cost checks a first scan runs, grouped. Each one
  * is a real check (backend/src/config/optimization-rules.ts).
  */
-const SCAN_CHECKS: { service: string; items: string }[] = [
-  { service: 'EC2', items: 'Low-activity instances · Unused Elastic IPs · Reserved Instance opportunities' },
-  { service: 'EBS', items: 'Unattached volumes · gp2-to-gp3 migration opportunities' },
-  { service: 'DynamoDB', items: 'Unused capacity · On-demand vs. provisioned capacity' },
-  { service: 'S3', items: 'Lifecycle optimization' },
-  { service: 'Lambda', items: 'Low-usage functions' },
+const SCAN_CHECKS: { group: string; items: string }[] = [
+  { group: 'Compute', items: 'Idle EC2 instances · Unused Elastic IPs · Reserved Instances' },
+  { group: 'Storage', items: 'Unattached EBS · gp2 → gp3 · S3 lifecycle' },
+  { group: 'Data & Serverless', items: 'DynamoDB capacity · Lambda usage' },
 ]
 
 const TIME_LINES = ['Read-only AWS access · No agents · No code changes', 'Revoke access anytime']
@@ -106,7 +104,7 @@ function SamplePanel() {
         className="m-0 mt-3 px-1 text-sm leading-normal text-slate-600"
         data-testid="hero-sample-panel-caption"
       >
-        Illustrative example. Your own findings appear after your first scan.
+        Illustrative example. Actual findings and savings estimates depend on your AWS account data.
       </p>
     </div>
   )
@@ -184,20 +182,20 @@ export function HeroSection() {
           <div className="rounded-2xl border border-slate-200 bg-white p-7" data-testid="hero-scan-card">
             <p className="m-0 text-xs font-semibold uppercase tracking-wider text-slate-600">What your first scan checks</p>
             <h2 className="m-0 mt-2 text-2xl font-bold tracking-tight text-slate-900">AWS cost optimization</h2>
-            <ul className="m-0 mt-4 list-none divide-y divide-slate-200 p-0">
+            <ul className="m-0 mt-4 list-none p-0">
               {SCAN_CHECKS.map((check) => (
                 <li
-                  key={check.service}
-                  className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm leading-snug"
+                  key={check.group}
+                  className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 lg:grid-cols-[8.5rem_minmax(0,1fr)] py-2.5 text-sm leading-snug"
                   data-testid="hero-scan-row"
                 >
-                  <span className="font-semibold text-slate-900">{check.service}</span>
+                  <span className="font-semibold text-slate-900">{check.group}</span>
                   <span className="text-slate-700">{check.items}</span>
                 </li>
               ))}
             </ul>
             <p className="m-0 mt-4 text-sm leading-normal text-slate-600">
-              See estimated monthly savings where the available data supports an estimate.
+              Estimated monthly savings where supported by available data.
             </p>
           </div>
 
