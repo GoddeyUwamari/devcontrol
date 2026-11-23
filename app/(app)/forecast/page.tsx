@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { forecastService } from '@/lib/services/forecast.service';
 import { CostForecast, Scenario, ScenarioType } from '@/types/forecast.types';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -24,6 +25,8 @@ import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis';
 import { cn } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme';
+import awsAccountsService from '@/lib/services/aws-accounts.service';
+import { NotConnectedCard } from '@/components/aws/not-connected';
 
 /** "Nov 12": a chart category label for a UTC day. */
 const dayLabel = (d: Date | string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -34,6 +37,12 @@ function shortHistoryOf(error: unknown): ShortHistory | null {
   const e = error as { status?: number; body?: { code?: string; finishedDays?: number; requiredDays?: number } } | null;
   if (e?.status !== 422 || e.body?.code !== 'INSUFFICIENT_FORECAST_HISTORY') return null;
   return { finishedDays: Number(e.body.finishedDays ?? 0), requiredDays: Number(e.body.requiredDays ?? 7) };
+}
+
+/** GET /api/forecast's 409 for no connected AWS account (PR4a): the connection changed after the check. */
+function isNotConnectedRefusal(error: unknown): boolean {
+  const e = error as { status?: number; body?: { code?: string } } | null;
+  return e?.status === 409 && e.body?.code === 'NOT_CONNECTED';
 }
 
 const stripMarkdown = (text: string) =>
@@ -54,6 +63,23 @@ export default function ForecastPage() {
   const planNotice = usePlanNotice(tierRequired);
   const [shortHistory, setShortHistory] = useState<ShortHistory | null>(null);
 
+  // PR4a empty states: the server's connection state, the same query (and cache entry) as Costs and
+  // Cost Optimization. Not connected only when the server says so; a failed or ambiguous check is
+  // today's page, unchanged. The forecast is never requested before this answers, or when not connected.
+  const queryClient = useQueryClient();
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  // Set when GET /api/forecast answered 409 NOT_CONNECTED (the account went after the check):
+  // the not-connected state, never an error card or toast.
+  const [refusedNotConnected, setRefusedNotConnected] = useState(false);
+  const notConnected = awsAccounts?.connection === 'not_connected' || refusedNotConnected;
+  const connectionLoading = awsAccounts === undefined && !accountsError;
+  const canLoadForecast = isPro && !connectionLoading && !notConnected;
+
   const [customParams, setCustomParams] = useState({
     trafficMultiplier: 2,
     newServiceCost: 1000,
@@ -69,7 +95,7 @@ export default function ForecastPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  useEffect(() => { if (isPro) loadForecast(); }, [isPro]);
+  useEffect(() => { if (canLoadForecast) loadForecast(); }, [canLoadForecast]);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(0);
@@ -92,6 +118,12 @@ export default function ForecastPage() {
       if (mountedRef.current) setForecast(data);
     } catch (error: unknown) {
       if (!mountedRef.current) return;
+      if (isNotConnectedRefusal(error)) {
+        // The shared connection entry is out of date: refresh it for every page that reads it.
+        setRefusedNotConnected(true);
+        void queryClient.invalidateQueries({ queryKey: ['aws-accounts'] });
+        return;
+      }
       const required = tierRequiredOf(error);
       const short = shortHistoryOf(error);
       if (required) setTierRequired(required);
@@ -172,6 +204,22 @@ export default function ForecastPage() {
 
   if (plan.status === 'loading') return <PlanLoadingState />;
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />;
+  // Until the connection check answers: grey blocks only (no plan lock, no claims).
+  if (connectionLoading) return <PlanLoadingState />;
+
+  // No AWS account connected: the page's title and the shared card. No plan lock (free or paid),
+  // no forecast request, no loading screen and no error.
+  if (notConnected) {
+    return (
+      <div className="min-h-screen px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto" data-testid="forecast-not-connected">
+        <div className="mb-8">
+          <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1')}>Cost Forecasting</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>AI-powered predictions and scenario planning for your AWS costs</p>
+        </div>
+        <NotConnectedCard />
+      </div>
+    );
+  }
 
   if (!isPro || tierRequired) {
     return (

@@ -4,6 +4,8 @@ import { CostForecastService, InsufficientForecastHistoryError } from '../servic
 import { ForecastAIService } from '../services/forecast-ai.service';
 import { ScenarioPlanningService } from '../services/scenario-planning.service';
 import { releaseRequestConnection } from '../middleware/request-lifecycle';
+import { isAwsAccountNotConnected } from '../repositories/aws-accounts.repository';
+import { AWS_NOT_CONNECTED_CODE, FORECAST_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 
 /**
  * Logs a failed forecast without the error object. The response never
@@ -57,6 +59,17 @@ export class ForecastController {
         forecast,
       });
     } catch (error: any) {
+      // No eligible AWS account (PR4a): a state, not a failure, so nothing is
+      // logged. By class only: a connected account's failures (AssumeRole
+      // refused, a client without credentials) carry the same AWS_NOT_CONNECTED
+      // text and keep the 500 below.
+      if (isAwsAccountNotConnected(error)) {
+        return res.status(409).json({
+          success: false,
+          code: AWS_NOT_CONNECTED_CODE,
+          error: FORECAST_NOT_CONNECTED_MESSAGE,
+        });
+      }
       if (error instanceof InsufficientForecastHistoryError) {
         // Not a failure: too few days AWS Cost Explorer has finished (a newly
         // connected account). The page shows a "not enough history yet" state.

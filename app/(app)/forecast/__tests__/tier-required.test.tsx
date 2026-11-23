@@ -17,6 +17,8 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn() }) }))
+// PR4a: /forecast reads the connection first; these cases are a connected organization.
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' }) } }))
 
 const forecastJson = {
   id: 'f-1', organizationId: '00000000-0000-4000-8000-000000000001', generatedAt: '2026-10-01T00:00:00Z',

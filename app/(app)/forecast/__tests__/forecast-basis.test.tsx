@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getForecast = vi.hoisted(() => vi.fn())
 
@@ -15,8 +16,15 @@ vi.mock('@/lib/hooks/use-plan', () => ({
 }))
 vi.mock('@/lib/services/forecast.service', () => ({ forecastService: { getForecast, generateScenario: vi.fn() } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// PR4a: /forecast reads the connection first; these cases are a connected organization.
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' }) } }))
 
 import ForecastPage from '../page'
+
+/** The page needs a QueryClient since PR4a (the connection query). */
+const renderPage = () => render(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ForecastPage /></QueryClientProvider>
+)
 
 function forecast(organizationId: string) {
   const day = (d: string, value: number) => ({ date: new Date(d), value, actual: true })
@@ -59,14 +67,14 @@ beforeEach(() => {
 describe('/forecast basis', () => {
   it('a real forecast says it is projected from Cost Explorer daily totals, after credits and refunds, floored at $0', async () => {
     getForecast.mockResolvedValue(forecast('00000000-0000-4000-8000-000000000001'))
-    render(<ForecastPage />)
+    renderPage()
     const basis = await screen.findByTestId('forecast-basis')
     expect(basis.textContent).toBe('Projected from AWS Cost Explorer daily totals · After credits and refunds; amounts below $0 count as $0')
   })
 
   it('the demo forecast makes no Cost Explorer claim', async () => {
     getForecast.mockResolvedValue(forecast('demo'))
-    render(<ForecastPage />)
+    renderPage()
     await screen.findByText('Cost Forecasting')
     expect(screen.queryByTestId('forecast-basis')).toBeNull()
   })
