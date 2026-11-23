@@ -431,7 +431,9 @@ describe('AC-3 G4: detector calls time out under the call policy', () => {
       if (o.success) expect(o.recommendations).toEqual([]);
     }
     const failed = analysis.observations.filter((o) => !o.success).map((o) => o.issue).sort();
-    expect(failed).toHaveLength(6);
+    // C1 added two home-region detectors (idle RDS, old EBS snapshots): 6 + 2.
+    expect(failed).toHaveLength(8);
+    expect(failed).toEqual(expect.arrayContaining(['Idle RDS Instance', 'Old EBS Snapshot']));
   });
 
   it('G4: a per-resource call that never answers makes that resource unknown; the others reconcile', async () => {

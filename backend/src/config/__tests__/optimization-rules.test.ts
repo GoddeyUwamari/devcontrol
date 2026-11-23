@@ -28,6 +28,8 @@ import {
   ISSUE_LAMBDA_LOW_USAGE,
   ISSUE_DYNAMODB_CAPACITY,
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
+  ISSUE_RDS_IDLE_INSTANCE,
+  ISSUE_EBS_OLD_SNAPSHOT,
 } from '../optimization-rules';
 
 describe('OPTIMIZATION_RULES: identity', () => {
@@ -72,6 +74,9 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     'lambda_low_usage',
     'dynamodb_capacity',
     'dynamodb_capacity_mode',
+    // C1
+    'rds_idle',
+    'ebs_old_snapshots',
   ].sort();
 
   it('marks exactly the currently-wired detectors as implemented', () => {
@@ -90,6 +95,18 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     expect(byId['lambda_low_usage'].issue).toBe(ISSUE_LAMBDA_LOW_USAGE);
     expect(byId['dynamodb_capacity'].issue).toBe(ISSUE_DYNAMODB_CAPACITY);
     expect(byId['dynamodb_capacity_mode'].issue).toBe(ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED);
+    expect(byId['rds_idle'].issue).toBe(ISSUE_RDS_IDLE_INSTANCE);
+    expect(byId['ebs_old_snapshots'].issue).toBe(ISSUE_EBS_OLD_SNAPSHOT);
+  });
+
+  it('C1: the two new checks are named as prospects see them, and the registry is 11 of 33', () => {
+    const byId = Object.fromEntries(OPTIMIZATION_RULES.map((r) => [r.id, r]));
+    expect(byId['rds_idle']).toMatchObject({ service: 'RDS', name: 'Idle RDS instances', status: 'implemented' });
+    expect(byId['ebs_old_snapshots']).toMatchObject({ service: 'EBS', name: 'Old EBS snapshots', status: 'implemented' });
+    // The idle identity is not the retired oversized-RDS identity.
+    expect(ISSUE_RDS_IDLE_INSTANCE).not.toBe('Oversized Instance');
+    expect(getImplementedOptimizationRules()).toHaveLength(11);
+    expect(OPTIMIZATION_RULES).toHaveLength(33);
   });
 
   it('rds_rightsizing is retired to planned: no issue identity, and the detail says what evidence is missing', () => {

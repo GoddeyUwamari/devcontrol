@@ -26,7 +26,7 @@ import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import costOptimizationService from '../cost-optimization.service';
 import { classifySavingsBasis } from '../estimated-savings';
 import { getImplementedOptimizationRules } from '../../config/optimization-rules';
-import { fakeAutoScaling, fakeClassicElb, fakeCloudWatch, fakeEc2, fakeElb } from './helpers/low-activity-aws';
+import { fakeAutoScaling, fakeClassicElb, fakeClient, fakeCloudWatch, fakeEc2, fakeElb } from './helpers/low-activity-aws';
 
 function withMockedSend<T extends { send: (...args: any[]) => any }>(client: T, send: jest.Mock): T {
   (client as any).send = send;
@@ -87,6 +87,18 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
     const config = { ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' };
     return (await service.detectLowUsageLambdaFunctions(`guard-org-${Date.now()}`, lambda, cw, config)).issues;
   },
+  ebs_old_snapshots: async () => {
+    // C1: a 400-day-old 100 GB snapshot that no AMI, backup vault or DLM policy uses.
+    const ec2 = fakeClient((command: any) => {
+      const name = command.constructor.name;
+      if (name === 'DescribeSnapshotsCommand') {
+        return { Snapshots: [{ SnapshotId: 'snap-0000000000000guard', State: 'completed', StorageTier: 'standard', StartTime: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000), VolumeId: 'vol-0000000000000guard', VolumeSize: 100 }] };
+      }
+      return name === 'DescribeImagesCommand' ? { Images: [] } : { Volumes: [] };
+    });
+    const backup = fakeClient((command: any) => (command.constructor.name === 'ListBackupVaultsCommand' ? { BackupVaultList: [] } : { RecoveryPoints: [] }));
+    return (await service.detectOldEBSSnapshots({ ec2, backup }, 'us-east-1')).issues;
+  },
 };
 
 // Implemented rules not driven above. Each names the test file (in this
@@ -94,6 +106,12 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
 // basis -- the coverage test below fails if the file is missing, does not call
 // the detector, or no longer contains the assertion.
 const COVERED_ELSEWHERE: Record<string, { file: string; detector: string; assertion: RegExp; why: string }> = {
+  rds_idle: {
+    file: 'cost-optimization-rds-idle.test.ts',
+    detector: 'detectIdleRDSInstances',
+    assertion: /potentialSavings: 0,[^]*expect\(m\.savings_basis\)\.toBeUndefined\(\)/,
+    why: 'carries no dollar figure at all (no RDS price source)',
+  },
   ec2_reserved_instances: {
     file: 'estimated-savings.test.ts',
     detector: 'detectReservedInstanceOpportunities',
@@ -129,6 +147,11 @@ describe('savings basis guard: behavioural', () => {
     for (const issue of positive) {
       expect(classifySavingsBasis(issue.metadata.savings_basis)).not.toBeNull();
     }
+  });
+
+  it('ebs_old_snapshots states its figure as a ceiling, never an estimate', async () => {
+    const [issue] = await DRIVEN.ebs_old_snapshots();
+    expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('ceiling');
   });
 
   it('s3_lifecycle states its figure as a ceiling, never an estimate', async () => {

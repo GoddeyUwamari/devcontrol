@@ -92,6 +92,10 @@ function neutralizeOtherDetectors() {
     'detectLowUsageLambdaFunctions',
     'detectDynamoDBCapacityOptimization',
     'detectDynamoDBOnDemandVsProvisionedOptimization',
+    // C1: the idle RDS check reads DescribeDBInstances by design; neutralised here so
+    // "RDS is never called" still proves the retired oversized detector calls nothing.
+    'detectIdleRDSInstances',
+    'detectOldEBSSnapshots',
   ]) {
     jest.spyOn(costOptimizationService as any, detector).mockResolvedValue({ success: true, issues: [] });
   }

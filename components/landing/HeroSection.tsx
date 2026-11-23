@@ -33,8 +33,8 @@ const SAMPLE_ROWS: SampleRow[] = [
  */
 const SCAN_CHECKS: { group: string; items: string }[] = [
   { group: 'Compute', items: 'Idle EC2 instances · Unused Elastic IPs · Reserved Instances' },
-  { group: 'Storage', items: 'Unattached EBS · gp2 → gp3 · S3 lifecycle' },
-  { group: 'Data & Serverless', items: 'DynamoDB capacity · Lambda usage' },
+  { group: 'Storage', items: 'Unattached EBS · gp2 → gp3 · Old EBS snapshots · S3 lifecycle' },
+  { group: 'Data & Serverless', items: 'Idle RDS · DynamoDB capacity · Lambda usage' },
 ]
 
 const TIME_LINES = ['Read-only AWS access · No agents · No code changes', 'Revoke access anytime']

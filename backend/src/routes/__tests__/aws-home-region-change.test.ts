@@ -143,7 +143,8 @@ describe('PUT /api/aws/accounts/home-region: the change (T2)', () => {
     const res = await put(org, { region: 'us-west-2' });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.data.cost_findings_removed.total).toBe(8);
+    // C1: idle RDS and old EBS snapshots are home-scoped too (8 + 2).
+    expect(body.data.cost_findings_removed.total).toBe(10);
     expect(Object.keys(body.data.cost_findings_removed.by_issue).sort()).toEqual([...HOME_REGION_SCOPED_ISSUE_LIST]);
     expect((await stateOf(org)).recs).toEqual([]);
   });

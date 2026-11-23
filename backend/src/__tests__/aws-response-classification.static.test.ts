@@ -118,6 +118,12 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   'client-dynamodb:DescribeTableCommand': metadataOnly('table schema, throughput, size and indexes; no items'),
   'client-application-auto-scaling:DescribeScalableTargetsCommand': metadataOnly('scaling targets and capacity bounds'),
   'client-backup:ListRecoveryPointsByResourceCommand': metadataOnly('recovery point ARNs, status and dates'),
+  // C1, the old EBS snapshot rule: only identifiers, state, tier, dates, size and tag keys are read;
+  // snapshot and AMI descriptions are never read or stored.
+  'client-ec2:DescribeSnapshotsCommand': metadataOnly('snapshot IDs, state, storage tier, start time, source volume ID and size, encryption flag, tags'),
+  'client-ec2:DescribeImagesCommand': metadataOnly('AMI IDs and the snapshot IDs in their block device mappings'),
+  'client-backup:ListBackupVaultsCommand': metadataOnly('backup vault names and ARNs'),
+  'client-backup:ListRecoveryPointsByBackupVaultCommand': metadataOnly('recovery point ARNs (an EBS snapshot ARN for EBS), resource type, status and dates'),
   'client-iam:ListUsersCommand': metadataOnly('user names, IDs, ARNs and dates'),
   'client-iam:ListMFADevicesCommand': metadataOnly('MFA device serial numbers and dates'),
   'client-iam:GetLoginProfileCommand': metadataOnly('whether a console password exists, and its dates'),

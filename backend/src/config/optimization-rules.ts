@@ -60,6 +60,10 @@ export const ISSUE_S3_LIFECYCLE_OPTIMIZATION = 'S3 Lifecycle Optimization';
 export const ISSUE_LAMBDA_LOW_USAGE = 'Low-Usage Lambda Function';
 export const ISSUE_DYNAMODB_CAPACITY = 'DynamoDB Capacity Review Opportunity';
 export const ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED = 'DynamoDB Capacity Mode Comparison';
+// C1. Distinct from ISSUE_RDS_OVERSIZED_INSTANCE (the retired rds_rightsizing
+// identity), so retired rows and idle findings never share an identity.
+export const ISSUE_RDS_IDLE_INSTANCE = 'Idle RDS Instance';
+export const ISSUE_EBS_OLD_SNAPSHOT = 'Old EBS Snapshot';
 
 /** Display/grouping order used by the UI's service coverage list. */
 export const OPTIMIZATION_RULE_SERVICES = [
@@ -143,6 +147,14 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     issue: ISSUE_EBS_GP2_TO_GP3,
   },
   {
+    id: 'ebs_old_snapshots',
+    service: 'EBS',
+    name: 'Old EBS snapshots',
+    detail: 'Your own snapshots older than 180 days that no AMI, AWS Backup plan or Data Lifecycle Manager policy uses; savings shown as an upper bound',
+    status: 'implemented',
+    issue: ISSUE_EBS_OLD_SNAPSHOT,
+  },
+  {
     id: 'ebs_oversized',
     service: 'EBS',
     name: 'Oversized volumes',
@@ -154,9 +166,10 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
   {
     id: 'rds_idle',
     service: 'RDS',
-    name: 'Idle databases',
-    detail: 'Databases with negligible connection/query activity',
-    status: 'planned',
+    name: 'Idle RDS instances',
+    detail: 'No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, read replicas and stopped databases are not checked; no dollar estimate',
+    status: 'implemented',
+    issue: ISSUE_RDS_IDLE_INSTANCE,
   },
   {
     id: 'rds_rightsizing',

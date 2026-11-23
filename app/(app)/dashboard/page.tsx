@@ -428,9 +428,9 @@ export default function DashboardPage() {
   // so a newly-supported resource type only ever needs one new entry here, never a
   // UI restructure. All three types below ARE real, wired, currently-running detectors
   // in cost-optimization.service.ts (verified directly against the backend source,
-  // not assumed) — none is hardcoded as unsupported. RDS has no card: its only
-  // detector (oversized instances) was retired for having no utilisation data, and a
-  // card for a check that never runs would read as a truthful "0 detected".
+  // not assumed) — none is hardcoded as unsupported. Idle RDS findings (C1, no dollar
+  // estimate) and old EBS snapshots (resource type 'EBS Snapshot', an upper bound) have
+  // no card yet: they count in the totals above and are listed on Cost Optimization.
   const priorityBadgeFor = (severity?: 'LOW' | 'MEDIUM' | 'HIGH') =>
     severity === 'HIGH' ? { label: 'High priority', color: 'var(--text-danger)', background: 'var(--bg-danger)' }
     : severity === 'MEDIUM' ? { label: 'Medium priority', color: 'var(--text-warning)', background: 'var(--bg-warning)' }

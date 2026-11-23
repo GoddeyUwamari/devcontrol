@@ -87,6 +87,12 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-dynamodb:DescribeTableCommand': read('dynamodb:DescribeTable'),
   'client-application-auto-scaling:DescribeScalableTargetsCommand': read('application-autoscaling:DescribeScalableTargets'),
   'client-backup:ListRecoveryPointsByResourceCommand': read('backup:ListRecoveryPointsByResource'),
+  // C1: the old EBS snapshot rule (DescribeSnapshots/DescribeImages/DescribeVolumes and the
+  // AWS Backup vault listing, which both managed policies grant).
+  'client-ec2:DescribeSnapshotsCommand': read('ec2:DescribeSnapshots'),
+  'client-ec2:DescribeImagesCommand': read('ec2:DescribeImages'),
+  'client-backup:ListBackupVaultsCommand': read('backup:ListBackupVaults'),
+  'client-backup:ListRecoveryPointsByBackupVaultCommand': read('backup:ListRecoveryPointsByBackupVault'),
   'client-iam:ListUsersCommand': read('iam:ListUsers'),
   'client-iam:ListMFADevicesCommand': read('iam:ListMFADevices'),
   'client-iam:GetLoginProfileCommand': read('iam:GetLoginProfile'),

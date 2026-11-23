@@ -31,6 +31,71 @@ export function estimateEBSMonthlyCost(volumeType: string | undefined, sizeGB: n
   return sizeGB * rate;
 }
 
+// Amazon EBS Snapshots, Standard tier storage, $/GB-month, PER REGION -- used
+// only by the ebs_old_snapshots rule's upper bound (C1). Unlike the volume
+// table above, this table is regional and never falls back to another region's
+// price: a region missing here gives no dollar figure at all.
+//
+// Source: AWS's public price data for Amazon EBS, the data the EBS pricing page
+// renders -- https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ebs.json,
+// usage "Storage Snapshot Amazon S3 GB Mo", publication date (its
+// manifest.hawkFilePublicationDate) 2026-11-21T00:48:16Z, retrieved 2026-11-23.
+// Region names were mapped to codes with AWS's public location list,
+// https://b0.p.awsstatic.com/locations/1.0/aws/current/locations.json (type
+// "AWS Region"). Every commercial AWS region with a published price is listed;
+// AWS GovCloud (another partition, never a home region here) and Local Zones are
+// not. Re-verify against the same source before relying on these after time has
+// passed. Copies of both files: review-logs/cost-optimization/c1-evidence/.
+export const EBS_SNAPSHOT_STANDARD_PRICE_SOURCE = {
+  url: 'https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ebs.json',
+  usage: 'Storage Snapshot Amazon S3 GB Mo',
+  published: '2026-11-21T00:48:16Z',
+  retrieved: '2026-11-23',
+} as const;
+
+export const EBS_SNAPSHOT_STANDARD_PER_GB_MONTH_USD_BY_REGION: Readonly<Record<string, number>> = Object.freeze({
+  'af-south-1': 0.0595,
+  'ap-east-1': 0.055,
+  'ap-east-2': 0.045,
+  'ap-northeast-1': 0.05,
+  'ap-northeast-2': 0.05,
+  'ap-northeast-3': 0.05,
+  'ap-south-1': 0.05,
+  'ap-south-2': 0.05,
+  'ap-southeast-1': 0.05,
+  'ap-southeast-2': 0.055,
+  'ap-southeast-3': 0.05,
+  'ap-southeast-4': 0.055,
+  'ap-southeast-5': 0.045,
+  'ap-southeast-6': 0.0577,
+  'ap-southeast-7': 0.045,
+  'ca-central-1': 0.055,
+  'ca-west-1': 0.055,
+  'eu-central-1': 0.054,
+  'eu-central-2': 0.059,
+  'eu-north-1': 0.0475,
+  'eu-south-1': 0.0525,
+  'eu-south-2': 0.05,
+  'eu-west-1': 0.05,
+  'eu-west-2': 0.053,
+  'eu-west-3': 0.053,
+  'il-central-1': 0.06,
+  'me-central-1': 0.055,
+  'me-south-1': 0.055,
+  'mx-central-1': 0.053,
+  'sa-east-1': 0.068,
+  'us-east-1': 0.05,
+  'us-east-2': 0.05,
+  'us-west-1': 0.055,
+  'us-west-2': 0.05,
+});
+
+/** The region's standard snapshot storage price ($/GB-month), or null when the table has none -- never another region's. */
+export function ebsSnapshotStandardPricePerGbMonth(region: string | undefined | null): number | null {
+  if (!region || !Object.prototype.hasOwnProperty.call(EBS_SNAPSHOT_STANDARD_PER_GB_MONTH_USD_BY_REGION, region)) return null;
+  return EBS_SNAPSHOT_STANDARD_PER_GB_MONTH_USD_BY_REGION[region];
+}
+
 // AWS S3 storage pricing, us-east-1, $/GB-month, first 50TB tier -- verified
 // via AWS's published pricing (confirmed current as of 2026-09-06) -- used
 // only by the s3_lifecycle analyzer's ceiling estimate (see
