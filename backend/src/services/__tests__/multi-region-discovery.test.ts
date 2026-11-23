@@ -434,6 +434,24 @@ describe('failure isolation: one region fails, the scan completes', () => {
     expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: 'timed_out', reason: 'region_deadline' });
   }, 60_000);
 
+  // Review S-1: the tests above get their short deadline from shortDeadlineIn, so this one pins that the
+  // configured regionDeadlineMs reaches every region's run (awsResourceDiscovery.ts, the RegionRun built
+  // per region). The scan deadline (2 h) is longer, so the min() picks the configured 45 s for each.
+  it('the configured regionDeadlineMs is the deadline of every region run', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    const RealRegionRun = regionRunModule.RegionRun;
+    const deadlines: Record<string, number> = {};
+    jest.spyOn(regionRunModule, 'RegionRun').mockImplementation((name: string, options: regionRunModule.RegionRunOptions) => {
+      deadlines[name] = options.deadlineMs;
+      return new RealRegionRun(name, options);
+    });
+
+    await service({ regionDeadlineMs: 45_000 }).discoverAllResources(orgId);
+
+    expect(deadlines).toEqual(Object.fromEntries(SCAN_ORDER.map((region) => [region, 45_000])));
+  }, 60_000);
+
   it('L-2: a region whose deadline passes AFTER its complete search (during enrichment): no Resource Explorer reconcile', async () => {
     const orgId = await insertOrg();
     // A queue the search no longer returns: a reconcile would count it missing.
