@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const getForecast = vi.hoisted(() => vi.fn())
 const toastError = vi.hoisted(() => vi.fn())
@@ -20,8 +21,15 @@ vi.mock('@/lib/hooks/use-plan', () => ({
 }))
 vi.mock('@/lib/services/forecast.service', () => ({ forecastService: { getForecast, generateScenario: vi.fn() } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: toastError, info: vi.fn() } }))
+// PR4a: /forecast reads the connection first; these cases are a connected organization.
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' }) } }))
 
 import ForecastPage from '../page'
+
+/** The page needs a QueryClient since PR4a (the connection query). */
+const renderPage = () => render(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ForecastPage /></QueryClientProvider>
+)
 
 const utc = (d: string) => new Date(`${d}T00:00:00.000Z`)
 const point = (d: string, value: number, actual = true) => ({ date: utc(d), value, actual })
@@ -61,7 +69,7 @@ describe('R3-L4: fewer than 7 finished days', () => {
     getForecast.mockRejectedValue(Object.assign(new Error('Failed to fetch forecast'), {
       status: 422, body: { success: false, code: 'INSUFFICIENT_FORECAST_HISTORY', finishedDays: 3, requiredDays: 7 },
     }))
-    render(<ForecastPage />)
+    renderPage()
     const card = await screen.findByTestId('forecast-short-history')
     expect(card).toHaveTextContent('Not enough finished days yet')
     expect(card).toHaveTextContent('The forecast needs at least 7 days that AWS Cost Explorer has finished reporting. There are 3 so far. Check back in a few days.')
@@ -71,14 +79,14 @@ describe('R3-L4: fewer than 7 finished days', () => {
 
   it('one finished day reads "There is 1 so far"', async () => {
     getForecast.mockRejectedValue(Object.assign(new Error('x'), { status: 422, body: { code: 'INSUFFICIENT_FORECAST_HISTORY', finishedDays: 1, requiredDays: 7 } }))
-    render(<ForecastPage />)
+    renderPage()
     expect(await screen.findByTestId('forecast-short-history')).toHaveTextContent('There is 1 so far.')
   })
 
   it('any other failure (a 500, or a 422 without the code) is still the error card and toast', async () => {
     for (const err of [Object.assign(new Error('x'), { status: 500, body: { error: 'Failed to generate forecast' } }), Object.assign(new Error('x'), { status: 422, body: {} })]) {
       getForecast.mockRejectedValueOnce(err)
-      const { unmount } = render(<ForecastPage />)
+      const { unmount } = renderPage()
       expect(await screen.findByText('Unable to Load Forecast')).toBeInTheDocument()
       expect(screen.queryByTestId('forecast-short-history')).toBeNull()
       unmount()
@@ -90,34 +98,34 @@ describe('R3-L4: fewer than 7 finished days', () => {
 describe('R3-L2 / R3-L3 on a real forecast', () => {
   it('history ending Nov 12 with today Nov 17: says actual spend runs through Nov 12 and the next 30 days count from Nov 17', async () => {
     getForecast.mockResolvedValue(forecast(SEVEN, '2026-11-17'))
-    render(<ForecastPage />)
+    renderPage()
     expect(await screen.findByTestId('forecast-history-end')).toHaveTextContent(
       'Actual spend through Nov 12, the last day AWS Cost Explorer has finished. Later days are predicted. Next 30 days counts from today (Nov 17).')
   })
 
   it('history ending yesterday: no note (nothing between the last finished day and today)', async () => {
     getForecast.mockResolvedValue(forecast([...SEVEN.slice(1), point('2026-11-16', 1)].map((p, i) => ({ ...p, date: utc(`2026-11-${String(10 + i).padStart(2, '0')}`) })), '2026-11-17'))
-    render(<ForecastPage />)
+    renderPage()
     await screen.findByText('Cost Forecasting')
     expect(screen.queryByTestId('forecast-history-end')).toBeNull()
   })
 
   it('an older backend (no forecastStartDate): no note', async () => {
     getForecast.mockResolvedValue(forecast(SEVEN))
-    render(<ForecastPage />)
+    renderPage()
     await screen.findByText('Cost Forecasting')
     expect(screen.queryByTestId('forecast-history-end')).toBeNull()
   })
 
   it('a filled gap day (actual: false) gets the "Estimated (filled gap)" legend entry; none without one', async () => {
     getForecast.mockResolvedValue(forecast([...SEVEN.slice(0, 3), point('2026-11-09', 1, false), ...SEVEN.slice(4)], '2026-11-17'))
-    const { unmount } = render(<ForecastPage />)
+    const { unmount } = renderPage()
     const legend = await screen.findByTestId('forecast-estimated-legend')
     expect(legend.textContent).toBe('Estimated (filled gap)')
     expect(document.body.textContent).not.toContain('Estimated (no data)')
     unmount()
     getForecast.mockResolvedValue(forecast(SEVEN, '2026-11-17'))
-    render(<ForecastPage />)
+    renderPage()
     await screen.findByText('Cost Forecasting')
     expect(screen.queryByTestId('forecast-estimated-legend')).toBeNull()
   })

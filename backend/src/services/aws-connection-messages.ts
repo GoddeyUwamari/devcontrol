@@ -19,3 +19,6 @@ export const SCAN_NOT_CONNECTED_MESSAGE = 'Connect an AWS account before startin
 
 /** A cost analysis asked for with no AWS connection (PR1 no-account guards, approved copy). */
 export const COST_ANALYSIS_NOT_CONNECTED_MESSAGE = 'Connect an AWS account before running cost analysis.';
+
+/** A cost forecast asked for with no AWS connection (PR4a, approved copy). */
+export const FORECAST_NOT_CONNECTED_MESSAGE = 'Connect an AWS account before generating a forecast.';
