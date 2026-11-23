@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { RichText } from '../../services/ScanTime'
-import type { FindingsTile, OverviewView, Tile } from './overviewModel'
+import { UnmeasuredValue } from '@/components/aws/not-connected'
+import { TILE_LABELS, type FindingsTile, type OverviewView, type Tile } from './overviewModel'
 
 function Captions({ captions, now }: { captions: Tile['captions']; now: number }) {
   return (
@@ -55,6 +56,23 @@ export function KpiTiles({ tiles, now }: { tiles: NonNullable<OverviewView['tile
         <FindingsCard tile={tiles.findings} now={now} />
         <TileCard tile={tiles.savings} now={now} />
         <TileCard tile={tiles.ownership} now={now} />
+      </div>
+    </section>
+  )
+}
+
+/** No AWS account (PR2): the same four tiles' labels with "—" only; no caption or link under them. */
+export function UnmeasuredKpiTiles() {
+  return (
+    <section aria-labelledby="infra-kpi-heading">
+      <h2 id="infra-kpi-heading" className="sr-only">Summary</h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {(['spend', 'findings', 'savings', 'ownership'] as const).map((key) => (
+          <div key={key} data-testid={`infra-tile-${key}`} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+            <h3 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{TILE_LABELS[key]}</h3>
+            <UnmeasuredValue />
+          </div>
+        ))}
       </div>
     </section>
   )

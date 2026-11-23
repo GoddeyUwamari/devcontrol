@@ -16,6 +16,8 @@ import { useAuth } from '@/lib/contexts/auth-context'
 import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
 import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected'
 import { pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
@@ -211,6 +213,18 @@ export default function CostsPage() {
     enabled: !isDemoActive,
   })
 
+  // PR2 empty states: the server's connection state, the same query (and cache entry) as Cost Optimization.
+  // Not connected only when the server says so; a failed or ambiguous check is today's page, unchanged.
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: !isDemoActive,
+  })
+  const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
+  const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError
+
   const { data: activeRecs = [], isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
@@ -392,7 +406,8 @@ export default function CostsPage() {
       // different periods and scopes, so the ratio is not a real billing ratio.
       sub: recsUnavailable ? recsUnavailableSub : describeAnnualizedSavings(displaySavings),
       subColor: recsUnavailable ? 'text-ink-muted' : 'text-ink-success', TrendIcon: recsUnavailable ? Minus : TrendingDown, trendColor: recsUnavailable ? 'text-ink-muted' : 'text-ink-success',
-      href: '/cost-optimization', borderTop: 'border-t-[3px] border-t-green-500', valueColor: 'text-ink-success',
+      // No AWS account: no green savings accent on an unmeasured "—" (PR2).
+      href: '/cost-optimization', borderTop: notConnected ? '' : 'border-t-[3px] border-t-green-500', valueColor: 'text-ink-success',
     },
     {
       key: 'mtd', label: spend.label,
@@ -442,7 +457,7 @@ export default function CostsPage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
                 Synced 2 min ago
               </span>
-            ) : costSummary?.spend.asOf ? (
+            ) : costSummary?.spend.asOf && !notConnected && !connectionLoading ? (
               <span className="inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted">
                 Cost data as of {new Date(costSummary.spend.asOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
@@ -452,7 +467,7 @@ export default function CostsPage() {
                 <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500" />
                 All systems clear
               </span>
-            ) : growthRate !== null ? (
+            ) : growthRate !== null && !notConnected && !connectionLoading ? (
               // Only a real comparison can say whether spend spiked; a missing one says nothing.
               <span className={`inline-flex items-center gap-1.5 text-label font-medium rounded-full px-2.5 py-1 ${
                 costAnomalyDetected
@@ -468,6 +483,7 @@ export default function CostsPage() {
             AWS spend visibility, forecasting, and AI-powered cost optimization.
           </p>
         </div>
+        {connectionLoading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : (
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white text-slate-600 px-4 py-2.5 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
             <Download size={14} /> Export CSV
@@ -476,10 +492,13 @@ export default function CostsPage() {
             <Zap size={14} /> Optimize Now
           </a>
         </div>
+        )}
       </div>
 
+      {connectionLoading ? <NotConnectedLoading tiles={4} /> : (<>
+
       {/* ── COST ANOMALY BANNER ── */}
-      {(isDemoActive || costAnomalyDetected) && (
+      {(isDemoActive || (costAnomalyDetected && !notConnected)) && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 mb-6 flex items-start gap-3.5">
           <div className="relative shrink-0 mt-0.5">
             <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
@@ -522,29 +541,35 @@ export default function CostsPage() {
       {/* ── 4 KPI CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         {kpiCards.map(({ key, label, value, sub, subColor, TrendIcon, trendColor, href, borderTop, valueColor, previous }: (typeof kpiCards)[number] & { previous?: string | null }) => (
-          <Link key={key} href={href} className="no-underline">
+          // Each tile fills its grid row, so a wrapped label never leaves the row's tiles at different heights.
+          <Link key={key} href={href} className="no-underline block h-full">
             <div
-              className={`bg-white rounded-xl p-4 sm:p-6 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${borderTop}`}
+              className={`h-full bg-white rounded-xl p-4 sm:p-6 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${borderTop}`}
               onMouseEnter={() => setHoveredCard(key)}
               onMouseLeave={() => setHoveredCard(null)}
             >
               <div className="flex items-center justify-between mb-3">
                 <span className="text-label font-semibold text-ink-muted uppercase tracking-widest">{label}</span>
-                <span className="text-ink-muted text-ui">›</span>
+                {!notConnected && <span className="text-ink-muted text-ui">›</span>}
               </div>
+              {/* No AWS account: label and "—" only, nothing under it (PR2). */}
+              {notConnected ? <UnmeasuredValue className="text-section sm:text-kpi" /> : (<>
               <div className={`text-section sm:text-kpi tabular-nums leading-none mb-2 ${valueColor}`}>{value}</div>
               <div className={`flex items-center gap-1.5 text-meta ${subColor}`}>
                 <TrendIcon size={12} className={trendColor} />
                 <span className="leading-relaxed">{sub}</span>
               </div>
               {previous && <p className="text-meta text-ink-muted mt-2 m-0" data-testid="previous-month-line">{previous}</p>}
+              </>)}
             </div>
           </Link>
         ))}
       </div>
 
+      {notConnected && <NotConnectedCard className="mb-5" />}
+
       {/* ── NL SEARCH ── */}
-      {!isPro ? (
+      {notConnected ? null : !isPro ? (
         <div className="mb-6 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-7 text-center">
           <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-3">
             <Lock size={18} className="text-violet-600" />
@@ -665,7 +690,7 @@ export default function CostsPage() {
               {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : `Historical AWS spend by ${trendUnit}, from Cost Explorer · ${TREND_TOTALS_NOTE}`}
             </p>
           </div>
-          <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
+          {!notConnected && <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
             {DATE_RANGES.map(({ label }) => (
               <button
                 key={label}
@@ -677,9 +702,11 @@ export default function CostsPage() {
                 {label}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
 
+        {/* No AWS account: only the empty-chart message below (no KPI row, top drivers, range tabs or legend; PR2). */}
+        {!notConnected && (<>
         {/* Chart summary */}
         <div className="flex flex-wrap gap-4 sm:gap-8 mb-5 pb-5 border-b border-slate-100">
           {[
@@ -718,6 +745,7 @@ export default function CostsPage() {
             <span className="text-meta text-ink-muted self-center">{costTrendLoading ? 'Loading…' : 'Not available'}</span>
           )}
         </div>
+        </>)}
 
         {/* Chart */}
         {isDemoActive ? (
@@ -747,11 +775,12 @@ export default function CostsPage() {
             </ResponsiveContainer>
           </div>
         ) : costTrendLoading ? (
-          <div className="h-60 flex items-center justify-center">
+          <div className={`${notConnected ? 'py-6' : 'h-60'} flex items-center justify-center`}>
             <Loader2 size={20} className="text-slate-400 animate-spin" />
           </div>
         ) : !hasTrendData ? (
-          <div className="h-60 flex items-center justify-center text-center px-4">
+          // No AWS account: about the height of Cost by Service's message (PR2).
+          <div className={`${notConnected ? 'py-6' : 'h-60'} flex items-center justify-center text-center px-4`}>
             <p className="text-meta text-ink-muted m-0">
               {costTrendError
                 ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
@@ -787,7 +816,7 @@ export default function CostsPage() {
         )}
 
         {/* Legend */}
-        <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-slate-100">
+        {!notConnected && <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-slate-100">
           {(isDemoActive
             ? [
                 { color: '#0F172A', dash: false, label: 'Actual spend' },
@@ -819,22 +848,23 @@ export default function CostsPage() {
           <span className="text-meta text-ink-muted ml-auto hidden sm:block">
             {isDemoActive ? 'Values shown as monthly equivalent' : trendUnit === 'month' ? 'Values shown as monthly spend' : 'Values shown as daily spend'}
           </span>
-        </div>
+        </div>}
       </div>
 
       {/* ── COST BY SERVICE + TOP SAVINGS ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+      {/* No AWS account: Cost by Service alone, full width (Top Savings hidden; PR2). */}
+      <div className={`grid grid-cols-1 gap-5 mb-5 ${notConnected ? '' : 'lg:grid-cols-2'}`}>
 
         {/* Cost by Service */}
         <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-ui font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
-              {!isDemoActive && <p className="text-meta text-ink-muted m-0 mt-0.5" data-testid="cost-by-service-basis">AWS Cost Explorer · selected range ({selectedRange}) · {TREND_TOTALS_NOTE}</p>}
+              {!isDemoActive && !notConnected && <p className="text-meta text-ink-muted m-0 mt-0.5" data-testid="cost-by-service-basis">AWS Cost Explorer · selected range ({selectedRange}) · {TREND_TOTALS_NOTE}</p>}
             </div>
-            <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
+            {!notConnected && <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
               Full breakdown <ChevronRight size={12} />
-            </a>
+            </a>}
           </div>
           <div className="flex flex-col gap-4">
             {!isDemoActive && !hasTrendData ? (
@@ -880,7 +910,7 @@ export default function CostsPage() {
         </div>
 
         {/* Top Savings */}
-        <div className="bg-white rounded-2xl p-5 sm:p-8 border border-green-200 border-t-[3px] border-t-green-500">
+        {!notConnected && <div className="bg-white rounded-2xl p-5 sm:p-8 border border-green-200 border-t-[3px] border-t-green-500">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-ui font-semibold text-ink-success m-0 tracking-tight">Top Savings</h2>
             <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
@@ -940,7 +970,7 @@ export default function CostsPage() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* ── DEVCONTROL VALUE DELIVERED ── */}
@@ -965,6 +995,7 @@ export default function CostsPage() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   )
 }

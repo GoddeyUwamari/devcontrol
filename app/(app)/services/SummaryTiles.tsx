@@ -69,8 +69,8 @@ function GapCaption({ gap }: { gap: 'no-account' | 'not-scanned' }) {
     : <p className="m-0 text-meta text-slate-600">{NOT_SCANNED_TEXT}</p>
 }
 
-function Tile({ label, value, tone, aside, children }: { label: string; value: string; tone?: 'danger'; aside?: string | null; children?: React.ReactNode }) {
-  const kpi = <p className={`m-0 text-kpi tabular-nums leading-none ${tone === 'danger' ? 'text-red-700' : 'text-slate-900'}`}>{value}</p>
+function Tile({ label, value, tone, aside, children }: { label: string; value: string; tone?: 'danger' | 'unmeasured'; aside?: string | null; children?: React.ReactNode }) {
+  const kpi = <p className={`m-0 text-kpi tabular-nums leading-none ${tone === 'danger' ? 'text-red-700' : tone === 'unmeasured' ? 'text-ink-muted' : 'text-slate-900'}`}>{value}</p>
   return (
     <div className={`bg-white rounded-xl p-4 border flex flex-col gap-1.5 ${tone === 'danger' ? 'border-red-200' : 'border-slate-200'}`}>
       <h2 className="m-0 text-label uppercase tracking-[0.04em] text-slate-700">{label}</h2>
@@ -101,8 +101,13 @@ const SEVERITY_CHIPS = [
 ] as const
 
 /** The five tiles (Q11): Needs attention, Unowned, Resources, Services, AWS spend. */
-export function SummaryTiles({ stats: statsState, coverage, registered, spend, onShowUnowned, redesign }: {
+export function SummaryTiles({ stats: statsState, coverage, registered, spend, onShowUnowned, redesign, notConnected = false }: {
   stats: StatsState
+  /**
+   * No AWS account connected (PR2, the redesign only): the inventory and spend tiles are label and "—" with
+   * nothing under them; Services keeps its real registered count.
+   */
+  notConnected?: boolean
   /** The Services redesign (PR 3b): scope captions from the server's fields, and no Coming soon tags. */
   redesign?: RedesignTiles
   coverage: ServicesCoverage | undefined
@@ -123,7 +128,27 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
   const gap = statsState.loading ? null : inventoryGap(coverage, stats?.total)
   const count = (n: number | undefined) => (gap ? '—' : kpi(n, statsState))
   // Red only when something is flagged.
-  const flagged = !gap && !statsState.loading && !statsState.unavailable && (stats?.needs_attention ?? 0) > 0
+  const flagged = !notConnected && !gap && !statsState.loading && !statsState.unavailable && (stats?.needs_attention ?? 0) > 0
+
+  const servicesTile = (
+    <Tile label="Services" value={kpi(registered.count, { loading: registered.loading, unavailable: registered.error })}>
+      <p className="m-0 text-meta text-slate-600">
+        registered{!redesign && stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <ComingSoonTag /></>}
+      </p>
+    </Tile>
+  )
+
+  if (notConnected) {
+    return (
+      <section aria-label="Summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+        <Tile label="Needs attention" value="—" tone="unmeasured" />
+        <Tile label="Unowned" value="—" tone="unmeasured" />
+        <Tile label="Resources" value="—" tone="unmeasured" />
+        {servicesTile}
+        <Tile label="AWS spend, month to date" value="—" tone="unmeasured" />
+      </section>
+    )
+  }
 
   return (
     <section aria-label="Summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
@@ -157,11 +182,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
         {!gap && redesign?.resourcesEarlier && <p data-testid="resources-earlier" className="m-0 text-meta text-slate-600">{redesign.resourcesEarlier}</p>}
       </Tile>
 
-      <Tile label="Services" value={kpi(registered.count, { loading: registered.loading, unavailable: registered.error })}>
-        <p className="m-0 text-meta text-slate-600">
-          registered{!redesign && stats?.mapped_to_service === 0 && stats.total > 0 && <> · resources not mapped to services yet <ComingSoonTag /></>}
-        </p>
-      </Tile>
+      {servicesTile}
 
       <Tile label="AWS spend, month to date" value={spendView.kind === 'loading' ? '…' : spendView.kind === 'billed' ? spendView.value : '—'}>
         {(spendView.kind === 'billed' || spendView.kind === 'no_billed_days') && (

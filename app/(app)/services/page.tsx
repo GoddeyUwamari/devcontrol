@@ -448,6 +448,8 @@ export default function ServicesPage() {
           banners={<>{resourceFocus}{upgradePrompt}</>}
           pageError={error}
           knownNoAccount={knownNoAccount}
+          connectionLoading={!isDemoActive && (!orgId || awsConnection === 'loading')}
+          onRetryLoad={() => { setDiscoveryError(null); if (statsQuery.isError) statsQuery.refetch() }}
           onFiltersChange={clearDiscoveryError}
         />
       ) : (<>

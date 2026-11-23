@@ -272,11 +272,22 @@ describe('R4 states', () => {
   it('S1 no account: the connect card only; no tiles, table, cost or ownership; no Sync', async () => {
     noAccount()
     await renderSettled()
+    // PR2: the shared NotConnectedCard (one heading, one filled button) and the outlined header button.
     expect(screen.getByRole('heading', { level: 2, name: 'No AWS account connected' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Connect AWS →' })).toHaveAttribute('href', '/connect-aws')
-    for (const name of ['Summary', 'What needs attention', 'Cost by AWS service', 'Ownership gaps']) expect(screen.queryByRole('heading', { name })).toBeNull()
+    expect(screen.getByTestId('not-connected-card-button')).toHaveAttribute('href', '/connect-aws')
+    expect(screen.getByTestId('connect-aws-header-button')).toHaveAttribute('href', '/connect-aws')
+    expect(screen.getAllByRole('link', { name: 'Connect AWS account' })).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'Connect AWS →' })).toBeNull()
+    for (const name of ['What needs attention', 'Cost by AWS service', 'Ownership gaps', 'What we checked']) expect(screen.queryByRole('heading', { name })).toBeNull()
+    // PR2: the KPI row as label and "—" only, above the card.
+    for (const [key, label] of [['spend', 'Spend this month'], ['findings', 'Open findings'], ['savings', 'Possible savings'], ['ownership', 'Owned resources']]) {
+      expect(screen.getByTestId(`infra-tile-${key}`).textContent).toBe(`${label}—Not measured`)
+    }
+    expect(screen.getByTestId('infra-tile-ownership').compareDocumentPosition(screen.getByTestId('not-connected-card')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Sync|Scan now|Scanning/ })).toBeNull()
-    expect(screen.getByText('Nothing has been checked yet.')).toBeInTheDocument()
+    // PR2: no duplicate bare status line, no empty What we checked card.
+    expect(screen.queryByText('No AWS account connected.')).toBeNull()
+    expect(screen.queryByText('Nothing has been checked yet.')).toBeNull()
   })
   it.each(Object.keys(CONNECTED_STATES))('renders without throwing (%s)', async (state) => {
     CONNECTED_STATES[state]()
@@ -302,13 +313,19 @@ describe('RU-3 the savings tile\'s "Review recommendations →" link', () => {
     CONNECTED_STATES[state]()
     const pending = state === 'loading' ? 7 : state === 'coverage loading' ? 1 : 0
     await renderSettled(pending)
+    if (pending) {
+      // PR2 loading gate: until coverage says connected or not, grey blocks only (no tiles, no link).
+      expect(screen.getByTestId('connection-loading')).toBeInTheDocument()
+      expect(screen.queryByTestId('infra-tile-savings')).toBeNull()
+      return
+    }
     const tile = screen.getByTestId('infra-tile-savings')
     expect(within(tile).getByRole('link', { name: 'Review recommendations →' })).toHaveAttribute('href', '/cost-optimization')
   })
-  it('is absent with no AWS account (S1): no savings tile, no link', async () => {
+  it('is absent with no AWS account (S1): the savings tile is "—" only, no link (PR2)', async () => {
     noAccount()
     await renderSettled()
-    expect(screen.queryByTestId('infra-tile-savings')).toBeNull()
+    expect(within(screen.getByTestId('infra-tile-savings')).getByTestId('unmeasured-value')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Review recommendations/ })).toBeNull()
   })
 })
@@ -775,5 +792,66 @@ describe('PR 3d-2 wording and links', () => {
     vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'false')
     await renderSettled()
     expect(screen.queryAllByRole('link', { name: 'Region coverage →' })).toHaveLength(0)
+  })
+})
+
+// ── PR2: the not-connected (no AWS account) state ──
+
+describe('PR2 not connected', () => {
+  const FREE = { isFree: true, isStarter: false, isPro: false, tier: 'free', lacksEntitlement: () => false }
+
+  it('no account: subtitle kept, outlined header button, the shared card; no Upgrade banner, What we checked or bare status line', async () => {
+    m.plan = FREE
+    noAccount()
+    await renderSettled()
+    expect(screen.getByText(OVERVIEW_COPY.subtitle)).toBeInTheDocument()
+    const header = screen.getByRole('banner')
+    expect(within(header).getByRole('link', { name: 'Connect AWS account' })).toHaveAttribute('href', '/connect-aws')
+    expect(within(header).getByTestId('connect-aws-header-button')).toBeInTheDocument()
+    const card = screen.getByTestId('not-connected-card')
+    expect(within(card).getByRole('heading', { level: 2, name: 'No AWS account connected' })).toBeInTheDocument()
+    expect(within(card).getAllByRole('link')).toHaveLength(1)
+    // The card's only text: its heading and its button.
+    expect(card.textContent).toBe('No AWS account connectedConnect AWS account')
+    expect(screen.queryByTestId('infra-free-banner')).toBeNull()
+    expect(screen.queryByRole('link', { name: /Upgrade/ })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'What we checked' })).toBeNull()
+    expect(screen.queryByText('No AWS account connected.')).toBeNull()
+    expect(screen.getAllByText('No AWS account connected')).toHaveLength(1)
+  })
+
+  it('connected: unchanged (Scan now, the plan banner, What we checked; no card, no Connect button)', async () => {
+    m.plan = FREE
+    connected()
+    await renderSettled()
+    expect(screen.getAllByRole('button', { name: /Scan now/ }).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('infra-free-banner')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'What we checked' })).toBeInTheDocument()
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
+    expect(screen.queryByTestId('connect-aws-header-button')).toBeNull()
+    expect(screen.queryByTestId('connection-loading')).toBeNull()
+  })
+
+  it('coverage loading: grey blocks only under the title and subtitle (no card, banner, button or claim)', async () => {
+    m.plan = FREE
+    connected()
+    m.responses['GET /api/services/coverage'] = never
+    await renderSettled(1)
+    expect(screen.getByTestId('connection-loading')).toBeInTheDocument()
+    expect(screen.getByTestId('connection-loading-tiles').children).toHaveLength(4)
+    expect(screen.getByTestId('header-action-loading')).toBeInTheDocument()
+    expect(screen.queryByTestId('infra-free-banner')).toBeNull()
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+  })
+
+  it('coverage failed: neither state; today\'s page (no card, no Connect button)', async () => {
+    connected()
+    m.responses['GET /api/services/coverage'] = fail()
+    await renderSettled()
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
+    expect(screen.queryByTestId('connect-aws-header-button')).toBeNull()
+    expect(screen.queryByTestId('connection-loading')).toBeNull()
   })
 })

@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ChevronDown,
   XCircle,
-  CloudOff,
   Clock,
   AlertTriangle,
   Server,
@@ -35,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice';
+import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected';
 import { analyzeFailureMessage } from './costOptimizationStatus';
 import { deriveCostScanState, runsRefetchInterval } from './costScanState';
 import {
@@ -406,6 +406,10 @@ export default function CostOptimizationPage() {
   // loading, on a failed check, or with more than one active connection.
   const connectionState = awsAccounts?.connection;
   const awsConnected = connectionState === 'connected' ? true : connectionState === 'not_connected' ? false : undefined;
+  // PR2 empty states: no AWS account connected (the server says so), and the connection check not answered yet.
+  // A failed or ambiguous check is neither: today's page, unchanged.
+  const notConnected = !isDemoActive && awsConnected === false;
+  const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError;
   const scan = deriveCostScanState({
     connection: { data: connectionState, isError: accountsError },
     runs: { data: analysisRuns, isError: runsError },
@@ -499,7 +503,7 @@ export default function CostOptimizationPage() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
       {/* ── TOP BANNER SLOT: the Run cost analysis result while it shows, otherwise the latest analysis. Never both. ── */}
-      {!isDemoActive && (runResult ? (
+      {!isDemoActive && !notConnected && !connectionLoading && (runResult ? (
         <RunResultBanner className="mb-6" result={runResult} onClose={closeRunResult} />
       ) : (
         <CostAnalysisBanner
@@ -520,7 +524,7 @@ export default function CostOptimizationPage() {
             DevControl identifies potential AWS cost-saving opportunities by checking your connected account
             against the categories below. Figures are estimated potential savings, not realized or billed savings.
           </p>
-          {!isDemoActive && (
+          {!isDemoActive && !connectionLoading && (
             <p className="text-meta text-ink-muted mt-2 flex flex-wrap items-center gap-x-1.5" data-testid="last-analysis">
               <span>{LAST_ANALYSIS}</span>
               {scan.key === 'loading' ? <Skeleton className="h-4 w-28" /> : scan.key === 'status_unavailable' ? (
@@ -539,13 +543,10 @@ export default function CostOptimizationPage() {
             </p>
           )}
         </div>
-        {!isDemoActive && awsConnected === false ? (
-          <a
-            href="/connect-aws"
-            className="inline-flex min-h-11 w-full sm:w-auto items-center justify-center gap-2 text-white text-ui font-semibold px-5 py-2.5 rounded-lg bg-violet-700 hover:bg-violet-800 whitespace-nowrap no-underline transition-colors"
-          >
-            Connect AWS
-          </a>
+        {connectionLoading ? (
+          <HeaderActionLoading />
+        ) : notConnected ? (
+          <ConnectAwsHeaderButton className="shrink-0" />
         ) : (
           <Button size="lg" onClick={handleScan} disabled={!canRunScan} className="min-h-11 w-full sm:w-auto whitespace-nowrap shrink-0">
             {isAnalyzing ? <><Loader2 size={16} className="mr-1.5 animate-spin" /> Scanning...</> : <><RefreshCw size={16} className="mr-1.5" /> Run cost analysis</>}
@@ -553,7 +554,9 @@ export default function CostOptimizationPage() {
         )}
       </div>
 
-      {isDemoActive ? (
+      {connectionLoading ? (
+        <NotConnectedLoading tiles={3} />
+      ) : isDemoActive ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center">
           <p className="text-ui font-semibold text-slate-900 mb-2">Cost recommendations aren&apos;t shown in demo mode</p>
           <p className="text-ui text-ink-muted">Turn off demo mode to see real optimization opportunities for your connected AWS account.</p>
@@ -565,12 +568,12 @@ export default function CostOptimizationPage() {
             <Card className="order-1">
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">{OPEN_OPPORTUNITIES}</p>
-                {statsLoading ? <Skeleton className="h-8 w-14" /> : activeCount === null ? (
+                {notConnected ? <UnmeasuredValue /> : statsLoading ? <Skeleton className="h-8 w-14" /> : activeCount === null ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
                 ) : (
                   <p className={cn('text-kpi tabular-nums', activeCount === 0 ? ZERO_CLASS : 'text-slate-900')}>{activeCount}</p>
                 )}
-                {!statsLoading && (
+                {!statsLoading && !notConnected && (
                   <ul className="flex flex-wrap gap-x-3 gap-y-1 list-none m-0 p-0 mt-2" data-testid="severity-chips" aria-label="Open opportunities by severity">
                     {SEVERITY_ROWS.map((row) => (
                       // Stats unavailable: "—", never 0.
@@ -582,7 +585,7 @@ export default function CostOptimizationPage() {
                   </ul>
                 )}
                 {/* Still-detected findings are not in this count (they come from /hidden, never /stats). */}
-                {stillDetectedCount !== null && stillDetectedCount > 0 && (
+                {!notConnected && stillDetectedCount !== null && stillDetectedCount > 0 && (
                   <p className="text-meta text-ink-muted mt-1" data-testid="kpi-still-detected">{stillDetectedKpiNote(stillDetectedCount)}</p>
                 )}
               </CardContent>
@@ -590,7 +593,7 @@ export default function CostOptimizationPage() {
             <Card className="order-3 col-span-2 md:order-2 md:col-span-1">
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">{ESTIMATED_MONTHLY_SAVINGS}</p>
-                {statsLoading ? <Skeleton className="h-8 w-24" /> : monthlyLabel === null ? (
+                {notConnected ? <UnmeasuredValue /> : statsLoading ? <Skeleton className="h-8 w-24" /> : monthlyLabel === null ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
                 ) : upperBoundOnlySavings ? (
                   // Every open figure is an upper bound: grey, never a firm total (founder ruling 4).
@@ -625,7 +628,7 @@ export default function CostOptimizationPage() {
             </Card>
           </div>
 
-          {statsError && (
+          {statsError && !notConnected && (
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <p className="text-label font-normal text-ink-muted">{STATS_UNAVAILABLE_NOTE}</p>
               <Button type="button" variant="outline" size="sm" onClick={() => refetchStats()} className="max-sm:min-h-11">{TRY_AGAIN}</Button>
@@ -638,6 +641,8 @@ export default function CostOptimizationPage() {
             Resolving or dismissing a recommendation records your decision — it does not itself confirm the underlying AWS change was made.
           </p>
 
+          {/* No AWS account (PR2): the shared card, full width, in place of the notice, opportunities and Summary. */}
+          {notConnected ? <NotConnectedCard /> : (<>
           {/* The latest scheduled discovery's warnings: unchanged, and not scan status. */}
           <DiscoveryWarningNotice warnings={discoveryJobs?.[0]?.warnings} className="mb-6" />
 
@@ -669,13 +674,8 @@ export default function CostOptimizationPage() {
                 </div>
               ) : recommendations.length === 0 ? (
                 <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 text-left" data-testid="empty-state">
-                  {scan.key === 'not_connected' ? (
-                    <>
-                      <CloudOff size={28} className="text-slate-400 mb-3" aria-hidden="true" />
-                      <p className="text-ui font-semibold text-slate-900 mb-2">Connect AWS to check for savings</p>
-                      <p className="text-ui text-ink-muted">DevControl needs a connected AWS account before it can look for cost-saving opportunities.</p>
-                    </>
-                  ) : scan.key === 'never_analyzed' ? (
+                  {/* No AWS account (scan.key 'not_connected') never reaches here: the NotConnectedCard replaces this column. */}
+                  {scan.key === 'never_analyzed' ? (
                     <>
                       <Clock size={28} className="text-slate-400 mb-3" aria-hidden="true" />
                       <p className="text-ui font-semibold text-slate-900 mb-2">No analysis has run yet</p>
@@ -830,6 +830,7 @@ export default function CostOptimizationPage() {
               </Card>
             </div>
           </div>
+          </>)}
 
           {/* ── HOW DEVCONTROL CHECKS: full width, closed by default. Registry-derived, never a hardcoded "every rule
               active" claim: an implementedCount below totalRules is expected and disclosed (config/optimization-rules.ts). ── */}
@@ -840,7 +841,7 @@ export default function CostOptimizationPage() {
                 {/* Phone: the counts wrap onto their own line under the title, the chevron stays beside the title. */}
                 <ChevronDown size={16} className="ml-auto shrink-0 text-ink-muted transition-transform group-open:rotate-180 sm:order-last sm:ml-0" aria-hidden="true" />
                 <span className="text-meta text-ink-muted tabular-nums basis-full min-w-0 sm:basis-auto sm:flex-1" data-testid="checks-summary-line">
-                  {checksHeaderLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)} · {severityLine}
+                  {checksHeaderLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)}{!notConnected && ` · ${severityLine}`}
                 </span>
               </summary>
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 border-t border-slate-100 px-5 py-5">
@@ -905,7 +906,7 @@ export default function CostOptimizationPage() {
           )}
 
           {/* ── RESOLVED AND DISMISSED: every decided finding, collapsed (PR 3b), at the bottom. Absent while /hidden is loading or failed. ── */}
-          {hiddenView.status === 'ready' && (
+          {hiddenView.status === 'ready' && !notConnected && (
             <div className="mt-6">
               <ReviewList data={hiddenView.data} actions={hiddenActions} />
             </div>
