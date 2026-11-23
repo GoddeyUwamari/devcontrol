@@ -386,15 +386,20 @@ describe('rendering', () => {
     }
   })
 
-  it('not connected: Connect AWS, no console link', async () => {
+  it('not connected: the shared not-connected card in place of the banner, no console link', async () => {
     render(<OperationalHealthV2 />)
     await flush()
     await settle(
       { status: 'not_connected', account_count: 0, multiple_accounts: false, region: null, checked_at: null, type_summary: null, resources: null, pagination: null },
       { ...ALARMS_OK, status: 'error', reason: 'not_connected', region: null, in_alarm: null, in_alarm_complete: null, configured_count: null, configured_count_complete: null, truncated: null }
     )
-    expect(screen.getByTestId('health-banner')).toHaveAttribute('data-kind', 'not_connected')
-    expect(screen.getByRole('link', { name: 'Connect AWS →' })).toHaveAttribute('href', '/connect-aws')
+    // PR3: PR2's NotConnectedCard (components/aws/not-connected.tsx), not the page's own banner.
+    const card = screen.getByTestId('not-connected-card')
+    expect(within(card).getByRole('heading', { level: 2, name: 'No AWS account connected' })).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'Connect AWS account' })).toHaveAttribute('href', '/connect-aws')
+    expect(screen.queryByTestId('health-banner')).toBeNull()
+    expect(screen.queryByText("CloudWatch isn't connected yet")).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Connect AWS →' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Open in CloudWatch ↗' })).toBeNull()
   })
 
@@ -408,6 +413,8 @@ describe('rendering', () => {
       { status: 'not_connected', account_count: 0, multiple_accounts: false, region: null, checked_at: null, type_summary: null, resources: null, pagination: null },
       { ...ALARMS_OK, status: 'error', reason: 'not_connected', region: null, in_alarm: null, in_alarm_complete: null, configured_count: null, configured_count_complete: null, truncated: null }
     )
+    // One way to connect: the shared card.
+    expect(screen.getAllByRole('link', { name: /Connect AWS/ }).map((link) => link.textContent)).toEqual(['Connect AWS account'])
     // Header: title and description only.
     expect(screen.getByRole('heading', { level: 1, name: 'Operational Health' })).toBeInTheDocument()
     expect(screen.getByText("Which resources are healthy, which need attention, and what we can't see yet.")).toBeInTheDocument()
