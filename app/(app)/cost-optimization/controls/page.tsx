@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { PlanLoadingState, WorkspaceLoadError } from '@/components/plan/plan-status'
 import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required'
@@ -15,6 +16,8 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { LOW_ACTIVITY_FIXED_THRESHOLDS } from '@/lib/finding-display'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
+import awsAccountsService from '@/lib/services/aws-accounts.service'
+import { NotConnectedCard } from '@/components/aws/not-connected'
 
 // Enterprise Workstream 3B: product/UI copy for the rules the backend
 // registry (backend/src/config/optimization-rules.ts) allows an organization
@@ -58,6 +61,21 @@ export default function OptimizationControlsPage() {
   // Set when the server refused for the plan (e.g. a restricted or changed plan): its gate.
   const [tierRequired, setTierRequired] = useState<TierRequired | null>(null)
   const planNotice = usePlanNotice(tierRequired)
+
+  // PR4b empty states: the server's connection state (the same query and cache entry as Costs and
+  // Cost Optimization), read only where the plan lock would show. With no AWS account the card takes
+  // the lock's place; the lock itself is unchanged and shows again once an account is connected.
+  // A failed or ambiguous check is today's lock. The Enterprise page makes no new request.
+  const lockedByPlan = plan.isKnown && !plan.isEnterprise
+  const { data: awsAccounts, isError: accountsError } = useQuery({
+    queryKey: ['aws-accounts'],
+    queryFn: awsAccountsService.getAccountsAndConnection,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    enabled: lockedByPlan,
+  })
+  const notConnected = lockedByPlan && awsAccounts?.connection === 'not_connected'
+  const connectionLoading = lockedByPlan && awsAccounts === undefined && !accountsError
 
   const [configs, setConfigs] = useState<EffectiveOptimizationRuleConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -136,6 +154,8 @@ export default function OptimizationControlsPage() {
 
   if (plan.status === 'loading') return <PlanLoadingState />
   if (plan.status === 'error') return <WorkspaceLoadError onRetry={plan.retry} />
+  // Until the connection check answers: neither the plan lock nor the card (PR4b).
+  if (connectionLoading) return <PlanLoadingState />
 
   // ── Enterprise gate — UX only. The real security boundary is
   // requireEnterprise on every /optimization-rules/configuration route
@@ -152,6 +172,7 @@ export default function OptimizationControlsPage() {
             Tune how DevControl identifies selected cost optimization opportunities for your organization.
           </p>
         </div>
+        {notConnected ? <NotConnectedCard /> : (
         <div className="bg-white border border-gray-200 rounded-xl py-16 px-10 text-center">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-5 h-5 text-gray-400" />
@@ -179,6 +200,7 @@ export default function OptimizationControlsPage() {
             </>
           )}
         </div>
+        )}
       </div>
     )
   }

@@ -24,7 +24,9 @@ describePlanStates('/costs/by-team', {
   entitledTier: 'starter',
   notEntitledTier: 'free',
   reset: () => { getCostSummary.mockClear(); getAccounts.mockClear() },
-  paidCalls: () => getCostSummary.mock.calls.length + getAccounts.mock.calls.length,
+  // GET /api/aws/accounts is not plan-gated (aws.routes.ts: authenticate only), and PR4b reads it on every
+  // known plan so no AWS account can take the plan lock's place. Only the cost summary is a paid read here.
+  paidCalls: () => getCostSummary.mock.calls.length,
   content: 'Cost attribution by team and service is not available yet',
   gate: 'On the Cost Control plan',
 })

@@ -52,6 +52,10 @@ const mockGetAllResources = vi.fn()
 vi.mock('@/lib/services/infrastructure.service', () => ({ infrastructureService: { getAll: () => mockGetAllResources() } }))
 const mockGetStats = vi.fn()
 vi.mock('@/lib/services/cost-recommendations.service', () => ({ costRecommendationsService: { getStats: () => mockGetStats() } }))
+// Connected (GET /api/aws/accounts: one active row): today's page (PR4b).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 const mockGetAnomalies = vi.fn()
 vi.mock('@/lib/services/anomaly.service', () => ({ anomalyService: { getAnomalies: () => mockGetAnomalies() } }))
 

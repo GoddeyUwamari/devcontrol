@@ -11,8 +11,21 @@
  * error state rather than fabricated configuration data.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import OptimizationControlsPage from '../page'
+
+// The page reads the AWS connection state with react-query (PR4b), so it renders inside a client.
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
+
+// Connected (GET /api/aws/accounts: one active row): the plan lock below is today's page (PR4b).
+vi.mock('@/lib/services/aws-accounts.service', () => ({
+  default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 1, status: 'active' }], connection: 'connected' }) },
+}))
 
 const mockUsePlan = vi.fn()
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => mockUsePlan() }))

@@ -1,7 +1,8 @@
 /**
  * /costs/by-team "connected" (AWS connect PR B): only the server's connection
  * state decides the wording. Spend left from an earlier connection never makes
- * the page say the account is connected.
+ * the page say the account is connected. PR4b: the server's not_connected shows
+ * the shared not-connected card; ambiguous and a failed check keep the block.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 // The page reads the organization for its org- and UTC-day-keyed cost caches (DAY1-D10).
@@ -51,16 +52,25 @@ beforeEach(() => {
 })
 
 describe('/costs/by-team: connected comes from the server connection state only', () => {
+  // PR4b: the server's not_connected is the shared card (with the kept link), never the block below.
   it.each([
     ['stale data, server not connected', { accounts: [], connection: 'not_connected' }],
     ['disconnected row, stale spend', { accounts: [{ id: 'acct-1', status: 'disconnected' }], connection: 'not_connected' }],
-    ['more than one active connection', { accounts: [], connection: 'ambiguous' }],
-  ])('%s: the not-connected wording', async (_label, answer) => {
+  ])('%s: the not-connected card', async (_label, answer) => {
     getConnection.mockResolvedValue(answer)
     renderPage()
-    await waitFor(() => expect(getConnection).toHaveBeenCalled())
+    await screen.findByTestId('not-connected-card')
+    expect(screen.queryByTestId('by-team-attribution-unavailable')).toBeNull()
+    expect(screen.queryByText(CONNECTED_COPY)).toBeNull()
+    expect(screen.getByRole('link', { name: 'See spend by AWS service →' })).toHaveAttribute('href', '/costs')
+  })
+
+  it('more than one active connection: the not-connected wording, not the card', async () => {
+    getConnection.mockResolvedValue({ accounts: [], connection: 'ambiguous' })
+    renderPage()
     await waitFor(() => expect(card()).toHaveTextContent(NOT_CONNECTED_COPY))
     expect(card()).not.toHaveTextContent(CONNECTED_COPY)
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
   })
 
   it('error: a failed check never shows the connected wording', async () => {
@@ -69,18 +79,23 @@ describe('/costs/by-team: connected comes from the server connection state only'
     await waitFor(() => expect(getConnection).toHaveBeenCalled())
     await screen.findByTestId('by-team-attribution-unavailable')
     expect(card()).not.toHaveTextContent(CONNECTED_COPY)
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
   })
 
-  it('loading: never the connected wording before the check answers', async () => {
+  it('loading: a skeleton only, never the connected wording or the card before the check answers', async () => {
     getConnection.mockResolvedValue('PENDING')
     renderPage()
-    await screen.findByTestId('by-team-attribution-unavailable')
-    expect(card()).not.toHaveTextContent(CONNECTED_COPY)
+    await waitFor(() => expect(getConnection).toHaveBeenCalled())
+    expect(screen.getByTestId('plan-loading')).toBeInTheDocument()
+    expect(screen.queryByTestId('by-team-attribution-unavailable')).toBeNull()
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
+    expect(screen.queryByText(CONNECTED_COPY)).toBeNull()
   })
 
   it('connected: the server reports one active connection', async () => {
     getConnection.mockResolvedValue({ accounts: [{ id: 'acct-1', status: 'active' }], connection: 'connected' })
     renderPage()
     await waitFor(() => expect(card()).toHaveTextContent(CONNECTED_COPY))
+    expect(screen.queryByTestId('not-connected-card')).toBeNull()
   })
 })
