@@ -5,6 +5,7 @@ import { Num } from '@/components/ui/typography'
 import type { SecurityView } from './securityModel'
 import { PAGE_COPY, PAGE_HREF } from './securityCopy'
 import { RegionText } from './RegionText'
+import { UnmeasuredValue } from '@/components/aws/not-connected'
 
 const LINK = 'mt-auto inline-flex min-h-11 w-fit items-center text-ui font-semibold text-ink-accent hover:underline'
 const RETRY = 'inline-flex min-h-11 w-fit items-center rounded-lg border border-slate-300 bg-white px-3 text-ui font-semibold text-ink hover:bg-slate-50'
@@ -22,6 +23,18 @@ function Tile({ testId, title, busy, children }: { testId: string; title: string
 const Dash = () => (
   <p className="m-0 text-kpi text-ink"><span aria-hidden="true">{PAGE_COPY.unavailable}</span><span className="sr-only">{PAGE_COPY.notAvailable}</span></p>
 )
+
+/** No AWS account (PR2): the four tiles' labels and "—" only; no caption, link or retry under them. */
+export function UnmeasuredSecurityTiles() {
+  return (
+    <section className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+      <Tile testId="security-tile-score" title={PAGE_COPY.tileScore} busy={false}><UnmeasuredValue /></Tile>
+      <Tile testId="security-tile-findings" title={PAGE_COPY.tileFindings} busy={false}><UnmeasuredValue /></Tile>
+      <Tile testId="security-tile-compliance" title={PAGE_COPY.tileCompliance} busy={false}><UnmeasuredValue /></Tile>
+      <Tile testId="security-tile-anomalies" title={PAGE_COPY.tileAnomalies} busy={false}><UnmeasuredValue /></Tile>
+    </section>
+  )
+}
 
 /** Security score · Open findings · Compliance baseline · Anomalies (founder answer 3). */
 export function SecurityTiles({ tiles, anomaliesError, onRetryScore, onRetryAnomalies }: {

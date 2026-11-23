@@ -1,7 +1,6 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -26,10 +25,11 @@ import { useNowEachLocalDay } from '../../services/useNowEachLocalDay'
 import { SCAN_BUSY_TEXT, scanBusyAfter } from '../../services/scanBusy'
 import { describeOverview, OVERVIEW_COPY, type Loadable } from './overviewModel'
 import { OverviewHeader, type SyncState } from './OverviewHeader'
+import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading } from '@/components/aws/not-connected'
 import { PlanBanners } from './PlanBanners'
 import { AccountStrip } from './AccountStrip'
 import { StatusLine } from './StatusLine'
-import { KpiTiles } from './KpiTiles'
+import { KpiTiles, UnmeasuredKpiTiles } from './KpiTiles'
 import { AttentionReview } from './AttentionReview'
 import { WhatWeChecked } from './WhatWeChecked'
 import { CostByService } from './CostByService'
@@ -161,15 +161,19 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
   }
 
   const connectedish = view.mode !== 'no-account'
+  // PR2 empty states: until coverage answers, grey blocks only; with no account, the shared card only.
+  const loading = view.mode === 'loading'
+  const notConnected = view.mode === 'no-account'
   return (
     <main className="mx-auto flex max-w-[1240px] flex-col gap-6 px-4 py-6 sm:px-6">
       <OverviewHeader
         lastScan={view.header.lastScan}
         now={now}
-        showSync={view.header.showSync}
+        showSync={view.header.showSync && !loading}
         scanRunning={view.header.scanRunning}
         sync={sync}
         onSync={handleSync}
+        altAction={loading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : null}
         actions={realMode && (
           <>
             <button
@@ -186,22 +190,20 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
           </>
         )}
       />
-      <PlanBanners limitReached={limitReached} isFree={!!isFree} isStarter={!!isStarter} isPro={!!isPro} />
-      {view.mode === 'no-account' ? (
-        <section aria-labelledby="infra-connect-heading" className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-          <h2 id="infra-connect-heading" className="m-0 text-section text-slate-900">{OVERVIEW_COPY.noAccountTitle}</h2>
-          <Link href="/connect-aws" className="w-fit text-ui font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.connectAws}</Link>
-        </section>
-      ) : (
+      {loading ? <NotConnectedLoading tiles={4} /> : notConnected ? (<>
+        <UnmeasuredKpiTiles />
+        <NotConnectedCard />
+      </>) : (<>
+        <PlanBanners limitReached={limitReached} isFree={!!isFree} isStarter={!!isStarter} isPro={!!isPro} />
         <AccountStrip account={view.account} now={now} coverageError={view.mode === 'coverage-error'} onRetry={() => coverageQuery.refetch()} />
-      )}
-      <StatusLine status={view.status} now={now} />
-      {connectedish && view.tiles && <KpiTiles tiles={view.tiles} now={now} />}
-      {connectedish && view.attention && <AttentionReview view={view.attention} now={now} onRetry={() => { attentionQuery.refetch(); accountFindingsQuery.refetch() }} />}
-      <WhatWeChecked lines={view.checked} now={now} />
-      {connectedish && view.costByService && <CostByService view={view.costByService} />}
-      {connectedish && view.ownership && <OwnershipGaps ownership={view.ownership} />}
-      {connectedish && view.footer && <OverviewFooter total={view.footer.total} />}
+        <StatusLine status={view.status} now={now} />
+        {connectedish && view.tiles && <KpiTiles tiles={view.tiles} now={now} />}
+        {connectedish && view.attention && <AttentionReview view={view.attention} now={now} onRetry={() => { attentionQuery.refetch(); accountFindingsQuery.refetch() }} />}
+        <WhatWeChecked lines={view.checked} now={now} />
+        {connectedish && view.costByService && <CostByService view={view.costByService} />}
+        {connectedish && view.ownership && <OwnershipGaps ownership={view.ownership} />}
+        {connectedish && view.footer && <OverviewFooter total={view.footer.total} />}
+      </>)}
       {realMode && !exportPlanRequired && (
         <ExportReportsDialog open={exportOpen} onOpenChange={setExportOpen} totalResources={statsQuery.data?.total ?? 0} />
       )}

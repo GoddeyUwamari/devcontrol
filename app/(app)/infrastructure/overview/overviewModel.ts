@@ -59,13 +59,14 @@ export interface OverviewInputs {
 
 // ── Copy ──
 
+/** The four KPI tiles' labels: the connected tiles and the not-connected "—" row (PR2) read the same words. */
+export const TILE_LABELS = { spend: 'Spend this month', findings: 'Open findings', savings: 'Possible savings', ownership: 'Owned resources' } as const
+
 export const OVERVIEW_COPY = {
   title: 'Infrastructure Overview',
   subtitle: 'What needs attention, what it costs, and what we checked in your AWS account.',
   noScanYet: 'No scan has finished yet',
-  noAccountTitle: 'No AWS account connected',
   noAccountStatus: 'No AWS account connected.',
-  connectAws: 'Connect AWS →',
   nothingChecked: 'Nothing has been checked yet.',
   coverageError: "Coverage couldn't be loaded, so we can't show what was checked.",
   findingsError: "Findings couldn't be loaded.",
@@ -459,7 +460,7 @@ function findingsTile(i: OverviewInputs, coverage: ServicesCoverage | null): Fin
   const done = coverage ? lastCompletedIso(coverage) : null
   return {
     key: 'findings',
-    label: 'Open findings',
+    label: TILE_LABELS.findings,
     sources: [
       { key: 'resources', label: 'On resources', value: value(rLoading, r), breakdown: r ? breakdown(r) : null, note: !rLoading && !r ? "Couldn't be loaded" : null },
       {
@@ -474,19 +475,19 @@ function findingsTile(i: OverviewInputs, coverage: ServicesCoverage | null): Fin
 function spendTile(i: OverviewInputs): Tile {
   const summary = i.costSummary.status === 'ready' ? i.costSummary.data : undefined
   const spend = describeServicesSpend({ loading: i.costSummary.status === 'loading', error: i.costSummary.status === 'error', summary })
-  if (spend.kind === 'loading') return { key: 'spend', label: 'Spend this month', value: '…', captions: [] }
+  if (spend.kind === 'loading') return { key: 'spend', label: TILE_LABELS.spend, value: '…', captions: [] }
   if (spend.kind === 'unavailable') {
     const reason = summary?.spend?.reason
-    return { key: 'spend', label: 'Spend this month', value: SPEND_UNAVAILABLE_TEXT, captions: reason ? [[reason]] : [] }
+    return { key: 'spend', label: TILE_LABELS.spend, value: SPEND_UNAVAILABLE_TEXT, captions: reason ? [[reason]] : [] }
   }
   const asOf = summary?.spend.asOf
   const asOfCaption: Rich[] = asOf ? [['Cost Explorer, as of ', { iso: asOf }]] : []
   // Nothing reported yet this month is "no data yet", not a measured $0.00.
   if (spend.kind === 'no_billed_days') {
-    return { key: 'spend', label: 'Spend this month', value: '—', captions: [[['whole account', 'billed, from Cost Explorer', NO_BILLED_DAYS_YET].join(' · ')], ...asOfCaption] }
+    return { key: 'spend', label: TILE_LABELS.spend, value: '—', captions: [[['whole account', 'billed, from Cost Explorer', NO_BILLED_DAYS_YET].join(' · ')], ...asOfCaption] }
   }
   return {
-    key: 'spend', label: 'Spend this month', value: spend.value,
+    key: 'spend', label: TILE_LABELS.spend, value: spend.value,
     captions: [[spend.notes.join(' · ')], ...asOfCaption],
   }
 }
@@ -494,7 +495,7 @@ function spendTile(i: OverviewInputs): Tile {
 /** The savings tile. Its "Review recommendations →" link is in every state (N1 / RU-3). */
 function savingsTile(i: OverviewInputs): Tile {
   const link = { text: OVERVIEW_COPY.reviewRecommendations, href: OVERVIEW_COPY.reviewRecommendationsHref }
-  const base = { key: 'savings' as const, label: 'Possible savings', link }
+  const base = { key: 'savings' as const, label: TILE_LABELS.savings, link }
   if (i.savings.status === 'loading') return { ...base, value: '…', captions: [] }
   if (i.savings.status === 'error') return { ...base, value: '—', captions: [[OVERVIEW_COPY.savingsError]] }
   const s = i.savings.data
@@ -551,18 +552,18 @@ export function describeOpenSavings(
 
 function ownershipTile(i: OverviewInputs, coverage: ServicesCoverage | null): Tile {
   const link = { text: 'Review ownership →', href: '/services' }
-  if (i.stats.status === 'loading') return { key: 'ownership', label: 'Owned resources', value: '…', captions: [], link }
+  if (i.stats.status === 'loading') return { key: 'ownership', label: TILE_LABELS.ownership, value: '…', captions: [], link }
   const stats = i.stats.status === 'ready' ? i.stats.data : null
   if (!stats || !stats.ownership || typeof stats.total !== 'number') {
-    return { key: 'ownership', label: 'Owned resources', value: '—', captions: [["Couldn't be loaded"]], link }
+    return { key: 'ownership', label: TILE_LABELS.ownership, value: '—', captions: [["Couldn't be loaded"]], link }
   }
   if (stats.total === 0) {
     const gap = inventoryGap(coverage ?? undefined, 0)
-    return { key: 'ownership', label: 'Owned resources', value: 'No resources yet', captions: gap === 'not-scanned' ? [['Not scanned yet']] : [], link }
+    return { key: 'ownership', label: TILE_LABELS.ownership, value: 'No resources yet', captions: gap === 'not-scanned' ? [['Not scanned yet']] : [], link }
   }
   const { owned, unowned, unknown } = stats.ownership
   return {
-    key: 'ownership', label: 'Owned resources', value: `${owned} of ${stats.total}`,
+    key: 'ownership', label: TILE_LABELS.ownership, value: `${owned} of ${stats.total}`,
     captions: [[`${unowned} unowned${unknown > 0 ? ` · ${unknown} tags unreadable` : ''}`]],
     link,
   }

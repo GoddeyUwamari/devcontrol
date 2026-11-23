@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { RefreshCw, Rocket, Scan } from 'lucide-react'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
-import { SCAN_RUNNING_HINT, SERVICES_HEADING, SERVICES_SUBTITLE } from './ServicesHeader'
+import { SCAN_RUNNING_HINT, SERVICES_HEADING } from './ServicesHeader'
 import { REDESIGN_COPY, type RedesignScanLine, type RedesignScanState } from './redesignModel'
 import { TONE } from './redesignTone'
 
@@ -17,6 +17,9 @@ const SCAN_DOT: Record<RedesignScanState, string> = {
 }
 
 export const SCAN_HINT_ID = 'services-scan-running-hint'
+
+/** The redesign's subtitle (PR2 empty states), connected or not. The non-redesign V2 header keeps SERVICES_SUBTITLE. */
+export const REDESIGN_SUBTITLE = "Know what's running, what needs attention, and who owns it."
 
 /**
  * The redesign's header (PR 3b): title and subtitle (CURRENT), the
@@ -32,14 +35,16 @@ export const RedesignHeader = forwardRef<HTMLButtonElement, {
   /** A scan holds the account's lease (coverage). */
   scanRunning: boolean
   onScanNow: () => void
-}>(function RedesignHeader({ scan, isDiscovering, scanRunning, onScanNow }, ref) {
+  /** In place of Scan now (PR2): the outlined Connect AWS account, or its grey block while loading. Deployments stays. */
+  altAction?: React.ReactNode
+}>(function RedesignHeader({ scan, isDiscovering, scanRunning, onScanNow, altAction }, ref) {
   const busy = isDiscovering || scanRunning
   const hint = scanRunning && !isDiscovering
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1 dark:text-slate-100')}>{SERVICES_HEADING}</h1>
-        <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0 dark:text-slate-400')}>{SERVICES_SUBTITLE}</p>
+        <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0 dark:text-slate-400')}>{REDESIGN_SUBTITLE}</p>
         {scan && (
           <p data-testid="services-scan-line" data-state={scan.state} role="status" className={cn('m-0 mt-1 flex items-center gap-2 text-meta', TONE.muted)}>
             <span aria-hidden="true" className={cn('inline-block size-2 shrink-0 rounded-full', SCAN_DOT[scan.state])} />
@@ -51,7 +56,7 @@ export const RedesignHeader = forwardRef<HTMLButtonElement, {
         <Link href="/deployments" className={cn(TONE.secondaryButton, 'px-3.5 py-2 no-underline')}>
           <Rocket size={13} aria-hidden="true" /> Deployments
         </Link>
-        <button
+        {altAction ?? <button
           ref={ref}
           type="button"
           onClick={onScanNow}
@@ -62,7 +67,7 @@ export const RedesignHeader = forwardRef<HTMLButtonElement, {
           {busy
             ? <><RefreshCw size={13} aria-hidden="true" className="animate-spin" /> {REDESIGN_COPY.scanning}</>
             : <><Scan size={13} aria-hidden="true" /> {REDESIGN_COPY.scanNow}</>}
-        </button>
+        </button>}
         {hint && <p id={SCAN_HINT_ID} className={cn('m-0 basis-full text-meta sm:text-right', TONE.muted)}>{SCAN_RUNNING_HINT}</p>}
       </div>
     </div>

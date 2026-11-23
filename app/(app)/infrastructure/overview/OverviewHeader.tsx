@@ -17,7 +17,7 @@ export type SyncState = 'idle' | 'syncing' | 'complete'
  * 3-second green state (§18.1 X13): "Scan finished" on desktop (PR 3d-2 D2; was "Sync Complete"), "Done" on a phone.
  * `actions` (the inventory export) sit under Sync in the same action column.
  */
-export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onSync, actions }: {
+export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onSync, actions, altAction }: {
   lastScan: Rich | null
   now: number
   showSync: boolean
@@ -25,6 +25,8 @@ export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onS
   sync: SyncState
   onSync: () => void
   actions?: ReactNode
+  /** Shown when Scan now is not (PR2): the outlined Connect AWS account, or its grey block while loading. */
+  altAction?: ReactNode
 }) {
   const disabled = sync === 'syncing' || scanRunning
   const green = sync === 'complete'
@@ -57,6 +59,7 @@ export function OverviewHeader({ lastScan, now, showSync, scanRunning, sync, onS
           {actions}
         </div>
       )}
+      {!showSync && altAction}
     </header>
   )
 }

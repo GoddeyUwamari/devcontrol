@@ -40,6 +40,8 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: { getStats: async () => ({ totalRecommendations: 0, activeRecommendations: 0, totalPotentialSavings: 0, potentialSavingsByResourceType: {}, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }), getAll: async () => [], getAnalysisRuns: async () => [] },
 }))
 vi.mock('@/lib/services/aws-resources.service', () => ({ awsResourcesService: { getDiscoveryJobs: async () => [] } }))
+// PR2: the page asks whether an AWS account is connected; these suites are the connected page.
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' }) } }))
 vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQuery: vi.fn() } }))
 
 const FIXTURES = path.resolve(__dirname, '../../../../backend/src/controllers/__tests__/__fixtures__/trend-lag')

@@ -15,12 +15,14 @@ const DOT: Record<ScanLineState, string> = {
 }
 
 /** Title and subtitle left; the scan line and Scan now right (founder answer 1; "Scan" since PR 3d-2 D2). */
-export function SecurityHeader({ scan, syncing, canSync, blockedReason, onSync }: {
+export function SecurityHeader({ scan, syncing, canSync, blockedReason, onSync, altAction }: {
   scan: ScanLine | null
   syncing: boolean
   canSync: boolean
   blockedReason: string | null
   onSync: () => void
+  /** In place of the scan line and Scan now (PR2): the outlined Connect AWS account, or its grey block while loading. */
+  altAction?: React.ReactNode
 }) {
   const running = scan?.state === 'running'
   const disabled = syncing || running || !canSync
@@ -31,6 +33,7 @@ export function SecurityHeader({ scan, syncing, canSync, blockedReason, onSync }
         <h1 className={cn(PAGE_TITLE_CLASS, 'm-0')}>{PAGE_COPY.title}</h1>
         <p className={cn(PAGE_SUBTITLE_CLASS, 'm-0')}>{PAGE_COPY.subtitle}</p>
       </div>
+      {altAction ? <div className="flex flex-col gap-2 sm:items-end">{altAction}</div> : (
       <div className="flex flex-col gap-2 sm:items-end">
         {scan && (
           <p id="security-scan-line" data-testid="security-scan-line" data-state={scan.state} className="m-0 flex items-center gap-2 text-meta text-ink-muted">
@@ -50,6 +53,7 @@ export function SecurityHeader({ scan, syncing, canSync, blockedReason, onSync }
         </button>
         {blockedReason && <p id="security-sync-reason" className="m-0 text-meta text-ink-muted">{blockedReason}</p>}
       </div>
+      )}
     </header>
   )
 }

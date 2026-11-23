@@ -351,10 +351,13 @@ describe('Still detected group', () => {
 describe('review fix L2: status cards still show when items are still detected', () => {
   const card = () => screen.findByTestId('empty-state')
 
-  it('not connected: the Connect AWS card stays', async () => {
+  it('not connected: the shared NotConnectedCard, and no Still detected from an earlier connection (PR2)', async () => {
     svc.getAccounts.mockResolvedValue([])
     renderPage()
-    expect(within(await card()).getByText('Connect AWS to check for savings')).toBeInTheDocument()
+    const notConnected = await screen.findByTestId('not-connected-card')
+    expect(within(notConnected).getByRole('heading', { name: 'No AWS account connected' })).toBeInTheDocument()
+    expect(screen.queryByTestId('empty-state')).toBeNull()
+    expect(screen.queryByRole('heading', { name: STILL_HEADING })).toBeNull()
   })
 
   it('never analyzed: its card stays', async () => {

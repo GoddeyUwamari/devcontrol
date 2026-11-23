@@ -17,7 +17,8 @@ import { describeSecurity, type ResourceFindingsSource, type ResourceWithIssues,
 import { PAGE_COPY } from './securityCopy'
 import { SecurityHeader } from './SecurityHeader'
 import { StatusBanner } from './StatusBanner'
-import { SecurityTiles } from './SecurityTiles'
+import { SecurityTiles, UnmeasuredSecurityTiles } from './SecurityTiles'
+import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading } from '@/components/aws/not-connected'
 import { FindingsList } from './FindingsList'
 import { ScoreTrend } from './ScoreTrend'
 import { SecurityChecked } from './SecurityChecked'
@@ -124,6 +125,11 @@ export default function SecurityOverviewV2() {
   // Unknown (null on the first render) fails closed: disabled, no reason shown until the role is read.
   const syncBlockedReason = role === null ? null : CAN_SYNC.includes(role) ? null : PAGE_COPY.viewerCantSync
 
+  // PR2 empty states: until coverage answers, grey blocks only; with no account connected, the shared card.
+  // A failed coverage read is neither: today's page, unchanged.
+  const loading = !coverageQuery.data && !coverageQuery.isError
+  const notConnected = !!coverageQuery.data && !coverageQuery.data.account.connected
+
   return (
     <main className="mx-auto flex max-w-[1240px] flex-col gap-6 px-4 py-6 sm:px-6">
       <SecurityHeader
@@ -132,7 +138,13 @@ export default function SecurityOverviewV2() {
         canSync={role !== null && CAN_SYNC.includes(role)}
         blockedReason={syncBlockedReason}
         onSync={handleSync}
+        altAction={loading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : undefined}
       />
+      {loading ? <NotConnectedLoading tiles={4} /> : notConnected ? (<>
+        <UnmeasuredSecurityTiles />
+        <NotConnectedCard />
+        <BottomLinks />
+      </>) : (<>
       <StatusBanner banner={view.banner} notChecked={view.notChecked} />
       <SecurityTiles
         tiles={view.tiles}
@@ -155,6 +167,7 @@ export default function SecurityOverviewV2() {
         </div>
       </div>
       <BottomLinks />
+      </>)}
     </main>
   )
 }

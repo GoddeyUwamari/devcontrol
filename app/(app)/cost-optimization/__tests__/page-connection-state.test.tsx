@@ -44,7 +44,8 @@ function renderPage() {
 }
 
 const banner = () => screen.getByTestId('scan-status-banner')
-const NOT_CONNECTED = 'Connect AWS to check for savings'
+// PR2: the shared NotConnectedCard's heading.
+const NOT_CONNECTED = 'No AWS account connected'
 
 beforeEach(() => svc.getConnection.mockReset())
 
@@ -56,8 +57,11 @@ describe('Cost Optimization: connected comes from the server connection state on
     svc.getConnection.mockResolvedValue(answer)
     renderPage()
     await waitFor(() => expect(screen.getAllByText(NOT_CONNECTED).length).toBeGreaterThan(0))
-    // The stored run's findings are not presented as this connection's result.
-    expect(banner()).not.toHaveAttribute('data-tone', 'info')
+    // The stored run's findings are not presented as this connection's result: no analysis banner at all (PR2).
+    expect(screen.queryByTestId('scan-status-banner')).toBeNull()
+    // Nor its 4 findings or counts (PR2: stale data from an earlier connection is hidden).
+    expect(screen.queryByTestId('opportunities')).toBeNull()
+    expect(screen.queryByTestId('summary-card')).toBeNull()
   })
 
   it.each([
@@ -70,13 +74,15 @@ describe('Cost Optimization: connected comes from the server connection state on
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
   })
 
-  it('loading: neither connected nor not connected', async () => {
+  it('loading: neither connected nor not connected (PR2: grey blocks only, no banner, card or button)', async () => {
     svc.getConnection.mockResolvedValue('PENDING')
     renderPage()
-    await waitFor(() => expect(banner()).toBeInTheDocument())
     await waitFor(() => expect(svc.getConnection).toHaveBeenCalled())
+    expect(screen.getByTestId('connection-loading')).toBeInTheDocument()
+    expect(screen.getByTestId('header-action-loading')).toBeInTheDocument()
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
-    expect(banner()).not.toHaveAttribute('data-tone', 'info')
+    expect(screen.queryByTestId('scan-status-banner')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Run cost analysis/ })).toBeNull()
   })
 
   it('connected: the stored run is shown', async () => {

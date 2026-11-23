@@ -56,6 +56,8 @@ function discoveryJob(status: 'running' | 'completed' | 'failed', costAnalysisCo
     compliance_scan_completed: true, cost_analysis_completed: costAnalysisCompleted,
   }
 }
+// PR2: the page asks whether an AWS account is connected; these suites are the connected page.
+vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' }) } }))
 vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQuery: vi.fn() } }))
 
 function recStats(totalPotentialSavings: number, activeRecommendations = 1) {

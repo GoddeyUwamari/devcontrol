@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
+import { RefreshCw } from 'lucide-react'
 import awsServicesService, { type AWSServicesPage, type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
 import { useCostSummary } from '@/lib/hooks/useCostSummary'
@@ -31,15 +32,19 @@ import { ScanBanner } from './ScanBanner'
 import { RegionCoverageCard } from './RegionCoverageCard'
 import { NotCheckedLine } from './NotCheckedLine'
 import { useHomeRegion } from './useHomeRegion'
+import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading } from '@/components/aws/not-connected'
 
 /** While a scan is running, coverage is read again this often (M6 only). */
 export const SCAN_RUNNING_REFETCH_MS = 60_000
 
-/** "Failed to load resources." (E9): the same banner as the current page's. */
-function LoadErrorBanner() {
+/** "Failed to load resources." (E9): the same banner as the current page's, with Try again (PR2). */
+function LoadErrorBanner({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-3 mb-5">
       <p className="text-ui text-ink-danger m-0">Failed to load resources.</p>
+      <button type="button" onClick={onRetry} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-label text-ink-danger hover:bg-red-100 sm:min-h-9">
+        <RefreshCw size={12} aria-hidden="true" /> Try again
+      </button>
     </div>
   )
 }
@@ -72,6 +77,7 @@ function ShowFromUrl({ onNeedsAttention }: { onNeedsAttention: () => void }) {
  */
 export function ServicesOverview({
   orgId, realMode, demo, stats, statusHeadline, discovery, banners, pageError, knownNoAccount, onFiltersChange,
+  connectionLoading = false, onRetryLoad,
 }: {
   orgId: string | null
   realMode: boolean
@@ -99,6 +105,10 @@ export function ServicesOverview({
   knownNoAccount: boolean
   /** A filter or organization change (the page clears the discovery error, as before). Must be stable. */
   onFiltersChange: () => void
+  /** The server's connection check has not answered yet (PR2, redesign only: grey blocks until it does). */
+  connectionLoading?: boolean
+  /** "Try again" on Failed to load resources: the page's own reads (stats, discovery error); the list and coverage are re-read here. */
+  onRetryLoad?: () => void
 }) {
   // Region coverage (multi-region M6), behind NEXT_PUBLIC_SERVICES_COVERAGE_M6.
   const m6 = isServicesCoverageM6Enabled()
@@ -221,6 +231,11 @@ export function ServicesOverview({
   // With no resources at all, the list below says why (no account, nothing
   // discovered); the attention and unowned cards have nothing to show.
   const noResources = !stats.loading && statsData?.total === 0
+  const retryLoad = () => {
+    onRetryLoad?.()
+    if (listQuery.isError) listQuery.refetch()
+    if (coverageQuery.isError) coverageQuery.refetch()
+  }
 
   if (redesign) {
     const coverage = coverageState.status === 'ready' ? coverageState.coverage : undefined
@@ -231,6 +246,10 @@ export function ServicesOverview({
       : coverageQuery.isError ? { tone: 'neutral' as const, text: 'Scan finished', counts: `${outcome.discovered.toLocaleString('en-US')} new · ${outcome.updated.toLocaleString('en-US')} updated` }
       : coverage ? scanBanner(coverage, outcome) : null
     const captions = resourcesCaptions(coverage)
+    // PR2 empty states: the server's connection state (the page's accounts check), never the row count.
+    // Until it answers, grey blocks only; a failed check is today's page, unchanged. Not in demo mode.
+    const pageLoading = !demo && connectionLoading
+    const notConnected = !demo && knownNoAccount
     return (
       <div data-services-redesign="">
         {/* PR 3d-2 (D7): ?show=needs_attention selects Needs attention; renders nothing. */}
@@ -242,11 +261,29 @@ export function ServicesOverview({
         )}
         <RedesignHeader
           ref={scanNowRef}
-          scan={coverage && connected ? redesignScanLine(coverage, now) : null}
+          scan={coverage && connected && !notConnected ? redesignScanLine(coverage, now) : null}
           isDiscovering={discovery.isDiscovering}
           scanRunning={scanIsRunning(coverage)}
           onScanNow={discovery.onAutoDiscover}
+          altAction={pageLoading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : undefined}
         />
+        {pageLoading ? <NotConnectedLoading tiles={5} /> : notConnected ? (<>
+          {(pageError || listFailed) && <LoadErrorBanner onRetry={retryLoad} />}
+          <SummaryTiles
+            stats={stats}
+            coverage={coverage}
+            registered={{
+              loading: registeredState.status === 'loading',
+              error: registeredState.status === 'error',
+              count: registeredState.status === 'ready' ? registeredState.services.length : undefined,
+            }}
+            spend={spend}
+            redesign={{ attentionScope: null, resourcesScope: null, resourcesEarlier: null }}
+            notConnected
+          />
+          <NotConnectedCard className="mb-6" />
+          <YourServices state={registeredState} mappedToService={statsData?.mapped_to_service} totalResources={statsData?.total} redesign />
+        </>) : (<>
         {banner && (
           <ScanBanner view={banner} onDismiss={() => { setDismissedOutcome(outcome); scanNowRef.current?.focus() }} />
         )}
@@ -254,7 +291,7 @@ export function ServicesOverview({
         {homeRegion.bannerNode}
         {homeRegion.dialogNode}
         {banners}
-        {(pageError || listFailed) && <LoadErrorBanner />}
+        {(pageError || listFailed) && <LoadErrorBanner onRetry={retryLoad} />}
         <SummaryTiles
           stats={stats}
           coverage={coverage}
@@ -309,6 +346,7 @@ export function ServicesOverview({
           />
         </div>
         {coverage && <NotCheckedLine view={describeNotChecked(coverage, statsData, now, discovery.warnings)} />}
+        </>)}
       </div>
     )
   }
@@ -329,7 +367,7 @@ export function ServicesOverview({
         scan={scan}
       />
       {banners}
-      {(pageError || listFailed) && <LoadErrorBanner />}
+      {(pageError || listFailed) && <LoadErrorBanner onRetry={retryLoad} />}
       <CoverageStrip
         state={coverageState}
         statusHeadline={!stats.loading && listFailed ? 'Resource data unavailable' : statusHeadline}
