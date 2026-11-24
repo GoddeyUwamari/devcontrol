@@ -125,6 +125,9 @@ export function Repositories(props: RepositoriesProps) {
     const busy = serviceSave?.phase === 'saving' || ruleSave?.phase === 'saving'
     const match = matchingService(repository, props.services)
     const tall = layout === 'card' ? 'min-h-11 max-w-none' : 'min-w-44'
+    // Fix round 3 (founder): in the table the rule select is as wide as its longest option (a native
+    // select's own width), never cut off at 1280. The phone cards keep the full-width select.
+    const ruleWidth = layout === 'card' ? tall : 'min-w-44 w-auto max-w-none'
 
     const serviceValue = serviceSave?.phase === 'saving' && serviceSave.pending !== undefined
       ? serviceSave.pending
@@ -180,7 +183,7 @@ export function Repositories(props: RepositoriesProps) {
           <select
             aria-label={`Deploy rule for ${name}`}
             data-testid={`github-rule-${repository.id}`}
-            className={cn(SELECT, tall, current === null && 'text-ink-muted')}
+            className={cn(SELECT, ruleWidth, current === null && 'text-ink-muted')}
             value={ruleValue}
             disabled={demo || busy || options.length === 0}
             onChange={(e) => chooseRule(repository, e.target.value)}

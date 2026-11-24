@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import developersService from '@/lib/services/developers.service'
 import { API_KEYS_AVAILABLE, WEBHOOKS_AVAILABLE, COMING_SOON } from '@/lib/features/coming-soon'
 import { useGitHubConnection } from '@/lib/hooks/use-github-connection'
+import { Skeleton } from '@/components/ui/skeleton'
 import { GITHUB_PAGE_HREF, SURFACE_COPY } from '@/lib/github-connection/copy'
 
 interface ApiKey { id: string; name: string; prefix: string; scopes: string[]; createdAt: string; lastUsedAt: string | null; status: 'active' | 'revoked' }
@@ -118,6 +119,9 @@ export default function DevelopersPage() {
   // route answers configured: false, so a failure means it is on); members' text, "View GitHub →".
   const githubFailed = !demoMode && github.connection.isError
   const githubOn = (githubData !== null && githubData.configured && !githubData.demo) || githubFailed
+  // Fix round 3 (founder, the same rule as Engineering Intelligence): while the status request is in
+  // flight, a neutral placeholder, never "Coming soon" (it may be on). Demo mode sends no request.
+  const githubLoading = !demoMode && github.connection.isPending
   const githubConnected = githubData !== null && githubData.configured && !githubData.demo && githubData.installations.length > 0
   // Founder ruling (d8b2-build.md §7.2): owners and admins get Connect / Manage, as the chip; members "View GitHub →".
   const githubCanManage = githubData !== null && githubData.configured && githubData.can_manage
@@ -395,10 +399,10 @@ export default function DevelopersPage() {
                   const intg = integrations.find(i => i.id === id)
                   if (!intg) return null
                   const meta = integrationMeta[id]
-                  const kind = id === 'github' && githubOn ? 'github' : tileKind(id)
+                  const kind = id === 'github' && githubOn ? 'github' : id === 'github' && githubLoading ? 'github-loading' : tileKind(id)
                   const isConnected = kind === 'connect' && intg.status === 'connected'
                   return (
-                    <div key={id} className={`bg-white border rounded-xl p-4 flex flex-col gap-2 ${isConnected ? 'border-green-500' : 'border-slate-200'}`}>
+                    <div key={id} aria-busy={kind === 'github-loading' || undefined} className={`bg-white border rounded-xl p-4 flex flex-col gap-2 ${isConnected ? 'border-green-500' : 'border-slate-200'}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isConnected ? 'bg-green-50 text-green-600' : 'bg-slate-50 text-slate-400'}`}>{intg.icon}</div>
@@ -418,6 +422,9 @@ export default function DevelopersPage() {
                       )}
                       {kind === 'test-only' && (
                         <a href="/settings/alerts" className="text-xs text-violet-700 no-underline self-start hover:text-violet-900">Alert settings →</a>
+                      )}
+                      {kind === 'github-loading' && (
+                        <Skeleton data-testid="developers-github-loading" aria-hidden="true" className="h-4 w-28 self-start" />
                       )}
                       {kind === 'github' && (
                         <a href={GITHUB_PAGE_HREF} data-testid="developers-github-link" className="text-xs text-violet-700 no-underline self-start hover:text-violet-900">

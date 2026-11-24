@@ -5,7 +5,7 @@
  * (only AWS). Every tile stays listed.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { act, render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const push = vi.fn()
@@ -80,8 +80,10 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
     for (const name of ALL_TILES) expect(tile(name)).toBeInTheDocument()
   })
 
-  it('tiles that do not exist yet say "Coming soon" and have no button', () => {
+  it('tiles that do not exist yet say "Coming soon" and have no button', async () => {
     renderPage()
+    // GitHub's tile waits for GET /api/integrations/github (switched off here); fix round 3: no "Coming soon" before it answers.
+    await waitFor(() => expect(tile('GitHub').textContent).toContain('Coming soon'))
     for (const name of COMING_SOON_TILES) {
       expect(tile(name).textContent).toContain('Coming soon')
       expect(within(tile(name)).queryByRole('button')).toBeNull()
@@ -182,10 +184,26 @@ describe('the GitHub tile while the GitHub App is switched on (D8b-2, board 7)',
     expect(document.body.textContent).not.toMatch(/Connect GitHub →|Manage GitHub connection →/)
   })
 
+  it('fix round 3 (founder): while the status request is loading, a neutral placeholder: never "Coming soon", no link', async () => {
+    let answer!: (v: unknown) => void
+    vi.mocked(githubConnectionService.get).mockImplementationOnce(() => new Promise((r) => { answer = r }) as never)
+    github.state = on([])
+    renderPage()
+    expect(await screen.findByTestId('developers-github-loading')).toBeInTheDocument()
+    expect(tile('GitHub').textContent).not.toMatch(/Coming soon/i)
+    expect(tile('GitHub')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByTestId('developers-github-link')).toBeNull()
+    // Once it answers, the placeholder goes: switched on -> the link.
+    await act(async () => answer(github.state))
+    expect(await screen.findByTestId('developers-github-link')).toHaveTextContent('Connect GitHub →')
+    expect(screen.queryByTestId('developers-github-loading')).toBeNull()
+  })
+
   it('switched off: "Coming soon" and no link, as before', async () => {
     renderPage()
     await vi.waitFor(() => expect(githubConnectionService.get).toHaveBeenCalled())
-    expect(tile('GitHub').textContent).toContain('Coming soon')
+    // Fix round 3: the answer (not just the request) decides; the loading placeholder comes first.
+    await waitFor(() => expect(tile('GitHub').textContent).toContain('Coming soon'))
     expect(screen.queryByTestId('developers-github-link')).toBeNull()
   })
 
@@ -202,6 +220,7 @@ describe('the GitHub tile while the GitHub App is switched on (D8b-2, board 7)',
     github.state = { ...on([INSTALLATION]), demo: true }
     renderPage()
     await vi.waitFor(() => expect(githubConnectionService.get).toHaveBeenCalled())
-    expect(tile('GitHub').textContent).toContain('Coming soon')
+    // Fix round 3: the answer (not just the request) decides; the loading placeholder comes first.
+    await waitFor(() => expect(tile('GitHub').textContent).toContain('Coming soon'))
   })
 })
