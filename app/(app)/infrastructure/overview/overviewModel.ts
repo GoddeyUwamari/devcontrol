@@ -544,7 +544,9 @@ function spendTile(i: OverviewInputs): Tile {
     ? ['whole account', 'billed, from Cost Explorer', NO_BILLED_DAYS_YET].join(' · ')
     : spend.notes.join(' · ')
   // The card shows the first caption; the Cost Explorer time is on Cost by AWS service (redesign R5).
-  return { ...base, value: spend.kind === 'no_billed_days' ? '—' : spend.value, captions: [[first], ...asOfCaption], line: [capitalize(first)] }
+  // Founder mock (Nov 24 round 3): "billed" is said once on the card: "… · billed, from Cost Explorer · through Nov 14".
+  const line = capitalize(first.replace(' · billed through ', ' · through '))
+  return { ...base, value: spend.kind === 'no_billed_days' ? '—' : spend.value, captions: [[first], ...asOfCaption], line: [line] }
 }
 
 const opportunities = (n: number) => `${n} open ${plural(n, 'opportunity', 'opportunities')}`

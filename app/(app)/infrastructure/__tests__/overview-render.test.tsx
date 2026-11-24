@@ -902,3 +902,15 @@ describe('the savings ⓘ', () => {
     expect(within(tile).getByTestId('infra-tile-savings-line')).toHaveTextContent('DevControl estimate · 3 open opportunities')
   })
 })
+
+// ── Round 3 (founder, Nov 24): the Ownership links follow the sentence ──
+
+describe('the Ownership links', () => {
+  it('sit right after the sentence, never pinned to the card bottom', async () => {
+    await renderSettled()
+    const card = screen.getByRole('region', { name: 'Ownership' })
+    const links = within(card).getByTestId('infra-ownership-all').parentElement!
+    expect(links.className.split(' ')).not.toContain('mt-auto')
+    expect(links.previousElementSibling).toBe(within(card).getByTestId('infra-ownership-sentence'))
+  })
+})

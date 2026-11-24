@@ -62,7 +62,8 @@ describe('O-K1 spend this month', () => {
     expect(spend.captions[0]).toEqual(['whole account · billed, from Cost Explorer · billed through Oct 21'])
     expect(spend.captions[1]).toEqual(['Cost Explorer, as of ', { iso: hoursAgo(1) }])
     // Redesign R5: the card shows the first caption; the Cost Explorer time moves to Cost by AWS service.
-    expect(spend.line).toEqual(['Whole account · billed, from Cost Explorer · billed through Oct 21'])
+    // Round 3: "billed" once on the card; the caption itself is unchanged.
+    expect(spend.line).toEqual(['Whole account · billed, from Cost Explorer · through Oct 21'])
     expect(view().costByService!.asOf).toBe(hoursAgo(1))
     expect(spend.link).toEqual({ text: 'Cost by service ↓', href: '#infra-cost-heading' })
   })

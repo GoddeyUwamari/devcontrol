@@ -14,8 +14,8 @@ function Stat({ value, label, testId }: { value: number; label: string; testId: 
 
 /**
  * Ownership (redesign item 6), beside What we checked: "No owner tag" and "Tags couldn't be read"
- * (never "unowned"), the sentence, and the links to Services. The sentence and "All N resources" are
- * hidden on a phone (board 2).
+ * (never "unowned"), the sentence, and the links to Services right under it. The sentence and
+ * "All N resources" are hidden on a phone (board 2).
  */
 export function OwnershipGaps({ ownership }: { ownership: OwnershipView }) {
   return (
@@ -38,7 +38,8 @@ export function OwnershipGaps({ ownership }: { ownership: OwnershipView }) {
           <p data-testid="infra-ownership-sentence" className="m-0 hidden text-meta text-slate-600 sm:block">{ownership.sentence}</p>
         </>
       )}
-      <div className="mt-auto flex flex-col gap-2">
+      {/* Directly under the sentence (founder, Nov 24 round 3), not pinned to the card's bottom. */}
+      <div className="flex flex-col gap-2">
         <Link href="/services" className="flex min-h-11 items-center text-ui font-semibold text-violet-700 hover:underline sm:min-h-0">{OVERVIEW_COPY.seeOwnership}</Link>
         {ownership.status === 'ready' && (
           <Link href="/services" data-testid="infra-ownership-all" className="hidden text-ui font-semibold text-violet-700 hover:underline sm:block">
