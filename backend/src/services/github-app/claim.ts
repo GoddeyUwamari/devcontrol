@@ -28,7 +28,7 @@ import {
   releaseHeldDeliveries,
   takeClaimRetry,
 } from '../../repositories/github-installations.repository';
-import { findUnprocessedEvents } from '../../repositories/pipeline-events.repository';
+import { expireClaimHolds, findUnprocessedEvents } from '../../repositories/pipeline-events.repository';
 import { upsertRepository } from '../../repositories/pipeline-repositories.repository';
 import { GitHubAppClient, GitHubClientError, createFetchGitHubAppClient } from './client';
 import { ConnectionSource, defaultSource, withOrgClient, withOrgTransaction, withUntaggedClient } from './db';
@@ -204,7 +204,12 @@ async function completeClaim(
   } catch (error) {
     deps.log(`[github-app] claim installation=${installationId} outcome=repository_list_failed code=${errorCode(error)}`);
   }
-  const pending = await withOrgClient(deps.source, organizationId, (client) => findUnprocessedEvents(client, organizationId, installationId));
+  // Events held for lack of a claim (stored, then disconnected; D8b-1 fix S-1) are recorded now,
+  // unless they were held longer than a held delivery is kept (7 days).
+  const pending = await withOrgClient(deps.source, organizationId, async (client) => {
+    await expireClaimHolds(client, organizationId, installationId);
+    return findUnprocessedEvents(client, organizationId, installationId);
+  });
   for (const event of pending) await processStoredEvent(deps.source, organizationId, event, deps.processor);
 
   return logged(deps, installationId, {

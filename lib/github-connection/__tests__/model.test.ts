@@ -11,7 +11,7 @@ import type { GitHubInstallation, GitHubRepository } from '../../services/github
 
 const install = (over: Partial<GitHubInstallation> = {}): GitHubInstallation => ({
   installation_id: '42', account_login: 'acme-inc', account_type: 'Organization', repository_selection: 'selected',
-  permissions_state: 'expected', permission_differences: [], claimed_at: '2026-11-24T10:00:00.000Z', claimed_by_name: 'Goddey Uwamari',
+  permissions_state: 'expected', permission_differences: [], claimed_at: '2026-11-24T10:00:00.000Z', claimed_by_name: 'Sam Rivera',
   suspended_at: null, deleted_at: null, ...over,
 })
 const repo = (over: Partial<GitHubRepository> = {}): GitHubRepository => ({
@@ -27,11 +27,11 @@ describe('claim answers -> board 4 outcomes (every code the server sends)', () =
     [200, { success: true, data: { status: 'pending_github_approval' } }, { kind: 'approval_requested' }],
     [202, { success: true, data: { status: 'waiting_for_github' } }, { kind: 'waiting' }],
     [400, { success: false, error: 'invalid_state' }, { kind: 'expired' }],
-    [400, { success: false, error: 'missing_code_or_installation' }, { kind: 'expired' }],
-    [400, { success: false, error: 'invalid_request' }, { kind: 'expired' }],
-    [403, { success: false, error: 'installation_not_accessible' }, { kind: 'installer_mismatch' }],
+    [400, { success: false, error: 'missing_code_or_installation' }, { kind: 'cancelled' }],
+    [400, { success: false, error: 'invalid_request' }, { kind: 'cancelled' }],
+    [403, { success: false, error: 'installation_not_accessible' }, { kind: 'not_accessible' }],
     [403, { success: false, error: 'not_installer' }, { kind: 'installer_mismatch' }],
-    [403, { success: false, error: 'github_authorization_failed' }, { kind: 'installer_mismatch' }],
+    [403, { success: false, error: 'github_authorization_failed' }, { kind: 'github_auth_failed' }],
     [403, { success: false, error: 'Insufficient permissions' }, { kind: 'not_allowed' }],
     [403, { success: false, error: 'not_available_in_demo' }, { kind: 'demo' }],
     [409, { success: false, error: 'installation_claimed_elsewhere' }, { kind: 'elsewhere' }],
@@ -99,15 +99,16 @@ describe('banners (board 6)', () => {
 })
 
 describe('formatting', () => {
-  it('"Goddey U.", "4 minutes ago", installation settings URLs', () => {
-    expect(shortName('Goddey Uwamari')).toBe('Goddey U.')
-    expect(shortName('Cher')).toBe('Cher')
+  it('"Sam R.", "4 minutes ago", installation settings URLs', () => {
+    expect(shortName('Sam Rivera')).toBe('Sam R.')
+    expect(shortName('Sam')).toBe('Sam')
     const now = Date.parse('2026-11-24T10:00:00Z')
     expect(relativeTime('2026-11-24T09:56:00Z', now)).toBe('4 minutes ago')
     expect(relativeTime('2026-11-24T08:00:00Z', now)).toBe('2 hours ago')
     expect(relativeTime('2026-11-24T09:59:30Z', now)).toBe('just now')
     expect(installationSettingsUrl(install())).toBe('https://github.com/organizations/acme-inc/settings/installations/42')
     expect(installationSettingsUrl(install({ account_type: 'User', account_login: 'me' }))).toBe('https://github.com/settings/installations/42')
+    expect(installationSettingsUrl(install({ account_type: 'Enterprise', account_login: 'acme-corp' }))).toBe('https://github.com/enterprises/acme-corp/settings/installations/42')
   })
 })
 

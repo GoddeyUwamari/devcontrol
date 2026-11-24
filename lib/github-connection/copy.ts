@@ -1,8 +1,8 @@
 /**
  * The GitHub connection's copy (D8b-1), word for word from the locked mock
  * (boards 1-4 and 6, board 5's header, summary card and disconnect row) and
- * the founder rulings. Text the mock does not draw is marked NOT IN MOCK and
- * listed in the build report for founder wording.
+ * the founder rulings. Text the mock does not draw was worded by the founder
+ * or approved as written (D8b-1 fix round).
  *
  * Rules (founder, Nov 23): never imply every deployment is captured, or that
  * failed or over-limit deploys are retried later; no retry or replay wording.
@@ -20,30 +20,29 @@ export const COPY = {
   awsName: 'Amazon Web Services',
   awsDescription: 'Cost, resources, security findings and health checks, through a read-only role in your account.',
   awsManage: 'Manage AWS connection →',
-  /** NOT IN MOCK: the AWS card when no account is connected (the app's existing button text). */
+  /** the AWS card when no account is connected (the app's existing button text). */
   awsConnect: 'Connect AWS account →',
   githubName: 'GitHub',
   githubDescription: 'Deployments from GitHub Actions, for Deployment History and Engineering Intelligence. Read-only, no access to your code.',
   githubByHand: 'You can still record deployments by hand.',
   githubSetUp: 'Set up GitHub →',
   githubLearnMore: 'Learn more →',
-  /** NOT IN MOCK: the GitHub card's link when connected (mirrors "Manage AWS connection →"). */
+  /** the GitHub card's link when connected (mirrors "Manage AWS connection →"). */
   githubManage: 'Manage GitHub connection →',
   chipConnected: 'Connected',
   chipNotConnected: 'Not connected',
   chipNotAvailable: 'Not available yet',
   chipNeedsAttention: 'Needs attention',
   chipDemo: 'Demo data',
-  /** NOT IN MOCK: a card whose state could not be read. */
+  /** a card whose state could not be read. */
   cardLoadFailed: "Couldn't load this connection.",
 
   // Boards 2, 3, 5: the GitHub page header.
   pageTitle: 'GitHub',
   pageSubtitle: 'Record deployments from GitHub Actions.',
   manageOnGitHub: 'Manage on GitHub ↗',
-  /** NOT IN MOCK: GET / failed. Never "not connected". */
+  /** GET / failed. Never "not connected". */
   pageLoadFailed: "Couldn't load the GitHub connection.",
-  /** NOT IN MOCK. */
   tryAgain: 'Try again',
 
   // Board 2: switched off.
@@ -68,7 +67,7 @@ export const COPY = {
   planLimitsTitle: 'Plan limits',
   planLimitsBody:
     "Deployments from GitHub count toward your plan's monthly deployment limit, together with any you record by hand. Deployments over the limit aren't recorded.",
-  /** NOT IN MOCK: POST /install did not return an install link. */
+  /** POST /install did not return an install link. */
   installFailed: "Couldn't start the GitHub connection. Try again.",
 
   // Board 4: callback and claim outcomes.
@@ -95,18 +94,29 @@ export const COPY = {
     "Your request to install DevControl Deployments went to the organization's owners. Once one of them approves it, they need to connect it from this page while signed in to DevControl.",
   notAllowedTitle: 'Only owners and admins can connect GitHub',
   notAllowedBody: 'Ask an owner or admin of this DevControl workspace to finish the connection.',
-  /** NOT IN MOCK as a card: the heading is board 4's; the body is the API's own message (d8a §15 founder copy). */
+  /** The heading is board 4's; the body is the API's own message (d8a §15 founder copy). */
   installEventMissingTitle: "We couldn't finish connecting",
+  /** Founder copy (D8b-1 fix round): 500, network error or an unrecognised answer. Heading = noResponseTitle. */
+  failedBody: 'Something went wrong on our side. Try connecting again in a few minutes.',
+  /** missing_code_or_installation, invalid_request. */
+  cancelledTitle: "GitHub didn't finish connecting",
+  cancelledBody: "The GitHub step was cancelled or didn't complete. Start again from DevControl.",
+  /** installation_not_accessible. */
+  notAccessibleTitle: "DevControl can't reach this installation",
+  notAccessibleBody: 'The app may have been uninstalled, suspended or installed on a different account. Check it on GitHub, then start again.',
+  /** github_authorization_failed. */
+  authFailedTitle: "GitHub didn't confirm your sign-in",
+  authFailedBody: 'GitHub declined the sign-in step. Start again and approve access when GitHub asks.',
 
   // Board 5: summary card and disconnect row.
   permissionsExpected: 'Permissions: read-only, as expected',
-  /** NOT IN MOCK: the summary line while the mismatch banner shows. */
+  /** the summary line while the mismatch banner shows. */
   permissionsMismatch: "Permissions: don't match what DevControl expects",
   lastEvent: (relative: string) => `Last event from GitHub: ${relative}`,
-  /** NOT IN MOCK: no event received yet. */
+  /** no event received yet. */
   lastEventNone: 'Last event from GitHub: none yet',
   connectedBy: (name: string, date: string) => `Connected by ${name} on ${date}`,
-  /** NOT IN MOCK: the claimer has no name (deleted user). */
+  /** the claimer has no name (deleted user). */
   connectedOn: (date: string) => `Connected on ${date}`,
   disconnectTitle: 'Disconnect GitHub',
   disconnectBody: 'Stops recording. Your repositories, services, rules and past deployments are kept.',
@@ -130,14 +140,14 @@ export const COPY = {
   dialogStaysInstalled: 'The app stays installed on GitHub until you uninstall it there.',
   uninstallOnGitHub: 'Uninstall on GitHub ↗',
   cancel: 'Cancel',
-  /** NOT IN MOCK: DELETE failed. */
+  /** DELETE failed. */
   disconnectFailed: "Couldn't disconnect. Try again.",
   demoChip: 'Demo data',
   demoBody: 'A sample of the connected screen. Nothing here can be changed.',
   planLimitNote: "Deployments over your plan's monthly limit aren't recorded.",
 } as const
 
-/** "GitHub organization" (board 5). Other account types: NOT IN MOCK. */
+/** "GitHub organization" (board 5), and the other account types. */
 export function accountTypeLabel(type: string): string {
   if (type === 'Organization') return 'GitHub organization'
   if (type === 'User') return 'GitHub personal account'
@@ -154,13 +164,13 @@ export function permissionLabel(name: string): string {
 /**
  * The mismatch banner's "now has" list: each permission that differs, with what
  * GitHub granted ("Contents (read)"); one DevControl asks for but the app lacks
- * reads "(no access)" (NOT IN MOCK).
+ * reads "(no access)".
  */
 export function permissionsNowHave(differences: readonly { permission: string; granted: string | null }[]): string {
   return differences.map((d) => `${permissionLabel(d.permission)} (${d.granted ?? 'no access'})`).join(', ')
 }
 
-/** "Goddey U." from "Goddey Uwamari"; one word stays as it is. */
+/** "Sam R." from "Sam Rivera"; one word stays as it is. */
 export function shortName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/).filter(Boolean)
   if (parts.length <= 1) return parts[0] ?? ''
@@ -185,12 +195,16 @@ export function relativeTime(iso: string, now: number): string {
 
 /**
  * The installation's settings page on GitHub, where its repositories,
- * permissions, suspension and uninstall live. VERIFY the paths on production
- * (Q17); GitHub documents both forms.
+ * permissions, suspension and uninstall live. Enterprise accounts (account_login
+ * is the enterprise slug): /enterprises/ENTERPRISE/settings/installations/ID,
+ * documented at https://docs.github.com/en/enterprise-cloud@latest/admin/managing-github-apps-for-your-enterprise/automate-installations
+ * (D8b-1 fix N-4). The organization and personal-account forms are still to be
+ * confirmed on production (Q17).
  */
 export function installationSettingsUrl(installation: { installation_id: string; account_login: string; account_type: string }): string {
   const id = encodeURIComponent(installation.installation_id)
-  return installation.account_type === 'Organization'
-    ? `https://github.com/organizations/${encodeURIComponent(installation.account_login)}/settings/installations/${id}`
-    : `https://github.com/settings/installations/${id}`
+  const login = encodeURIComponent(installation.account_login)
+  if (installation.account_type === 'Organization') return `https://github.com/organizations/${login}/settings/installations/${id}`
+  if (installation.account_type === 'Enterprise') return `https://github.com/enterprises/${login}/settings/installations/${id}`
+  return `https://github.com/settings/installations/${id}`
 }

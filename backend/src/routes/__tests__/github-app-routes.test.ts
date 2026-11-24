@@ -289,6 +289,30 @@ describe('/api/integrations/github', () => {
       }
     });
 
+    it('DELETE whose last step fails on a foreign key (23503) -> 409 try_again, and the whole disconnect is rolled back: claim kept, repository still linked', async () => {
+      // A probe table referencing only this test's installation makes step 3 (DELETE the claim) fail after
+      // step 2 (detach the repositories) ran: only one transaction around both undoes the detach.
+      const instC = instB + 1;
+      const probe = `d8b_fix_fk_probe_${Math.random().toString(36).slice(2, 10)}`;
+      await seedClaim(A, instC, EXPECTED, 'expected');
+      const repoC = (await harness.pool.query(
+        `INSERT INTO pipeline_repositories (organization_id, github_repo_id, installation_id, full_name) VALUES ($1, $2, $3, 'acme/fk-probe') RETURNING id::text AS id`,
+        [A.orgId, 910000000 + Math.floor(Math.random() * 1e6), instC])).rows[0].id;
+      await harness.pool.query(`CREATE TABLE ${probe} (installation_id BIGINT NOT NULL REFERENCES github_installations(installation_id))`);
+      try {
+        await harness.pool.query(`INSERT INTO ${probe} VALUES ($1)`, [instC]);
+        const res = await harness.sendAs(A.orgId, A.owner, 'DELETE', `/integrations/github/installations/${instC}`);
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ success: false, error: 'try_again' });
+        expect((await harness.pool.query('SELECT organization_id::text AS org FROM github_installations WHERE installation_id = $1', [instC])).rows).toEqual([{ org: A.orgId }]);
+        expect((await harness.pool.query('SELECT installation_id::text AS i FROM pipeline_repositories WHERE id = $1', [repoC])).rows).toEqual([{ i: String(instC) }]);
+      } finally {
+        await harness.pool.query(`DROP TABLE IF EXISTS ${probe}`);
+        await harness.pool.query('DELETE FROM pipeline_repositories WHERE id = $1', [repoC]);
+        await harness.pool.query('DELETE FROM github_installations WHERE installation_id = $1', [instC]);
+      }
+    });
+
     it('DELETE by an admin: the claim goes, the repository keeps its service and rule (detached), deployments untouched; again -> 404', async () => {
       const deployment = (await harness.pool.query(
         `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, organization_id)

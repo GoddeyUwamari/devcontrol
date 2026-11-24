@@ -35,7 +35,7 @@ const NOW = Date.parse('2026-11-24T10:04:00Z')
 
 const INSTALLATION = {
   installation_id: '42', account_login: 'acme-inc', account_type: 'Organization', repository_selection: 'selected',
-  permissions_state: 'expected', permission_differences: [], claimed_at: '2026-11-24T10:00:00.000Z', claimed_by_name: 'Goddey Uwamari',
+  permissions_state: 'expected', permission_differences: [], claimed_at: '2026-11-24T10:00:00.000Z', claimed_by_name: 'Sam Rivera',
   suspended_at: null, deleted_at: null,
 }
 type Conn = Record<string, unknown>
@@ -231,7 +231,6 @@ describe('the claim (board 4)', () => {
     [400, { success: false, error: 'invalid_state' }, 'This connection link has expired', "Start again from DevControl. The app stays installed on GitHub, so you won't need to reinstall it."],
     [409, { success: false, error: 'installation_claimed_elsewhere' }, 'This installation belongs to another DevControl workspace', 'Disconnect it in that workspace first, or install DevControl Deployments on a different GitHub account or organization.'],
     [403, { success: false, error: 'not_installer' }, "We couldn't confirm who installed the app", 'To connect, the person who installs DevControl Deployments on GitHub has to be the one who finishes here. Start again, signed in to GitHub as that person.'],
-    [403, { success: false, error: 'installation_not_accessible' }, "We couldn't confirm who installed the app", 'To connect, the person who installs DevControl Deployments on GitHub has to be the one who finishes here. Start again, signed in to GitHub as that person.'],
     [200, { success: true, data: { status: 'pending_github_approval' } }, 'Waiting for an owner of the GitHub organization', "Your request to install DevControl Deployments went to the organization's owners. Once one of them approves it, they need to connect it from this page while signed in to DevControl."],
     [403, { success: false, error: 'Insufficient permissions' }, 'Only owners and admins can connect GitHub', 'Ask an owner or admin of this DevControl workspace to finish the connection.'],
     [502, { success: false, error: 'github_unavailable' }, "We couldn't finish connecting", "GitHub didn't respond in time. Nothing was changed."],
@@ -243,6 +242,56 @@ describe('the claim (board 4)', () => {
     expect(await screen.findByText(title)).toBeInTheDocument()
     expect(screen.getByText(text)).toBeInTheDocument()
     expect(posts('/api/integrations/github/claim')).toHaveLength(1)
+  })
+
+  // D8b-1 fix round, founder copy: the four cards that end with the outlined Connect GitHub (owners and admins only).
+  const FOUNDER_CARDS = [
+    [400, { success: false, error: 'missing_code_or_installation' }, 'github-claim-cancelled', "GitHub didn't finish connecting", "The GitHub step was cancelled or didn't complete. Start again from DevControl."],
+    [400, { success: false, error: 'invalid_request' }, 'github-claim-cancelled', "GitHub didn't finish connecting", "The GitHub step was cancelled or didn't complete. Start again from DevControl."],
+    [403, { success: false, error: 'installation_not_accessible' }, 'github-claim-not-accessible', "DevControl can't reach this installation", 'The app may have been uninstalled, suspended or installed on a different account. Check it on GitHub, then start again.'],
+    [403, { success: false, error: 'github_authorization_failed' }, 'github-claim-auth-failed', "GitHub didn't confirm your sign-in", 'GitHub declined the sign-in step. Start again and approve access when GitHub asks.'],
+    [500, { success: false, error: 'Internal server error' }, 'github-claim-failed', "We couldn't finish connecting", 'Something went wrong on our side. Try connecting again in a few minutes.'],
+    [400, { success: false, error: 'something_new' }, 'github-claim-failed', "We couldn't finish connecting", 'Something went wrong on our side. Try connecting again in a few minutes.'],
+  ] as const
+
+  it.each(FOUNDER_CARDS)('%i %j -> %s: heading, body word for word, outlined Connect GitHub', async (status, body, testId, title, text) => {
+    parked()
+    claimWith(status, body)
+    renderPage()
+    const card = await screen.findByTestId(testId)
+    expect(within(card).getByText(title)).toBeInTheDocument()
+    expect(within(card).getByText(text)).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Connect GitHub' })).toBe(screen.getByTestId('github-outcome-connect'))
+    expect(posts('/api/integrations/github/claim')).toHaveLength(1)
+  })
+
+  it('a network error on the claim: the fallback card with its body', async () => {
+    parked()
+    mockPost.mockImplementation(() => Promise.reject(new Error('network down')))
+    renderPage()
+    const card = await screen.findByTestId('github-claim-failed')
+    expect(card).toHaveTextContent("We couldn't finish connectingSomething went wrong on our side. Try connecting again in a few minutes.")
+  })
+
+  it('the four founder cards show no Connect GitHub when the server says the user may not manage', async () => {
+    const { ClaimOutcomeCard } = await import('../_components/NotConnected')
+    for (const kind of ['cancelled', 'not_accessible', 'github_auth_failed', 'failed'] as const) {
+      const { unmount } = render(<ClaimOutcomeCard outcome={{ kind }} canManage={false} onConnect={() => undefined} onTryAgain={() => undefined} starting={false} />)
+      expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
+      unmount()
+      const managed = render(<ClaimOutcomeCard outcome={{ kind }} canManage onConnect={() => undefined} onTryAgain={() => undefined} starting={false} />)
+      expect(screen.getByRole('button', { name: 'Connect GitHub' })).toBeInTheDocument()
+      managed.unmount()
+    }
+  })
+
+  it('Connect was started in another workspace (N-3): "expired", and no claim is sent', async () => {
+    saveInstallStart(STATE, 'org-other')
+    parkCallback({ code: CODE, installation_id: '42', setup_action: 'install', state: STATE })
+    renderPage()
+    expect(await screen.findByText('This connection link has expired')).toBeInTheDocument()
+    expect(mockPost).not.toHaveBeenCalled()
+    expect(sessionStorage.length).toBe(0)
   })
 
   it('202 waiting: "Finishing…", POST /claim/retry every 3 s with the state, until it connects', async () => {
@@ -337,7 +386,7 @@ describe('connected (board 5 header, summary, disconnect; board 6 banners)', () 
     renderPage()
     const summary = await screen.findByTestId('github-summary')
     expect(within(summary).getByTestId('github-summary-chip')).toHaveTextContent('Connected')
-    for (const text of ['acme-inc', 'GitHub organization', 'Permissions: read-only, as expected', 'Last event from GitHub: 4 minutes ago', 'Connected by Goddey U. on Nov 24']) {
+    for (const text of ['acme-inc', 'GitHub organization', 'Permissions: read-only, as expected', 'Last event from GitHub: 4 minutes ago', 'Connected by Sam R. on Nov 24']) {
       expect(within(summary).getByText(text)).toBeInTheDocument()
     }
     const manage = screen.getByTestId('github-manage')
@@ -376,6 +425,15 @@ describe('connected (board 5 header, summary, disconnect; board 6 banners)', () 
     expect(banner).toHaveTextContent('Nothing is being recorded. Your repositories, services and past deployments are kept. Connect again to pick up where you left off.')
     expect(within(banner).getByRole('button', { name: 'Connect GitHub' })).toBeInTheDocument()
     expect(screen.queryByTestId('github-manage')).toBeNull()
+  })
+
+  it('uninstalled, seen by a member (N-5): the banner without Connect GitHub', async () => {
+    connectionBody = on({ can_manage: false, installations: [{ ...INSTALLATION, deleted_at: '2026-11-24T09:00:00Z' }] })
+    renderPage()
+    const banner = await screen.findByTestId('github-banner-uninstalled')
+    expect(banner).toHaveTextContent('DevControl Deployments was uninstalled from acme-inc')
+    expect(within(banner).queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull()
   })
 
   it('a repository removed on GitHub: its greyed row; repositories of a disconnected installation are not shown', async () => {

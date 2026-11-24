@@ -21,6 +21,7 @@ const PATHS_WITHOUT_QUERY = [
   '/verify-email',
   '/accept-invitation',
   '/auth/sso/callback',
+  '/auth/github/callback',
   '/billing/success',
 ]
 

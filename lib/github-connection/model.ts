@@ -78,6 +78,9 @@ export type ClaimOutcome =
   | { kind: 'no_response'; canRetry: boolean }
   | { kind: 'elsewhere' }
   | { kind: 'installer_mismatch' }
+  | { kind: 'cancelled' }
+  | { kind: 'not_accessible' }
+  | { kind: 'github_auth_failed' }
   | { kind: 'not_allowed' }
   | { kind: 'install_event_missing'; message: string }
   | { kind: 'demo' }
@@ -101,10 +104,11 @@ export function claimOutcome(answer: ApiAnswer, afterWaiting: boolean): ClaimOut
   if (status === 200 && data.status === 'already_connected') return { kind: 'already_connected' }
   if (status === 200 && data.status === 'pending_github_approval') return { kind: 'approval_requested' }
   if (status === 202 && data.status === 'waiting_for_github') return { kind: 'waiting' }
-  if (status === 400 && (error === 'invalid_state' || error === 'missing_code_or_installation' || error === 'invalid_request')) return { kind: 'expired' }
-  if (status === 403 && (error === 'installation_not_accessible' || error === 'not_installer' || error === 'github_authorization_failed')) {
-    return { kind: 'installer_mismatch' }
-  }
+  if (status === 400 && error === 'invalid_state') return { kind: 'expired' }
+  if (status === 400 && (error === 'missing_code_or_installation' || error === 'invalid_request')) return { kind: 'cancelled' }
+  if (status === 403 && error === 'not_installer') return { kind: 'installer_mismatch' }
+  if (status === 403 && error === 'installation_not_accessible') return { kind: 'not_accessible' }
+  if (status === 403 && error === 'github_authorization_failed') return { kind: 'github_auth_failed' }
   if (status === 403 && error === 'not_available_in_demo') return { kind: 'demo' }
   if (status === 403) return { kind: 'not_allowed' }
   if (status === 409 && error === 'installation_claimed_elsewhere') return { kind: 'elsewhere' }

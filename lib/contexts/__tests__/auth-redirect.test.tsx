@@ -2,7 +2,7 @@
  * login() and register() go to a caller's return path once signed in, but
  * only a same-origin path (safeReturnPath); anything else falls back to
  * /dashboard -- or /accept-invitation when an invitation is pending in this
- * tab. logout() forgets a pending invitation; session expiry deliberately
+ * tab. logout() forgets a pending invitation and the GitHub hand-off; session expiry deliberately
  * does not (see the test below).
  *
  * Runs the real AuthProvider; the auth service calls and navigation are faked.
@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from "@/lib/contexts/auth-context";
 import { authService } from "@/lib/services/auth.service";
 import { organizationsService } from "@/lib/services/organizations.service";
 import { PENDING_INVITATION_KEY, savePendingInvitation } from "@/lib/pending-invitation";
+import { GITHUB_INSTALL_START_KEY, GITHUB_PARKED_CALLBACK_KEY, parkCallback, saveInstallStart } from "@/lib/github-connection/pending-claim";
 import { DOT_SEGMENT_ESCAPES } from "@/lib/__tests__/support/open-redirect-cases";
 
 const push = vi.fn();
@@ -160,6 +161,17 @@ describe("logout", () => {
     await mount();
     await act(() => auth.logout());
     expect(sessionStorage.getItem(PENDING_INVITATION_KEY)).toBeNull();
+  });
+
+  it("clears the GitHub hand-off: the install start and the parked callback (D8b-1 fix N-5)", async () => {
+    saveInstallStart("S".repeat(43), "org-1");
+    parkCallback({ code: "placeholderCode123", installation_id: "42", state: "S".repeat(43) });
+    expect(sessionStorage.getItem(GITHUB_INSTALL_START_KEY)).not.toBeNull();
+    expect(sessionStorage.getItem(GITHUB_PARKED_CALLBACK_KEY)).not.toBeNull();
+    await mount();
+    await act(() => auth.logout());
+    expect(sessionStorage.getItem(GITHUB_INSTALL_START_KEY)).toBeNull();
+    expect(sessionStorage.getItem(GITHUB_PARKED_CALLBACK_KEY)).toBeNull();
   });
 });
 

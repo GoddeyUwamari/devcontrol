@@ -7,9 +7,9 @@
  * 'failed' with a reason code and never deletes it.
  */
 import { PoolClient } from 'pg';
-import { EventToProcess, ProcessingStatus, setProcessingOutcome } from '../../repositories/pipeline-events.repository';
+import { EventToProcess, holdUntilClaimed, NOT_CLAIMED_REASON, ProcessingStatus, setProcessingOutcome } from '../../repositories/pipeline-events.repository';
 import { findRepositoryForEvent, markRepositoryRemoved, upsertRepository } from '../../repositories/pipeline-repositories.repository';
-import { applyInstallationLifecycle } from '../../repositories/github-installations.repository';
+import { applyInstallationLifecycle, lockOwnClaim } from '../../repositories/github-installations.repository';
 import { ConnectionSource, withOrgClient, withOrgTransaction } from './db';
 import { permissionsStateOf } from './permissions';
 import { detectDeployment } from './detect';
@@ -110,6 +110,12 @@ function failureReason(error: unknown): string {
  * Processes one stored event in its own transaction and records the outcome.
  * On failure the processing transaction rolls back and the event is marked
  * 'failed' on a fresh statement; the event row itself always stays.
+ *
+ * First the organization's claim on the event's installation is locked
+ * (D8b-1 fix S-1). Gone (disconnected after the event was stored): the event
+ * is held, pending / installation_not_claimed, for this organization's next
+ * claim, and nothing else runs. Held, it can never fail on the repository's
+ * foreign key to the claim.
  */
 export async function processStoredEvent(
   source: ConnectionSource,
@@ -119,6 +125,10 @@ export async function processStoredEvent(
 ): Promise<ProcessingOutcome> {
   try {
     return await withOrgTransaction(source, organizationId, async (client) => {
+      if (!(await lockOwnClaim(client, organizationId, Number(event.installationId)))) {
+        await holdUntilClaimed(client, organizationId, event.id);
+        return { status: 'pending', reason: NOT_CLAIMED_REASON };
+      }
       const outcome = await processor(client, organizationId, event);
       await setProcessingOutcome(client, organizationId, event.id, outcome.status, outcome.reason);
       return outcome;

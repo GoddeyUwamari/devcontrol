@@ -208,6 +208,24 @@ export async function listInstallations(client: PoolClient, organizationId: stri
 }
 
 /**
+ * Processing (D8b-1 fix S-1): inside the event's processing transaction, lock
+ * this organization's claim on the installation (FOR KEY SHARE) and say
+ * whether it still exists. The lock conflicts with the disconnect's FOR
+ * UPDATE only, so events of one installation still process side by side:
+ *
+ *  - processing first: a disconnect waits until the event is processed;
+ *  - disconnect first: this waits, then finds no claim (false), and the
+ *    caller holds the event instead of processing it.
+ */
+export async function lockOwnClaim(client: PoolClient, organizationId: string, installationId: number): Promise<boolean> {
+  const { rowCount } = await client.query(
+    'SELECT 1 FROM github_installations WHERE organization_id = $1 AND installation_id = $2 FOR KEY SHARE',
+    [organizationId, installationId]
+  );
+  return rowCount === 1;
+}
+
+/**
  * Disconnect (D8b, D8-N11): removes this organization's claim on one
  * installation. Run inside a transaction (withOrgTransaction):
  *
@@ -217,9 +235,9 @@ export async function listInstallations(client: PoolClient, organizationId: stri
  *  3. delete the claim.
  *
  * Deployment rows and pipeline_events are never touched. The lock in step 1
- * also holds off a concurrent webhook that would re-point a repository at
- * the installation: its foreign-key check waits for this transaction and
- * then fails, and that event is marked failed, never lost. New deliveries
+ * is serialised with event processing (lockOwnClaim): an event stored for
+ * this organization but processed after the disconnect is held, not failed,
+ * and a claim by this organization within 7 days records it. New deliveries
  * for the installation are held again (no organization), as before a claim.
  */
 export async function disconnectInstallation(

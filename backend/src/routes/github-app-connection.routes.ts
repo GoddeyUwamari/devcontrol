@@ -176,8 +176,10 @@ router.delete('/installations/:installationId', refuseUnconfigured, requireAdmin
     console.log(`[github-app] disconnect installation=${installationId} repositories=${result.repositories}`);
     res.json({ success: true, data: { disconnected: true, repositories: result.repositories } });
   } catch (error) {
-    // A webhook re-pointing a repository at this installation mid-disconnect
-    // (foreign key 23503): nothing changed; the customer tries again.
+    // A row still pointing at the claim when it is deleted (foreign key
+    // 23503): the transaction rolled back, so nothing changed (repositories
+    // stay linked); the customer tries again. Event processing is serialised
+    // with the disconnect (lockOwnClaim), so this is a defence only.
     if ((error as { code?: unknown } | null)?.code === '23503') {
       res.status(409).json({ success: false, error: 'try_again' });
       return;

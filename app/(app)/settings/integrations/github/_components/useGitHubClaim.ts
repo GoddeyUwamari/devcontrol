@@ -20,6 +20,7 @@ export type InstallProblem = 'failed' | null
  * /auth/github/callback are taken (single use) and claimed with the state:
  * the one GitHub echoed, else the one saved when Connect was clicked (V1).
  * Both present and different: the link is treated as expired, with no call.
+ * So is a Connect started in another workspace than the current one.
  * Nothing is claimed while the feature is off, in the demo workspace, or for
  * someone who may not connect (they see "Only owners and admins").
  *
@@ -107,6 +108,11 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
         settle({ kind: 'not_allowed' })
         return
       }
+      // Connect was started in another workspace (the tab switched since): nothing is sent (D8b-1 fix N-3).
+      if (stored && stored.organizationId !== organizationId) {
+        settle({ kind: 'expired' })
+        return
+      }
       if (parked.state && stored && parked.state !== stored.state) {
         settle({ kind: 'expired' })
         return
@@ -128,7 +134,7 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
       settle(next)
       if (next.kind === 'waiting') scheduleRetry()
     })()
-  }, [connection, settle, scheduleRetry])
+  }, [connection, organizationId, settle, scheduleRetry])
 
   /** Try again on "GitHub didn't respond": the retry route, with the state this tab still holds. */
   const tryAgain = useCallback(() => {

@@ -121,10 +121,16 @@ export function ClaimOutcomeCard({
       return <OutcomeCard testId="github-claim-approval" live title={COPY.approvalTitle}>{COPY.approvalBody}</OutcomeCard>
     case 'not_allowed':
       return <OutcomeCard testId="github-claim-not-allowed" live title={COPY.notAllowedTitle}>{COPY.notAllowedBody}</OutcomeCard>
+    case 'cancelled':
+      return <OutcomeCard testId="github-claim-cancelled" live title={COPY.cancelledTitle} action={restart}>{COPY.cancelledBody}</OutcomeCard>
+    case 'not_accessible':
+      return <OutcomeCard testId="github-claim-not-accessible" live title={COPY.notAccessibleTitle} action={restart}>{COPY.notAccessibleBody}</OutcomeCard>
+    case 'github_auth_failed':
+      return <OutcomeCard testId="github-claim-auth-failed" live title={COPY.authFailedTitle} action={restart}>{COPY.authFailedBody}</OutcomeCard>
     case 'install_event_missing':
       return <OutcomeCard testId="github-claim-install-event" live title={COPY.installEventMissingTitle} action={restart}>{outcome.message}</OutcomeCard>
     case 'failed':
-      return <OutcomeCard testId="github-claim-failed" live title={COPY.noResponseTitle} action={restart} />
+      return <OutcomeCard testId="github-claim-failed" live title={COPY.noResponseTitle} action={restart}>{COPY.failedBody}</OutcomeCard>
     default:
       return null
   }
