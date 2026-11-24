@@ -3,35 +3,35 @@
     [
       "Critical",
       "SSH open to the world",
-      "launch-wizard-1 (sg-0123456789abcdef0) Security group",
+      "launch-wizard-1Security group · account-level",
       "us-east-1",
       "Review"
     ],
     [
       "High",
       "RDP open to the world",
-      "sg-0aaaaaaaaaaaaaaaa Security group",
+      "sg-0aaaaaaaaaaaaaaaaSecurity group · account-level",
       "us-east-1",
       "Review"
     ],
     [
       "High",
       "All ports open",
-      "sg-0bbbbbbbbbbbbbbbb Security group",
+      "sg-0bbbbbbbbbbbbbbbbSecurity group · account-level",
       "us-east-1",
       "Review"
     ],
     [
       "High",
       "Console user without MFA",
-      "arn:aws:iam::123456789012:user/example-user IAM user",
+      "arn:aws:iam::123456789012:user/example-userIAM user",
       "Global (IAM)",
       "Review"
     ],
     [
       "High",
       "Bare ID",
-      "sg-0cccccccccccccccc Security group",
+      "sg-0ccccccccccccccccSecurity group · account-level",
       "us-east-1",
       "Review"
     ]
@@ -39,23 +39,23 @@
   "phone": [
     [
       "SSH open to the world",
-      "launch-wizard-1 (sg-0123456789abcdef0) · Security group · us-east-1"
+      "launch-wizard-1 · Security group · account-level"
     ],
     [
       "RDP open to the world",
-      "sg-0aaaaaaaaaaaaaaaa · Security group · us-east-1"
+      "sg-0aaaaaaaaaaaaaaaa · Security group · account-level"
     ],
     [
       "All ports open",
-      "sg-0bbbbbbbbbbbbbbbb · Security group · us-east-1"
+      "sg-0bbbbbbbbbbbbbbbb · Security group · account-level"
     ],
     [
       "Console user without MFA",
-      "arn:aws:iam::123456789012:user/example-user · IAM user · Global (IAM)"
+      "arn:aws:iam::123456789012:user/example-user · IAM user"
     ],
     [
       "Bare ID",
-      "sg-0cccccccccccccccc · Security group · us-east-1"
+      "sg-0cccccccccccccccc · Security group · account-level"
     ]
   ],
   "reviewButtons": [

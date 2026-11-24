@@ -176,11 +176,13 @@ describe('R1 / R6 / a11y structure', () => {
     await renderSettled()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     const h2 = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
-    expect(h2).toEqual([
-      'AWS account',
-      'Critical-severity findings need review: 1 on resources, 1 account-level · High: 2 on resources, 1 account-level',
-      'Summary', 'What needs attention', 'What we checked', 'Cost by AWS service', 'Ownership gaps', 'All 9 resources',
-    ])
+    // Redesign (founder mock Nov 24): header, cards, attention, What we checked beside Ownership, cost last.
+    expect(h2).toEqual(['Summary', 'What needs attention', 'What we checked', 'Ownership', 'Cost by AWS service'])
+    expect(screen.getByTestId('infra-header-status').textContent).toMatch(/^AWS account connectedHome region us-east-11 of 17 regions checkedLast scan finished /)
+    // One row of actions: Export inventory (secondary) before Scan now (primary).
+    const actions = within(screen.getByTestId('infra-header-actions')).getAllByRole('button').map((b) => b.textContent?.trim())
+    expect(actions).toEqual(['Export inventory', 'Scan now', 'Scan now'])
+    expect(document.querySelector('main')!.className.split(' ')).toEqual(expect.arrayContaining(['max-w-[1320px]', 'lg:px-14', 'lg:py-10']))
     expect(document.querySelector('svg[class*="recharts"], canvas')).toBeNull()
     for (const section of document.querySelectorAll('main section')) expect(section.getAttribute('aria-labelledby')).toBeTruthy()
   })
@@ -516,10 +518,14 @@ describe('RU-1 / RU-2 / R9 V2 source rules', () => {
   it('R9 spacing only from the 4/8/12/16/24/32 scale; one violet button per section', () => {
     const spacing = /\b-?(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y|space-x|space-y)-([0-9.]+|\[[^\]]+\])/g
     for (const { f, src } of sources) {
-      for (const [, value] of src.matchAll(spacing)) expect(['0', '1', '2', '3', '4', '6', '8'], `${f}: ${value}`).toContain(value)
+      // Redesign R4 (founder Nov 24): plus Operational Health's container (lg:px-14, sm:py-8, lg:py-10) and the 20 px card gap.
+      for (const [, value] of src.matchAll(spacing)) expect(['0', '1', '2', '3', '4', '5', '6', '8', '10', '14'], `${f}: ${value}`).toContain(value)
     }
+    const at = (v: string) => sources.flatMap(({ f, src }) => [...src.matchAll(new RegExp(`\\b(?:p|px|py|gap)-${v}\\b`, 'g'))].map(() => f))
+    expect(at('14')).toEqual(['InfrastructureOverviewV2.tsx'])
+    expect(at('10')).toEqual(['InfrastructureOverviewV2.tsx'])
     const violetButtons = sources.flatMap(({ f, src }) => [...src.matchAll(/bg-violet-700/g)].map(() => f))
-    expect(violetButtons.sort()).toEqual(['OverviewFooter.tsx', 'OverviewHeader.tsx', 'PlanBanners.tsx'])
+    expect(violetButtons.sort()).toEqual(['OverviewHeader.tsx', 'PlanBanners.tsx'])
   })
 })
 
@@ -569,16 +575,19 @@ describe('PB-1 plan banners and the limit prompt: the same text and links as the
 // ── P1-2: never summed, in the page ──
 
 describe('O-K2c never summed, as rendered', () => {
-  it('the Open findings tile, the status headline and the attention description never add the two sources', async () => {
+  it('the Open findings tile, the attention severity line and the attention description never add the two sources', async () => {
     // Resource findings 8, open account findings 4 (sum 12); 23 resources and 2 critical/high account findings in the table (sum 25).
     m.responses['GET /api/services'] = ok(attentionPage(undefined, 23))
     await renderSettled()
     const tile = screen.getByTestId('infra-tile-findings')
-    expect(within(tile).getByTestId('infra-findings-resources')).toHaveTextContent(/^On resources8/)
-    expect(within(tile).getByTestId('infra-findings-account')).toHaveTextContent(/^Account-level \(security groups, IAM users\)4/)
+    // Ruling 2 (keep rule): the big number is findings on resources; account-level findings are their own line.
+    expect(within(tile).getByTestId('infra-findings-resources')).toHaveTextContent(/^8$/)
+    expect(within(tile).getByTestId('infra-findings-account')).toHaveTextContent('+ 4 account-level findings (1 Critical, 1 High)')
+    // Round 2 ruling: the description is the criteria sentence only; the header line carries the counts.
     const description = screen.getByTestId('infra-attention-description')
-    expect(description).toHaveTextContent('23 resources · 2 account-level findings.')
-    const status = screen.getByRole('heading', { level: 2, name: /findings need review/ })
+    expect(description.textContent).toBe(OVERVIEW_COPY.attentionDescription)
+    const status = screen.getByTestId('infra-attention-severity')
+    expect(status).toHaveTextContent('· 3 critical and high-severity on resources, 2 account-level')
     // Text node by text node, so adjacent elements ("Low 1" + "2 dismissed") don't run together into a false "12".
     const words = (el: Element) => {
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
@@ -647,7 +656,7 @@ describe('O-AC the alarm line, as rendered', () => {
   it('exactly the constant and its link: no count, no percent', async () => {
     await renderSettled()
     const line = screen.getByTestId('infra-checked-alarms')
-    expect(line.textContent).toBe(`${OVERVIEW_COPY.alarms} ${OVERVIEW_COPY.alarmsLink}`)
+    expect(line.textContent).toBe(`${OVERVIEW_COPY.alarmsName}${OVERVIEW_COPY.alarmsDetail} · ${OVERVIEW_COPY.alarmsLink}Not shown here`)
     expect((line.textContent ?? '').replace(/\bEC2\b/g, '')).not.toMatch(/[0-9%]/)
     expect(within(line).getByRole('link', { name: OVERVIEW_COPY.alarmsLink })).toHaveAttribute('href', '/observability/alert-history')
   })
@@ -726,13 +735,14 @@ describe('cost by service share, as rendered', () => {
 
 // ── P2-7: the reason line wraps on a phone ──
 
-describe('the status reason line', () => {
-  it('wraps below sm and is one line from sm up', async () => {
+describe('the header status line', () => {
+  it('wraps on a phone (no truncation); the old status headline and "Top:" line are gone', async () => {
     await renderSettled()
-    const classes = screen.getByTestId('infra-status-reason').className.split(' ')
-    expect(classes).toContain('break-words')
-    expect(classes).toContain('sm:truncate')
-    expect(classes).not.toContain('truncate')
+    const classes = screen.getByTestId('infra-header-status').className.split(' ')
+    expect(classes).toContain('flex-wrap')
+    expect(classes.some((c) => /truncate/.test(c))).toBe(false)
+    expect(screen.queryByTestId('infra-status-reason')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Top: |findings need review/)
   })
 })
 
@@ -741,11 +751,14 @@ describe('the status reason line', () => {
 describe('PR 3d-2 wording and links', () => {
   const linkTo = (name: string) => screen.getAllByRole('link', { name }).map((a) => a.getAttribute('href'))
 
-  it('D1: "See ownership in Services & Ownership →" to /services; "Assign owners" is gone; the tile keeps "Review ownership →"', async () => {
+  it('D1: "See ownership in Services & Ownership →" and "All N resources →" to /services; "Assign owners", the Owned tile and the footer are gone', async () => {
     await renderSettled()
     expect(linkTo('See ownership in Services & Ownership →')).toEqual(['/services'])
-    expect(document.body.textContent).not.toMatch(/Assign owners/)
-    expect(linkTo('Review ownership →')).toEqual(['/services'])
+    expect(linkTo('All 9 resources →')).toEqual(['/services'])
+    expect(document.body.textContent).not.toMatch(/Assign owners|Review ownership|Open Services & Ownership|Owned resources|unowned/i)
+    const card = screen.getByRole('region', { name: 'Ownership' })
+    expect(within(card).getByTestId('infra-ownership-no-owner-tag')).toHaveTextContent('3No owner tag')
+    expect(within(card).getByTestId('infra-ownership-unknown')).toHaveTextContent("0Tags couldn't be read")
   })
 
   it('D2: the discovery button and toast say "scan" with Services\' counts; no "Sync" anywhere on the page', async () => {
@@ -761,7 +774,7 @@ describe('PR 3d-2 wording and links', () => {
   it('D4 + D5: the shared needs-attention sentence, the account-level note under it, and the account rows still listed', async () => {
     await renderSettled()
     expect(screen.getByTestId('infra-attention-description').textContent).toBe(
-      'Critical and high findings, cost recommendations estimated at $100/mo or more, and stopped, degraded or failed resources. 6 resources · 2 account-level findings.',
+      'Critical and high findings, cost recommendations estimated at $100/mo or more, and stopped, degraded or failed resources.',
     )
     expect(screen.getByTestId('infra-attention-account-note').textContent).toBe(
       'This list also includes account-level findings (IAM, security groups). The Services count covers resources only.',
@@ -779,12 +792,24 @@ describe('PR 3d-2 wording and links', () => {
     expect(linkTo('View all 40 in Services & Ownership →')).toEqual(['/services?show=needs_attention'])
   })
 
-  it('D7: both region links read "Region coverage →" to the card, with the Services V2 and M6 flags on; "View regions" is gone', async () => {
+  it('D7: the notice\'s one region link reads "Region coverage →" to the card, with the Services V2 and M6 flags on; "View regions" is gone', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
+    vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')
+    const denied = coverage({ region_status: coverage().region_status!.map((r) => (r.home ? { ...r, status: 'denied' } : r)), home_only_coverage: { regions_total: 17, regions_checked: 0 } })
+    m.responses['GET /api/services/coverage'] = ok(denied)
+    await renderSettled()
+    const notice = screen.getByTestId('infra-region-notice')
+    expect(notice).toHaveTextContent("us-east-1 couldn't be checked. AWS refused DevControl's read role there. Resources found earlier stay listed until a complete scan.")
+    expect(linkTo('Region coverage →')).toEqual(['/services#region-coverage'])
+    expect(document.body.textContent).not.toMatch(/View regions/)
+  })
+
+  it('every region the scan covers checked: no notice, so no region link', async () => {
     vi.stubEnv('NEXT_PUBLIC_SERVICES_V2', 'true')
     vi.stubEnv('NEXT_PUBLIC_SERVICES_COVERAGE_M6', 'true')
     await renderSettled()
-    expect(linkTo('Region coverage →')).toEqual(['/services#region-coverage', '/services#region-coverage'])
-    expect(document.body.textContent).not.toMatch(/View regions/)
+    expect(screen.queryByTestId('infra-region-notice')).toBeNull()
+    expect(screen.queryAllByRole('link', { name: 'Region coverage →' })).toHaveLength(0)
   })
 
   it('D7 negative: with the M6 flag off there is no region link (no card to land on), as before', async () => {
@@ -853,5 +878,39 @@ describe('PR2 not connected', () => {
     expect(screen.queryByTestId('not-connected-card')).toBeNull()
     expect(screen.queryByTestId('connect-aws-header-button')).toBeNull()
     expect(screen.queryByTestId('connection-loading')).toBeNull()
+  })
+})
+
+// ── Redesign item 3: the ⓘ behind the savings card's one line ──
+
+describe('the savings ⓘ', () => {
+  it('is a focusable button described by its tooltip; focus opens it, Escape closes it; it holds the moved sentences', async () => {
+    await renderSettled()
+    const tile = screen.getByTestId('infra-tile-savings')
+    const button = within(tile).getByRole('button', { name: 'More about Possible savings' })
+    const tip = document.getElementById(button.getAttribute('aria-describedby')!)!
+    expect(tip).toHaveAttribute('role', 'tooltip')
+    expect(tip.dataset.open).toBe('false')
+    button.focus()
+    expect(document.activeElement).toBe(button)
+    await waitFor(() => expect(tip.dataset.open).toBe('true'))
+    expect(tip.textContent).toContain('Estimated savings: $123.45/month.')
+    expect(tip.textContent).toContain(OVERVIEW_COPY.savingsSource)
+    fireEvent.keyDown(button, { key: 'Escape' })
+    await waitFor(() => expect(tip.dataset.open).toBe('false'))
+    // The card itself shows the one line.
+    expect(within(tile).getByTestId('infra-tile-savings-line')).toHaveTextContent('DevControl estimate · 3 open opportunities')
+  })
+})
+
+// ── Round 3 (founder, Nov 24): the Ownership links follow the sentence ──
+
+describe('the Ownership links', () => {
+  it('sit right after the sentence, never pinned to the card bottom', async () => {
+    await renderSettled()
+    const card = screen.getByRole('region', { name: 'Ownership' })
+    const links = within(card).getByTestId('infra-ownership-all').parentElement!
+    expect(links.className.split(' ')).not.toContain('mt-auto')
+    expect(links.previousElementSibling).toBe(within(card).getByTestId('infra-ownership-sentence'))
   })
 })

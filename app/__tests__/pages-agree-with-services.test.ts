@@ -31,6 +31,7 @@ import { describeCoverageCard, describeNotChecked, homeRegionOf, multiRegionOf, 
 import { richText } from '../(app)/services/regionCoverage'
 import { describeCoverage, resourceExplorerOffText } from '../(app)/services/coverage'
 import { homeRegionCheck, regionGaps, scanIsRunning, scanState } from '../(app)/services/servicesTruth'
+import { lastCompletedScanIso } from '@/lib/scan-time'
 import { describeOverview } from '../(app)/infrastructure/overview/overviewModel'
 import { attentionPage, inputs, ready } from '../(app)/infrastructure/__tests__/overview-fixtures'
 import { headerScanLine, notCheckedText, securityCheckedLines } from '../(app)/security/overview/securityModel'
@@ -190,16 +191,20 @@ describe.each(Object.entries(CASES))('%s', (_name, { coverage, expected }) => {
     expect((regionGaps(c, NOW) ?? []).filter((g) => !g.home).map((g) => g.long)).toEqual(expected.otherRegions)
   })
 
-  it('Infrastructure: header, strip, Not checked yet, What we checked and the empty-state scope', () => {
+  it('Infrastructure: header status line, region notice, What we checked and the empty-state scope', () => {
     const v = describeOverview(inputs({ coverage: ready(c), attention: ready(attentionPage([])), accountFindings: ready([]) }), NOW)
     // The header prints the parts, with the scan time as its own focusable element; the words are the same.
-    expect(richText(v.header.lastScan!, NOW)).toBe(expected.scan.text)
+    expect(richText(v.header.status!.lastScan, NOW)).toBe(expected.scan.text)
     expect(v.header.scanRunning).toBe(scanIsRunning(c))
-    expect(v.account!.items.find((i) => i.term === 'Regions checked')!.value).toBe(expected.line)
-    expect(v.status.notChecked).toBe(expected.notChecked)
-    const inventory = v.checked.find((l) => l.key === 'inventory')!.parts.join('')
-    expect(inventory.endsWith(expected.inventory)).toBe(true)
-    expect(v.checked.filter((l) => l.key.startsWith('other-regions')).map((l) => l.parts.join(''))).toEqual(expected.otherRegions)
+    // Redesign item 1: the organising line's first segment ("1 of 4 regions checked").
+    expect(v.header.status!.regions.text).toBe(expected.line.split(' · ')[0])
+    // Redesign items 2 + ruling 6: the regions not checked are the notice's lead (couldn't be checked) and the
+    // inventory row's muted line (everything else), in Services' words and order — together, every gap.
+    const inventory = v.checked.rows.find((r) => r.key === 'inventory')!
+    const said = [...(v.notice ? [v.notice.lead.replace(/\.$/, '')] : []), ...(inventory.extra ? inventory.extra.split(' · ') : [])]
+    expect(said).toEqual((regionGaps(c, NOW) ?? []).map((g) => (g.key === 'not-checked-by-scan' || g.key === 'home-couldnt' ? g.long : g.short)))
+    // The inventory chip is amber exactly when the old line named a gap (flag off: the home region not "Checked").
+    if (!multiRegionOf(c) && lastCompletedScanIso(c)) expect(inventory.chip.tone).toBe(expected.inventory.endsWith(': Checked') ? 'ok' : 'warn')
     expect(v.attention).toMatchObject({ status: 'ready', empty: { scope: expected.line.endsWith('.') ? expected.line : `${expected.line}.` } })
     // Nothing on the page says the old helper's words.
     expect(JSON.stringify(v)).not.toMatch(/with gaps|Checked with gaps|Other enabled regions: Not checked \(/)
@@ -348,7 +353,15 @@ describe.each(FLAG_OFF)('H-1 %s: the region lines are the Services card\'s rows'
       ...(earlier.length > 0 ? [`${regions(earlier.length)} from an earlier scan`] : []),
     ]
     expect(security()).toEqual(fromCard)
-    expect(infra().checked.filter((l) => l.key.startsWith('other-regions')).map((l) => l.parts.join(''))).toEqual(fromCard)
+    // Redesign ruling 6: Infrastructure lists the same rows on its inventory row, the former home in its short form.
+    const since = formerLine?.match(/^(\S+) hasn't been scanned since (.+), except for S3 buckets\.$/)
+    const infraFromCard = [
+      ...(homeRow.status?.key === 'not_scanned' ? [`${home} not scanned yet`] : []),
+      ...(formerRow ? [`${formerRow.label} not scanned since ${since![2]}`] : []),
+      ...(group ? [group.label] : []),
+      ...(earlier.length > 0 ? [`${regions(earlier.length)} from an earlier scan`] : []),
+    ]
+    expect(infra().checked.rows.find((r) => r.key === 'inventory')!.extra?.split(' · ') ?? []).toEqual(infraFromCard)
   })
 
   it('"Not checked yet": the organising line\'s home segment, the former-home row, then the card\'s not-scanned home row and group', () => {
@@ -361,15 +374,18 @@ describe.each(FLAG_OFF)('H-1 %s: the region lines are the Services card\'s rows'
     const unscanned = [...(homeRow.status?.key === 'not_scanned' ? [home] : []), ...(group ? [regions(group.regions!.length)] : [])]
     const expected = [...before, unscanned.length > 0 ? `Not scanned yet: ${[...unscanned, IAM_ITEM].join(' · ')}` : `Not checked yet: ${IAM_ITEM}`].join(' · ')
     expect(notCheckedText({ status: 'ready', data: c }, NOW)).toBe(expected)
-    expect(infra().status.notChecked).toBe(expected)
+    // Redesign item 2: Infrastructure's notice says "{home} couldn't be checked" exactly when the organising line does.
+    const notice = infra().notice
+    expect(notice?.lead ?? null).toBe(card.line.text.endsWith(`· ${home} couldn't be checked`) ? `${home} couldn't be checked.` : null)
   })
 
-  it('Infrastructure\'s inventory line ends with the card\'s home row status (Complete reads "Checked", Partial "Partly checked")', () => {
+  it('Infrastructure\'s inventory chip is green only when the card\'s home row is Complete', () => {
     const status = homeRow.status!
-    // While a scan runs the card shows "Scanning"; the inventory line keeps the last result (the case's literal).
+    // While a scan runs the card shows "Scanning"; the chip keeps the last result.
     if (status.key === 'scanning') return
-    const words = status.key === 'complete' ? 'Checked' : status.key === 'partial' ? 'Partly checked' : status.label
-    expect(infra().checked.find((l) => l.key === 'inventory')!.parts.join('').endsWith(`${home}: ${words}`)).toBe(true)
+    const inventory = infra().checked.rows.find((r) => r.key === 'inventory')!
+    if (inventory.chip.text === 'Not checked yet') return
+    expect(inventory.chip.tone).toBe(status.key === 'complete' ? 'ok' : 'warn')
   })
 })
 
@@ -382,7 +398,8 @@ describe('H-1 flagged: the region lines follow the Services banner and organisin
     expect(securityCheckedLines({ status: 'ready', data: c }, NOW).filter((l) => l.key.startsWith('other-regions')).map((l) => l.label)).toEqual([who])
     expect(notCheckedText({ status: 'ready', data: c }, NOW)).toBe(`${who} · Not checked yet: ${IAM_ITEM}`)
     const v = describeOverview(inputs({ coverage: ready(c), attention: ready(attentionPage([])), accountFindings: ready([]) }), NOW)
-    expect(v.status.notChecked).toBe(`${who} · Not checked yet: ${IAM_ITEM}`)
+    // Redesign item 2: the notice leads with the banner's "who"; throttled is not access denied, so the generic wording.
+    expect(v.notice).toEqual({ lead: `${who}.`, body: null, link: false })
   })
 
   it('in progress (tab 2): the "still running or waiting" count is the organising line\'s', () => {
@@ -423,7 +440,7 @@ describe('Nov 21: one home-region state on Connect AWS, Infrastructure and Servi
       expect(v.chips[0].note).toBe(`${c.scope.home_region!.count} · home · ${connect}`)
       // Infrastructure: the Resource Explorer sentence names the home region only when the home region raised it.
       const o = describeOverview(inputs({ coverage: ready(c), attention: ready(attentionPage([])), accountFindings: ready([]) }), NOW)
-      const sentence = o.checked.filter((l) => l.parts.join('') === resourceExplorerOffText(home))
+      const sentence = o.checked.warnings.filter((w) => w.text === resourceExplorerOffText(home))
       expect(sentence.length).toBe(homeCode ? 1 : 0)
       if (!homeCode) expect(JSON.stringify(o)).not.toContain(`Resource Explorer isn't turned on in ${home}`)
     }

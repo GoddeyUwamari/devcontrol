@@ -28,17 +28,26 @@
   },
   "infrastructureSpendTile": {
     "key": "spend",
-    "label": "Spend this month",
+    "label": "AWS spend, this month",
+    "info": [],
+    "link": {
+      "text": "Cost by service ↓",
+      "href": "#infra-cost-heading"
+    },
     "value": "Cost data not available yet",
     "captions": [
       [
         "no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate"
       ]
+    ],
+    "line": [
+      "no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate"
     ]
   },
   "infrastructureCostByService": {
     "status": "unavailable",
     "sub": null,
+    "asOf": null,
     "rows": [],
     "unavailable": "Cost by service isn't available: no AWS Cost Explorer result (the Cost Explorer response did not include the expected cost metric) and no inventory estimate"
   }

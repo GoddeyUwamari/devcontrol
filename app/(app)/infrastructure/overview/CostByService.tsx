@@ -1,5 +1,6 @@
 'use client'
 
+import { RichText } from '../../services/ScanTime'
 import { OVERVIEW_COPY, type CostByServiceView } from './overviewModel'
 
 const SHARE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
@@ -11,11 +12,16 @@ export function formatShare(percent: number): string {
 }
 
 /** Billed month-to-date spend by AWS service: the cost summary's top 5 plus everything else. */
-export function CostByService({ view }: { view: CostByServiceView }) {
+export function CostByService({ view, now }: { view: CostByServiceView; now: number }) {
   return (
     <section aria-labelledby="infra-cost-heading" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
       <h2 id="infra-cost-heading" className="m-0 text-section text-slate-900">{OVERVIEW_COPY.costByServiceTitle}</h2>
-      {view.sub && <p className="m-0 mt-1 text-meta text-slate-600">{view.sub}</p>}
+      {(view.sub || view.asOf) && (
+        <p data-testid="infra-cost-sub" className="m-0 mt-1 text-meta text-slate-600">
+          {view.sub}
+          {view.asOf && <>{view.sub ? ' · ' : ''}<RichText parts={['Cost Explorer, as of ', { iso: view.asOf }]} now={now} /></>}
+        </p>
+      )}
       <div className="mt-3">
         {view.status === 'loading' ? (
           <p role="status" className="m-0 text-ui text-slate-600">Loading…</p>
@@ -28,7 +34,7 @@ export function CostByService({ view }: { view: CostByServiceView }) {
               <tr className="text-left text-label uppercase tracking-[0.04em] text-slate-600">
                 <th scope="col" className="py-2">Service</th>
                 <th scope="col" className="py-2 text-right">Billed</th>
-                {view.rows.some((r) => r.share !== null) && <th scope="col" className="py-2 text-right">Share</th>}
+                {view.rows.some((r) => r.share !== null) && <th scope="col" className="hidden py-2 text-right sm:table-cell">Share</th>}
               </tr>
             </thead>
             <tbody>
@@ -36,7 +42,7 @@ export function CostByService({ view }: { view: CostByServiceView }) {
                 <tr key={r.service} className="border-t border-slate-100">
                   <th scope="row" className="break-words py-2 pr-3 text-left font-normal text-slate-900">{r.service}</th>
                   <td className="whitespace-nowrap py-2 text-right font-semibold tabular-nums text-slate-900">{r.amount}</td>
-                  {view.rows.some((x) => x.share !== null) && <td className="whitespace-nowrap py-2 pl-3 text-right tabular-nums text-slate-600">{r.share !== null ? formatShare(r.share) : ''}</td>}
+                  {view.rows.some((x) => x.share !== null) && <td className="hidden whitespace-nowrap py-2 pl-3 text-right tabular-nums text-slate-600 sm:table-cell">{r.share !== null ? formatShare(r.share) : ''}</td>}
                 </tr>
               ))}
             </tbody>

@@ -2,8 +2,9 @@
   "rows": [
     {
       "key": "account-f-named",
-      "resource": "launch-wizard-1 (sg-0123456789abcdef0)",
-      "resourceKind": "Security group",
+      "resource": "launch-wizard-1",
+      "resourceKind": "Security group · account-level",
+      "resourceId": "sg-0123456789abcdef0",
       "issue": "SSH open to the world",
       "found": "SSH open to the world (security group)",
       "nextStep": {
@@ -13,7 +14,8 @@
     {
       "key": "account-f-no-evidence",
       "resource": "sg-0aaaaaaaaaaaaaaaa",
-      "resourceKind": "Security group",
+      "resourceKind": "Security group · account-level",
+      "resourceId": null,
       "issue": "RDP open to the world",
       "found": "RDP open to the world (security group)",
       "nextStep": {
@@ -23,7 +25,8 @@
     {
       "key": "account-f-blank-name",
       "resource": "sg-0bbbbbbbbbbbbbbbb",
-      "resourceKind": "Security group",
+      "resourceKind": "Security group · account-level",
+      "resourceId": null,
       "issue": "All ports open",
       "found": "All ports open (security group)",
       "nextStep": {
@@ -34,6 +37,7 @@
       "key": "account-f-iam",
       "resource": "arn:aws:iam::123456789012:user/example-user",
       "resourceKind": "IAM user",
+      "resourceId": null,
       "issue": "Console user without MFA",
       "found": "Console user without MFA (iam user)",
       "nextStep": {
@@ -43,7 +47,8 @@
     {
       "key": "account-f-bare-id",
       "resource": "sg-0cccccccccccccccc",
-      "resourceKind": "Security group",
+      "resourceKind": "Security group · account-level",
+      "resourceId": null,
       "issue": "Bare ID",
       "found": "Bare ID (security group)",
       "nextStep": {
