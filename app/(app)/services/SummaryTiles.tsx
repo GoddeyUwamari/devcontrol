@@ -6,6 +6,7 @@ import type { CostSummary } from '@/lib/types'
 import { billedThroughInPeriod, formatUsd, LATEST_DAYS_REPORTING, monthStateOf, NO_BILLED_DAYS_YET, shortDay } from '../costs/cost-display'
 import { ComingSoonTag } from './ComingSoonTag'
 import { inventoryGap, resourcesScopeCaption } from './coverage'
+import { NO_OWNER_TAG_LABEL } from './ownership'
 
 export interface StatsState { loading: boolean; unavailable: boolean; stats: AWSServicesStats | undefined }
 export interface RegisteredState { loading: boolean; error: boolean; count: number | undefined }
@@ -58,14 +59,6 @@ export function describeServicesSpend({ loading, error, summary }: SpendState):
 export function noFlaggedIssuesCaption(shown: string): string {
   return `${shown} ${shown === '1' ? 'resource' : 'resources'} with no flagged issues`
 }
-
-/**
- * The Unowned tile's label on the redesigned page (in-app polish): the count is
- * resources whose tags we read and found neither an Owner nor a Team tag, so the
- * label says what was measured. The flag-off page keeps "Unowned" (its snapshots
- * must not change).
- */
-export const NO_OWNER_TAG_LABEL = 'No owner tag'
 
 export const CONNECT_ACCOUNT_TEXT = 'Connect an AWS account'
 export const NOT_SCANNED_TEXT = 'Not scanned yet'

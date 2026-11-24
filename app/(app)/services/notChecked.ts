@@ -30,11 +30,16 @@ function listOf(items: string[]): string {
   return items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
-/** The tags-unreadable line, with the per-type counts when /stats has them. */
-export function unknownTagsText(count: number, byType: Record<string, number> | undefined): string {
+/**
+ * The tags-unreadable line, with the per-type counts when /stats has them.
+ * noOwnerTagLabel (the Services redesign, in-app polish): the metric is named by its label there,
+ * 'not counted under "No owner tag"'. The legacy page and Infrastructure keep "as Unowned".
+ */
+export function unknownTagsText(count: number, byType: Record<string, number> | undefined, noOwnerTagLabel = false): string {
+  const counted = noOwnerTagLabel ? 'counted under "No owner tag"' : 'counted as Unowned'
   const head = count === 1
-    ? "1 resource: tags couldn't be read, so its owner is unknown, not missing. It is not counted as Unowned."
-    : `${count} resources: tags couldn't be read, so their owner is unknown, not missing. They are not counted as Unowned.`
+    ? `1 resource: tags couldn't be read, so its owner is unknown, not missing. It is not ${counted}.`
+    : `${count} resources: tags couldn't be read, so their owner is unknown, not missing. They are not ${counted}.`
   const types = Object.entries(byType ?? {}).filter(([, n]) => n > 0).sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
   return types.length > 0 ? `${head} By type: ${types.map(([t, n]) => `${typeName(t)} ${n}`).join(', ')}.` : head
 }
@@ -44,7 +49,7 @@ export function unknownTagsText(count: number, byType: Record<string, number> | 
  * finished comes from last_scan and scan_in_progress, as in the region
  * coverage, instead of the one-hour rule for running jobs.
  */
-export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesStats | undefined, now: number, inTabWarnings: readonly string[] = [], leaseRule = false): NotCheckedLine[] {
+export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesStats | undefined, now: number, inTabWarnings: readonly string[] = [], leaseRule = false, noOwnerTagLabel = false): NotCheckedLine[] {
   const lines: NotCheckedLine[] = []
   const connected = coverage.account.connected && !!coverage.scope.home_region
   const last = coverage.last_scan
@@ -60,7 +65,7 @@ export function notCheckedLines(coverage: ServicesCoverage, stats: AWSServicesSt
   if (coverage.scope.cloudfront.count > 0) lines.push({ key: 'cloudfront-tags', text: NOT_CHECKED_COPY.cloudfrontTags })
 
   const unknown = stats?.ownership?.unknown ?? 0
-  if (unknown > 0) lines.push({ key: 'tags-unknown', text: unknownTagsText(unknown, stats?.unknown_by_type) })
+  if (unknown > 0) lines.push({ key: 'tags-unknown', text: unknownTagsText(unknown, stats?.unknown_by_type, noOwnerTagLabel) })
 
   for (const note of warningNotes(last?.warnings ?? [], inTabWarnings, coverage.scope.home_region?.region)) lines.push({ key: `warning-${note.key}`, text: note.body })
 

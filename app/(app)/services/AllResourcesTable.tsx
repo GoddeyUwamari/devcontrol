@@ -7,6 +7,7 @@ import { SeverityBadge } from '@/components/ui/severity-badge'
 import { RESOURCE_TYPE_CHIPS, TYPE_DISPLAY } from './resourceTypes'
 import { Details, OwnerCell, SEVERITY_LABEL, environmentLabel, typeLabel } from './AttentionTable'
 import { ComingSoonTag } from './ComingSoonTag'
+import { NO_OWNER_TAG_LABEL } from './ownership'
 import { resourcesScopeCaption, timeAgo } from './coverage'
 import { allResourcesScope, REDESIGN_COPY, formerHomeOf } from './redesignModel'
 import type { StatsState } from './SummaryTiles'
@@ -35,7 +36,7 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
-function Row({ row, explainUnknown = false }: { row: AWSService; explainUnknown?: boolean }) {
+function Row({ row, explainUnknown = false, redesign = false }: { row: AWSService; explainUnknown?: boolean; redesign?: boolean }) {
   const [open, setOpen] = useState(false)
   // "Last seen" is read against the time the row mounted.
   const [now] = useState(() => Date.now())
@@ -65,7 +66,7 @@ function Row({ row, explainUnknown = false }: { row: AWSService; explainUnknown?
         </td>
         <td className="px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700">{row.aws_region ?? '—'}</td>
         <td className="px-3 py-3 whitespace-nowrap text-slate-700">{environmentLabel(row)}</td>
-        <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} withTeam={false} explainUnknown={explainUnknown} /></td>
+        <td className="px-3 py-3 whitespace-nowrap"><OwnerCell row={row} withTeam={false} explainUnknown={explainUnknown} redesign={redesign} /></td>
         <td className="px-3 py-3 whitespace-nowrap text-slate-700">{owner || !row.team ? <span className="text-slate-600">—</span> : row.team}</td>
         <td className="px-3 py-3 min-w-[200px]">
           {row.needs_attention ? (
@@ -80,7 +81,7 @@ function Row({ row, explainUnknown = false }: { row: AWSService; explainUnknown?
       </tr>
       {open && (
         <tr id={detailsId} className="border-b border-slate-100 bg-slate-50">
-          <td colSpan={8} className="px-4 py-4"><Details row={row} /></td>
+          <td colSpan={8} className="px-4 py-4"><Details row={row} redesign={redesign} /></td>
         </tr>
       )}
     </Fragment>
@@ -138,7 +139,8 @@ export function AllResourcesTable({
   const showOptions: { value: ShowFilter; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'needs_attention', label: `Needs attention (${showCount(statsData?.needs_attention, stats)})` },
-    { value: 'unowned', label: `Unowned (${showCount(statsData?.ownership?.unowned, stats)})` },
+    // The redesign calls it "No owner tag" (in-app polish); the legacy page keeps "Unowned".
+    { value: 'unowned', label: `${redesign ? NO_OWNER_TAG_LABEL : 'Unowned'} (${showCount(statsData?.ownership?.unowned, stats)})` },
     { value: 'unknown', label: `Owner unknown (${showCount(statsData?.ownership?.unknown, stats)})` },
   ]
 
@@ -243,7 +245,7 @@ export function AllResourcesTable({
               </tr>
             </thead>
             <tbody>
-              {state.page.services.map((row) => <Row key={row.id} row={row} explainUnknown={redesign} />)}
+              {state.page.services.map((row) => <Row key={row.id} row={row} explainUnknown={redesign} redesign={redesign} />)}
             </tbody>
           </table>
         </div>

@@ -97,7 +97,7 @@
   },
   "page": {
     "comingSoon": "service mapping and owner assignment. Map resources to services and assign owners to see findings, cost, spend and deploys per service.",
-    "unknownTooltip": "We couldn't read this resource's tags, so we don't know who owns it. Unowned is different: we read the tags and found neither an Owner nor a Team tag.",
+    "unknownTooltip": "We couldn't read this resource's tags, so we don't know who owns it. \"No owner tag\" is different: we read the tags and found neither an Owner nor a Team tag.",
     "notCheckedEnd": "So nothing on this page looks more complete than it is.",
     "emptyListAction": "Run Scan now to scan your connected account."
   }

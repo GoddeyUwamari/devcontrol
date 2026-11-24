@@ -14,6 +14,16 @@ export type OwnerDisplay =
   | { kind: 'team-only'; label: 'No Owner tag'; team: string }
   | { kind: 'none'; label: '—' }
 
+/**
+ * The redesigned page's ownership labels (in-app polish, founder rulings 2026-11-24).
+ * NO_OWNER_TAG_LABEL: neither an Owner nor a Team tag (the legacy page says "Unowned").
+ * TEAM_TAG_ONLY_LABEL: a Team tag without an Owner tag, owned by that team (the legacy
+ * page says "No Owner tag", which would read like NO_OWNER_TAG_LABEL). The legacy page
+ * keeps its labels: its snapshots are pinned byte for byte.
+ */
+export const NO_OWNER_TAG_LABEL = 'No owner tag'
+export const TEAM_TAG_ONLY_LABEL = 'Team tag only'
+
 export function ownerDisplay(row: Pick<AWSService, 'owner' | 'team' | 'ownership'>): OwnerDisplay {
   if (row.ownership === 'unknown') return { kind: 'unknown', label: 'Unknown · tags unreadable' }
   if (row.ownership === 'unowned') return { kind: 'unowned', label: 'Unowned' }
