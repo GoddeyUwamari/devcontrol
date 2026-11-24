@@ -11,7 +11,7 @@ import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { deploymentStatusDisplay, type RecordedDeployment as Deployment } from '@/lib/deployments/status';
 import { isManualRecord } from '@/lib/deployments/record';
-import { githubRecordDetail } from '@/lib/deployments/github-record';
+import { githubRecordDetail, UNKNOWN } from '@/lib/deployments/github-record';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 
 /**
@@ -130,7 +130,8 @@ export default function DeploymentDetailsPage() {
               [github.targetLabel, github.target, 'deployment-target'],
               ['Started', github.started, 'deployment-started'],
               ['Duration', github.duration, 'deployment-duration'],
-              ['Region', deployment.awsRegion || MANUAL_DETAIL_COPY.notRecorded, 'deployment-region'],
+              // Fix round 2 (N-4): unknown reads "—" like every other unknown on this card set (R10).
+              ['Region', deployment.awsRegion || UNKNOWN, 'deployment-region'],
             ] as const).map(([label, value, testId]) => (
               <Card key={testId}>
                 <CardHeader className="pb-3">

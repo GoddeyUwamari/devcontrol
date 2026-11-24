@@ -75,24 +75,41 @@ function ambiguousJobs(jobs: readonly { workflow_name: string; job_name: string 
   return new Set([...workflowsByJob].filter(([, w]) => w.size > 1).map(([job]) => job))
 }
 
-/** The key of the stored rule among the options, or null when there is no usable rule. */
+/** A job rule's DevControl environment: production when the stored rule has none (R3). */
+const jobEnvironment = (rule: StoredDeployRule) => rule.environment ?? 'production'
+
+/**
+ * The key of the stored rule among the options, or null when there is no usable rule.
+ * A job rule shares a seen job's key only when choosing that job would send it back
+ * as it is (default branch, production). Any other stored rule is 'current': its own
+ * option, always the selected one (review N-5: an older job rule for another
+ * environment is not shown as, or silently re-saved as, the production one).
+ */
 export function currentRuleKey(rule: StoredDeployRule | null): string | null {
   if (!rule || !hasUsableRule(rule)) return null
   if (rule.mode === 'job') {
-    return (rule.branch ?? 'default') === 'default' ? jobKey(rule.workflow_name!, rule.job_name!) : 'current'
+    return (rule.branch ?? 'default') === 'default' && jobEnvironment(rule) === 'production'
+      ? jobKey(rule.workflow_name!, rule.job_name!)
+      : 'current'
   }
   return typeof rule.environment_name === 'string' ? envKey(rule.environment_name) : 'current'
+}
+
+function jobRuleLabel(rule: StoredDeployRule, jobsSeen: readonly { workflow_name: string; job_name: string }[]): string {
+  const job = rule.job_name!
+  if (rule.branch === 'any') return REPO_COPY.ruleJobAnyBranch(job)
+  if (rule.branch === 'named' && rule.branch_name) return REPO_COPY.ruleJobNamedBranch(job, rule.branch_name)
+  const ambiguous = ambiguousJobs([...jobsSeen, { workflow_name: rule.workflow_name!, job_name: job }])
+  return ambiguous.has(job) ? REPO_COPY.ruleJobInWorkflow(rule.workflow_name!, job) : REPO_COPY.ruleJob(job)
 }
 
 /** The label of a stored rule (the selected option, or the members' read-only text). */
 export function ruleLabel(rule: StoredDeployRule | null, jobsSeen: readonly { workflow_name: string; job_name: string }[] = []): string | null {
   if (!rule || !hasUsableRule(rule)) return null
   if (rule.mode === 'job') {
-    const job = rule.job_name!
-    if (rule.branch === 'any') return REPO_COPY.ruleJobAnyBranch(job)
-    if (rule.branch === 'named' && rule.branch_name) return REPO_COPY.ruleJobNamedBranch(job, rule.branch_name)
-    const ambiguous = ambiguousJobs([...jobsSeen, { workflow_name: rule.workflow_name!, job_name: job }])
-    return ambiguous.has(job) ? REPO_COPY.ruleJobInWorkflow(rule.workflow_name!, job) : REPO_COPY.ruleJob(job)
+    const label = jobRuleLabel(rule, jobsSeen)
+    const environment = jobEnvironment(rule)
+    return environment === 'production' ? label : REPO_COPY.ruleJobEnvironment(label, environment)
   }
   return typeof rule.environment_name === 'string' ? REPO_COPY.ruleEnvironment(rule.environment_name) : REPO_COPY.ruleAnyEnvironment
 }

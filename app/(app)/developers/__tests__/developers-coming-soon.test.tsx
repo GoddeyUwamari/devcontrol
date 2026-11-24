@@ -172,6 +172,16 @@ describe('the GitHub tile while the GitHub App is switched on (D8b-2, board 7)',
     expect(document.body.textContent).not.toMatch(/Connect GitHub →|Manage GitHub connection →/)
   })
 
+  it('fix round 2 (N-3): the status request fails -> "View GitHub →" to the GitHub page, never "Coming soon"', async () => {
+    vi.mocked(githubConnectionService.get).mockRejectedValueOnce(new Error('Network Error'))
+    renderPage()
+    const link = await screen.findByTestId('developers-github-link')
+    expect(link).toHaveTextContent('View GitHub →')
+    expect(link).toHaveAttribute('href', '/settings/integrations/github')
+    expect(tile('GitHub').textContent).not.toContain('Coming soon')
+    expect(document.body.textContent).not.toMatch(/Connect GitHub →|Manage GitHub connection →/)
+  })
+
   it('switched off: "Coming soon" and no link, as before', async () => {
     renderPage()
     await vi.waitFor(() => expect(githubConnectionService.get).toHaveBeenCalled())

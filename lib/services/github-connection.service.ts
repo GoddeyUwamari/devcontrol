@@ -46,6 +46,8 @@ export interface StoredDeployRule {
   job_name?: string
   branch?: string
   branch_name?: string | null
+  /** Job rules: the DevControl environment the job records as (production when absent). */
+  environment?: string
   /** D8b-2 (R2): one GitHub environment. Absent on rules that record every known name. */
   environment_name?: string
   environment_map?: Record<string, string>

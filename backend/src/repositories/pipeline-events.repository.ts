@@ -93,6 +93,38 @@ export const NOT_CLAIMED_REASON = 'installation_not_claimed';
  */
 export const HELD_EVENT_DAYS = 7;
 
+/** The events the 7-day held window applies to: the deployment candidates (ruling R1). */
+const DEPLOY_CANDIDATE_EVENTS_SQL = `event IN ('workflow_job', 'deployment_status')`;
+
+/**
+ * D8b-2 fix round 2 (S-2): the held window as SQL, received in the last
+ * `days` days. `days` is the placeholder that carries HELD_EVENT_DAYS. The
+ * one window for a replay, the held counts, and the pick-up at a re-claim.
+ */
+function heldWindowSql(days: string): string {
+  return `received_at >= NOW() - make_interval(days => ${days})`;
+}
+
+/** Placeholders that carry a ReplaySelection and HELD_EVENT_DAYS into replayEligibleSql. */
+export interface ReplayEligibleParams {
+  statuses: string;
+  reasons: string;
+  days: string;
+}
+
+/**
+ * D8b-2 fix round 2 (N-1): the one eligibility test for "a replay picks this
+ * event up". findReplayableEvents reads with it, and listRepositoryActivity
+ * counts with it, so the held count the GitHub screen shows is the number
+ * of events the next step's replay picks up. A deployment candidate, in the
+ * selection (statuses, or 'ignored' with one of its reasons), in the window.
+ */
+export function replayEligibleSql(p: ReplayEligibleParams): string {
+  return `${DEPLOY_CANDIDATE_EVENTS_SQL}
+        AND (processing_status = ANY(${p.statuses}::text[]) OR (processing_status = 'ignored' AND processing_reason = ANY(${p.reasons}::text[])))
+        AND ${heldWindowSql(p.days)}`;
+}
+
 export async function holdUntilClaimed(client: PoolClient, organizationId: string, eventId: string): Promise<void> {
   await client.query(
     `UPDATE pipeline_events
@@ -113,7 +145,7 @@ export async function expireClaimHolds(client: PoolClient, organizationId: strin
     `UPDATE pipeline_events
         SET processing_status = 'ignored', processing_reason = 'hold_expired', processed_at = NOW()
       WHERE organization_id = $1 AND installation_id = $2 AND processed_at IS NULL AND processing_reason = $3
-        AND received_at < NOW() - make_interval(days => $4)`,
+        AND NOT (${heldWindowSql('$4')})`,
     [organizationId, installationId, NOT_CLAIMED_REASON, HELD_EVENT_DAYS]
   );
   return rowCount ?? 0;
@@ -185,10 +217,9 @@ export async function findReplayableEvents(
   const { rows } = await client.query(
     `SELECT id, installation_id, event, action, occurred_at, received_at, received_at::text AS cursor_at, facts
        FROM pipeline_events
-      WHERE organization_id = $1 AND github_repo_id = $2 AND event IN ('workflow_job', 'deployment_status')
-        AND (processing_status = ANY($3::text[]) OR (processing_status = 'ignored' AND processing_reason = ANY($4::text[])))
+      WHERE organization_id = $1 AND github_repo_id = $2
+        AND ${replayEligibleSql({ statuses: '$3', reasons: '$4', days: '$8' })}
         AND ($6::timestamptz IS NULL OR (received_at, id) > ($6::timestamptz, $7::uuid))
-        AND received_at >= NOW() - make_interval(days => $8)
       ORDER BY received_at, id
       LIMIT $5`,
     [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit, after?.at ?? null, after?.id ?? null,
@@ -207,7 +238,17 @@ export async function findReplayableEvents(
   return { events, next: rows.length === limit ? { at: last.cursor_at, id: last.id } : null };
 }
 
-/** Events not processed yet (e.g. just released from hold by a claim), oldest first. */
+/**
+ * Events not processed yet (e.g. just released from hold by a claim), oldest first.
+ *
+ * D8b-2 fix round 2 (S-2): a deployment candidate is picked up only inside
+ * the held window (HELD_EVENT_DAYS), as a replay is (ruling R1). A delivery
+ * held during a disconnect keeps its original received_at when the claim
+ * releases it, so one older than 7 days is left stored as it is: not
+ * recorded, not changed, not deleted. Other events (installation,
+ * installation_repositories, ...) are still processed whatever their age:
+ * the held installation.created is kept past 7 days on purpose.
+ */
 export async function findUnprocessedEvents(
   client: PoolClient,
   organizationId: string,
@@ -218,9 +259,10 @@ export async function findUnprocessedEvents(
     `SELECT id, installation_id, event, action, occurred_at, received_at, facts
        FROM pipeline_events
       WHERE organization_id = $1 AND installation_id = $2 AND processed_at IS NULL
+        AND (NOT (${DEPLOY_CANDIDATE_EVENTS_SQL}) OR ${heldWindowSql('$4')})
       ORDER BY received_at, id
       LIMIT $3`,
-    [organizationId, installationId, limit]
+    [organizationId, installationId, limit, HELD_EVENT_DAYS]
   );
   return rows.map((r) => ({
     id: r.id,

@@ -227,7 +227,8 @@ describe('a row the GitHub App recorded (D8b-2): only what GitHub reported and D
     expect(screen.getByTestId('deployment-target')).toHaveTextContent('CI › deploy-backend')
     expect(screen.getByTestId('deployment-started')).toHaveTextContent(new Date('2026-11-20T10:00:05.000Z').toLocaleString())
     expect(screen.getByTestId('deployment-duration')).toHaveTextContent('7m 25s')
-    expect(screen.getByTestId('deployment-region')).toHaveTextContent('Not recorded')
+    // Fix round 2 (N-4): an unknown Region reads "—" like every other unknown here.
+    expect(screen.getByTestId('deployment-region')).toHaveTextContent(/^—$/)
     const link = screen.getByTestId('deployment-github-link')
     expect(link).toHaveTextContent('View on GitHub ↗')
     expect(link).toHaveAttribute('href', 'https://github.com/acme-inc/payments-api/actions/runs/1/job/7')
@@ -243,6 +244,7 @@ describe('a row the GitHub App recorded (D8b-2): only what GitHub reported and D
     expect(screen.getByTestId('deployment-target')).toHaveTextContent('production')
     expect(screen.getByTestId('deployment-started')).toHaveTextContent('—')
     expect(screen.getByTestId('deployment-duration')).toHaveTextContent('—')
+    expect(screen.getByTestId('deployment-region')).toHaveTextContent(/^—$/)
     expect(screen.queryByTestId('deployment-github-link')).toBeNull()
     expect(screen.queryByText(/View on GitHub/)).toBeNull()
     noPlaceholders()

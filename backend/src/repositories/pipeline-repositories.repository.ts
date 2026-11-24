@@ -9,6 +9,7 @@
  */
 import { PoolClient } from 'pg';
 import type { RepositoryForEvent } from '../services/github-app/detect';
+import { HELD_EVENT_DAYS, replayEligibleSql, ReplaySelection } from './pipeline-events.repository';
 
 interface RepositoryUpsert {
   githubRepoId: number;
@@ -203,13 +204,13 @@ export async function listJobsSeen(client: PoolClient, organizationId: string, g
  * read from what DevControl has actually stored for this organization. Keyed
  * by the GitHub repository id (text).
  *
- *   held          deployment-candidate events (workflow_job, deployment_status)
- *                 received in the last HELD_EVENT_DAYS that a mapping or rule
- *                 replay would pick up (ruling R1: same window as the replay):
- *                   waiting  unmapped, or pending (not yet processed), except
- *                            events held for a claim (installation_not_claimed:
- *                            only a re-claim releases those)
- *                   noRule   ignored as no_deploy_rule / deploy_rule_invalid
+ *   held          the events each replay would pick up, counted with the
+ *                 replay's own eligibility test (replayEligibleSql: deployment
+ *                 candidates, the selection, the HELD_EVENT_DAYS window; D8b-2
+ *                 fix round 2, N-1), so a count is exactly what that replay
+ *                 picks up:
+ *                   forMapping  MAPPING_REPLAY's selection (a service is chosen)
+ *                   forRule     RULE_REPLAY's selection (a deploy rule is saved)
  *   environments  GitHub environment names seen on deployment events (30 days, <= 50)
  *   jobs          workflow + job names seen on completed jobs (30 days, <= 50)
  *   lastDeployment the newest deployment row this repository recorded through the
@@ -219,8 +220,8 @@ export async function listJobsSeen(client: PoolClient, organizationId: string, g
  *                 counts it), with no deployment row for that job / deployment
  */
 export interface RepositoryActivity {
-  waiting: number;
-  noRule: number;
+  heldForMapping: number;
+  heldForRule: number;
   environments: string[];
   jobs: { workflow_name: string; job_name: string }[];
   lastDeployment: Date | null;
@@ -233,32 +234,29 @@ export const SEEN_LIMIT = JOBS_SEEN_LIMIT;
 export async function listRepositoryActivity(
   client: PoolClient,
   organizationId: string,
-  heldEventDays: number,
-  notClaimedReason: string
+  held: { mapping: ReplaySelection; rule: ReplaySelection }
 ): Promise<Map<string, RepositoryActivity>> {
   const byRepo = new Map<string, RepositoryActivity>();
   const entry = (repo: string): RepositoryActivity => {
     let e = byRepo.get(repo);
     if (!e) {
-      e = { waiting: 0, noRule: 0, environments: [], jobs: [], lastDeployment: null, overLimit: 0 };
+      e = { heldForMapping: 0, heldForRule: 0, environments: [], jobs: [], lastDeployment: null, overLimit: 0 };
       byRepo.set(repo, e);
     }
     return e;
   };
 
-  const held = await client.query<{ repo: string; waiting: number; no_rule: number }>(
+  const heldCounts = await client.query<{ repo: string; for_mapping: number; for_rule: number }>(
     `SELECT github_repo_id::text AS repo,
-            count(*) FILTER (WHERE processing_status = 'unmapped'
-                               OR (processing_status = 'pending' AND processing_reason IS DISTINCT FROM $3))::int AS waiting,
-            count(*) FILTER (WHERE processing_status = 'ignored'
-                               AND processing_reason IN ('no_deploy_rule', 'deploy_rule_invalid'))::int AS no_rule
+            count(*) FILTER (WHERE ${replayEligibleSql({ statuses: '$2', reasons: '$3', days: '$6' })})::int AS for_mapping,
+            count(*) FILTER (WHERE ${replayEligibleSql({ statuses: '$4', reasons: '$5', days: '$6' })})::int AS for_rule
        FROM pipeline_events
-      WHERE organization_id = $1 AND github_repo_id IS NOT NULL AND event IN ('workflow_job', 'deployment_status')
-        AND received_at >= NOW() - make_interval(days => $2)
+      WHERE organization_id = $1 AND github_repo_id IS NOT NULL
       GROUP BY 1`,
-    [organizationId, heldEventDays, notClaimedReason]
+    [organizationId, [...held.mapping.statuses], [...held.mapping.ignoredReasons], [...held.rule.statuses], [...held.rule.ignoredReasons],
+      HELD_EVENT_DAYS]
   );
-  for (const r of held.rows) Object.assign(entry(r.repo), { waiting: r.waiting, noRule: r.no_rule });
+  for (const r of heldCounts.rows) Object.assign(entry(r.repo), { heldForMapping: r.for_mapping, heldForRule: r.for_rule });
 
   const environments = await client.query<{ repo: string; name: string }>(
     `SELECT github_repo_id::text AS repo, facts ->> 'environment' AS name

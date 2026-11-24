@@ -414,7 +414,8 @@ describe('D8b-2: repository activity, current role, one environment', () => {
     await addEvent(B.orgId, ghWait, { status: 'over_limit', reason: 'monthly_deployment_limit', installation: instB2, facts: { kind: 'workflow_job', job_id: 1, completed_at: new Date().toISOString() } });
     await addAppDeployment(B.orgId, svcB, ghWait, new Date().toISOString());
 
-    // A, waiting for a service: 2 unmapped + 1 not processed yet = 3. Not: a claim hold, 8 days old, legacy, a workflow_run.
+    // A, waiting for a service: what a mapping's replay picks up (fix round 2, N-1): 2 unmapped + 1 not processed yet
+    // + a claim hold + a legacy-guard event = 5. Not: 8 days old, a workflow_run, a not_deploy_job.
     await addEvent(A.orgId, ghWait, { status: 'unmapped', reason: 'repository_not_mapped' });
     await addEvent(A.orgId, ghWait, { event: 'deployment_status', status: 'unmapped', reason: 'repository_not_mapped', facts: { kind: 'deployment_status', environment: 'Production' } });
     await addEvent(A.orgId, ghWait, { status: 'pending' });
@@ -422,7 +423,10 @@ describe('D8b-2: repository activity, current role, one environment', () => {
     await addEvent(A.orgId, ghWait, { status: 'unmapped', reason: 'repository_not_mapped', ago: '8 days' });
     await addEvent(A.orgId, ghWait, { status: 'ignored', reason: 'legacy_webhook_org' });
     await addEvent(A.orgId, ghWait, { event: 'workflow_run', status: 'unmapped', reason: 'repository_not_mapped' });
-    // A, no rule: 2 no_deploy_rule + 1 unmapped = 3; one no_deploy_rule 8 days old is not counted.
+    // Not either: a job an earlier rule decided was not the deploy job (only a rule's replay picks that up).
+    await addEvent(A.orgId, ghWait, { status: 'ignored', reason: 'not_deploy_job' });
+    // A, no rule: what a rule's replay picks up: 2 no_deploy_rule + 1 unmapped + 1 deployment_status no_deploy_rule = 4;
+    // one no_deploy_rule 8 days old is not counted.
     await addEvent(A.orgId, ghNoRule, { status: 'ignored', reason: 'no_deploy_rule', facts: { kind: 'workflow_job', workflow_name: 'Deploy', job_name: 'deploy' } });
     await addEvent(A.orgId, ghNoRule, { status: 'ignored', reason: 'no_deploy_rule', facts: { kind: 'workflow_job', workflow_name: 'Release', job_name: 'release' } });
     await addEvent(A.orgId, ghNoRule, { status: 'unmapped', reason: 'repository_not_mapped' });
@@ -458,7 +462,7 @@ describe('D8b-2: repository activity, current role, one environment', () => {
     expect(body.data.held_event_days).toBe(7);
     const byId = new Map(body.data.repositories.map((r: { id: string }) => [r.id, r]));
     expect(byId.get(rowWait)).toMatchObject({
-      held_events: 3, environments_seen: ['Production'], jobs_seen: [], last_deployment_at: null, over_limit_this_month: 0,
+      held_events: 5, environments_seen: ['Production'], jobs_seen: [], last_deployment_at: null, over_limit_this_month: 0,
     });
     expect(byId.get(rowNoRule)).toMatchObject({ held_events: 4 });
     const noRule = byId.get(rowNoRule) as { environments_seen: string[]; jobs_seen: unknown[] };

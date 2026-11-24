@@ -17,7 +17,7 @@ import { deployRuleBody, storedDeployRule } from '../deploy-rule';
 import { MAPPING_REPLAY, replayRepository, RULE_REPLAY } from '../replay';
 import { withOrgClient } from '../db';
 import { listRepositoryActivity, setRepositoryDeployRule, setRepositoryService } from '../../../repositories/pipeline-repositories.repository';
-import { HELD_EVENT_DAYS, NOT_CLAIMED_REASON } from '../../../repositories/pipeline-events.repository';
+import { NOT_CLAIMED_REASON } from '../../../repositories/pipeline-events.repository';
 import { insertPipelineDeployment } from '../../../repositories/deployments.repository';
 import { Pool } from 'pg';
 import { installTenantTagReset } from '../../../config/database';
@@ -550,7 +550,7 @@ describe('organization isolation', () => {
 
 describe('D8b-2: the 7-day pick-up window (R1), one chosen environment (R2), mappings apply going forward', () => {
   const activityOf = async (org: string, repoId: number) =>
-    (await withOrgClient(fx.app, org, (c) => listRepositoryActivity(c, org, HELD_EVENT_DAYS, NOT_CLAIMED_REASON))).get(String(repoId));
+    (await withOrgClient(fx.app, org, (c) => listRepositoryActivity(c, org, { mapping: MAPPING_REPLAY, rule: RULE_REPLAY }))).get(String(repoId));
   const eventRow = async (deliveryId: string) => (await fx.admin.query(
     `SELECT id::text AS id, processing_status AS status, processing_reason AS reason, received_at, processed_at, deployment_id
        FROM pipeline_events WHERE delivery_id = $1`, [deliveryId])).rows[0];
@@ -565,7 +565,7 @@ describe('D8b-2: the 7-day pick-up window (R1), one chosen environment (R2), map
     await fx.admin.query(`UPDATE pipeline_events SET received_at = NOW() - interval '6 days' WHERE delivery_id = $1`, [fresh.deliveryId]);
     const before = await eventRow(old.deliveryId);
     expect(before).toMatchObject({ status: 'unmapped', reason: 'repository_not_mapped' });
-    expect((await activityOf(orgA, r.repoId))?.waiting).toBe(1);
+    expect((await activityOf(orgA, r.repoId))?.heldForMapping).toBe(1);
 
     await withOrgClient(fx.app, orgA, (c) => setRepositoryService(c, orgA, r.rowId, r.serviceId));
     expect(await replayRepository(orgA, r.repoId, MAPPING_REPLAY, fx.app)).toEqual({ considered: 1, recorded: 1 });
@@ -578,14 +578,14 @@ describe('D8b-2: the 7-day pick-up window (R1), one chosen environment (R2), map
     expect((await eventRow(fresh.deliveryId)).status).toBe('processed');
     // Counted nowhere: nothing held is left in the window.
     const after = await activityOf(orgA, r.repoId);
-    expect(after?.waiting ?? 0).toBe(0);
-    expect(after?.noRule ?? 0).toBe(0);
+    expect(after?.heldForMapping ?? 0).toBe(0);
+    expect(after?.heldForRule ?? 0).toBe(0);
     // A rule replay doesn't reach it either.
     expect(await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app)).toEqual({ considered: 0, recorded: 0 });
     expect(await eventRow(old.deliveryId)).toEqual(before);
   });
 
-  it('R1: held counts: no service -> unmapped and unprocessed (not claim holds); service without a rule -> no_deploy_rule too; older than 7 days never', async () => {
+  it('R1: held counts: no service -> what a mapping picks up (claim holds included, fix round 2 N-1); service without a rule -> no_deploy_rule too; older than 7 days never', async () => {
     const r = await repo(orgA, instA, null, false);
     await job(instA, r);
     await job(instA, r, { jobName: 'lint' });
@@ -594,15 +594,56 @@ describe('D8b-2: the 7-day pick-up window (R1), one chosen environment (R2), map
     const claimHold = await job(instA, r);
     await fx.admin.query(`UPDATE pipeline_events SET processing_status = 'pending', processing_reason = $2, processed_at = NULL WHERE delivery_id = $1`,
       [claimHold.deliveryId, NOT_CLAIMED_REASON]);
-    expect(await activityOf(orgA, r.repoId)).toMatchObject({ waiting: 2, noRule: 0 });
+    // The two and the claim hold: this organization holds the claim here, so the mapping's replay
+    // processes the claim hold like any unprocessed event, and the count includes it.
+    expect(await activityOf(orgA, r.repoId)).toMatchObject({ heldForMapping: 3, heldForRule: 3 });
 
     await withOrgClient(fx.app, orgA, (c) => setRepositoryService(c, orgA, r.rowId, r.serviceId));
-    await replayRepository(orgA, r.repoId, MAPPING_REPLAY, fx.app);
-    // In the window, now waiting for a rule: the two, plus the claim hold (this organization does
-    // hold the claim here, so the replay processes it like any unprocessed event). The aged one is
-    // untouched and uncounted.
-    expect(await activityOf(orgA, r.repoId)).toMatchObject({ waiting: 0, noRule: 3 });
+    expect(await replayRepository(orgA, r.repoId, MAPPING_REPLAY, fx.app)).toEqual({ considered: 3, recorded: 0 });
+    // In the window, now waiting for a rule: the same three. The aged one is untouched and uncounted.
+    expect(await activityOf(orgA, r.repoId)).toMatchObject({ heldForMapping: 0, heldForRule: 3 });
     expect((await eventRow(aged.deliveryId)).status).toBe('unmapped');
+  });
+
+  it('fix round 2 (N-1): one 7-day boundary decides the held count and the release; each count is exactly what its replay picks up', async () => {
+    const r = await repo(orgA, instA, null, false);
+    const received = async (ago: string, opts: JobOptions = {}) => {
+      const d = await job(instA, r, opts);
+      await fx.admin.query(`UPDATE pipeline_events SET received_at = NOW() - $2::interval WHERE delivery_id = $1`, [d.deliveryId, ago]);
+      return d;
+    };
+    const setStatus = (d: { deliveryId: string }, status: string, reason: string | null) => fx.admin.query(
+      `UPDATE pipeline_events SET processing_status = $2::text, processing_reason = $3::text, processed_at = CASE WHEN $2::text = 'pending' THEN NULL ELSE NOW() END
+        WHERE delivery_id = $1`, [d.deliveryId, status, reason]);
+    // Either side of the boundary, one minute apart from it.
+    const inside = await received('6 days 23 hours 59 minutes');
+    const outside = await received('7 days 1 minute');
+    // Picked up by a mapping (and a rule): a claim hold this organization can release, a legacy-guard event.
+    await setStatus(await received('1 hour'), 'pending', NOT_CLAIMED_REASON);
+    await setStatus(await received('1 hour'), 'ignored', 'legacy_webhook_org');
+    // Picked up by a rule only: a job an earlier rule decided was not the deploy job.
+    await setStatus(await received('1 hour', { jobName: 'lint' }), 'ignored', 'not_deploy_job');
+    const outsideRow = async () => (await fx.admin.query('SELECT row_to_json(e)::text AS j FROM pipeline_events e WHERE delivery_id = $1',
+      [outside.deliveryId])).rows[0].j as string;
+    const outsideBefore = await outsideRow();
+    expect((await eventRow(inside.deliveryId)).status).toBe('unmapped');
+
+    const beforeMapping = await activityOf(orgA, r.repoId);
+    expect(beforeMapping).toMatchObject({ heldForMapping: 3, heldForRule: 4 });
+    await withOrgClient(fx.app, orgA, (c) => setRepositoryService(c, orgA, r.rowId, r.serviceId));
+    const mapped = await replayRepository(orgA, r.repoId, MAPPING_REPLAY, fx.app);
+    expect(mapped.considered).toBe(beforeMapping!.heldForMapping);
+
+    const beforeRule = await activityOf(orgA, r.repoId);
+    expect(beforeRule).toMatchObject({ heldForMapping: 0, heldForRule: 4 });
+    await withOrgClient(fx.app, orgA, (c) => setRepositoryDeployRule(c, orgA, r.rowId, JOB_RULE));
+    const ruled = await replayRepository(orgA, r.repoId, RULE_REPLAY, fx.app);
+    expect(ruled).toEqual({ considered: beforeRule!.heldForRule, recorded: 3 });
+
+    // The event one minute past the boundary: never counted, never picked up, byte for byte the same row.
+    expect(await activityOf(orgA, r.repoId)).toMatchObject({ heldForMapping: 0, heldForRule: 1 });
+    expect(await outsideRow()).toBe(outsideBefore);
+    expect((await eventRow(inside.deliveryId)).status).toBe('processed');
   });
 
   it('R2: a rule for one environment records only that environment; another is kept as environment_not_matched and a rule for it records it later', async () => {

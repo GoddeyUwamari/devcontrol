@@ -110,6 +110,10 @@ export default function DORAMetricsPage() {
   // Founder ruling (d8b2-build.md §7.3): until GET /api/integrations/github has answered, or if it
   // failed, no banner at all (never "coming soon" while the feature may be on). Switched off: today's banner.
   const githubUnknown = live && !github.connection.isSuccess;
+  // Fix round 2 (founder ruling): the demo workspace with the feature on never says "coming soon"
+  // either. Its GitHub screen is a fixed sample, so there is no connection state to show: no banner.
+  const githubData = github.connection.data;
+  const githubDemoWorkspace = live && github.connection.isSuccess && githubData?.configured === true && githubData.demo;
   const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({
     queryKey: ['dora-benchmarks'],
     queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; },
@@ -202,7 +206,7 @@ export default function DORAMetricsPage() {
         </div>
       </div>
 
-      {showBanner && !githubUnknown && <NoDataBanner github={githubOn ? githubState : null} />}
+      {showBanner && !githubUnknown && !githubDemoWorkspace && <NoDataBanner github={githubOn ? githubState : null} />}
 
       {/* Loading */}
       {!isDemoActive && isLoading && (

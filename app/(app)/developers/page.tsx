@@ -114,7 +114,10 @@ export default function DevelopersPage() {
   // (GET /api/integrations/github says configured); otherwise, in demo mode, or while loading, "Coming soon" as before.
   const github = useGitHubConnection({ enabled: !demoMode })
   const githubData = !demoMode && github.connection.isSuccess ? github.connection.data : null
-  const githubOn = githubData !== null && githubData.configured && !githubData.demo
+  // Fix round 2 (N-3, founder): a failed status request never says "Coming soon" (while switched off the
+  // route answers configured: false, so a failure means it is on); members' text, "View GitHub →".
+  const githubFailed = !demoMode && github.connection.isError
+  const githubOn = (githubData !== null && githubData.configured && !githubData.demo) || githubFailed
   const githubConnected = githubData !== null && githubData.configured && !githubData.demo && githubData.installations.length > 0
   // Founder ruling (d8b2-build.md §7.2): owners and admins get Connect / Manage, as the chip; members "View GitHub →".
   const githubCanManage = githubData !== null && githubData.configured && githubData.can_manage

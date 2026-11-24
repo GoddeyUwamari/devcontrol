@@ -281,11 +281,30 @@ describe('saving: Saving… then Saved; on failure the previous value comes back
     await waitFor(() => expect(getsOf('/api/integrations/github/repositories')).toBeGreaterThan(before))
   })
 
-  it('504: "The save may still be processing. Refresh this list to check."', async () => {
+  it('a network error (no answer at all): the previous value comes back and "Couldn\'t save. Try again." shows, never "Saved"', async () => {
+    mockPut.mockImplementation(() => Promise.reject(new Error('Network Error')))
+    renderPage()
+    await row('r-worker')
+    const before = getsOf('/api/integrations/github/repositories')
+    fireEvent.change(within(await row('r-worker')).getByLabelText('Service for worker'), { target: { value: 'svc-pay' } })
+    const line = await within(await row('r-worker')).findByTestId('github-service-save-r-worker')
+    await waitFor(() => expect(line).toHaveTextContent("Couldn't save. Try again."))
+    expect(line).not.toHaveTextContent('Saved')
+    expect(screen.queryAllByText('Saved')).toHaveLength(0)
+    expect((within(await row('r-worker')).getByLabelText('Service for worker') as HTMLSelectElement).value).toBe('svc-worker')
+    expect(mockPut).toHaveBeenCalledTimes(1)
+    // Nothing was saved, so the list is not read again.
+    expect(getsOf('/api/integrations/github/repositories')).toBe(before)
+  })
+
+  it('504: "The save may still be processing. Refresh this list to check." and the list is read again', async () => {
     mockPut.mockImplementation(() => answer(504))
     renderPage()
+    await row('r-worker')
+    const before = getsOf('/api/integrations/github/repositories')
     fireEvent.change(within(await row('r-worker')).getByLabelText('Deploy rule for worker'), { target: { value: 'env:staging' } })
     expect(await within(await row('r-worker')).findByTestId('github-rule-save-r-worker')).toHaveTextContent('The save may still be processing. Refresh this list to check.')
+    await waitFor(() => expect(getsOf('/api/integrations/github/repositories')).toBe(before + 1))
   })
 
   it('"No service" appears only once mapped, and sends null (going forward)', async () => {
@@ -343,6 +362,55 @@ describe('deploy rule options: only what DevControl has seen', () => {
     expect([...dup.options].map((o) => o.textContent)).toEqual(['Choose a deploy rule', 'Job: CI › deploy', 'Job: Release › deploy'])
     // Once per layout (the desktop table; the phone cards render the same rows).
     expect((await table()).textContent?.match(/\(any branch\)/g)).toHaveLength(1)
+  })
+})
+
+describe('fix round 2 (N-5): the stored rule is always the selected option', () => {
+  const svc = { service_id: 'svc-pay', service_name: 'payments-api' }
+  const ruleSelect = async (id: string, name: string) => within(await row(id)).getByLabelText(`Deploy rule for ${name}`) as HTMLSelectElement
+  const texts = (select: HTMLSelectElement) => [...select.options].map((o) => o.textContent)
+
+  it('an older job rule for a non-production environment is its own option, selected, never shown as the seen job; nothing is sent for it', async () => {
+    mockPut.mockImplementation(() => answer(200, { success: true, data: {} }))
+    repositories = [
+      repo('stg', 'a', {
+        ...svc, deploy_rule: { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy', environment: 'staging', branch: 'default', aws_region: null },
+        jobs_seen: [{ workflow_name: 'CI', job_name: 'deploy' }],
+      }),
+      // Legacy shape (no branch key), nothing seen at all.
+      repo('legacy', 'b', { ...svc, deploy_rule: { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy', environment: 'development' } }),
+    ]
+    renderPage()
+    const stg = await ruleSelect('stg', 'a')
+    expect(stg.selectedOptions[0].textContent).toBe('Job: deploy · records as staging')
+    expect(texts(stg)).toEqual(['Job: deploy · records as staging', 'Job: deploy'])
+    const legacy = await ruleSelect('legacy', 'b')
+    expect(legacy.selectedOptions[0].textContent).toBe('Job: deploy · records as development')
+    expect(legacy).not.toBeDisabled()
+    // Re-choosing the stored rule sends nothing (it can't be re-sent as it is).
+    fireEvent.change(stg, { target: { value: stg.selectedOptions[0].value } })
+    expect(mockPut).not.toHaveBeenCalled()
+    // The seen job is a different rule: choosing it sends the server-default (production) rule.
+    fireEvent.change(stg, { target: { value: (stg.options[1] as HTMLOptionElement).value } })
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1))
+    expect(mockPut.mock.calls[0][1]).toEqual({ mode: 'job', workflow_name: 'CI', job_name: 'deploy' })
+  })
+
+  it('a stored job or environment that is no longer among what was seen is still the selected option', async () => {
+    repositories = [
+      repo('job', 'c', {
+        ...svc, deploy_rule: { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy-old', environment: 'production', branch: 'default' },
+        environments_seen: ['production'], jobs_seen: [{ workflow_name: 'CI', job_name: 'deploy' }],
+      }),
+      repo('env', 'd', { ...svc, deploy_rule: { v: 1, mode: 'github_deployments', environment_name: 'qa', environment_map: {} }, environments_seen: ['production'] }),
+    ]
+    renderPage()
+    const job = await ruleSelect('job', 'c')
+    expect(job.selectedOptions[0].textContent).toBe('Job: deploy-old')
+    expect(texts(job)).toEqual(['Job: deploy-old', 'Environment: production', 'Job: deploy'])
+    const env = await ruleSelect('env', 'd')
+    expect(env.selectedOptions[0].textContent).toBe('Environment: qa')
+    expect(texts(env)).toEqual(['Environment: qa', 'Environment: production'])
   })
 })
 

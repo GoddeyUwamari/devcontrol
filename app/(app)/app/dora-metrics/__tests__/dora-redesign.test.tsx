@@ -9,12 +9,13 @@
  *   - null stays "—"; no comparison → no %; no "Connect your CI".
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ReactNode } from 'react'
 import DORAMetricsPage from '../page'
+import { githubConnectionService } from '@/lib/services/github-connection.service'
 import { emptyData, founderData, mixedData, ODD_BANDS, PIPELINE_ROW, STATS_BASE } from './d4-fixture'
 
 const env = vi.hoisted(() => ({ tier: 'pro', demo: false }))
@@ -617,6 +618,20 @@ describe('no-data banner and the GitHub status (D8b-2, founder ruling §7.3)', (
     github.answer = on({ installations: [INSTALLATION] })
     renderPage()
     expect(await screen.findByTestId('dora-banner-connected')).toHaveTextContent("GitHub is connected. Deployments appear here after the next deploy that matches a repository's deploy rule.")
+  })
+
+  it('fix round 2 (founder): the demo workspace with the feature on: no banner, never "coming soon"', async () => {
+    noDeployments()
+    github.answer = on({ demo: true, can_manage: false, installations: [INSTALLATION] })
+    renderPage()
+    await screen.findByTestId('dora-source-line')
+    await waitFor(() => expect(screen.getByRole('button', { name: /Export CSV/ })).toBeDisabled())
+    await waitFor(() => expect(vi.mocked(githubConnectionService.get)).toHaveBeenCalled())
+    // The answer has landed (the page knows it is the demo workspace), not just "still loading".
+    await vi.mocked(githubConnectionService.get).mock.results[0].value
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(screen.queryByTestId('dora-no-data-banner')).toBeNull()
+    expect(document.body).not.toHaveTextContent(/coming soon/i)
   })
 
   it('switched off: today\'s banner, as before', async () => {

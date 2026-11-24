@@ -188,6 +188,8 @@ export const REPO_COPY = {
   /** N3: stored rules the select can't offer (never for rules saved from this screen). */
   ruleJobNamedBranch: (job: string, branch: string) => `Job: ${job} (branch ${branch})`,
   ruleJobAnyBranch: (job: string) => `Job: ${job} (any branch)`,
+  /** Fix round 2 (N-5), NEW, for founder approval: a stored job rule that records as another environment. */
+  ruleJobEnvironment: (jobLabel: string, environment: string) => `${jobLabel} · records as ${environment}`,
   ruleAnyEnvironment: 'Environments: any known name',
   seen: (environments: readonly string[], jobs: readonly string[]) => {
     const parts: string[] = []

@@ -6,7 +6,7 @@ import { isDemoOrganization } from '../demo/demo-workspace';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
 import { disconnectInstallation, listInstallations } from '../repositories/github-installations.repository';
-import { HELD_EVENT_DAYS, lastEventReceivedAt, NOT_CLAIMED_REASON } from '../repositories/pipeline-events.repository';
+import { HELD_EVENT_DAYS, lastEventReceivedAt } from '../repositories/pipeline-events.repository';
 import {
   githubRepoIdOf,
   listJobsSeen,
@@ -192,10 +192,11 @@ router.delete('/installations/:installationId', refuseUnconfigured, requireAdmin
 // GET /api/integrations/github/repositories (any member of the organization)
 // D8b-2 adds, per repository, only what DevControl has stored for this
 // organization (listRepositoryActivity):
-//   held_events            events a replay would pick up for the repository's next
-//                          step (no service: waiting for a mapping; service but no
-//                          usable rule: waiting for a rule), last held_event_days
-//                          days only (ruling R1); 0 once both exist
+//   held_events            the events the repository's next step's replay picks up
+//                          (no service: MAPPING_REPLAY; service but no usable rule:
+//                          RULE_REPLAY), counted with the replay's own eligibility
+//                          test (replayEligibleSql, last held_event_days days, ruling
+//                          R1; fix round 2 N-1); 0 once both exist
 //   environments_seen      GitHub environment names (30 days)
 //   jobs_seen              { workflow_name, job_name } (30 days)
 //   last_deployment_at     newest deployment recorded from this repository
@@ -206,12 +207,13 @@ router.get('/repositories', refuseUnconfigured, async (req, res, next) => {
     const { organizationId } = orgAndUser(req);
     const repositories = await withOrgClient(defaultSource, organizationId, async (client) => {
       const rows = await listRepositories(client, organizationId);
-      const activity = await listRepositoryActivity(client, organizationId, HELD_EVENT_DAYS, NOT_CLAIMED_REASON);
+      const activity = await listRepositoryActivity(client, organizationId, { mapping: MAPPING_REPLAY, rule: RULE_REPLAY });
       return rows.map((row) => {
         const a = activity.get(row.github_repo_id);
         const rule = readStoredDeployRule(row.deploy_rule);
         const hasRule = rule !== 'invalid' && rule.mode !== 'none';
-        const held = row.service_id === null ? (a?.waiting ?? 0) : hasRule ? 0 : (a?.waiting ?? 0) + (a?.noRule ?? 0);
+        // What the next step's replay picks up: the mapping's (PUT service) or the rule's (PUT deploy-rule).
+        const held = row.service_id === null ? (a?.heldForMapping ?? 0) : hasRule ? 0 : (a?.heldForRule ?? 0);
         return {
           ...row,
           held_events: held,
