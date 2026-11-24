@@ -32,6 +32,7 @@ import {
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
+  ISSUE_NAT_GATEWAY_IDLE,
 } from '../optimization-rules';
 
 describe('OPTIMIZATION_RULES: identity', () => {
@@ -79,6 +80,8 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     // C1
     'rds_idle',
     'ebs_old_snapshots',
+    // C2
+    'nat_gateway_idle',
   ].sort();
 
   it('marks exactly the currently-wired detectors as implemented', () => {
@@ -99,16 +102,33 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     expect(byId['dynamodb_capacity_mode'].issue).toBe(ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED);
     expect(byId['rds_idle'].issue).toBe(ISSUE_RDS_IDLE_INSTANCE);
     expect(byId['ebs_old_snapshots'].issue).toBe(ISSUE_EBS_OLD_SNAPSHOT);
+    expect(byId['nat_gateway_idle'].issue).toBe(ISSUE_NAT_GATEWAY_IDLE);
   });
 
-  it('C1: the two new checks are named as prospects see them, and the registry is 11 of 33', () => {
+  it('C1: the two new checks are named as prospects see them', () => {
     const byId = Object.fromEntries(OPTIMIZATION_RULES.map((r) => [r.id, r]));
     expect(byId['rds_idle']).toMatchObject({ service: 'RDS', name: 'Idle RDS instances', status: 'implemented' });
     expect(byId['ebs_old_snapshots']).toMatchObject({ service: 'EBS', name: 'Old EBS snapshots', status: 'implemented' });
     // The idle identity is not the retired oversized-RDS identity.
     expect(ISSUE_RDS_IDLE_INSTANCE).not.toBe('Oversized Instance');
-    expect(getImplementedOptimizationRules()).toHaveLength(11);
-    expect(OPTIMIZATION_RULES).toHaveLength(33);
+  });
+
+  it('C2: idle NAT gateways is its own check, the data-processing check stays planned, and the registry is 12 of 34', () => {
+    const byId = Object.fromEntries(OPTIMIZATION_RULES.map((r) => [r.id, r]));
+    expect(byId['nat_gateway_idle']).toEqual({
+      id: 'nat_gateway_idle',
+      service: 'NAT Gateway',
+      name: 'Idle NAT gateways',
+      detail: 'No connections and no traffic in either direction in any hour for 32 days; regional NAT gateways are not checked; savings estimated at the regional hourly list price',
+      status: 'implemented',
+      issue: 'Idle NAT Gateway',
+    });
+    expect(byId['nat_gateway_data_processing']).toMatchObject({ service: 'NAT Gateway', status: 'planned' });
+    expect(byId['nat_gateway_data_processing'].issue).toBeUndefined();
+    expect(getImplementedOptimizationRules()).toHaveLength(12);
+    expect(OPTIMIZATION_RULES).toHaveLength(34);
+    expect(OPTIMIZATION_RULES.filter((r) => r.status === 'planned')).toHaveLength(22);
+    expect(new Set(getImplementedOptimizationRules().map((r) => r.service)).size).toBe(7);
   });
 
   it('rds_rightsizing is retired to planned: no issue identity, and the detail says what evidence is missing', () => {

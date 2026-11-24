@@ -95,6 +95,9 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-backup:ListRecoveryPointsByBackupVaultCommand': read('backup:ListRecoveryPointsByBackupVault'),
   // C1 review S-3: locked snapshots are excluded (SecurityAudit ec2:Describe*, ViewOnlyAccess names it).
   'client-ec2:DescribeLockedSnapshotsCommand': read('ec2:DescribeLockedSnapshots'),
+  // C2: the idle NAT gateway rule (SecurityAudit ec2:Describe*, ViewOnlyAccess names both).
+  'client-ec2:DescribeNatGatewaysCommand': read('ec2:DescribeNatGateways'),
+  'client-ec2:DescribeRouteTablesCommand': read('ec2:DescribeRouteTables'),
   'client-iam:ListUsersCommand': read('iam:ListUsers'),
   'client-iam:ListMFADevicesCommand': read('iam:ListMFADevices'),
   'client-iam:GetLoginProfileCommand': read('iam:GetLoginProfile'),

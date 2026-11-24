@@ -3,8 +3,8 @@
  * exactly as GET /api/cost-recommendations/optimization-rules builds it from
  * backend/src/config/optimization-rules.ts (getOptimizationRules +
  * getOptimizationRuleSummary), so the coverage numbers come from the registry
- * itself, never a copy: 11 active checks across EC2 · EBS · RDS · S3 · Lambda ·
- * DynamoDB (the catalog's total is never shown: scan result banner PR, ruling
+ * itself, never a copy: 12 active checks across EC2 · EBS · RDS · S3 · Lambda ·
+ * DynamoDB · NAT Gateway since C2 (the catalog's total is never shown: scan result banner PR, ruling
  * 6), both new checks listed and explained, 22 planned.
  *
  * And the new rows: an idle RDS finding reads "No dollar estimate" under the
@@ -99,20 +99,20 @@ beforeEach(() => {
 })
 
 describe('C1: coverage comes from the registry', () => {
-  it('11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB; the 33 total never shown; both new checks listed and explained; 22 planned; all 11 ran', async () => {
+  it('12 active checks (C2) across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway; the 34 total never shown; both C1 checks listed and explained; 22 planned; all 12 ran', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 11 active checks$/))
-    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB$/)
+    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway$/)
     // The How DevControl checks header keeps its title and expand control only.
     expect(screen.queryByTestId('checks-summary-line')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('checks-section')).getByText('How DevControl checks').closest('summary')).toHaveTextContent(/^How DevControl checks$/)
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB\.$/)
-    expect(container.textContent).not.toMatch(/\b33\b|of 33/)
-    expect(screen.getByTestId('checks-count-note')).toHaveTextContent('11 active checks today — not every possible AWS cost optimization.')
-    expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB'])
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway\.$/)
+    expect(container.textContent).not.toMatch(/\b34\b|of 34/)
+    expect(screen.getByTestId('checks-count-note')).toHaveTextContent('12 active checks today — not every possible AWS cost optimization.')
+    expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway'])
 
     const names = within(screen.getByTestId('check-names')).getAllByRole('listitem').map((li) => li.textContent)
-    expect(names).toHaveLength(11)
+    expect(names).toHaveLength(12)
     expect(names).toEqual(expect.arrayContaining(['Idle RDS instances', 'Old EBS snapshots']))
     const how = within(screen.getByTestId('how-checks-work'))
     expect(how.getByText('No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; no dollar estimate')).toBeInTheDocument()
@@ -123,7 +123,7 @@ describe('C1: coverage comes from the registry', () => {
     expect(planned.queryByText('RDS — Idle databases')).not.toBeInTheDocument()
     expect(planned.queryByText(/Idle RDS instances/)).not.toBeInTheDocument()
 
-    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent('passed all 11 active checks')
+    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent('passed all 12 active checks')
   })
 
   it('computed, not stored: a new active rule adds a check and its service everywhere the page names them', async () => {
@@ -131,9 +131,9 @@ describe('C1: coverage comes from the registry', () => {
     try {
       svc.getOptimizationRules.mockResolvedValue({ rules: getOptimizationRules().map((rule) => ({ ...rule, parameters: [] })), summary: getOptimizationRuleSummary() })
       renderPage()
-      await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
-      expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS$/)
-      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS\.$/)
+      await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 13 active checks$/))
+      expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · ECS$/)
+      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^13 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · ECS\.$/)
     } finally {
       OPTIMIZATION_RULES.pop()
     }

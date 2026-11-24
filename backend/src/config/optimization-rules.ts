@@ -64,6 +64,8 @@ export const ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED = 'DynamoDB Capacity Mode C
 // identity), so retired rows and idle findings never share an identity.
 export const ISSUE_RDS_IDLE_INSTANCE = 'Idle RDS Instance';
 export const ISSUE_EBS_OLD_SNAPSHOT = 'Old EBS Snapshot';
+// C2. Its own identity: nat_gateway_data_processing (planned) is a different check.
+export const ISSUE_NAT_GATEWAY_IDLE = 'Idle NAT Gateway';
 
 /** Display/grouping order used by the UI's service coverage list. */
 export const OPTIMIZATION_RULE_SERVICES = [
@@ -294,6 +296,14 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
   },
 
   // ── NAT Gateway ──────────────────────────────────────────────────────
+  {
+    id: 'nat_gateway_idle',
+    service: 'NAT Gateway',
+    name: 'Idle NAT gateways',
+    detail: 'No connections and no traffic in either direction in any hour for 32 days; regional NAT gateways are not checked; savings estimated at the regional hourly list price',
+    status: 'implemented',
+    issue: ISSUE_NAT_GATEWAY_IDLE,
+  },
   {
     id: 'nat_gateway_data_processing',
     service: 'NAT Gateway',

@@ -431,9 +431,10 @@ describe('AC-3 G4: detector calls time out under the call policy', () => {
       if (o.success) expect(o.recommendations).toEqual([]);
     }
     const failed = analysis.observations.filter((o) => !o.success).map((o) => o.issue).sort();
-    // C1 added two home-region detectors (idle RDS, old EBS snapshots): 6 + 2.
-    expect(failed).toHaveLength(8);
-    expect(failed).toEqual(expect.arrayContaining(['Idle RDS Instance', 'Old EBS Snapshot']));
+    // C1 added two home-region detectors (idle RDS, old EBS snapshots): 6 + 2;
+    // C2 one more (idle NAT gateways): 8 + 1.
+    expect(failed).toHaveLength(9);
+    expect(failed).toEqual(expect.arrayContaining(['Idle RDS Instance', 'Old EBS Snapshot', 'Idle NAT Gateway']));
   });
 
   it('G4: a per-resource call that never answers makes that resource unknown; the others reconcile', async () => {

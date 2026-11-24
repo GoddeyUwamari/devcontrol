@@ -96,6 +96,73 @@ export function ebsSnapshotStandardPricePerGbMonth(region: string | undefined | 
   return EBS_SNAPSHOT_STANDARD_PER_GB_MONTH_USD_BY_REGION[region];
 }
 
+// NAT gateway hourly charge, $/hour, PER REGION -- used only by the
+// nat_gateway_idle rule's estimate (C2: hourly price x 730 hours). Like the
+// snapshot table above, it never falls back to another region's price: a region
+// missing here gives no dollar figure at all.
+//
+// Source: AWS's public price data for NAT gateways, the data the Amazon VPC
+// pricing page's NAT table renders --
+// https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/natgateway.json,
+// key "Hourly charge for NAT Gateways", publication date (its
+// manifest.hawkFilePublicationDate) 2026-11-23T17:10:05Z, retrieved 2026-11-23.
+// Region names were mapped to codes with AWS's public location list (type "AWS
+// Region"). Every commercial AWS region with a published price is listed; AWS
+// GovCloud (another partition) and the two Local Zone entries (Los Angeles,
+// Phoenix: not home regions) are not. The provisioned-bandwidth variant in the
+// same file is undocumented and not used. Re-verify against the same source
+// before relying on these after time has passed. Copies of both files:
+// review-logs/cost-optimization/c2-evidence/.
+export const NAT_GATEWAY_HOURLY_PRICE_SOURCE = {
+  url: 'https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/natgateway.json',
+  key: 'Hourly charge for NAT Gateways',
+  published: '2026-11-23T17:10:05Z',
+  retrieved: '2026-11-23',
+} as const;
+
+export const NAT_GATEWAY_HOURLY_USD_BY_REGION: Readonly<Record<string, number>> = Object.freeze({
+  'af-south-1': 0.057,
+  'ap-east-1': 0.065,
+  'ap-east-2': 0.0558,
+  'ap-northeast-1': 0.062,
+  'ap-northeast-2': 0.059,
+  'ap-northeast-3': 0.062,
+  'ap-south-1': 0.056,
+  'ap-south-2': 0.056,
+  'ap-southeast-1': 0.059,
+  'ap-southeast-2': 0.059,
+  'ap-southeast-3': 0.059,
+  'ap-southeast-4': 0.059,
+  'ap-southeast-5': 0.05015,
+  'ap-southeast-6': 0.06195,
+  'ap-southeast-7': 0.05015,
+  'ca-central-1': 0.05,
+  'ca-west-1': 0.05,
+  'eu-central-1': 0.052,
+  'eu-central-2': 0.0572,
+  'eu-north-1': 0.046,
+  'eu-south-1': 0.05,
+  'eu-south-2': 0.048,
+  'eu-west-1': 0.048,
+  'eu-west-2': 0.05,
+  'eu-west-3': 0.05,
+  'il-central-1': 0.0504,
+  'me-central-1': 0.0528,
+  'me-south-1': 0.0528,
+  'mx-central-1': 0.04725,
+  'sa-east-1': 0.093,
+  'us-east-1': 0.045,
+  'us-east-2': 0.045,
+  'us-west-1': 0.048,
+  'us-west-2': 0.045,
+});
+
+/** The region's NAT gateway hourly price ($/hour), or null when the table has none -- never another region's. */
+export function natGatewayHourlyPrice(region: string | undefined | null): number | null {
+  if (!region || !Object.prototype.hasOwnProperty.call(NAT_GATEWAY_HOURLY_USD_BY_REGION, region)) return null;
+  return NAT_GATEWAY_HOURLY_USD_BY_REGION[region];
+}
+
 // AWS S3 storage pricing, us-east-1, $/GB-month, first 50TB tier -- verified
 // via AWS's published pricing (confirmed current as of 2026-09-06) -- used
 // only by the s3_lifecycle analyzer's ceiling estimate (see

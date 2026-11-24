@@ -28,6 +28,7 @@ import {
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
+  ISSUE_NAT_GATEWAY_IDLE,
 } from '../config/optimization-rules';
 
 /** Open findings by what their dollar figure is (getActiveSavingsBreakdown). */
@@ -61,6 +62,7 @@ const NON_RI_ISSUES = [
   ISSUE_LAMBDA_LOW_USAGE,
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
+  ISSUE_NAT_GATEWAY_IDLE,
 ] as const;
 
 // Distinct from the migration runner's single-integer advisory lock
@@ -101,6 +103,8 @@ const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   // C1: both list the home region only (DescribeDBInstances, DescribeSnapshots).
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
+  // C2: lists the home region only (DescribeNatGateways).
+  ISSUE_NAT_GATEWAY_IDLE,
 ]);
 
 /** The same issues as a list, for statements that take them as an array (home region change, HR-D11). */
