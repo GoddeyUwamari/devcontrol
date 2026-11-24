@@ -165,7 +165,7 @@ describe('C2: idle NAT gateway findings on the page', () => {
     expect(screen.queryByTestId('opportunity-card')).not.toBeInTheDocument()
     // Founder ruling 2: never "passed all N active checks" when a resource couldn't be fully checked; the count is the run record's.
     const card = await screen.findByTestId('empty-all-checks')
-    expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 1 resource couldn't be fully checked\.$/)
+    expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 1 resource couldn't be fully checked\. DevControl runs the checks again on a schedule and lists anything new here\.$/)
     expect(card.textContent).not.toMatch(/passed all/)
   })
 
@@ -177,6 +177,6 @@ describe('C2: idle NAT gateway findings on the page', () => {
     })])
     renderPage()
     const card = await screen.findByTestId('empty-all-checks')
-    expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 3 resources couldn't be fully checked\.$/)
+    expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 3 resources couldn't be fully checked\. DevControl runs the checks again on a schedule and lists anything new here\.$/)
   })
 })

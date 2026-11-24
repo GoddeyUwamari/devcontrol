@@ -249,7 +249,7 @@ describe('Still detected group', () => {
     const empty = screen.getByTestId('empty-state')
     expect(within(empty).getByRole('heading', { name: 'Nothing to act on right now' })).toBeInTheDocument()
     // The run (PRODUCTION_RESOLVED_ONLY) has unknown_resource_count 1: never "passed all 9 active checks" (C2, founder ruling 2).
-    expect(within(empty).getByText("No opportunities found in the resources DevControl could check. 1 resource couldn't be fully checked.")).toBeInTheDocument()
+    expect(within(empty).getByText("No opportunities found in the resources DevControl could check. 1 resource couldn't be fully checked. DevControl runs the checks again on a schedule and lists anything new here.")).toBeInTheDocument()
     expect(empty.textContent).not.toMatch(/passed all/)
     expect(screen.queryByText(EMPTY_HEADLINE)).not.toBeInTheDocument()
     expect(empty.compareDocumentPosition(slot()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -478,7 +478,7 @@ describe('/hidden failed: C27, never empty', () => {
     await waitFor(() => expect(screen.getByText(C27)).toBeInTheDocument())
     const card = await screen.findByTestId('empty-state')
     // unknown_resource_count 1 on the run: the truthful body, not "passed all 9 active checks" (C2, founder ruling 2).
-    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^Nothing to act on right nowNo opportunities found in the resources DevControl could check\. 1 resource couldn't be fully checked\.See what's checkedView costs →$/)
+    expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^Nothing to act on right nowNo opportunities found in the resources DevControl could check\. 1 resource couldn't be fully checked\. DevControl runs the checks again on a schedule and lists anything new here\.See what's checkedView costs →$/)
     expect(card.textContent).not.toMatch(/below/)
   })
 
