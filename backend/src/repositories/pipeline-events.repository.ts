@@ -78,6 +78,43 @@ export async function setProcessingOutcome(
   );
 }
 
+/**
+ * D8b-1 fix S-1: an event stored for this organization whose installation is
+ * no longer claimed by it (disconnected while the event was in flight). It
+ * is held under the held-delivery rule: left unprocessed ('pending',
+ * processed_at NULL) so this organization's next claim of the installation
+ * records it, if that claim comes within HELD_EVENT_DAYS of receipt.
+ */
+export const NOT_CLAIMED_REASON = 'installation_not_claimed';
+/** The same 7 days as github_held_deliveries (github_purge_held_deliveries). */
+export const HELD_EVENT_DAYS = 7;
+
+export async function holdUntilClaimed(client: PoolClient, organizationId: string, eventId: string): Promise<void> {
+  await client.query(
+    `UPDATE pipeline_events
+        SET processing_status = 'pending', processing_reason = $3, processed_at = NULL,
+            processing_attempts = LEAST(processing_attempts + 1, 32767)
+      WHERE organization_id = $1 AND id = $2`,
+    [organizationId, eventId, NOT_CLAIMED_REASON]
+  );
+}
+
+/**
+ * On a claim, before its unprocessed events are processed: events held for
+ * lack of a claim longer than HELD_EVENT_DAYS end 'ignored' / hold_expired,
+ * as a held delivery that old is purged. Returns how many.
+ */
+export async function expireClaimHolds(client: PoolClient, organizationId: string, installationId: number): Promise<number> {
+  const { rowCount } = await client.query(
+    `UPDATE pipeline_events
+        SET processing_status = 'ignored', processing_reason = 'hold_expired', processed_at = NOW()
+      WHERE organization_id = $1 AND installation_id = $2 AND processed_at IS NULL AND processing_reason = $3
+        AND received_at < NOW() - make_interval(days => $4)`,
+    [organizationId, installationId, NOT_CLAIMED_REASON, HELD_EVENT_DAYS]
+  );
+  return rowCount ?? 0;
+}
+
 export interface EventToProcess {
   id: string;
   installationId: string;

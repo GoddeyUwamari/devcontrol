@@ -154,13 +154,18 @@ interface InstallationRow {
   account_type: string;
   repository_selection: string;
   permissions_state: string;
+  /** What GitHub reports the installation was granted (D8b: the mismatch banner names the differences). */
+  permissions: Record<string, string>;
   claimed_at: Date;
+  /** The DevControl user who claimed it (D8b summary card); null once that user is deleted or has no name. */
+  claimed_by_name: string | null;
   suspended_at: Date | null;
   deleted_at: Date | null;
 }
 
-const INSTALLATION_COLUMNS = `installation_id::text AS installation_id, account_login, account_type, repository_selection,
-                              permissions_state, claimed_at, suspended_at, deleted_at`;
+const INSTALLATION_COLUMNS = `gi.installation_id::text AS installation_id, gi.account_login, gi.account_type, gi.repository_selection,
+                              gi.permissions_state, gi.permissions, gi.claimed_at, NULLIF(btrim(u.full_name), '') AS claimed_by_name,
+                              gi.suspended_at, gi.deleted_at`;
 
 /**
  * Inserts the claim. The primary key is global, so an installation another
@@ -192,10 +197,66 @@ export async function insertInstallationClaim(
 
 export async function listInstallations(client: PoolClient, organizationId: string): Promise<InstallationRow[]> {
   const { rows } = await client.query<InstallationRow>(
-    `SELECT ${INSTALLATION_COLUMNS} FROM github_installations WHERE organization_id = $1 ORDER BY claimed_at, installation_id`,
+    `SELECT ${INSTALLATION_COLUMNS}
+       FROM github_installations gi
+       LEFT JOIN users u ON u.id = gi.claimed_by_user_id
+      WHERE gi.organization_id = $1
+      ORDER BY gi.claimed_at, gi.installation_id`,
     [organizationId]
   );
   return rows;
+}
+
+/**
+ * Processing (D8b-1 fix S-1): inside the event's processing transaction, lock
+ * this organization's claim on the installation (FOR KEY SHARE) and say
+ * whether it still exists. The lock conflicts with the disconnect's FOR
+ * UPDATE only, so events of one installation still process side by side:
+ *
+ *  - processing first: a disconnect waits until the event is processed;
+ *  - disconnect first: this waits, then finds no claim (false), and the
+ *    caller holds the event instead of processing it.
+ */
+export async function lockOwnClaim(client: PoolClient, organizationId: string, installationId: number): Promise<boolean> {
+  const { rowCount } = await client.query(
+    'SELECT 1 FROM github_installations WHERE organization_id = $1 AND installation_id = $2 FOR KEY SHARE',
+    [organizationId, installationId]
+  );
+  return rowCount === 1;
+}
+
+/**
+ * Disconnect (D8b, D8-N11): removes this organization's claim on one
+ * installation. Run inside a transaction (withOrgTransaction):
+ *
+ *  1. lock the claim row (FOR UPDATE). Not this organization's -> null, nothing changed;
+ *  2. detach its repositories (installation_id NULL). Their service, deploy
+ *     rule and events stay, so a later claim re-links them as they were;
+ *  3. delete the claim.
+ *
+ * Deployment rows and pipeline_events are never touched. The lock in step 1
+ * is serialised with event processing (lockOwnClaim): an event stored for
+ * this organization but processed after the disconnect is held, not failed,
+ * and a claim by this organization within 7 days records it. New deliveries
+ * for the installation are held again (no organization), as before a claim.
+ */
+export async function disconnectInstallation(
+  client: PoolClient,
+  organizationId: string,
+  installationId: number
+): Promise<{ repositories: number } | null> {
+  const own = await client.query(
+    'SELECT 1 FROM github_installations WHERE organization_id = $1 AND installation_id = $2 FOR UPDATE',
+    [organizationId, installationId]
+  );
+  if (own.rowCount !== 1) return null;
+  const detached = await client.query(
+    `UPDATE pipeline_repositories SET installation_id = NULL, updated_at = NOW()
+      WHERE organization_id = $1 AND installation_id = $2`,
+    [organizationId, installationId]
+  );
+  await client.query('DELETE FROM github_installations WHERE organization_id = $1 AND installation_id = $2', [organizationId, installationId]);
+  return { repositories: detached.rowCount ?? 0 };
 }
 
 type InstallationLifecycle =

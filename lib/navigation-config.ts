@@ -296,8 +296,13 @@ export const userNavSections: NavSection[] = [
       },
       {
         label: 'Integrations',
-        href: '/settings/alerts',
+        href: '/settings/integrations',
         icon: Zap,
+      },
+      {
+        label: 'Alerts',
+        href: '/settings/alerts',
+        icon: Bell,
       },
       {
         label: 'Developers & Webhooks',

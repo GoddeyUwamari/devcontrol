@@ -27,6 +27,7 @@ const routeLabels: Record<string, string> = {
   settings: 'Settings',
   billing: 'Billing',
   integrations: 'Integrations',
+  github: 'GitHub',
   profile: 'Profile',
   organization: 'Organization',
   pricing: 'Pricing',

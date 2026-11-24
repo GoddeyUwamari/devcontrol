@@ -11,6 +11,30 @@ export const EXPECTED_PERMISSIONS: Readonly<Record<string, 'read'>> = {
   pull_requests: 'read',
 };
 
+/** One permission whose access differs from EXPECTED_PERMISSIONS (granted null: missing; expected null: not asked for). */
+export interface PermissionDifference {
+  permission: string;
+  granted: string | null;
+  expected: 'read' | null;
+}
+
+/**
+ * What differs between the granted set and EXPECTED_PERMISSIONS, by permission
+ * name (D8b: the mismatch banner names them). Empty exactly when
+ * permissionsStateOf is 'expected'.
+ */
+export function permissionDifferences(granted: Readonly<Record<string, string>>): PermissionDifference[] {
+  const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+  const names = [...new Set([...Object.keys(granted), ...Object.keys(EXPECTED_PERMISSIONS)])].sort();
+  return names
+    .map((permission) => ({
+      permission,
+      granted: has(granted, permission) ? String(granted[permission]) : null,
+      expected: has(EXPECTED_PERMISSIONS, permission) ? EXPECTED_PERMISSIONS[permission] : null,
+    }))
+    .filter((d) => d.granted !== d.expected);
+}
+
 export function permissionsStateOf(granted: Readonly<Record<string, string>>): 'expected' | 'mismatch' {
   const names = Object.keys(granted).sort();
   const expected = Object.keys(EXPECTED_PERMISSIONS).sort();

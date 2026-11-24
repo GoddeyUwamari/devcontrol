@@ -24,6 +24,7 @@ import {
 import { logError } from "@/lib/safe-log";
 import { DEFAULT_RETURN_PATH, safeReturnPath } from "@/lib/safe-return-path";
 import { clearPendingInvitation, hasPendingInvitation } from "@/lib/pending-invitation";
+import { clearGitHubConnectionState } from "@/lib/github-connection/pending-claim";
 import { loginPathReturningHere } from "@/lib/login-redirect";
 
 /**
@@ -457,6 +458,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       tokenManager.clearAuthCookie();
       // An invitation opened in this tab must not carry over to whoever signs in next.
       clearPendingInvitation();
+      // Nor a GitHub install started or handed back in this tab (D8b-1).
+      clearGitHubConnectionState();
       setUser(null);
       setOrganization(null);
       setOrganizations([]);

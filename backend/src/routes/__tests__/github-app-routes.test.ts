@@ -212,6 +212,130 @@ describe('/api/integrations/github', () => {
     expect((await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [repoA])).rows[0].deploy_rule).toBeNull();
   });
 
+  describe('D8b-1: can_manage, demo, permission differences, disconnect', () => {
+    const instA = 8_800_000_000 + Math.floor(Math.random() * 1e8);
+    const instB = instA + 1;
+    const seedClaim = (org: RoleGateOrg, inst: number, permissions: Record<string, string>, state: 'expected' | 'mismatch') => harness.pool.query(
+      `INSERT INTO github_installations (installation_id, organization_id, account_id, account_login, account_type, repository_selection,
+         permissions, permissions_state, installer_github_user_id, claimed_by_user_id, claimed_by_github_user_id)
+       VALUES ($1, $2, 777, $3, 'Organization', 'selected', $4::jsonb, $5, 8123, $6, 8123)`,
+      [inst, org.orgId, `acct-${inst}`, JSON.stringify(permissions), state, org.owner]);
+    const EXPECTED = { actions: 'read', deployments: 'read', metadata: 'read', pull_requests: 'read' };
+
+    beforeAll(async () => {
+      await seedClaim(A, instA, { ...EXPECTED, contents: 'read', actions: 'write' }, 'mismatch');
+      await seedClaim(B, instB, EXPECTED, 'expected');
+      await harness.pool.query('UPDATE pipeline_repositories SET installation_id = $1, service_id = $2, deploy_rule = $3::jsonb WHERE id = $4',
+        [instA, serviceA, JSON.stringify({ v: 1, mode: 'none' }), repoA]);
+      await harness.pool.query('UPDATE pipeline_repositories SET installation_id = $1 WHERE id = $2', [instB, repoB]);
+    });
+    afterAll(async () => {
+      await harness.pool.query('UPDATE pipeline_repositories SET installation_id = NULL WHERE id = ANY($1::uuid[])', [[repoA, repoB]]);
+      await harness.pool.query('DELETE FROM github_installations WHERE installation_id = ANY($1::bigint[])', [[instA, instB]]);
+    });
+
+    it.each([['owner', true], ['admin', true], ['member', false], ['viewer', false]] as const)('GET as %s: can_manage %s, demo false', async (role, canManage) => {
+      const res = await harness.sendAs(A.orgId, A[role], 'GET', '/integrations/github');
+      expect(res.status).toBe(200);
+      const data = (await res.json()).data;
+      expect(data).toMatchObject({ configured: true, can_manage: canManage, demo: false });
+    });
+
+    it('GET in the demo workspace: can_manage false even for the owner, demo true', async () => {
+      jest.spyOn(demo, 'isDemoOrganization').mockResolvedValue(true);
+      const data = (await (await harness.sendAs(A.orgId, A.owner, 'GET', '/integrations/github')).json()).data;
+      expect(data).toMatchObject({ configured: true, can_manage: false, demo: true });
+    });
+
+    it('GET lists only the organization\'s own installations, with the permission differences and the claimer\'s name; never the raw permission set', async () => {
+      const data = (await (await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github')).json()).data;
+      expect(data.installations).toHaveLength(1);
+      const [row] = data.installations;
+      expect(row).toMatchObject({ installation_id: String(instA), account_login: `acct-${instA}`, permissions_state: 'mismatch', claimed_by_name: 'Role Gate User' });
+      expect(row.permission_differences).toEqual([
+        { permission: 'actions', granted: 'write', expected: 'read' },
+        { permission: 'contents', granted: 'read', expected: null },
+      ]);
+      expect(row).not.toHaveProperty('permissions');
+      const other = (await (await harness.sendAs(B.orgId, B.viewer, 'GET', '/integrations/github')).json()).data;
+      expect(other.installations.map((i: { installation_id: string }) => i.installation_id)).toEqual([String(instB)]);
+      expect(other.installations[0].permission_differences).toEqual([]);
+    });
+
+    it.each(['viewer', 'member'] as const)('DELETE as %s -> 403, nothing changed', async (role) => {
+      const res = await harness.sendAs(A.orgId, A[role], 'DELETE', `/integrations/github/installations/${instA}`);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ ...ADMIN_REFUSAL, current: role });
+      expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_installations WHERE installation_id = $1', [instA])).rows[0].n).toBe(1);
+    });
+
+    it('DELETE in the demo workspace -> 403 not_available_in_demo, nothing changed', async () => {
+      jest.spyOn(demo, 'isDemoOrganization').mockResolvedValue(true);
+      const res = await harness.sendAs(A.orgId, A.owner, 'DELETE', `/integrations/github/installations/${instA}`);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ success: false, error: 'not_available_in_demo' });
+      expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_installations WHERE installation_id = $1', [instA])).rows[0].n).toBe(1);
+    });
+
+    it('DELETE of another organization\'s installation -> 404 and it is untouched; a malformed id -> 400', async () => {
+      const res = await harness.sendAs(A.orgId, A.owner, 'DELETE', `/integrations/github/installations/${instB}`);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ success: false, error: 'not_found' });
+      const b = (await harness.pool.query('SELECT organization_id::text AS org FROM github_installations WHERE installation_id = $1', [instB])).rows;
+      expect(b).toEqual([{ org: B.orgId }]);
+      expect((await harness.pool.query('SELECT installation_id::text AS i FROM pipeline_repositories WHERE id = $1', [repoB])).rows[0].i).toBe(String(instB));
+      for (const id of ['0', '0042', 'abc', '12345678901234567890']) {
+        expect((await harness.sendAs(A.orgId, A.owner, 'DELETE', `/integrations/github/installations/${id}`)).status).toBe(400);
+      }
+    });
+
+    it('DELETE whose last step fails on a foreign key (23503) -> 409 try_again, and the whole disconnect is rolled back: claim kept, repository still linked', async () => {
+      // A probe table referencing only this test's installation makes step 3 (DELETE the claim) fail after
+      // step 2 (detach the repositories) ran: only one transaction around both undoes the detach.
+      const instC = instB + 1;
+      const probe = `d8b_fix_fk_probe_${Math.random().toString(36).slice(2, 10)}`;
+      await seedClaim(A, instC, EXPECTED, 'expected');
+      const repoC = (await harness.pool.query(
+        `INSERT INTO pipeline_repositories (organization_id, github_repo_id, installation_id, full_name) VALUES ($1, $2, $3, 'acme/fk-probe') RETURNING id::text AS id`,
+        [A.orgId, 910000000 + Math.floor(Math.random() * 1e6), instC])).rows[0].id;
+      await harness.pool.query(`CREATE TABLE ${probe} (installation_id BIGINT NOT NULL REFERENCES github_installations(installation_id))`);
+      try {
+        await harness.pool.query(`INSERT INTO ${probe} VALUES ($1)`, [instC]);
+        const res = await harness.sendAs(A.orgId, A.owner, 'DELETE', `/integrations/github/installations/${instC}`);
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ success: false, error: 'try_again' });
+        expect((await harness.pool.query('SELECT organization_id::text AS org FROM github_installations WHERE installation_id = $1', [instC])).rows).toEqual([{ org: A.orgId }]);
+        expect((await harness.pool.query('SELECT installation_id::text AS i FROM pipeline_repositories WHERE id = $1', [repoC])).rows).toEqual([{ i: String(instC) }]);
+      } finally {
+        await harness.pool.query(`DROP TABLE IF EXISTS ${probe}`);
+        await harness.pool.query('DELETE FROM pipeline_repositories WHERE id = $1', [repoC]);
+        await harness.pool.query('DELETE FROM github_installations WHERE installation_id = $1', [instC]);
+      }
+    });
+
+    it('DELETE by an admin: the claim goes, the repository keeps its service and rule (detached), deployments untouched; again -> 404', async () => {
+      const deployment = (await harness.pool.query(
+        `INSERT INTO deployments (service_id, environment, aws_region, status, deployed_by, organization_id)
+         VALUES ($1, 'production', 'us-east-1', 'success', 'd8b-test', $2) RETURNING id::text AS id`, [serviceA, A.orgId])).rows[0].id;
+      try {
+        const res = await harness.sendAs(A.orgId, A.admin, 'DELETE', `/integrations/github/installations/${instA}`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ success: true, data: { disconnected: true, repositories: 1 } });
+        expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_installations WHERE installation_id = $1', [instA])).rows[0].n).toBe(0);
+        const repo = (await harness.pool.query('SELECT installation_id, service_id::text AS service_id, deploy_rule FROM pipeline_repositories WHERE id = $1', [repoA])).rows[0];
+        expect(repo).toEqual({ installation_id: null, service_id: serviceA, deploy_rule: { v: 1, mode: 'none' } });
+        expect((await harness.pool.query('SELECT count(*)::int AS n FROM deployments WHERE id = $1', [deployment])).rows[0].n).toBe(1);
+        // B's installation is not affected.
+        expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_installations WHERE installation_id = $1', [instB])).rows[0].n).toBe(1);
+        expect((await harness.sendAs(A.orgId, A.owner, 'DELETE', `/integrations/github/installations/${instA}`)).status).toBe(404);
+        const after = (await (await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github')).json()).data;
+        expect(after.installations).toEqual([]);
+      } finally {
+        await harness.pool.query('DELETE FROM deployments WHERE id = $1', [deployment]);
+      }
+    });
+  });
+
   it('jobs seen: a viewer reads its own repository\'s completed jobs (30 days, distinct); another organization\'s repository -> 404', async () => {
     const repoIdOf = async (id: string) => (await harness.pool.query('SELECT github_repo_id FROM pipeline_repositories WHERE id = $1', [id])).rows[0].github_repo_id;
     const seed = async (org: string, repo: string, job: string, branch: string, daysAgo: number) => harness.pool.query(

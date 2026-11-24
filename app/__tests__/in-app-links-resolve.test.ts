@@ -22,10 +22,6 @@ const KNOWN_DEAD: Record<string, { link: string; owner: string }> = {
   'app/(app)/admin/monitoring/page.tsx:544': { link: '/settings/monitoring', owner: 'legacy /admin/monitoring, flag off (C3-D12)' },
   'app/(app)/admin/monitoring/page.tsx:557': { link: '/settings/monitoring', owner: 'legacy /admin/monitoring, flag off (C3-D12)' },
   'app/(app)/admin/monitoring/page.tsx:739': { link: '/settings/monitoring', owner: 'legacy /admin/monitoring, flag off (C3-D12)' },
-  'components/dashboard/risk-score-trend-chart.tsx:91': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
-  'components/deployments/DeploymentIntegrations.tsx:116': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
-  'components/deployments/DeploymentIntegrations.tsx:132': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
-  'components/deployments/DeploymentSetupChecklist.tsx:46': { link: '/settings/integrations', owner: 'unrendered file, CAT-2 / CAT-D10' },
 }
 
 function walk(dir: string, keep: (f: string) => boolean, out: string[] = []): string[] {

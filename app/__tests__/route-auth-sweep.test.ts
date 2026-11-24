@@ -16,6 +16,8 @@ const APP_DIR = join(__dirname, "..");
 const PUBLIC_ROUTES = [
   // (auth)
   "/accept-invitation",
+  // D8b-1: GitHub's install callback; it signs no one in and calls no API (the GitHub page claims).
+  "/auth/github/callback",
   "/auth/sso/callback",
   "/forgot-password",
   "/login",

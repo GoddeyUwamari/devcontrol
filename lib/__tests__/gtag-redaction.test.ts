@@ -19,6 +19,7 @@ describe("gaPageLocation", () => {
     "/verify-email",
     "/accept-invitation",
     "/auth/sso/callback",
+    "/auth/github/callback",
     "/billing/success",
   ])("%s keeps origin and path only", (path) => {
     for (const suffix of [
@@ -38,8 +39,14 @@ describe("gaPageLocation", () => {
     ["/LOGIN", "/LOGIN"],
     ["/reset-password/extra", "/reset-password/extra"],
     ["/auth/sso/callback/", "/auth/sso/callback/"],
+    ["/auth/github/callback/", "/auth/github/callback/"],
   ])("%s (trailing slash, case, sub-path) is still treated as sensitive", (path, expected) => {
     expect(gaPageLocation(`${ORIGIN}${path}?token=${SECRET}&utm_source=x`)).toBe(`${ORIGIN}${expected}`);
+  });
+
+  it("/auth/github/callback (D8b-1 fix N-2): GitHub's code, state, installation id and setup action never reach analytics, even beside a utm param", () => {
+    const query = `?code=${SECRET}&installation_id=41234567&setup_action=install&state=${SECRET}&utm_source=x`;
+    expect(gaPageLocation(`${ORIGIN}/auth/github/callback${query}`)).toBe(`${ORIGIN}/auth/github/callback`);
   });
 
   it("a path that only starts with the same letters is not sensitive", () => {

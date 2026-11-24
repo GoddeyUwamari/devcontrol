@@ -10,11 +10,13 @@ import { claimInstallation, ClaimDeps, retryClaim, startInstall } from '../claim
 import { GitHubAppClient, GitHubClientError, GitHubInstallationDetails } from '../client';
 import { ingestDelivery } from '../ingest';
 import { processEvent } from '../process';
-import { holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
+import { disconnectInstallation, holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
+import { ConnectionSource, withOrgTransaction } from '../db';
 import { normalizeDelivery } from '../normalize';
 import { createFixtures, enabledConfig, CLIENT_SECRET, WEBHOOK_SECRET } from './fixtures/db';
 import { installationCreated, installationEvent, signedDelivery, uniqueId, workflowJobCompleted } from './fixtures/payloads';
 import { EXPECTED_PERMISSIONS } from '../permissions';
+import { deployRuleBody, storedDeployRule } from '../deploy-rule';
 
 const fx = createFixtures('d8a-claim');
 const logs: string[] = [];
@@ -333,6 +335,46 @@ describe('claim', () => {
     }
   });
 
+  it('D8b disconnect: repositories keep their service and rule, events stay, deliveries are held again; another organization cannot disconnect it; a new claim re-links', async () => {
+    const inst = fx.installationId();
+    const repoId = uniqueId();
+    await deliver('installation', installationCreated(inst, INSTALLER, [{ id: repoId, full_name: 'acme/kept-repo' }]));
+    const f = { githubUserId: INSTALLER, accessible: [inst], repos: [{ id: repoId, fullName: 'acme/kept-repo' }] };
+    const first = await claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, deps(f));
+    expect(first.body.data).toMatchObject({ status: 'connected', repositories: 1 });
+    const serviceId = await fx.service(orgA, `kept-${inst}`);
+    const rule = { v: 1, mode: 'none' };
+    await fx.admin.query('UPDATE pipeline_repositories SET service_id = $1, deploy_rule = $2::jsonb WHERE organization_id = $3 AND github_repo_id = $4',
+      [serviceId, JSON.stringify(rule), orgA, repoId]);
+    const eventsBefore = (await fx.admin.query('SELECT count(*)::int AS n FROM pipeline_events WHERE installation_id = $1', [inst])).rows[0].n;
+    expect(eventsBefore).toBeGreaterThan(0);
+    const repoRow = async () => (await fx.admin.query(
+      'SELECT installation_id::text AS installation_id, service_id::text AS service_id, deploy_rule FROM pipeline_repositories WHERE organization_id = $1 AND github_repo_id = $2',
+      [orgA, repoId])).rows;
+
+    // Another organization, through RLS as devcontrol: nothing to disconnect, A unchanged.
+    expect(await withOrgTransaction(fx.app, orgB, (c) => disconnectInstallation(c, orgB, inst))).toBeNull();
+    expect(await owner(inst)).toEqual([{ org: orgA }]);
+    expect(await repoRow()).toEqual([{ installation_id: String(inst), service_id: serviceId, deploy_rule: rule }]);
+
+    // A disconnects.
+    expect(await withOrgTransaction(fx.app, orgA, (c) => disconnectInstallation(c, orgA, inst))).toEqual({ repositories: 1 });
+    expect(await owner(inst)).toEqual([]);
+    expect(await repoRow()).toEqual([{ installation_id: null, service_id: serviceId, deploy_rule: rule }]);
+    expect((await fx.admin.query('SELECT count(*)::int AS n FROM pipeline_events WHERE installation_id = $1', [inst])).rows[0].n).toBe(eventsBefore);
+    // Again: already gone.
+    expect(await withOrgTransaction(fx.app, orgA, (c) => disconnectInstallation(c, orgA, inst))).toBeNull();
+    // GitHub still sends: the delivery is held (no organization), not stored for A.
+    expect((await deliver('workflow_job', workflowJobCompleted(inst, repoId))).status).toBe(202);
+    expect((await fx.admin.query('SELECT count(*)::int AS n FROM pipeline_events WHERE installation_id = $1', [inst])).rows[0].n).toBe(eventsBefore);
+
+    // Connecting again: the installer proof still holds (installation.created is kept in pipeline_events),
+    // and the repository is re-linked with its service and rule.
+    const again = await claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, deps(f));
+    expect(again.body.data).toMatchObject({ status: 'connected', repositories: 1, released_events: 1 });
+    expect(await repoRow()).toEqual([{ installation_id: String(inst), service_id: serviceId, deploy_rule: rule }]);
+  });
+
   it('no token, OAuth code, state, secret or GitHub body in any claim log line', async () => {
     const inst = fx.installationId();
     await deliver('installation', installationCreated(inst, INSTALLER));
@@ -343,5 +385,141 @@ describe('claim', () => {
     const all = logs.join('\n');
     expect(logs.some((l) => l.includes('outcome=connected'))).toBe(true);
     for (const forbidden of [USER_TOKEN, CODE, state, CLIENT_SECRET, WEBHOOK_SECRET]) expect(all).not.toContain(forbidden);
+  });
+});
+
+/**
+ * D8b-1 fix S-1: a webhook stored for the organization while its disconnect
+ * is under way (or just committed) is held, never failed: processing locks
+ * the claim (FOR KEY SHARE) against the disconnect's FOR UPDATE, finds it
+ * gone, and leaves the event pending / installation_not_claimed. The
+ * organization's next claim within 7 days records it; after 7 days it ends
+ * ignored / hold_expired, as a held delivery that old is purged.
+ */
+describe('D8b-1 fix S-1: an event in flight while its installation is disconnected', () => {
+  const JOB_RULE = storedDeployRule(deployRuleBody.parse({ mode: 'job', workflow_name: 'CI', job_name: 'deploy-backend' }));
+
+  beforeAll(() => fx.grantDeploymentWrites());
+
+  /** A's installation, claimed, its repository mapped to a service with a job rule (so a deploy job records a deployment). */
+  async function connected(label: string) {
+    const inst = fx.installationId();
+    const repoId = uniqueId();
+    await deliver('installation', installationCreated(inst, INSTALLER, [{ id: repoId, full_name: `acme/${label}` }]));
+    const f = { githubUserId: INSTALLER, accessible: [inst], repos: [{ id: repoId, fullName: `acme/${label}` }] };
+    const claimed = await claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, deps(f));
+    expect(claimed.body.data).toMatchObject({ status: 'connected' });
+    const serviceId = await fx.service(orgA, `${label}-${inst}`);
+    await fx.admin.query('UPDATE pipeline_repositories SET service_id = $1, deploy_rule = $2::jsonb WHERE organization_id = $3 AND github_repo_id = $4',
+      [serviceId, JSON.stringify(JOB_RULE), orgA, repoId]);
+    return { inst, repoId, f, serviceId };
+  }
+
+  /** A deploy job newer than anything the repository has seen, so processing re-points the repository at the installation. */
+  const newerJob = (inst: number, repoId: number) => workflowJobCompleted(inst, repoId, { completedAt: new Date(Date.now() + 60_000).toISOString() });
+
+  const jobEvents = async (inst: number) => (await fx.admin.query(
+    `SELECT organization_id::text AS org, processing_status AS status, processing_reason AS reason, processed_at IS NULL AS unprocessed,
+            deployment_id IS NOT NULL AS recorded
+       FROM pipeline_events WHERE installation_id = $1 AND event = 'workflow_job'`, [inst])).rows;
+  const deploymentsFor = async (serviceId: string) =>
+    (await fx.admin.query('SELECT count(*)::int AS n FROM deployments WHERE organization_id = $1 AND service_id = $2', [orgA, serviceId])).rows[0].n;
+  const linkedTo = async (repoId: number) => (await fx.admin.query(
+    'SELECT installation_id::text AS installation_id FROM pipeline_repositories WHERE organization_id = $1 AND github_repo_id = $2', [orgA, repoId])).rows[0].installation_id;
+
+  const deliverWith = (source: ConnectionSource, event: string, payload: unknown) => {
+    const d = signedDelivery(event, payload, WEBHOOK_SECRET);
+    return ingestDelivery({ rawBody: d.rawBody, headers: d.headers }, { ...ingestDeps, source });
+  };
+
+  async function reclaim(c: Awaited<ReturnType<typeof connected>>) {
+    return claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, c.f), code: CODE, installationId: c.inst }, deps(c.f));
+  }
+
+  // orgA is set in beforeAll, so this is read at run time.
+  const heldEvent = () => ({ org: orgA, status: 'pending', reason: 'installation_not_claimed', unprocessed: true, recorded: false });
+
+  it('disconnect under way: processing waits for it, then holds the event (never failed db_23503); connecting again records it', async () => {
+    const c = await connected('race-under-way');
+    // The disconnect runs first and stays open: claim locked FOR UPDATE, repository detached, claim deleted, not committed.
+    const side = await fx.app.connect();
+    let delivery: Promise<{ status: number }> | null = null;
+    try {
+      await side.query("SELECT set_config('app.current_organization_id', $1, false)", [orgA]);
+      const pid = (await side.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number;
+      await side.query('BEGIN');
+      expect(await disconnectInstallation(side, orgA, c.inst)).toEqual({ repositories: 1 });
+
+      // The delivery still resolves A (the delete is not committed), stores the event, and its processing blocks on the disconnect.
+      delivery = deliverWith(fx.app, 'workflow_job', newerJob(c.inst, c.repoId));
+      const deadline = Date.now() + 60_000;
+      for (;;) {
+        const waiting = (await fx.admin.query('SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [pid])).rows[0].n;
+        if (waiting > 0) break;
+        if (Date.now() > deadline) throw new Error('the delivery never waited for the disconnect');
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(await jobEvents(c.inst)).toEqual([{ ...heldEvent(), reason: null }]);
+      await side.query('COMMIT');
+    } catch (error) {
+      await side.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      side.release();
+    }
+
+    expect((await delivery!).status).toBe(200);
+    expect(await jobEvents(c.inst)).toEqual([heldEvent()]);
+    expect(await deploymentsFor(c.serviceId)).toBe(0);
+    expect(await linkedTo(c.repoId)).toBeNull();
+
+    const again = await reclaim(c);
+    expect(again.body.data).toMatchObject({ status: 'connected' });
+    expect(await jobEvents(c.inst)).toEqual([{ org: orgA, status: 'processed', reason: null, unprocessed: false, recorded: true }]);
+    expect(await deploymentsFor(c.serviceId)).toBe(1);
+    expect(await linkedTo(c.repoId)).toBe(String(c.inst));
+  });
+
+  it('disconnect committed between storing and processing: the event is held; connecting again records it', async () => {
+    const c = await connected('race-committed');
+    // ingest's third connection is the processing one: the disconnect commits just before it.
+    let connects = 0;
+    const source: ConnectionSource = {
+      connect: async () => {
+        connects += 1;
+        if (connects === 3) {
+          expect(await jobEvents(c.inst)).toHaveLength(1);
+          expect(await withOrgTransaction(fx.app, orgA, (cl) => disconnectInstallation(cl, orgA, c.inst))).toEqual({ repositories: 1 });
+        }
+        return fx.app.connect();
+      },
+    };
+    expect((await deliverWith(source, 'workflow_job', newerJob(c.inst, c.repoId))).status).toBe(200);
+    expect(connects).toBeGreaterThanOrEqual(3);
+    expect(await jobEvents(c.inst)).toEqual([heldEvent()]);
+    expect(await deploymentsFor(c.serviceId)).toBe(0);
+
+    expect((await reclaim(c)).body.data).toMatchObject({ status: 'connected' });
+    expect(await jobEvents(c.inst)).toEqual([{ org: orgA, status: 'processed', reason: null, unprocessed: false, recorded: true }]);
+    expect(await deploymentsFor(c.serviceId)).toBe(1);
+  });
+
+  it('held longer than 7 days: connecting again does not record it (ignored / hold_expired), like a purged held delivery', async () => {
+    const c = await connected('race-expired');
+    let connects = 0;
+    const source: ConnectionSource = {
+      connect: async () => {
+        connects += 1;
+        if (connects === 3) await withOrgTransaction(fx.app, orgA, (cl) => disconnectInstallation(cl, orgA, c.inst));
+        return fx.app.connect();
+      },
+    };
+    expect((await deliverWith(source, 'workflow_job', newerJob(c.inst, c.repoId))).status).toBe(200);
+    expect(await jobEvents(c.inst)).toEqual([heldEvent()]);
+    await fx.admin.query(`UPDATE pipeline_events SET received_at = NOW() - interval '7 days 1 minute' WHERE installation_id = $1 AND event = 'workflow_job'`, [c.inst]);
+
+    expect((await reclaim(c)).body.data).toMatchObject({ status: 'connected' });
+    expect(await jobEvents(c.inst)).toEqual([{ org: orgA, status: 'ignored', reason: 'hold_expired', unprocessed: false, recorded: false }]);
+    expect(await deploymentsFor(c.serviceId)).toBe(0);
   });
 });

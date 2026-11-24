@@ -256,6 +256,12 @@ const STRICT = [
   ...SM,
   // DEVOPS: DORA, Deployments and Dependencies.
   ...DEVOPS,
+  // D8b-1: the Integrations index, the GitHub page and their shared parts (the callback is a sign-in page).
+  'components/integrations/parts.tsx',
+  'app/(app)/settings/integrations/page.tsx',
+  'app/(app)/settings/integrations/github/page.tsx',
+  'app/(app)/settings/integrations/github/_components/Connected.tsx',
+  'app/(app)/settings/integrations/github/_components/NotConnected.tsx',
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.
