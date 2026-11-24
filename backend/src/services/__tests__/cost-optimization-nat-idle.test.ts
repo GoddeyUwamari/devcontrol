@@ -582,6 +582,19 @@ describe('idle NAT gateways: pricing per region, never another region\'s', () =>
     expect(finding.severity).toBe('LOW');
   });
 
+  it.each([
+    ['ProvisionTime only', { ProvisionTime: OLD }],
+    ['RequestTime only', { RequestTime: OLD }],
+    ['both times, no string field', { ProvisionTime: OLD, RequestTime: OLD }],
+  ])('provisioned bandwidth set only by date fields (%s): still no dollar estimate (review N-1)', async (_label, provisioned) => {
+    const { result } = await detect([gateway('nat-placeholder-a', { ProvisionedBandwidth: provisioned })]);
+    const [finding] = result.issues;
+    expect(finding.potentialSavings).toBe(0);
+    expect(finding.metadata.savings_basis).toBeUndefined();
+    expect(finding.metadata.savings_note).toBe('provisioned_bandwidth');
+    expect(finding.severity).toBe('LOW');
+  });
+
   it('an empty provisioned-bandwidth object carries no setting and does not block the estimate', async () => {
     const { result } = await detect([gateway('nat-placeholder-a', { ProvisionedBandwidth: {} })]);
     expect(result.issues[0].potentialSavings).toBe(32.85);
@@ -623,6 +636,89 @@ describe('idle NAT gateways: listing', () => {
     expect(result).toMatchObject({ success: true, issues: [], unknownResourceIds: [] });
     expect(ec2.count('DescribeRouteTablesCommand')).toBe(0);
     expect(cloudWatch.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('idle NAT gateways: GetMetricData request and page boundaries (review N-3)', () => {
+  const CHUNK = 500; // AWS: at most 500 MetricDataQueries per GetMetricData request
+  const PAGE_2 = 'cw-page-2';
+
+  /** One gateway's series split over two GetMetricData pages: hours [0, split) on page 1 (PartialData + NextToken), the rest on page 2. */
+  function pagedNatCloudWatch(split: number, options: { busy?: { metric: MetricName; hour: number }; omitOnPage2?: MetricName; page2Throws?: boolean } = {}) {
+    return fakeClient((command: any) => {
+      const page2 = command.input.NextToken === PAGE_2;
+      if (page2 && options.page2Throws) throw new Error('page 2 lost');
+      const [from, to] = page2 ? [split, NAT_IDLE_HOURS_REQUIRED] : [0, split];
+      const results = (command.input.MetricDataQueries as any[])
+        .filter((q) => !(page2 && q.MetricStat.Metric.MetricName === options.omitOnPage2))
+        .map((q) => {
+          const metric = q.MetricStat.Metric.MetricName as MetricName;
+          const raw = hourly((h) => (h < from || h >= to ? null : options.busy?.metric === metric && options.busy.hour === h ? 1 : 0));
+          return { Id: q.Id, Label: metric, Timestamps: raw.Timestamps, Values: raw.Values, StatusCode: page2 ? 'Complete' : 'PartialData' };
+        });
+      return page2 ? { MetricDataResults: results } : { MetricDataResults: results, NextToken: PAGE_2 };
+    });
+  }
+  const detectPaged = (cloudWatch: ReturnType<typeof fakeClient>) =>
+    service.detectIdleNatGateways({ ec2: fakeNatEc2([gateway('nat-placeholder-paged')]), cloudWatch }, 'us-east-1', NOW);
+
+  it('a series split over two pages is read whole: 400 + 368 zero hours make the gateway idle', async () => {
+    const cloudWatch = pagedNatCloudWatch(400);
+    const result = await detectPaged(cloudWatch);
+    expect(ids(result)).toEqual(['nat-placeholder-paged']);
+    expect(cloudWatch.send.mock.calls.map(([c]: any[]) => c.input.NextToken)).toEqual([undefined, PAGE_2]);
+  });
+
+  it('activity only on the second page is still activity: not idle', async () => {
+    const result = await detectPaged(pagedNatCloudWatch(400, { busy: { metric: 'BytesInFromDestination', hour: 767 } }));
+    expect(ids(result)).toEqual([]);
+    expect(result.natIdle.not_flagged.bytes_from_destination).toBe(1);
+  });
+
+  it('a second page missing one metric (last page PartialData): couldn\'t check, never idle', async () => {
+    const result = await detectPaged(pagedNatCloudWatch(400, { omitOnPage2: 'PacketsInFromSource' }));
+    expect(ids(result)).toEqual([]);
+    expect(result.unknownResourceIds).toEqual(['nat-placeholder-paged']);
+    expect(result.natIdle.couldnt_check.cloudwatch_failed).toBe(1);
+  });
+
+  it('a second page that fails outright: couldn\'t check, never idle on page 1 alone', async () => {
+    const result = await detectPaged(pagedNatCloudWatch(400, { page2Throws: true }));
+    expect(ids(result)).toEqual([]);
+    expect(result.unknownResourceIds).toEqual(['nat-placeholder-paged']);
+    expect(result.natIdle.couldnt_check.cloudwatch_failed).toBe(1);
+  });
+
+  // 101 gateways x 5 metrics = 505 queries: gateways 0..99 fill request 1 (500), gateway 100 is alone in request 2.
+  const many = Array.from({ length: 101 }, (_, i) => gateway(`nat-placeholder-chunk-${i}`));
+  const lastId = 'nat-placeholder-chunk-100';
+  const gatewaysIn = (command: any) => [...new Set((command.input.MetricDataQueries as any[]).map((q) => q.MetricStat.Metric.Dimensions[0].Value))];
+
+  it('101 gateways cross the 500-query request boundary: each verdict comes from its own request', async () => {
+    const cloudWatch = fakeNatCloudWatch({ [lastId]: { values: { ActiveConnectionCount: (h) => (h === 0 ? 1 : 0) } } });
+    const result = await service.detectIdleNatGateways({ ec2: fakeNatEc2(many), cloudWatch }, 'us-east-1', NOW);
+    const requests = cloudWatch.send.mock.calls.map(([c]: any[]) => c);
+    expect(requests.map((c: any) => c.input.MetricDataQueries.length)).toEqual([CHUNK, 5]);
+    expect(gatewaysIn(requests[1])).toEqual([lastId]);
+    // The 100 idle gateways in request 1 are flagged; the busy one in request 2 is not.
+    expect(ids(result)).toHaveLength(100);
+    expect(ids(result)).not.toContain(lastId);
+    expect(result.natIdle.not_flagged.active_connections).toBe(1);
+    expect(result.unknownResourceIds).toEqual([]);
+  });
+
+  it('a failed second request leaves only its gateway couldn\'t check; request 1\'s verdicts stand', async () => {
+    const inner = fakeNatCloudWatch({});
+    const cloudWatch = fakeClient((command: any) => {
+      if (gatewaysIn(command).includes(lastId)) throw new Error('request 2 lost');
+      return inner.send(command);
+    });
+    const result = await service.detectIdleNatGateways({ ec2: fakeNatEc2(many), cloudWatch }, 'us-east-1', NOW);
+    expect(cloudWatch.send).toHaveBeenCalledTimes(2);
+    expect(ids(result)).toHaveLength(100);
+    expect(ids(result)).not.toContain(lastId);
+    expect(result.unknownResourceIds).toEqual([lastId]);
+    expect(result.natIdle.couldnt_check.cloudwatch_failed).toBe(1);
   });
 });
 

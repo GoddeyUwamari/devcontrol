@@ -87,6 +87,27 @@ function hidden(): HiddenFindings {
   } as unknown as HiddenFindings
 }
 
+/**
+ * The empty state's icon (founder ruling 2): the neutral clock when any resource couldn't be fully checked, the
+ * green all-clear tick only when nothing was unchecked. lucide-react names each svg by icon (CheckCircle2 renders
+ * as lucide-circle-check), so the page needs no test id for this.
+ */
+function expectEmptyStateIcon(card: HTMLElement, icon: 'neutral' | 'all-clear') {
+  const clock = card.querySelector('svg.lucide-clock')
+  const tick = card.querySelector('svg.lucide-circle-check')
+  if (icon === 'neutral') {
+    expect(clock).not.toBeNull()
+    expect(clock).toHaveClass('text-ink-muted')
+    expect(tick).toBeNull()
+    // No green icon of any kind beside "couldn't be fully checked".
+    expect(card.querySelectorAll('svg.text-green-700')).toHaveLength(0)
+  } else {
+    expect(tick).not.toBeNull()
+    expect(tick).toHaveClass('text-green-700')
+    expect(clock).toBeNull()
+  }
+}
+
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={queryClient}><CostOptimizationPage /></QueryClientProvider>)
@@ -122,6 +143,8 @@ describe('C2: coverage comes from the registry', () => {
 
     // Every check ran and nothing was unchecked: the all-clear body is true here.
     expect(await screen.findByTestId('empty-all-checks-body')).toHaveTextContent(/^Your resources passed all 12 active checks in the last analysis\./)
+    // ...and so is the green all-clear tick (no neutral clock).
+    expectEmptyStateIcon(screen.getByTestId('empty-all-checks'), 'all-clear')
   })
 })
 
@@ -167,6 +190,8 @@ describe('C2: idle NAT gateway findings on the page', () => {
     const card = await screen.findByTestId('empty-all-checks')
     expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 1 resource couldn't be fully checked\. DevControl runs the checks again on a schedule and lists anything new here\.$/)
     expect(card.textContent).not.toMatch(/passed all/)
+    // ...and no all-clear tick beside it: the neutral clock instead (review S-1).
+    expectEmptyStateIcon(card, 'neutral')
   })
 
   it('the unchecked count is the run record\'s, across every check (plural)', async () => {
@@ -178,5 +203,6 @@ describe('C2: idle NAT gateway findings on the page', () => {
     renderPage()
     const card = await screen.findByTestId('empty-all-checks')
     expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 3 resources couldn't be fully checked\. DevControl runs the checks again on a schedule and lists anything new here\.$/)
+    expectEmptyStateIcon(card, 'neutral')
   })
 })
