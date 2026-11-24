@@ -2,13 +2,17 @@
  * C2: idle NAT gateways on Cost Optimization, with the rule catalog served
  * exactly as GET /api/cost-recommendations/optimization-rules builds it from
  * backend/src/config/optimization-rules.ts, so the coverage numbers come from
- * the registry itself: 12 of 34 checks across 7 services, the NAT Gateway pill,
- * the check listed and explained, the data-processing check still planned.
+ * the registry itself: "AWS cost optimization · 12 active checks" across
+ * EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway (the catalog's total is
+ * never shown: scan result banner PR), the check listed and explained, the
+ * data-processing check still planned.
  *
  * And the rows: an idle NAT gateway finding ($32.85) reads "$33/mo" (the page
  * shows whole dollars; an estimate, never "Up to") under the NAT Gateway chip and counts in the firm savings
  * total; one with no price for its region reads "No dollar estimate"; a run
- * where the NAT check could not check a gateway says so and flags nothing.
+ * where the NAT check could not check a gateway says so on the Last analysis
+ * line, flags nothing, and its empty state never claims "passed all N active
+ * checks" (founder ruling 2).
  * Real page and real React Query, mocked services, placeholder data only.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -32,6 +36,9 @@ vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'member' 
 const svc = vi.hoisted(() => ({ getAll: vi.fn(), getStats: vi.fn(), getAnalysisRuns: vi.fn(), getHidden: vi.fn(), getOptimizationRules: vi.fn() }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: () => svc.getAll(),
     getStats: () => svc.getStats(),
     getOptimizationRules: () => svc.getOptimizationRules(),
@@ -95,11 +102,12 @@ beforeEach(() => {
 })
 
 describe('C2: coverage comes from the registry', () => {
-  it('12 of 34 checks across 7 services; NAT Gateway pill; idle NAT gateways listed and explained; data processing still planned', async () => {
-    renderPage()
-    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent('12 of 34 checks · 7 services'))
-    expect(screen.getByTestId('checks-summary-line')).toHaveTextContent(/^12 of 34 checks active · 7 services/)
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent('12 of 34 checks active across 7 AWS services.')
+  it('12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway; idle NAT gateways listed and explained; data processing still planned', async () => {
+    const { container } = renderPage()
+    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway$/)
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway\.$/)
+    expect(container.textContent).not.toMatch(/\b34\b|of 34/)
     expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway'])
 
     const names = within(screen.getByTestId('check-names')).getAllByRole('listitem').map((li) => li.textContent)
@@ -112,7 +120,8 @@ describe('C2: coverage comes from the registry', () => {
     expect(planned.getByText(/NAT Gateway — Unnecessary data processing/)).toBeInTheDocument()
     expect(planned.queryByText(/Idle NAT gateways/)).not.toBeInTheDocument()
 
-    await waitFor(() => expect(screen.getByTestId('scan-status-subline')).toHaveTextContent('all 12 active checks ran'))
+    // Every check ran and nothing was unchecked: the all-clear body is true here.
+    expect(await screen.findByTestId('empty-all-checks-body')).toHaveTextContent(/^Your resources passed all 12 active checks in the last analysis\./)
   })
 })
 
@@ -152,7 +161,22 @@ describe('C2: idle NAT gateway findings on the page', () => {
       detected_count: 0, unknown_resource_count: 1,
     })])
     renderPage()
-    await waitFor(() => expect(screen.getByTestId('scan-status-banner')).toHaveTextContent("Nothing was flagged, but 1 resource couldn't be fully checked."))
+    await waitFor(() => expect(screen.getByTestId('last-analysis-problem')).toHaveTextContent("· 1 resource couldn't be fully checked"))
     expect(screen.queryByTestId('opportunity-card')).not.toBeInTheDocument()
+    // Founder ruling 2: never "passed all N active checks" when a resource couldn't be fully checked; the count is the run record's.
+    const card = await screen.findByTestId('empty-all-checks')
+    expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 1 resource couldn't be fully checked\.$/)
+    expect(card.textContent).not.toMatch(/passed all/)
+  })
+
+  it('the unchecked count is the run record\'s, across every check (plural)', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([run({
+      source: 'discovery',
+      checks: CHECKS.map((c) => (c.rule_id === 'nat_gateway_idle' ? { ...c, unknown: 2 } : c.rule_id === 'rds_idle' ? { ...c, unknown: 1 } : c)),
+      detected_count: 0, unknown_resource_count: 3,
+    })])
+    renderPage()
+    const card = await screen.findByTestId('empty-all-checks')
+    expect(within(card).getByTestId('empty-all-checks-body')).toHaveTextContent(/^No opportunities found in the resources DevControl could check\. 3 resources couldn't be fully checked\.$/)
   })
 })

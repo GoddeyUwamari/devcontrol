@@ -83,6 +83,7 @@ import {
   coverageLine,
   found,
   noFilterMatches,
+  nothingFoundSomeUncheckedBody,
   nothingToActOnBody,
   opportunitiesHeading,
   plannedToggle,
@@ -833,9 +834,15 @@ export default function CostOptimizationPage() {
                     // The run completed every check and found nothing new (founder ruling 5). Still-detected
                     // findings show below it, in their own group.
                     <div data-testid="empty-all-checks">
-                      <CheckCircle2 size={28} className="text-green-700 mb-3" aria-hidden="true" />
+                      {/* Some resources couldn't be fully checked (run record unknown_resource_count): never "passed all
+                          N checks", and no all-clear tick (C2, founder ruling 2). */}
+                      {runCounts.unknown > 0
+                        ? <Clock size={28} className="text-ink-muted mb-3" aria-hidden="true" />
+                        : <CheckCircle2 size={28} className="text-green-700 mb-3" aria-hidden="true" />}
                       <h2 className="text-ui font-semibold text-slate-900 mb-2">{NOTHING_TO_ACT_ON}</h2>
-                      <p className="text-ui text-ink-muted">{nothingToActOnBody(runCounts.checksTotal)}</p>
+                      <p className="text-ui text-ink-muted" data-testid="empty-all-checks-body">
+                        {runCounts.unknown > 0 ? nothingFoundSomeUncheckedBody(runCounts.unknown) : nothingToActOnBody(runCounts.checksTotal)}
+                      </p>
                       <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3">
                         {catalogLoaded && (
                           <a href={`#${CHECKS_ANCHOR}`} onClick={openChecks} className="inline-flex min-h-11 items-center text-ui font-semibold text-violet-700 hover:text-violet-800">

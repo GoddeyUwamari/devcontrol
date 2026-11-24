@@ -229,10 +229,10 @@ describe('service display names', () => {
     );
   });
 
-  it('the active services today are EC2 · EBS · RDS · S3 · Lambda · DynamoDB (11 active checks)', () => {
+  it('the active services today are EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway (12 active checks, C2)', () => {
     const summary = getOptimizationRuleSummary();
-    expect(summary.implementedCount).toBe(11);
-    expect(summary.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB']);
+    expect(summary.implementedCount).toBe(12);
+    expect(summary.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway']);
   });
 
   it('adding a rule increments the active count and adds its service (computed, not stored)', () => {
@@ -241,7 +241,7 @@ describe('service display names', () => {
     try {
       const after = getOptimizationRuleSummary();
       expect(after.implementedCount).toBe(before.implementedCount + 1);
-      expect(after.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'ECS']);
+      expect(after.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway', 'ECS']);
     } finally {
       OPTIMIZATION_RULES.pop();
     }

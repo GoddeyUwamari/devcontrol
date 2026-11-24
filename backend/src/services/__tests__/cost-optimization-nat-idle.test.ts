@@ -23,6 +23,7 @@ import { natIdleWindow, NAT_IDLE_HOURS_REQUIRED } from '../nat-gateway-idle-eval
 import { NAT_GATEWAY_IDLE_RULE } from '../../config/nat-gateway-idle-rule';
 import { ISSUE_NAT_GATEWAY_IDLE } from '../../config/optimization-rules';
 import { classifySavingsBasis } from '../estimated-savings';
+import { summarizeDetectors } from '../cost-analysis-outcome';
 import { fakeClient, accessDenied } from './helpers/low-activity-aws';
 
 const service = costOptimizationService as any;
@@ -588,15 +589,20 @@ describe('idle NAT gateways: pricing per region, never another region\'s', () =>
 });
 
 describe('idle NAT gateways: listing', () => {
-  it('a failed DescribeNatGateways (permission denied) fails the category: no finding, rows untouched', async () => {
+  it('a failed DescribeNatGateways (permission denied) fails the category: no finding, rows untouched, classed as permissions', async () => {
     const { result } = await detect(accessDenied());
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'permissions' });
   });
 
-  it('an incomplete listing (page limit) fails the category', async () => {
+  it('a throttled DescribeNatGateways is classed rate_limited', async () => {
+    const { result } = await detect(Object.assign(new Error('slow down'), { name: 'ThrottlingException' }));
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'rate_limited' });
+  });
+
+  it('an incomplete listing (page limit) fails the category, classed too_many_resources', async () => {
     const ec2 = fakeClient(() => ({ NatGateways: [gateway('nat-placeholder-a')], NextToken: 'always-more' }));
     const result = await service.detectIdleNatGateways({ ec2, cloudWatch: fakeNatCloudWatch({}) }, 'us-east-1', NOW);
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'too_many_resources' });
   });
 
   it('reads every page (MaxResults 1000), passing the token on; page 2 data takes effect', async () => {
@@ -676,6 +682,29 @@ describe('C2 wiring in analyzeAllResources', () => {
     expect(analysis.observations.find((o) => o.issue === ISSUE_NAT_GATEWAY_IDLE)).toEqual({
       issue: ISSUE_NAT_GATEWAY_IDLE, success: true, recommendations: [], unknownResourceIds: ['nat-placeholder-a'], endActiveForUnknown: true, natIdle: natCounts,
     });
+  });
+
+  it('a failed NAT check carries its failure class to the run record (failure_reason, never error text)', async () => {
+    const clients = { enabled: true, region: 'eu-west-1', ec2: {}, rds: {}, s3: {}, lambda: {}, cloudWatch: {}, backup: {} };
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clients as any);
+    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockResolvedValue({ ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' } as any);
+    for (const detector of [
+      'detectLowActivityEC2Instances', 'detectUnusedElasticIPs', 'detectUnattachedEBSVolumes', 'detectGp2ToGp3Migrations',
+      'detectS3LifecycleOptimization', 'detectLowUsageLambdaFunctions', 'detectDynamoDBCapacityOptimization',
+      'detectDynamoDBOnDemandVsProvisionedOptimization', 'detectReservedInstanceOpportunities', 'detectIdleRDSInstances', 'detectOldEBSSnapshots',
+    ]) {
+      jest.spyOn(service, detector).mockResolvedValue({ success: true, issues: [] });
+    }
+    const real = service.detectIdleNatGateways.bind(service);
+    jest.spyOn(service, 'detectIdleNatGateways').mockImplementation((_clients: any, region: any) =>
+      real({ ec2: fakeNatEc2(accessDenied()), cloudWatch: fakeNatCloudWatch({}) }, region, NOW));
+
+    const analysis = await costOptimizationService.analyzeAllResources('org-c2-wiring');
+    const observation = analysis.observations.find((o) => o.issue === ISSUE_NAT_GATEWAY_IDLE)!;
+    expect(observation).toMatchObject({ success: false, failureReason: 'permissions', recommendations: [] });
+    const check = summarizeDetectors(analysis.observations, true, []).checks.find((c) => c.issue === ISSUE_NAT_GATEWAY_IDLE)!;
+    expect(check).toMatchObject({ rule_id: 'nat_gateway_idle', outcome: 'failed', failure_reason: 'permissions' });
+    expect(check).not.toHaveProperty('nat_idle');
   });
 
   it('a finding is passed to reconciliation with its region, resource type, id and estimate', async () => {
