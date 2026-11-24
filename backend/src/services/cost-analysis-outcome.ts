@@ -28,7 +28,8 @@ export type CheckFailureReason = 'permissions' | 'rate_limited' | 'timeout' | 't
 
 export const CHECK_FAILURE_REASONS: readonly CheckFailureReason[] = ['permissions', 'rate_limited', 'timeout', 'too_many_resources', 'error'];
 
-const TIMEOUT_ERROR_NAMES = new Set(['TimeoutError', 'AbortError', 'RequestTimeout', 'RequestTimeoutException']);
+// ScanDeadlineError (region-run.ts): the whole scan's deadline ran out, a timeout by ruling 3 (review N-4).
+const TIMEOUT_ERROR_NAMES = new Set(['TimeoutError', 'AbortError', 'RequestTimeout', 'RequestTimeoutException', 'ScanDeadlineError']);
 
 /** The class of a detector's caught error. Reads the error's name/code/status only, never its message. */
 export function classifyCheckFailure(error: unknown): CheckFailureReason {

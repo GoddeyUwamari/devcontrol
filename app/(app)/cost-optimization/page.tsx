@@ -154,6 +154,24 @@ const OPPORTUNITIES_ANCHOR = 'opportunities';
 /** The result banner's query: this user's latest manual run in this organization, until seen or closed. */
 const RUN_RESULT_KEY = ['cost-run-result'] as const;
 
+const tabVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
+
+/**
+ * What GET my-result answered, and whether this tab was visible for the whole request (review S-1). An answer
+ * fetched while the tab was hidden may already be stale: another tab can show and acknowledge the result
+ * meanwhile. Such an answer is never shown or acknowledged; the tab asks again once it is visible.
+ */
+interface MyRunResultAnswer {
+  result: CostRunResult | null;
+  fetchedVisible: boolean;
+}
+
+async function fetchMyRunResult(): Promise<MyRunResultAnswer> {
+  const visibleAtStart = tabVisible();
+  const result = await costRecommendationsService.getMyRunResult();
+  return { result, fetchedVisible: visibleAtStart && tabVisible() };
+}
+
 function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
@@ -378,21 +396,38 @@ export default function CostOptimizationPage() {
   // run can't replace it. gcTime 0: a remount (navigating back) asks the server again, never replays the cache.
   const runResultQuery = useQuery({
     queryKey: RUN_RESULT_KEY,
-    queryFn: costRecommendationsService.getMyRunResult,
+    queryFn: fetchMyRunResult,
     staleTime: 0,
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
-    refetchInterval: (query) => (query.state.data?.state === 'running' ? RUNNING_REFETCH_MS : false),
+    refetchInterval: (query) => (query.state.data?.result?.state === 'running' ? RUNNING_REFETCH_MS : false),
     enabled: !isDemoActive,
   });
   // A result whose run row couldn't be saved (ruling 8): shown for this session only, never acknowledged.
   const [sessionResult, setSessionResult] = useState<CostRunResult | null>(null);
   const [closedRunId, setClosedRunId] = useState<string | null>(null);
-  const serverResult = runResultQuery.data ?? null;
+  const runResultAnswer = runResultQuery.data;
+  const serverResult = runResultAnswer?.result ?? null;
+  // Review S-1: a finished result is shown (and so acknowledged) only from an answer fetched while this tab was
+  // visible. Once shown here it stays until closed: nothing refetches it while it is on screen.
+  const verifiedResult = runResultAnswer?.fetchedVisible ? serverResult : null;
   const shownResult: CostRunResult | null = sessionResult
-    ?? (serverResult && serverResult.state !== 'running' && serverResult.id !== closedRunId ? serverResult : null);
+    ?? (verifiedResult && verifiedResult.state !== 'running' && verifiedResult.id !== closedRunId ? verifiedResult : null);
   const runRunning = isAnalyzing || serverResult?.state === 'running';
+
+  // An answer fetched while hidden (a background tab, or a run that ended while the user was elsewhere) is asked
+  // again as soon as the tab is visible, so a result already seen in another tab is never replayed here.
+  const answerNeedsVisibleFetch = !isDemoActive && runResultAnswer !== undefined && !runResultAnswer.fetchedVisible;
+  useEffect(() => {
+    if (!answerNeedsVisibleFetch) return undefined;
+    const refetchIfVisible = () => {
+      if (tabVisible()) void queryClient.refetchQueries({ queryKey: RUN_RESULT_KEY, exact: true });
+    };
+    refetchIfVisible();
+    document.addEventListener('visibilitychange', refetchIfVisible);
+    return () => document.removeEventListener('visibilitychange', refetchIfVisible);
+  }, [answerNeedsVisibleFetch, queryClient]);
 
   // Seen = shown while the tab is visible: acknowledged once, so a refresh, another tab or device never replays it.
   // A failed acknowledge leaves it to show again next visit (never lost).
@@ -442,20 +477,21 @@ export default function CostOptimizationPage() {
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
       ]);
       // The banner shows the run's own result at once (the same facts GET my-result gives).
-      if (result.result?.id) queryClient.setQueryData(RUN_RESULT_KEY, result.result);
+      // Seen only if this tab is visible now (S-1); otherwise it is asked again once the tab is visible.
+      if (result.result?.id) queryClient.setQueryData<MyRunResultAnswer>(RUN_RESULT_KEY, { result: result.result, fetchedVisible: tabVisible() });
       else if (result.result) setSessionResult(result.result);
       else await queryClient.invalidateQueries({ queryKey: RUN_RESULT_KEY });
     } catch (err: unknown) {
       // The run's own record says what happened (it may even still be running, e.g. after a proxy timeout).
       void queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] });
       const recorded = await queryClient
-        .fetchQuery({ queryKey: RUN_RESULT_KEY, queryFn: costRecommendationsService.getMyRunResult, staleTime: 0 })
+        .fetchQuery({ queryKey: RUN_RESULT_KEY, queryFn: fetchMyRunResult, staleTime: 0 })
         .catch(() => null);
-      if (!recorded) {
+      if (!recorded?.result) {
         // No row (it couldn't be created): this session only, and no claim that the findings are unchanged.
         setSessionResult({
           id: null, state: 'failed', completedAt: null, checksTotal: 0, checksRan: 0, failedChecks: [], services: [],
-          newCount: null, openCount: null, stillOpen: null, message: analyzeFailureMessage(err), findingsUnchanged: false,
+          newCount: null, openCount: null, stillOpen: null, unknownResourceCount: null, message: analyzeFailureMessage(err), findingsUnchanged: false,
         });
       }
     } finally {

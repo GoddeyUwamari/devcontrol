@@ -106,7 +106,7 @@ describe('C1: coverage comes from the registry', () => {
     // The How DevControl checks header keeps its title and expand control only.
     expect(screen.queryByTestId('checks-summary-line')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('checks-section')).getByText('How DevControl checks').closest('summary')).toHaveTextContent(/^How DevControl checks$/)
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB$/)
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB\.$/)
     expect(container.textContent).not.toMatch(/\b33\b|of 33/)
     expect(screen.getByTestId('checks-count-note')).toHaveTextContent('11 active checks today — not every possible AWS cost optimization.')
     expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB'])
@@ -133,7 +133,7 @@ describe('C1: coverage comes from the registry', () => {
       renderPage()
       await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
       expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS$/)
-      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS$/)
+      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS\.$/)
     } finally {
       OPTIMIZATION_RULES.pop()
     }

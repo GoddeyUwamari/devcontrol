@@ -297,6 +297,31 @@ describe('what the result says', () => {
   });
 });
 
+describe('resource-level gaps (fix round S-2): from the run record\'s unknown_resource_count', () => {
+  it('every check ran but some resources could not be evaluated: the count is carried by my-result and the analyze response', async () => {
+    const orgId = await insertOrg();
+    const user = randomUUID();
+    mockAnalysis([
+      { issue: 'Idle Instance', success: true, recommendations: [], unknownResourceIds: ['i-0123456789abcdef0', 'i-1234567890abcdef0'] },
+      { issue: 'Unattached EBS Volume', success: true, recommendations: [], unknownResourceIds: ['placeholder-volume'] },
+      retiredRds,
+    ]);
+    const { json } = await analyze(orgId, user);
+    const response = json.mock.calls[0][0].data;
+    expect((await rowOf(response.runId)).unknown_resource_count).toBe(3);
+    expect(response.result).toMatchObject({ state: 'completed', checksRan: 3, checksTotal: 3, unknownResourceCount: 3 });
+    expect(await myResult(orgId, user)).toMatchObject({ id: response.runId, state: 'completed', unknownResourceCount: 3 });
+  });
+
+  it('no resource gaps: 0, never null, for a run that recorded it', async () => {
+    const orgId = await insertOrg();
+    const user = randomUUID();
+    mockAnalysis([{ issue: 'Idle Instance', success: true, recommendations: [] }, retiredRds]);
+    await analyze(orgId, user);
+    expect(await myResult(orgId, user)).toMatchObject({ state: 'completed', unknownResourceCount: 0 });
+  });
+});
+
 describe('failedBeforeAnyWrite (founder ruling 4)', () => {
   it.each([
     ['COST_RESULTS_NOT_SAVED: analysis ran without a scan lease; nothing was saved', true],

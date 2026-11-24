@@ -5,6 +5,7 @@
 import { buildCostRunResult, failedChecksByReason, servicesOfChecks } from '../cost-run-result';
 import { classifyCheckFailure, summarizeDetectors, type CostAnalysisCheck } from '../cost-analysis-outcome';
 import { AwsCallTimeoutError } from '../../utils/awsCallPolicy';
+import { ScanDeadlineError } from '../region-run';
 
 const check = (rule_id: string, outcome: 'complete' | 'failed', failure_reason?: CostAnalysisCheck['failure_reason']): CostAnalysisCheck => ({
   rule_id, issue: rule_id, outcome, detected: 0, unknown: 0, ...(failure_reason ? { failure_reason } : {}),
@@ -20,6 +21,7 @@ describe('classifyCheckFailure: a class from the error name/code/status, never i
     [Object.assign(new Error('x'), { name: 'AccessDeniedException' }), 'permissions'],
     [Object.assign(new Error('x'), { name: 'UnauthorizedOperation' }), 'permissions'],
     [Object.assign(new Error('x'), { $metadata: { httpStatusCode: 403 } }), 'permissions'],
+    [new ScanDeadlineError('cost analysis'), 'timeout'],
     [new Error('AccessDenied in the message only'), 'error'],
     [undefined, 'error'],
   ])('%p → %s', (error, reason) => {
@@ -80,7 +82,7 @@ describe('servicesOfChecks', () => {
 });
 
 describe('buildCostRunResult', () => {
-  const base = { id: 'run', completedAt: null, message: 'placeholder message', findingsUnchanged: true };
+  const base = { id: 'run', completedAt: null, message: 'placeholder message', findingsUnchanged: true, unknownResourceCount: null };
 
   it('completed: counts, K = open - new, no message, no unchanged claim', () => {
     expect(buildCostRunResult({ ...base, state: 'completed', checks: [check('ec2_idle', 'complete')], newCount: 2, openCount: 5 })).toMatchObject({
@@ -92,6 +94,15 @@ describe('buildCostRunResult', () => {
     expect(buildCostRunResult({ ...base, state: 'completed', checks: null, newCount: null, openCount: 4 })).toMatchObject({
       checksTotal: 0, newCount: null, openCount: 4, stillOpen: null,
     });
+  });
+
+  it('resource-level gaps (S-2): the run\'s unknown resource count is carried as recorded; unrecorded stays null', () => {
+    expect(buildCostRunResult({ ...base, state: 'completed', checks: [check('ec2_idle', 'complete')], newCount: 0, openCount: 0, unknownResourceCount: 4 }))
+      .toMatchObject({ state: 'completed', unknownResourceCount: 4 });
+    expect(buildCostRunResult({ ...base, state: 'completed', checks: [check('ec2_idle', 'complete')], newCount: 0, openCount: 0, unknownResourceCount: 0 }))
+      .toMatchObject({ unknownResourceCount: 0 });
+    expect(buildCostRunResult({ ...base, state: 'completed', checks: [check('ec2_idle', 'complete')], newCount: 0, openCount: 0 }))
+      .toMatchObject({ unknownResourceCount: null });
   });
 
   it('failed carries its message and the unchanged claim; interrupted never claims unchanged', () => {

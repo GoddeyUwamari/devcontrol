@@ -12,10 +12,27 @@
 -- Discards on purpose: who started each manual run, whether its result was
 -- seen, and its open count. Findings and runs themselves are untouched.
 --
--- Removes only what the paired migration added, and its schema_migrations row.
--- No statement uses CASCADE.
+-- Removes only the three columns carrying the paired migration's marker, and
+-- its schema_migrations row. REFUSES (nothing changed) unless all three are
+-- present and marked. No statement uses CASCADE.
 
 SET LOCAL lock_timeout = '5s';
+
+DO $$
+DECLARE
+  marker CONSTANT TEXT := '[202611231200_cost_analysis_runs_result_banner]';
+  marked INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO marked
+    FROM pg_attribute
+   WHERE attrelid = 'public.cost_analysis_runs'::regclass
+     AND attname IN ('initiated_by_user_id', 'result_acknowledged_at', 'open_count')
+     AND NOT attisdropped
+     AND starts_with(COALESCE(col_description(attrelid, attnum), ''), marker);
+  IF marked <> 3 THEN
+    RAISE EXCEPTION 'cost_analysis_runs result banner columns are absent or were not created by the paired migration (% of 3 marked) -- refusing to roll back.', marked;
+  END IF;
+END $$;
 
 ALTER TABLE public.cost_analysis_runs
   DROP COLUMN open_count,
@@ -23,3 +40,7 @@ ALTER TABLE public.cost_analysis_runs
   DROP COLUMN initiated_by_user_id;
 
 DELETE FROM schema_migrations WHERE migration_name = '202611231200_cost_analysis_runs_result_banner.sql';
+
+DO $$ BEGIN
+  RAISE NOTICE 'Rolled back 202611231200_cost_analysis_runs_result_banner.sql';
+END $$;

@@ -29,6 +29,12 @@ export interface CostRunResult {
   openCount: number | null;
   /** Open findings that were already open before this run: openCount - newCount; null when either is unknown. */
   stillOpen: number | null;
+  /**
+   * Resources the checks that ran listed but couldn't fully evaluate (the run's
+   * unknown_resource_count): any above 0 makes the banner amber, never green
+   * (founder ruling, scan banner fix round S-2). null when not recorded.
+   */
+  unknownResourceCount: number | null;
   /** A failed or interrupted run's fixed text (never the raw error); null otherwise. */
   message: string | null;
   /** True only for a failure known to happen before anything was written (founder ruling 4). */
@@ -42,6 +48,7 @@ export interface CostRunResultInput {
   checks: CostAnalysisCheck[] | null;
   newCount: number | null;
   openCount: number | null;
+  unknownResourceCount: number | null;
   message: string | null;
   findingsUnchanged: boolean;
 }
@@ -76,6 +83,7 @@ export function buildCostRunResult(input: CostRunResultInput): CostRunResult {
   const checks = Array.isArray(input.checks) ? input.checks : [];
   const newCount = typeof input.newCount === 'number' ? input.newCount : null;
   const openCount = typeof input.openCount === 'number' ? input.openCount : null;
+  const unknownResourceCount = typeof input.unknownResourceCount === 'number' ? input.unknownResourceCount : null;
   const failed = input.state === 'failed' || input.state === 'interrupted';
   return {
     id: input.id,
@@ -88,6 +96,7 @@ export function buildCostRunResult(input: CostRunResultInput): CostRunResult {
     newCount,
     openCount,
     stillOpen: newCount !== null && openCount !== null ? Math.max(0, openCount - newCount) : null,
+    unknownResourceCount,
     message: failed ? input.message : null,
     findingsUnchanged: input.state === 'failed' && input.findingsUnchanged,
   };

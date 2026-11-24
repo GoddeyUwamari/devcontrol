@@ -27,12 +27,20 @@
 --
 -- ADMINISTRATIVE MIGRATION (see README.md): cost_analysis_runs is owned by
 -- postgres (202611101200_transfer_tenant_table_ownership.sql). Applied by the
--- founder, as postgres, BEFORE the code is merged. Owner, grants and row-level
--- security are unchanged: devcontrol's table-level SELECT, INSERT, UPDATE
--- cover the new columns.
+-- founder, as postgres, BEFORE the code is merged: the release after it writes
+-- initiated_by_user_id and open_count on every manual run and fails without
+-- them. Owner, grants and row-level security are unchanged: devcontrol's
+-- table-level SELECT, INSERT, UPDATE cover the new columns.
 --
---   psql -v ON_ERROR_STOP=1 --single-transaction -d <database> \
---     -f 202611231200_cost_analysis_runs_result_banner.sql
+-- Applied with the canonical runner, `database/migrate.js --execute-only`
+-- (README.md; the founder's apply package drives it), which runs this file
+-- and its schema_migrations row in ONE transaction: any failure, including
+-- the 5 s lock timeout below, leaves nothing applied. Lock: ACCESS EXCLUSIVE
+-- on cost_analysis_runs for the catalog-only ADD COLUMNs (milliseconds once
+-- granted).
+--
+-- The three columns carry the marker [202611231200_cost_analysis_runs_result_banner]
+-- in their comments; the paired rollback drops them only if all three carry it.
 --
 -- Written for PostgreSQL 14 and later.
 

@@ -51,6 +51,8 @@ export interface CostScanState {
   counts: CostScanCounts | null
   /** The run's failed-check count (the Last analysis line's "N checks couldn't run"); null when not recorded. */
   failedChecks: number | null
+  /** The run's unknown_resource_count (the Last analysis line's "N resources couldn't be fully checked"); null when not recorded. */
+  uncheckedResources: number | null
 }
 
 /** What a react-query result tells this derivation. */
@@ -89,7 +91,7 @@ export function safeRunMessage(message: string | null | undefined): string | nul
 }
 
 function state(key: CostScanStateKey, extra: Partial<CostScanState> = {}): CostScanState {
-  return { key, source: null, completedAt: null, errorMessage: null, counts: null, failedChecks: null, ...extra }
+  return { key, source: null, completedAt: null, errorMessage: null, counts: null, failedChecks: null, uncheckedResources: null, ...extra }
 }
 
 const isLoading = <T>(query: QueryView<T>) => !query.isError && query.data === undefined
@@ -137,7 +139,8 @@ function fromRun(run: CostAnalysisRun): CostScanState {
   const failedChecks = Array.isArray(run.checks)
     ? run.checks.filter((check) => check.outcome === 'failed').length
     : typeof run.failed_detector_count === 'number' ? run.failed_detector_count : null
-  const base = { source, completedAt: run.completed_at, failedChecks }
+  const uncheckedResources = typeof run.unknown_resource_count === 'number' ? run.unknown_resource_count : null
+  const base = { source, completedAt: run.completed_at, failedChecks, uncheckedResources }
   switch (runState) {
     case 'running':
       return state('running', { source })

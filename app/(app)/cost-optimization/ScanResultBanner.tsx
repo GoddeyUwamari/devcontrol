@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Loader2, X, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { SCAN_BANNER_TONE_CLASSES, type ScanBannerTone } from '@/components/ui/scan-status-banner';
-import { DISMISS_BANNER, RUN_RUNNING, TRY_AGAIN, type ResultBannerContent } from './costScanBanner';
+import { CLOSE_BANNER, RUN_RUNNING, TRY_AGAIN, type ResultBannerContent } from './costScanBanner';
 
 /**
  * Cost Optimization's ONE banner (founder-locked behaviour, Nov 23): what a
@@ -85,7 +85,7 @@ export function ScanResultBanner({
       {content ? (
         <button
           type="button"
-          aria-label={DISMISS_BANNER}
+          aria-label={CLOSE_BANNER}
           onClick={onClose}
           className="order-2 -mr-1 inline-flex shrink-0 items-center justify-center rounded-md p-1 hover:bg-white/70 transition-colors max-sm:-my-2.5 max-sm:h-11 max-sm:w-11 sm:order-3"
         >

@@ -52,7 +52,7 @@ const failure = async () => {
 function recorded(overrides: Record<string, unknown> = {}) {
   return {
     id: 'run-placeholder', state: 'failed', completedAt: '2026-11-02T08:00:01.000Z', checksTotal: 0, checksRan: 0, failedChecks: [],
-    services: [], newCount: null, openCount: null, stillOpen: null, message: CHECKS_FAILED, findingsUnchanged: true, ...overrides,
+    services: [], newCount: null, openCount: null, stillOpen: null, unknownResourceCount: null, message: CHECKS_FAILED, findingsUnchanged: true, ...overrides,
   }
 }
 
@@ -124,7 +124,7 @@ describe('Cost Optimization page: a failed Analyze', () => {
     expect(within(banner).getByTestId('scan-result-description')).toHaveTextContent(/^Scan failed — try again\.$/)
     expect(banner.textContent).not.toMatch(/haven't changed|gateway|status code/)
     expect(mockAcknowledge).not.toHaveBeenCalled()
-    fireEvent.click(within(banner).getByRole('button', { name: 'Dismiss' }))
+    fireEvent.click(within(banner).getByRole('button', { name: 'Close' }))
     expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
   })
 
@@ -134,7 +134,7 @@ describe('Cost Optimization page: a failed Analyze', () => {
     await failScan(requestError(504, '<html>gateway timeout</html>'))
     await waitFor(() => expect(resultBanner()).toHaveAttribute('data-phase', 'running'))
     expect(within(resultBanner()).getByText('Cost analysis running. This can take a few minutes.')).toBeInTheDocument()
-    expect(within(resultBanner()).queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(within(resultBanner()).queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Running analysis…/ })).toBeDisabled()
     expect(mockAcknowledge).not.toHaveBeenCalled()
   })

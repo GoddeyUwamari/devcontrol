@@ -12,7 +12,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostOptimizationPage from '../page'
 import type { CostRunResult } from '@/lib/services/cost-recommendations.service'
-import { run, waitForLastAnalysis } from './fixtures'
+import { checks, run, waitForLastAnalysis } from './fixtures'
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -49,7 +49,7 @@ const SIX = ['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB']
 function result(overrides: Partial<CostRunResult> = {}): CostRunResult {
   return {
     id: 'run-a', state: 'completed', completedAt: '2026-11-23T10:00:00.000Z', checksTotal: 11, checksRan: 11, failedChecks: [], services: SIX,
-    newCount: 0, openCount: 0, stillOpen: 0, message: null, findingsUnchanged: false, ...overrides,
+    newCount: 0, openCount: 0, stillOpen: 0, unknownResourceCount: 0, message: null, findingsUnchanged: false, ...overrides,
   }
 }
 const REC = {
@@ -114,7 +114,7 @@ describe('the run completes while the user is on the page', () => {
 
     await waitFor(() => expect(banner()).toHaveAttribute('data-phase', 'running'))
     expect(within(banner()).getByText('Cost analysis running. This can take a few minutes.')).toBeInTheDocument()
-    expect(within(banner()).queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(within(banner()).queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
     expect(runButton()).toHaveTextContent('Running analysis…')
     expect(runButton()).toBeDisabled()
 
@@ -157,7 +157,7 @@ describe('the run completes while the user is on the page', () => {
     await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
     expect(banner()).toBeInTheDocument()
-    fireEvent.click(within(banner()).getByRole('button', { name: 'Dismiss' }))
+    fireEvent.click(within(banner()).getByRole('button', { name: 'Close' }))
     expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
     expect(svc.acknowledgeRunResult).toHaveBeenCalledWith('run-a')
   })
@@ -187,7 +187,45 @@ describe('states, from the run\'s own result', () => {
       "8 of 11 checks ran. 2 checks couldn't run because of missing permissions and 1 because of a timeout. Findings from the completed checks are up to date."
     )
     expect(within(banner()).queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
-    expect(within(banner()).getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
+    expect(within(banner()).getByRole('button', { name: 'Close' })).toBeInTheDocument()
+  })
+
+  it('AMBER, resource-level gaps only (S-2): every check ran, some resources couldn\'t be fully checked; never green', async () => {
+    svc.getMyRunResult.mockResolvedValue(result({ unknownResourceCount: 4 }))
+    renderPage()
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'warning'))
+    expect(within(banner()).getByTestId('scan-result-title')).toHaveTextContent('Cost analysis completed with gaps')
+    expect(within(banner()).getByTestId('scan-result-description')).toHaveTextContent(
+      "11 of 11 checks ran. 4 resources couldn't be fully checked. Findings from the completed checks are up to date."
+    )
+    expect(banner().textContent).not.toMatch(/No opportunities found|No new opportunities|Cost analysis complete\b/)
+    expect(within(banner()).getByRole('button', { name: 'Close' })).toBeInTheDocument()
+  })
+
+  it('AMBER, check-level and resource-level gaps (S-2): combined, neither hidden', async () => {
+    svc.getMyRunResult.mockResolvedValue(result({ state: 'partial', checksRan: 9, failedChecks: [{ reason: 'permissions', count: 2 }], unknownResourceCount: 1 }))
+    renderPage()
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'warning'))
+    expect(within(banner()).getByTestId('scan-result-description')).toHaveTextContent(
+      "9 of 11 checks ran. 2 checks couldn't run because of missing permissions. 1 resource couldn't be fully checked. Findings from the completed checks are up to date."
+    )
+  })
+
+  it('the Last analysis line (S-2): amber note for resource-only gaps, combined with check gaps, none without gaps', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', unknown_resource_count: 4 })])
+    const first = renderPage()
+    await waitFor(() => expect(screen.getByTestId('last-analysis-problem')).toHaveTextContent("· 4 resources couldn't be fully checked"))
+    first.unmount()
+
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', status: 'failed', run_state: 'partial', checks: checks(2), failed_detector_count: 2, unknown_resource_count: 1 })])
+    const second = renderPage()
+    await waitFor(() => expect(screen.getByTestId('last-analysis-problem')).toHaveTextContent("· 2 checks couldn't run · 1 resource couldn't be fully checked"))
+    second.unmount()
+
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', unknown_resource_count: 0 })])
+    renderPage()
+    await waitForLastAnalysis()
+    expect(screen.queryByTestId('last-analysis-problem')).not.toBeInTheDocument()
   })
 
   it('RED: an alert, with Try again starting a new manual run', async () => {
@@ -229,14 +267,75 @@ describe('lifecycle', () => {
     expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
   })
 
-  it('a result that arrives while the tab is hidden is not "seen" until the tab is visible', async () => {
+  it('a result that arrives while the tab is hidden is neither shown nor "seen"; once visible the tab asks again, then shows and acknowledges it', async () => {
     setVisibility('hidden')
     svc.getMyRunResult.mockResolvedValue(result())
     renderPage()
-    await waitFor(() => expect(banner()).toBeInTheDocument())
+    await waitForLastAnalysis()
+    await waitFor(() => expect(svc.getMyRunResult).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
     expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
     act(() => setVisibility('visible'))
+    await waitFor(() => expect(svc.getMyRunResult).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
     await waitFor(() => expect(svc.acknowledgeRunResult).toHaveBeenCalledWith('run-a'))
+    expect(svc.acknowledgeRunResult).toHaveBeenCalledTimes(1)
+  })
+
+  it('S-1 two tabs: B loaded the pending result in the background, A showed and acknowledged it, B becomes visible → no banner, no second acknowledge', async () => {
+    // Tab B renders while hidden; the server still has the result pending.
+    setVisibility('hidden')
+    svc.getMyRunResult.mockResolvedValue(result({ id: 'run-x', newCount: 1, openCount: 1, stillOpen: 0 }))
+    renderPage()
+    await waitForLastAnalysis()
+    await waitFor(() => expect(svc.getMyRunResult).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
+    // Tab A shows it and acknowledges it on the server: from now on the server answers null.
+    svc.getMyRunResult.mockResolvedValue(null)
+    act(() => setVisibility('visible'))
+    // B asks the server again and believes it, not its cache.
+    await waitFor(() => expect(svc.getMyRunResult).toHaveBeenCalledTimes(2))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
+    expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
+  })
+
+  it('S-1: a banner already shown in this tab stays until closed when the user switches tabs and back (nothing refetches it)', async () => {
+    svc.getMyRunResult.mockResolvedValue(result())
+    renderPage()
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
+    await waitFor(() => expect(svc.acknowledgeRunResult).toHaveBeenCalledTimes(1))
+    svc.getMyRunResult.mockResolvedValue(null)
+    act(() => setVisibility('hidden'))
+    act(() => setVisibility('visible'))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(banner()).toHaveAttribute('data-tone', 'success')
+    expect(svc.getMyRunResult).toHaveBeenCalledTimes(1)
+    expect(svc.acknowledgeRunResult).toHaveBeenCalledTimes(1)
+  })
+
+  it('S-1: the run ends (POST answers) while the tab is hidden: not shown or acknowledged until the tab is visible and the server confirms it is still pending', async () => {
+    let finish!: (value: unknown) => void
+    svc.analyze.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    renderPage()
+    await waitForLastAnalysis()
+    fireEvent.click(runButton())
+    await waitFor(() => expect(banner()).toHaveAttribute('data-phase', 'running'))
+    act(() => setVisibility('hidden'))
+    await act(async () => {
+      finish({ recommendationsFound: 0, totalPotentialSavings: 0, bySeverity: { high: 0, medium: 0, low: 0 }, timestamp: 't', runId: 'run-a', result: result() })
+    })
+    await waitFor(() => expect(runButton()).toHaveTextContent('Run cost analysis'))
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
+    expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
+    // Another tab saw it meanwhile: the server answers null.
+    const calls = svc.getMyRunResult.mock.calls.length
+    svc.getMyRunResult.mockResolvedValue(null)
+    act(() => setVisibility('visible'))
+    await waitFor(() => expect(svc.getMyRunResult.mock.calls.length).toBeGreaterThan(calls))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
+    expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
   })
 
   it('a failed acknowledge keeps the result to show next visit (never lost) and is tried again', async () => {
@@ -244,7 +343,7 @@ describe('lifecycle', () => {
     svc.getMyRunResult.mockResolvedValue(result())
     renderPage()
     await waitFor(() => expect(svc.acknowledgeRunResult).toHaveBeenCalledTimes(1))
-    fireEvent.click(within(banner()).getByRole('button', { name: 'Dismiss' }))
+    fireEvent.click(within(banner()).getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(svc.acknowledgeRunResult).toHaveBeenCalledTimes(2))
   })
 
@@ -274,7 +373,7 @@ describe('lifecycle', () => {
     fireEvent.click(runButton())
     await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
     expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
-    fireEvent.click(within(banner()).getByRole('button', { name: 'Dismiss' }))
+    fireEvent.click(within(banner()).getByRole('button', { name: 'Close' }))
     expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
     expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
   })

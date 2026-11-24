@@ -29,7 +29,8 @@ export const STATUS_UNAVAILABLE_TITLE = "Couldn't load analysis status"
 export const UNAVAILABLE = 'Unavailable'
 export const STATS_UNAVAILABLE_NOTE = "Totals couldn't load. This doesn't mean there are no savings."
 export const TRY_AGAIN = 'Try again'
-export const DISMISS_BANNER = 'Dismiss'
+/** The result banner's × (the locked mock's label). */
+export const CLOSE_BANNER = 'Close'
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
 
@@ -89,6 +90,11 @@ export function couldntRunSentence(failedChecks: CostRunResult['failedChecks'], 
   return `${firstClause}, ${secondClause}, and other reasons.`
 }
 
+/** Resource-level gaps (fix round S-2): "4 resources couldn't be fully checked" (no trailing period). */
+export function resourcesNotFullyChecked(count: number): string {
+  return `${count} resource${plural(count, '', 's')} couldn't be fully checked`
+}
+
 /** Founder ruling 9: the banner has its own Try again button, so the reason's trailing "Try again." goes (banner only). */
 export function withoutTrailingTryAgain(message: string): string {
   return message.replace(/\s*(Try again|Run it again)\.\s*$/, '').trim()
@@ -116,15 +122,19 @@ export function resultBannerContent(result: CostRunResult): ResultBannerContent 
       retry: true,
     }
   }
-  if (result.state === 'partial') {
-    const failed = Math.max(0, result.checksTotal - result.checksRan)
-    return {
-      tone: 'warning',
-      title: RESULT_GAPS_TITLE,
-      description: `${result.checksRan} of ${result.checksTotal} check${plural(result.checksTotal, '', 's')} ran. ${couldntRunSentence(result.failedChecks, failed)} ${GAPS_UP_TO_DATE}`,
+  // Amber for check-level gaps (partial), resource-level gaps (some resources couldn't be fully checked;
+  // founder ruling, fix round S-2), or both, combined: neither is hidden. Green only with neither.
+  const unchecked = result.unknownResourceCount ?? 0
+  if (result.state === 'partial' || unchecked > 0) {
+    const sentences = [`${result.checksRan} of ${result.checksTotal} check${plural(result.checksTotal, '', 's')} ran.`]
+    if (result.state === 'partial') {
+      sentences.push(couldntRunSentence(result.failedChecks, Math.max(0, result.checksTotal - result.checksRan)))
     }
+    if (unchecked > 0) sentences.push(`${resourcesNotFullyChecked(unchecked)}.`)
+    sentences.push(GAPS_UP_TO_DATE)
+    return { tone: 'warning', title: RESULT_GAPS_TITLE, description: sentences.join(' ') }
   }
-  // completed (every check ran). A count the run didn't record is left out, never shown as 0.
+  // completed: every check ran and every resource was evaluated. A count the run didn't record is left out, never shown as 0.
   const parts = [checksRunPart(result.checksRan, result.services)]
   const { newCount, stillOpen, openCount } = result
   if (newCount !== null && newCount > 0) {
@@ -147,14 +157,23 @@ export function resultBannerContent(result: CostRunResult): ResultBannerContent 
 
 // ── The "Last analysis" line (founder ruling 1a): a scheduled run's failure or gaps, never a banner ──
 
-/** "· 2 checks couldn't run" for a run with gaps, "· didn't finish" for a failed or interrupted one; null otherwise. */
-export function lastAnalysisProblem(scan: Pick<CostScanState, 'key' | 'failedChecks'>): string | null {
+/**
+ * "· didn't finish" for a failed or interrupted run; for a finished run, its gaps, as the banner judges them
+ * (fix round S-2): "2 checks couldn't run", "4 resources couldn't be fully checked", or both
+ * ("2 checks couldn't run · 4 resources couldn't be fully checked"); null when it had none.
+ */
+export function lastAnalysisProblem(scan: Pick<CostScanState, 'key' | 'failedChecks' | 'uncheckedResources'>): string | null {
   if (scan.key === 'failed' || scan.key === 'interrupted') return "didn't finish"
+  const finished = scan.key === 'partial' || scan.key.startsWith('completed')
+  if (!finished) return null
+  const parts: string[] = []
   if (scan.key === 'partial') {
     const n = scan.failedChecks
-    return n !== null && n > 0 ? `${n} check${plural(n, '', 's')} couldn't run` : "some checks couldn't run"
+    parts.push(n !== null && n > 0 ? `${n} check${plural(n, '', 's')} couldn't run` : "some checks couldn't run")
   }
-  return null
+  const unchecked = scan.uncheckedResources
+  if (unchecked !== null && unchecked > 0) parts.push(resourcesNotFullyChecked(unchecked))
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 // ── The Run cost analysis button (item 5) ──

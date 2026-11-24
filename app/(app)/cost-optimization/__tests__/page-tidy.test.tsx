@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostOptimizationPage from '../page'
 import type { CostRecommendation } from '@/lib/types'
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service'
-import { checks, run, waitForLastAnalysis } from './fixtures'
+import { run, waitForLastAnalysis } from './fixtures'
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -238,7 +238,7 @@ describe('How DevControl checks: what DevControl checks and coverage', () => {
     renderPage()
     await loaded()
     const coverage = screen.getByTestId('coverage-card')
-    expect(within(coverage).getByTestId('coverage-line')).toHaveTextContent(/^3 active checks across EC2 · EBS · S3$/)
+    expect(within(coverage).getByTestId('coverage-line')).toHaveTextContent(/^3 active checks across EC2 · EBS · S3\.$/)
     expect(within(within(coverage).getByTestId('coverage-services')).getAllByText(/.+/).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'S3'])
     const planned = within(coverage).getByTestId('planned-checks') as HTMLDetailsElement
     expect(planned.open).toBe(false)
@@ -254,7 +254,7 @@ describe('How DevControl checks: what DevControl checks and coverage', () => {
     })
     renderPage()
     await loaded()
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^1 active check across EC2$/)
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^1 active check across EC2\.$/)
     expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 1 active check$/)
     expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2$/)
     expect(screen.getByTestId('checks-count-note')).toHaveTextContent(/^1 active check today/)

@@ -20,7 +20,7 @@ const SIX = ['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB']
 function result(overrides: Partial<CostRunResult> = {}): CostRunResult {
   return {
     id: 'run-placeholder', state: 'completed', completedAt: null, checksTotal: 11, checksRan: 11, failedChecks: [], services: SIX,
-    newCount: 0, openCount: 0, stillOpen: 0, message: null, findingsUnchanged: false, ...overrides,
+    newCount: 0, openCount: 0, stillOpen: 0, unknownResourceCount: 0, message: null, findingsUnchanged: false, ...overrides,
   }
 }
 
@@ -107,6 +107,49 @@ describe('AMBER: some checks couldn\'t run', () => {
   })
 })
 
+describe('AMBER: resource-level gaps (fix round S-2, founder ruling: amber, not green)', () => {
+  it('every check ran, some resources couldn\'t be fully checked: amber with the exact copy', () => {
+    expect(resultBannerContent(result({ unknownResourceCount: 4 }))).toEqual({
+      tone: 'warning',
+      title: 'Cost analysis completed with gaps',
+      description: "11 of 11 checks ran. 4 resources couldn't be fully checked. Findings from the completed checks are up to date.",
+    })
+  })
+
+  it('one resource: singular; one check in all: singular', () => {
+    expect(resultBannerContent(result({ unknownResourceCount: 1 })).description)
+      .toBe("11 of 11 checks ran. 1 resource couldn't be fully checked. Findings from the completed checks are up to date.")
+    expect(resultBannerContent(result({ checksTotal: 1, checksRan: 1, services: ['EC2'], unknownResourceCount: 2 })).description)
+      .toBe("1 of 1 check ran. 2 resources couldn't be fully checked. Findings from the completed checks are up to date.")
+  })
+
+  it('resource gaps win over the green clauses: never "No opportunities found" / "No new opportunities", no link', () => {
+    for (const counts of [{ newCount: 0, openCount: 0, stillOpen: 0 }, { newCount: 0, openCount: 4, stillOpen: 4 }, { newCount: 2, openCount: 2, stillOpen: 0 }]) {
+      const content = resultBannerContent(result({ ...counts, unknownResourceCount: 3 }))
+      expect(content.tone).toBe('warning')
+      expect(content.description).not.toMatch(/No opportunities found|No new opportunities/)
+      expect(content.link).toBeUndefined()
+    }
+  })
+
+  it('check-level AND resource-level gaps: combined, neither hidden', () => {
+    expect(resultBannerContent(result({ state: 'partial', checksRan: 9, failedChecks: [{ reason: 'permissions', count: 2 }], unknownResourceCount: 4 })).description)
+      .toBe("9 of 11 checks ran. 2 checks couldn't run because of missing permissions. 4 resources couldn't be fully checked. Findings from the completed checks are up to date.")
+    expect(resultBannerContent(result({ state: 'partial', checksRan: 8, failedChecks: [{ reason: 'timeout', count: 2 }, { reason: 'rate_limited', count: 1 }], unknownResourceCount: 1 })).description)
+      .toBe("8 of 11 checks ran. 2 checks couldn't run because of a timeout and 1 because of AWS rate limiting. 1 resource couldn't be fully checked. Findings from the completed checks are up to date.")
+  })
+
+  it('no gaps of either kind: green ("No opportunities found" / "No new opportunities"); an unrecorded count is not a gap', () => {
+    expect(resultBannerContent(result({ unknownResourceCount: 0 }))).toMatchObject({ tone: 'success', description: '11 checks run across EC2, EBS, RDS, S3, Lambda and DynamoDB · No opportunities found' })
+    expect(resultBannerContent(result({ newCount: 0, openCount: 2, stillOpen: 2, unknownResourceCount: 0 })).description).toMatch(/· No new opportunities · 2 still open from earlier$/)
+    expect(resultBannerContent(result({ unknownResourceCount: null })).tone).toBe('success')
+  })
+
+  it('a failed run stays red whatever its resource count', () => {
+    expect(resultBannerContent(result({ state: 'failed', message: null, unknownResourceCount: 5 })).tone).toBe('danger')
+  })
+})
+
 describe('RED: the scan itself failed', () => {
   it('ruling 4: the unchanged sentence only when the server vouches for it; ruling 9: no trailing "Try again."', () => {
     expect(resultBannerContent(result({ state: 'failed', message: 'None of the cost checks could complete. Try again.', findingsUnchanged: true }))).toEqual({
@@ -134,15 +177,22 @@ describe('RED: the scan itself failed', () => {
   })
 })
 
-describe('the Last analysis line (ruling 1a)', () => {
+describe('the Last analysis line (ruling 1a; resource-level gaps, fix round S-2)', () => {
   it.each([
-    [{ key: 'partial' as const, failedChecks: 2 }, "2 checks couldn't run"],
-    [{ key: 'partial' as const, failedChecks: 1 }, "1 check couldn't run"],
-    [{ key: 'partial' as const, failedChecks: null }, "some checks couldn't run"],
-    [{ key: 'failed' as const, failedChecks: null }, "didn't finish"],
-    [{ key: 'interrupted' as const, failedChecks: null }, "didn't finish"],
-    [{ key: 'completed_new' as const, failedChecks: 0 }, null],
-    [{ key: 'running' as const, failedChecks: null }, null],
+    [{ key: 'partial' as const, failedChecks: 2, uncheckedResources: 0 }, "2 checks couldn't run"],
+    [{ key: 'partial' as const, failedChecks: 1, uncheckedResources: null }, "1 check couldn't run"],
+    [{ key: 'partial' as const, failedChecks: null, uncheckedResources: 0 }, "some checks couldn't run"],
+    [{ key: 'failed' as const, failedChecks: null, uncheckedResources: 3 }, "didn't finish"],
+    [{ key: 'interrupted' as const, failedChecks: null, uncheckedResources: null }, "didn't finish"],
+    [{ key: 'completed_new' as const, failedChecks: 0, uncheckedResources: 0 }, null],
+    [{ key: 'completed_clean' as const, failedChecks: 0, uncheckedResources: null }, null],
+    [{ key: 'running' as const, failedChecks: null, uncheckedResources: null }, null],
+    // resource-only gaps: amber note on any finished (completed) run
+    [{ key: 'completed_unchecked' as const, failedChecks: 0, uncheckedResources: 4 }, "4 resources couldn't be fully checked"],
+    [{ key: 'completed_new' as const, failedChecks: 0, uncheckedResources: 1 }, "1 resource couldn't be fully checked"],
+    // both: combined, neither hidden
+    [{ key: 'partial' as const, failedChecks: 2, uncheckedResources: 4 }, "2 checks couldn't run · 4 resources couldn't be fully checked"],
+    [{ key: 'partial' as const, failedChecks: 1, uncheckedResources: 1 }, "1 check couldn't run · 1 resource couldn't be fully checked"],
   ])('%j → %s', (scan, expected) => {
     expect(lastAnalysisProblem(scan)).toBe(expected)
   })
@@ -153,7 +203,7 @@ describe('coverage copy (ruling 6): never the catalog total', () => {
     expect(coverageCardLine(11)).toBe('AWS cost optimization · 11 active checks')
     expect(coverageCardLine(1)).toBe('AWS cost optimization · 1 active check')
     expect(serviceNamesLine(SIX)).toBe('EC2 · EBS · RDS · S3 · Lambda · DynamoDB')
-    expect(coverageLine(11, SIX)).toBe('11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB')
+    expect(coverageLine(11, SIX)).toBe('11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB.')
   })
 
   it('serviceList joins with commas and "and"', () => {

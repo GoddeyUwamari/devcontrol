@@ -114,7 +114,7 @@ describe('"<N> dismissed finding(s) were found again" in Resolved and dismissed'
     ])
     svc.getMyRunResult.mockResolvedValue({
       id: 'run-manual-earlier', state: 'completed', completedAt: '2026-11-02T08:00:01.000Z', checksTotal: 1, checksRan: 1, failedChecks: [],
-      services: ['EC2'], newCount: 0, openCount: 0, stillOpen: 0, message: null, findingsUnchanged: false,
+      services: ['EC2'], newCount: 0, openCount: 0, stillOpen: 0, unknownResourceCount: 0, message: null, findingsUnchanged: false,
     })
     renderPage()
     await screen.findByTestId('scan-result-banner')

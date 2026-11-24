@@ -4,7 +4,7 @@
  * earlier connection never make the page read as connected. Fixture data only.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostOptimizationPage from '../page'
 import { run } from './fixtures'
@@ -13,7 +13,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.f
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => selector({ enabled: false }) }))
 
-const svc = vi.hoisted(() => ({ getConnection: vi.fn(), acknowledgeRunResult: vi.fn(async (_id: string) => undefined) }))
+const svc = vi.hoisted(() => ({ getConnection: vi.fn(), acknowledgeRunResult: vi.fn<(id: string) => Promise<undefined>>(async () => undefined) }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
     getAll: async () => [],
@@ -29,7 +29,7 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     // A result of a run this user started, waiting to be seen: shown only when connected.
     getMyRunResult: async () => ({
       id: 'run-placeholder', state: 'completed', completedAt: null, checksTotal: 1, checksRan: 1, failedChecks: [], services: ['EC2'],
-      newCount: 0, openCount: 4, stillOpen: 4, message: null, findingsUnchanged: false,
+      newCount: 0, openCount: 4, stillOpen: 4, unknownResourceCount: 0, message: null, findingsUnchanged: false,
     }),
     acknowledgeRunResult: (id: string) => svc.acknowledgeRunResult(id),
   },

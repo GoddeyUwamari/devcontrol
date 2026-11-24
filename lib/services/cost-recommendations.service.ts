@@ -80,6 +80,7 @@ export function parseCostRunResult(raw: unknown): CostRunResult | null {
     newCount: count(r.newCount),
     openCount: count(r.openCount),
     stillOpen: count(r.stillOpen),
+    unknownResourceCount: count(r.unknownResourceCount),
     message: typeof r.message === 'string' ? r.message : null,
     findingsUnchanged: r.findingsUnchanged === true,
   }

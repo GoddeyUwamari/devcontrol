@@ -117,6 +117,7 @@ function runResultOf(run: CostAnalysisRun) {
     checks: run.checks,
     newCount: run.new_count,
     openCount: run.open_count,
+    unknownResourceCount: run.unknown_resource_count,
     message: runMessage(run),
     findingsUnchanged: run.run_state === 'failed' && failedBeforeAnyWrite(run.error_message),
   });
@@ -648,6 +649,7 @@ export class CostRecommendationsController {
             checks: detail.summary.checks,
             newCount: detail.counts?.new ?? null,
             openCount: stats.active_recommendations,
+            unknownResourceCount: detail.summary.unknownResourceCount,
             message: null,
             findingsUnchanged: false,
           }),

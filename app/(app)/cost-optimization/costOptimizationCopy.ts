@@ -83,9 +83,9 @@ export const HOW_EACH_CHECK_WORKS = 'How each check works'
 export const activeChecksNote = (count: number) =>
   `${count} active check${plural(count, '', 's')} today — not every possible AWS cost optimization.`
 
-/** Founder ruling 6: "11 active checks across EC2 · EBS · …" (`names`: the services with an active check). */
+/** Founder ruling 6 (Stage A Q6 text): "11 active checks across EC2 · EBS · … ." (`names`: the services with an active check). */
 export const coverageLine = (active: number, names: readonly string[]) =>
-  `${active} active check${plural(active, '', 's')} across ${serviceNamesLine(names)}`
+  `${active} active check${plural(active, '', 's')} across ${serviceNamesLine(names)}.`
 
 export const plannedToggle = (count: number) => `Planned / Coming soon (${count})`
 

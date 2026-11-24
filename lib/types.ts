@@ -971,6 +971,8 @@ export interface CostRunResult {
   openCount: number | null;
   /** openCount - newCount; null when either is unknown. */
   stillOpen: number | null;
+  /** Resources the checks that ran couldn't fully evaluate (the run's unknown_resource_count); above 0 = amber. null when not recorded. */
+  unknownResourceCount: number | null;
   /** A failed or interrupted run's fixed text; null otherwise. */
   message: string | null;
   /** Only for a failure known to happen before anything was written. */
