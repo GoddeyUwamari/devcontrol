@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { bannersFor, cardState, claimOutcome, connectedLine, isRecording } from '../model'
-import { COPY, installationSettingsUrl, permissionsNowHave, relativeTime, shortName } from '../copy'
+import { COPY, REPO_COPY, SURFACE_COPY, installationSettingsUrl, permissionsNowHave, relativeTime, shortName } from '../copy'
 import type { GitHubInstallation, GitHubRepository } from '../../services/github-connection.service'
 
 const install = (over: Partial<GitHubInstallation> = {}): GitHubInstallation => ({
@@ -16,8 +16,11 @@ const install = (over: Partial<GitHubInstallation> = {}): GitHubInstallation => 
 })
 const repo = (over: Partial<GitHubRepository> = {}): GitHubRepository => ({
   id: 'r1', github_repo_id: '1', installation_id: '42', full_name: 'acme-inc/api', service_id: null, service_name: null,
-  deploy_rule: null, access_state: 'active', removed_at: null, last_event_at: null, ...over,
+  deploy_rule: null, access_state: 'accessible', removed_at: null, last_event_at: null,
+  held_events: 0, environments_seen: [], jobs_seen: [], last_deployment_at: null, over_limit_this_month: 0, ...over,
 })
+const JOB = { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy' }
+const ENVS = { v: 1, mode: 'github_deployments' }
 const answer = (status: number, body: Record<string, unknown>) => ({ status, body })
 
 describe('claim answers -> board 4 outcomes (every code the server sends)', () => {
@@ -63,17 +66,20 @@ describe('index card state (board 1)', () => {
 
   it('"{account} · 4 repositories · 3 recording": detached and removed repositories are not counted; recording needs a service and a rule', () => {
     const repos = [
-      repo({ id: 'a', service_id: 's', deploy_rule: { mode: 'job' } }),
-      repo({ id: 'b', service_id: 's', deploy_rule: { mode: 'github_deployments' } }),
-      repo({ id: 'c', service_id: 's', deploy_rule: { mode: 'none' } }),
+      repo({ id: 'a', service_id: 's', deploy_rule: JOB }),
+      repo({ id: 'b', service_id: 's', deploy_rule: ENVS }),
+      repo({ id: 'c', service_id: 's', deploy_rule: { v: 1, mode: 'none' } }),
       repo({ id: 'd' }),
-      repo({ id: 'e', access_state: 'removed', service_id: 's', deploy_rule: { mode: 'job' } }),
-      repo({ id: 'f', installation_id: null, service_id: 's', deploy_rule: { mode: 'job' } }),
+      repo({ id: 'e', access_state: 'removed', service_id: 's', deploy_rule: JOB }),
+      repo({ id: 'f', installation_id: null, service_id: 's', deploy_rule: JOB }),
+      // D8b-2: a rule the server can't read (no version, or a job rule without names) records nothing.
+      repo({ id: 'g', service_id: 's', deploy_rule: { mode: 'job' } }),
     ]
-    expect(connectedLine(on([install()]), repos)).toBe('acme-inc · 4 repositories · 2 recording')
+    expect(connectedLine(on([install()]), repos)).toBe('acme-inc · 5 repositories · 2 recording')
     expect(connectedLine(on([install()]), null)).toBe('acme-inc')
     expect(isRecording(repos[0])).toBe(true)
     expect(isRecording(repos[2])).toBe(false)
+    expect(isRecording(repos[6])).toBe(false)
   })
 })
 
@@ -119,9 +125,20 @@ describe('copy rules (founder, Nov 23)', () => {
     'app/(app)/settings/integrations/github/page.tsx',
     'app/(app)/settings/integrations/github/_components/NotConnected.tsx',
     'app/(app)/settings/integrations/github/_components/Connected.tsx',
+    'app/(app)/settings/integrations/github/_components/Repositories.tsx',
+    'components/integrations/github-status-chip.tsx',
     'app/(auth)/auth/github/callback/page.tsx',
   ].map((f) => readFileSync(join(process.cwd(), f), 'utf8'))
-  const visible = Object.values(COPY).flatMap((v) => (typeof v === 'string' ? [v] : typeof v === 'function' ? [String((v as (...a: string[]) => string)('X', 'Y'))] : JSON.stringify(v)))
+  // Every string the screens can show, functions called with placeholder values (counts as 1 and 2).
+  const call = (f: (...a: never[]) => unknown): string[] => {
+    const out: string[] = []
+    for (const args of [['X', 'Y'], [1], [2], [['X'], ['Y']]]) {
+      try { out.push(String((f as (...a: unknown[]) => unknown)(...args))) } catch { /* not this signature */ }
+    }
+    return out
+  }
+  const visible = [...Object.values(COPY), ...Object.values(REPO_COPY), ...Object.values(SURFACE_COPY)]
+    .flatMap((v) => (typeof v === 'string' ? [v] : typeof v === 'function' ? call(v as (...a: never[]) => unknown) : [JSON.stringify(v)]))
     .join('\n')
 
   it('never "every deployment", automatic retry or replay wording', () => {
@@ -132,7 +149,8 @@ describe('copy rules (founder, Nov 23)', () => {
 
   it('the three ruled sentences, word for word', () => {
     expect(COPY.pageSubtitle).toBe('Record deployments from GitHub Actions.')
-    expect(COPY.planLimitNote).toBe("Deployments over your plan's monthly limit aren't recorded.")
+    // D8b-2: the plan-limit sentence moved into board 5's footer, word for word.
+    expect(REPO_COPY.footerLimitLabel + REPO_COPY.footerLimit).toBe("Plan limit: deployments over your plan's monthly limit aren't recorded.")
     expect(sources.some((s) => s.includes('COPY.suspendedBody'))).toBe(true)
   })
 })

@@ -9,7 +9,7 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import type { GitHubInstallation, GitHubRepository } from '@/lib/services/github-connection.service'
+import type { GitHubInstallation } from '@/lib/services/github-connection.service'
 import {
   COPY,
   accountTypeLabel,
@@ -19,7 +19,7 @@ import {
   shortDate,
   shortName,
 } from '@/lib/github-connection/copy'
-import { bannersFor, needsAttention, removedRepositories } from '@/lib/github-connection/model'
+import { bannersFor, needsAttention } from '@/lib/github-connection/model'
 import { Banner, BannerLink, BUTTON_DANGER, BUTTON_DANGER_OUTLINE, BUTTON_NEUTRAL, BUTTON_PRIMARY, CARD, Chip } from '@/components/integrations/parts'
 
 /** Board 4's success banner, at the top of the connected screen. */
@@ -106,22 +106,6 @@ export function SummaryCard({ installation, lastEventAt, now }: { installation: 
       </span>
       <span data-testid="github-summary-connected-by" className="text-meta text-ink-body">{name ? COPY.connectedBy(name, date) : COPY.connectedOn(date)}</span>
     </section>
-  )
-}
-
-/** Board 6: a repository removed from the installation on GitHub. Its row stays, greyed. */
-export function RemovedRepositories({ repositories }: { repositories: readonly GitHubRepository[] }) {
-  const removed = removedRepositories(repositories)
-  if (removed.length === 0) return null
-  return (
-    <ul data-testid="github-removed-repositories" className="m-0 flex list-none flex-col gap-2 p-0">
-      {removed.map((repo) => (
-        <li key={repo.id} className={cn(CARD, 'flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-6 py-4')}>
-          <span className="text-ui font-semibold text-ink-body">{repo.full_name}</span>
-          <span className="text-meta text-ink-muted">{COPY.removedRepo}</span>
-        </li>
-      ))}
-    </ul>
   )
 }
 

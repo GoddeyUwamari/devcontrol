@@ -360,6 +360,157 @@ describe('/api/integrations/github', () => {
   });
 });
 
+describe('D8b-2: repository activity, current role, one environment', () => {
+  const inst = 8_900_000_000 + Math.floor(Math.random() * 1e8);
+  const instB2 = inst + 1;
+  let ghWait: number;
+  let ghNoRule: number;
+  let ghRec: number;
+  let rowWait: string;
+  let rowNoRule: string;
+  let rowRec: string;
+  let svcRec: string;
+
+  const addRepo = async (org: string, gh: number, name: string, installation: number, service: string | null, rule: unknown) =>
+    (await harness.pool.query(
+      `INSERT INTO pipeline_repositories (organization_id, github_repo_id, installation_id, full_name, service_id, deploy_rule)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id::text AS id`,
+      [org, gh, installation, name, service, rule === null ? null : JSON.stringify(rule)])).rows[0].id as string;
+  const addEvent = (org: string, gh: number, o: { event?: string; status: string; reason?: string | null; ago?: string; facts?: Record<string, unknown>; installation?: number }) =>
+    harness.pool.query(
+      `INSERT INTO pipeline_events (delivery_id, organization_id, installation_id, github_repo_id, event, action, normalizer_version, facts,
+                                    received_at, processing_status, processing_reason, processed_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'completed', 1, $5::jsonb, NOW() - $6::interval, $7::text, $8::text,
+               CASE WHEN $7::text = 'pending' THEN NULL ELSE NOW() END)`,
+      [org, o.installation ?? inst, gh, o.event ?? 'workflow_job', JSON.stringify(o.facts ?? { kind: o.event ?? 'workflow_job' }), o.ago ?? '1 hour', o.status, o.reason ?? null]);
+  const addAppDeployment = (org: string, service: string, gh: number, at: string, extra: Record<string, unknown> = {}) => harness.pool.query(
+    `INSERT INTO deployments (service_id, environment, status, deployed_by, deployed_at, organization_id, metadata)
+     VALUES ($1, 'production', 'success', 'd8b2', $2, $3, $4::jsonb) RETURNING id::text AS id`,
+    [service, at, org, JSON.stringify({ connection: 'github_app', pipeline_metadata_version: 1, source: 'github_actions', github_repo_id: gh, ...extra })]);
+
+  beforeAll(async () => {
+    for (const [org, i] of [[A, inst], [B, instB2]] as const) {
+      await harness.pool.query(
+        `INSERT INTO github_installations (installation_id, organization_id, account_id, account_login, account_type, repository_selection,
+           permissions, permissions_state, installer_github_user_id, claimed_by_user_id, claimed_by_github_user_id)
+         VALUES ($1, $2, 777, $3, 'Organization', 'selected', '{}'::jsonb, 'expected', 8123, $4, 8123)`,
+        [i, org.orgId, `acct-${i}`, org.owner]);
+    }
+    const base = 950_000_000 + Math.floor(Math.random() * 1e6);
+    [ghWait, ghNoRule, ghRec] = [base, base + 1, base + 2];
+    svcRec = (await harness.pool.query(
+      `INSERT INTO services (name, template, owner, status, organization_id) VALUES ('svc-rec', 'api', 'd8b2', 'active', $1) RETURNING id::text AS id`,
+      [A.orgId])).rows[0].id;
+    rowWait = await addRepo(A.orgId, ghWait, 'acme/web-app', inst, null, null);
+    rowNoRule = await addRepo(A.orgId, ghNoRule, 'acme/worker', inst, serviceA, null);
+    rowRec = await addRepo(A.orgId, ghRec, 'acme/mobile-api', inst, svcRec, { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy-prod' });
+    // B has a repository with A's waiting repository's GitHub id, and plenty of activity on it.
+    const svcB = (await harness.pool.query(
+      `INSERT INTO services (name, template, owner, status, organization_id) VALUES ('svc-b2', 'api', 'd8b2', 'active', $1) RETURNING id::text AS id`,
+      [B.orgId])).rows[0].id;
+    await addRepo(B.orgId, ghWait, 'b-corp/secret-repo', instB2, null, null);
+    for (let i = 0; i < 5; i += 1) await addEvent(B.orgId, ghWait, { status: 'unmapped', reason: 'repository_not_mapped', installation: instB2 });
+    await addEvent(B.orgId, ghWait, { event: 'deployment_status', status: 'unmapped', installation: instB2, facts: { kind: 'deployment_status', environment: 'b-secret-env' } });
+    await addEvent(B.orgId, ghWait, { status: 'over_limit', reason: 'monthly_deployment_limit', installation: instB2, facts: { kind: 'workflow_job', job_id: 1, completed_at: new Date().toISOString() } });
+    await addAppDeployment(B.orgId, svcB, ghWait, new Date().toISOString());
+
+    // A, waiting for a service: what a mapping's replay picks up (fix round 2, N-1): 2 unmapped + 1 not processed yet
+    // + a claim hold + a legacy-guard event = 5. Not: 8 days old, a workflow_run, a not_deploy_job.
+    await addEvent(A.orgId, ghWait, { status: 'unmapped', reason: 'repository_not_mapped' });
+    await addEvent(A.orgId, ghWait, { event: 'deployment_status', status: 'unmapped', reason: 'repository_not_mapped', facts: { kind: 'deployment_status', environment: 'Production' } });
+    await addEvent(A.orgId, ghWait, { status: 'pending' });
+    await addEvent(A.orgId, ghWait, { status: 'pending', reason: 'installation_not_claimed' });
+    await addEvent(A.orgId, ghWait, { status: 'unmapped', reason: 'repository_not_mapped', ago: '8 days' });
+    await addEvent(A.orgId, ghWait, { status: 'ignored', reason: 'legacy_webhook_org' });
+    await addEvent(A.orgId, ghWait, { event: 'workflow_run', status: 'unmapped', reason: 'repository_not_mapped' });
+    // Not either: a job an earlier rule decided was not the deploy job (only a rule's replay picks that up).
+    await addEvent(A.orgId, ghWait, { status: 'ignored', reason: 'not_deploy_job' });
+    // A, no rule: what a rule's replay picks up: 2 no_deploy_rule + 1 unmapped + 1 deployment_status no_deploy_rule = 4;
+    // one no_deploy_rule 8 days old is not counted.
+    await addEvent(A.orgId, ghNoRule, { status: 'ignored', reason: 'no_deploy_rule', facts: { kind: 'workflow_job', workflow_name: 'Deploy', job_name: 'deploy' } });
+    await addEvent(A.orgId, ghNoRule, { status: 'ignored', reason: 'no_deploy_rule', facts: { kind: 'workflow_job', workflow_name: 'Release', job_name: 'release' } });
+    await addEvent(A.orgId, ghNoRule, { status: 'unmapped', reason: 'repository_not_mapped' });
+    await addEvent(A.orgId, ghNoRule, { status: 'ignored', reason: 'no_deploy_rule', ago: '8 days' });
+    await addEvent(A.orgId, ghNoRule, { event: 'deployment_status', status: 'ignored', reason: 'no_deploy_rule', facts: { kind: 'deployment_status', environment: 'production' } });
+    await addEvent(A.orgId, ghNoRule, { event: 'deployment', status: 'processed', facts: { kind: 'deployment', environment: 'staging' } });
+    await addEvent(A.orgId, ghNoRule, { event: 'deployment', status: 'processed', facts: { kind: 'deployment', environment: 'PRODUCTION' }, ago: '2 hours' });
+    await addEvent(A.orgId, ghNoRule, { event: 'deployment', status: 'processed', facts: { kind: 'deployment', environment: 'old-env' }, ago: '40 days' });
+    // A, recording: an unmapped event is not "held" once service and rule exist.
+    await addEvent(A.orgId, ghRec, { status: 'unmapped', reason: 'repository_not_mapped' });
+    // Over the limit this month: job 11 twice (one deployment), job 12; job 13 last month; job 14 recorded since.
+    const now = new Date().toISOString();
+    const lastMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 15)).toISOString();
+    for (const [jobId, at] of [[11, now], [11, now], [12, now], [13, lastMonth], [14, now]] as const) {
+      await addEvent(A.orgId, ghRec, { status: 'over_limit', reason: 'monthly_deployment_limit', facts: { kind: 'workflow_job', job_id: jobId, completed_at: at } });
+    }
+    await addAppDeployment(A.orgId, svcRec, ghRec, '2026-01-02T03:04:05.000Z', { github_job_id: 14 });
+    await addAppDeployment(A.orgId, svcRec, ghRec, '2026-01-01T00:00:00.000Z');
+  });
+
+  afterAll(async () => {
+    await harness.pool.query('DELETE FROM deployments WHERE deployed_by = $1 AND organization_id = ANY($2::uuid[])', ['d8b2', [A.orgId, B.orgId]]);
+    await harness.pool.query('DELETE FROM pipeline_events WHERE installation_id = ANY($1::bigint[])', [[inst, instB2]]);
+    await harness.pool.query('DELETE FROM pipeline_repositories WHERE installation_id = ANY($1::bigint[])', [[inst, instB2]]);
+    await harness.pool.query('DELETE FROM github_installations WHERE installation_id = ANY($1::bigint[])', [[inst, instB2]]);
+    await harness.pool.query("DELETE FROM services WHERE name IN ('svc-rec', 'svc-b2') AND organization_id = ANY($1::uuid[])", [[A.orgId, B.orgId]]);
+  });
+
+  it('GET /repositories: held, seen, last deployment and over-limit, from this organization only; held_event_days 7', async () => {
+    const res = await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github/repositories');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.held_event_days).toBe(7);
+    const byId = new Map(body.data.repositories.map((r: { id: string }) => [r.id, r]));
+    expect(byId.get(rowWait)).toMatchObject({
+      held_events: 5, environments_seen: ['Production'], jobs_seen: [], last_deployment_at: null, over_limit_this_month: 0,
+    });
+    expect(byId.get(rowNoRule)).toMatchObject({ held_events: 4 });
+    const noRule = byId.get(rowNoRule) as { environments_seen: string[]; jobs_seen: unknown[] };
+    // Distinct without case, newest spelling first; 40-day-old names are not "seen".
+    expect([...noRule.environments_seen].sort()).toEqual(['production', 'staging']);
+    expect(noRule.jobs_seen).toEqual(expect.arrayContaining([{ workflow_name: 'Deploy', job_name: 'deploy' }, { workflow_name: 'Release', job_name: 'release' }]));
+    expect(noRule.jobs_seen).toHaveLength(2);
+    expect(byId.get(rowRec)).toMatchObject({ held_events: 0, over_limit_this_month: 2, last_deployment_at: '2026-01-02T03:04:05.000Z' });
+    // Nothing of B's: no names, no counts, no row.
+    expect(JSON.stringify(body)).not.toMatch(/b-secret-env|b-corp|secret-repo/);
+  });
+
+  it('B reads its own numbers for the same GitHub repository id', async () => {
+    const body = await (await harness.sendAs(B.orgId, B.viewer, 'GET', '/integrations/github/repositories')).json();
+    const row = body.data.repositories.find((r: { github_repo_id: string }) => r.github_repo_id === String(ghWait));
+    expect(row).toMatchObject({ full_name: 'b-corp/secret-repo', held_events: 6, environments_seen: ['b-secret-env'], over_limit_this_month: 1 });
+    expect(row.last_deployment_at).not.toBeNull();
+  });
+
+  it('R5: the role is the current membership, not the token claim: an admin claim on a member membership is refused for both PUTs', async () => {
+    for (const [path, body] of [
+      [`/integrations/github/repositories/${rowWait}/service`, { service_id: serviceA }],
+      [`/integrations/github/repositories/${rowWait}/deploy-rule`, { mode: 'none' }],
+    ] as const) {
+      const res = await harness.sendAs(A.orgId, A.member, 'PUT', path, body, 'admin');
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ ...ADMIN_REFUSAL, current: 'member' });
+    }
+    const row = (await harness.pool.query('SELECT service_id, deploy_rule FROM pipeline_repositories WHERE id = $1', [rowWait])).rows[0];
+    expect(row).toEqual({ service_id: null, deploy_rule: null });
+  });
+
+  it('PUT deploy-rule with one environment: stored trimmed, other fields as before; another organization\'s repository -> 404', async () => {
+    const res = await harness.sendAs(A.orgId, A.admin, 'PUT', `/integrations/github/repositories/${rowNoRule}/deploy-rule`,
+      { mode: 'github_deployments', environment_name: ' staging ' });
+    expect(res.status).toBe(200);
+    const stored = { v: 1, mode: 'github_deployments', environment_name: 'staging', environment_map: {}, aws_region: null };
+    expect((await res.json()).data.deploy_rule).toEqual(stored);
+    expect((await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [rowNoRule])).rows[0].deploy_rule).toEqual(stored);
+    const listed = (await (await harness.sendAs(A.orgId, A.viewer, 'GET', '/integrations/github/repositories')).json())
+      .data.repositories.find((r: { id: string }) => r.id === rowNoRule);
+    expect(listed.held_events).toBe(0);
+    const bRow = (await harness.pool.query('SELECT id::text AS id FROM pipeline_repositories WHERE organization_id = $1 AND github_repo_id = $2', [B.orgId, ghWait])).rows[0].id;
+    expect((await harness.sendAs(A.orgId, A.admin, 'PUT', `/integrations/github/repositories/${bRow}/deploy-rule`, { mode: 'github_deployments', environment_name: 'x' })).status).toBe(404);
+    expect((await harness.pool.query('SELECT deploy_rule FROM pipeline_repositories WHERE id = $1', [bRow])).rows[0].deploy_rule).toBeNull();
+  });
+});
+
 describe('/api/webhooks/github-app through the application body parsing', () => {
   const post = (raw: Buffer, headers: Record<string, string>) => fetch(webhookUrl, { method: "POST", body: new Uint8Array(raw), headers });
   const signed = (raw: Buffer) => 'sha256=' + crypto.createHmac('sha256', SECRET).update(raw).digest('hex');

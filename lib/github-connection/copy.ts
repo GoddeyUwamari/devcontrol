@@ -144,7 +144,92 @@ export const COPY = {
   disconnectFailed: "Couldn't disconnect. Try again.",
   demoChip: 'Demo data',
   demoBody: 'A sample of the connected screen. Nothing here can be changed.',
-  planLimitNote: "Deployments over your plan's monthly limit aren't recorded.",
+} as const
+
+/** Where a repository is sent to create a service, and where "See plans" goes (D8b-2 R11). */
+export const CREATE_SERVICE_HREF = `/services/new?returnTo=${encodeURIComponent(GITHUB_PAGE_HREF)}`
+export const SEE_PLANS_HREF = '/settings/billing/upgrade'
+
+/**
+ * How long held events are picked up, when the server does not say (it sends
+ * held_event_days, its HELD_EVENT_DAYS). One constant, never a literal in copy.
+ */
+export const HELD_EVENT_DAYS_FALLBACK = 7
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * Board 5 / board 8: the repository table (D8b-2). LOCKED strings are word for
+ * word from the mock; the rest were approved by the founder as drafted in
+ * d8b2-step-a.md §g (N8 reworded). Counts pluralise from the number.
+ */
+export const REPO_COPY = {
+  title: (n: number) => `Repositories (${n})`,
+  subtitle: 'The repositories you chose on GitHub. Each needs a service and a deploy rule before anything is recorded.',
+  createService: 'Create a service →',
+  colRepository: 'Repository',
+  colService: 'Service',
+  colRule: 'Deploy rule',
+  colStatus: 'Status',
+  chooseService: 'Choose a service',
+  /** N5: once mapped, unmaps from now on. */
+  noService: 'No service',
+  chipUseService: (name: string) => `Use “${name}”`,
+  chooseServiceFirst: 'Choose a service first',
+  chooseRule: 'Choose a deploy rule',
+  /** N2 */
+  nothingSeen: 'Nothing seen from GitHub yet',
+  /** N11 (members): no rule. */
+  noRule: 'No deploy rule',
+  ruleEnvironment: (name: string) => `Environment: ${name}`,
+  ruleJob: (job: string) => `Job: ${job}`,
+  /** N4: the same job name in two workflows. */
+  ruleJobInWorkflow: (workflow: string, job: string) => `Job: ${workflow} › ${job}`,
+  /** N3: stored rules the select can't offer (never for rules saved from this screen). */
+  ruleJobNamedBranch: (job: string, branch: string) => `Job: ${job} (branch ${branch})`,
+  ruleJobAnyBranch: (job: string) => `Job: ${job} (any branch)`,
+  /** Fix round 2 (N-5), NEW, for founder approval: a stored job rule that records as another environment. */
+  ruleJobEnvironment: (jobLabel: string, environment: string) => `${jobLabel} · records as ${environment}`,
+  ruleAnyEnvironment: 'Environments: any known name',
+  seen: (environments: readonly string[], jobs: readonly string[]) => {
+    const parts: string[] = []
+    if (environments.length > 0) parts.push(`environments ${environments.join(', ')}`)
+    if (jobs.length > 0) parts.push(`jobs ${jobs.join(', ')}`)
+    return `Seen: ${parts.join(' · ')}`
+  },
+  statusRecording: 'Recording',
+  statusWaiting: 'Waiting for a service',
+  statusNoRule: 'No deploy rule yet',
+  lastDeployment: (relative: string) => `Last deployment ${relative}`,
+  /** N1 */
+  noDeploymentYet: 'No deployment recorded yet',
+  held: (n: number) => `${plural(n, 'event', 'events')} held`,
+  overLimit: (n: number) => `${plural(n, 'deployment', 'deployments')} not recorded this month: plan limit reached`,
+  seePlans: 'See plans',
+  saving: 'Saving…',
+  saved: 'Saved',
+  /** N6 */
+  saveFailed: "Couldn't save. Try again.",
+  /** N7 */
+  saveNotFound: 'This repository or service no longer exists.',
+  /** N8 (founder wording) */
+  saveMaybe: 'The save may still be processing. Refresh this list to check.',
+  /** N9 */
+  loadFailed: "Couldn't load repositories.",
+  /** Founder-approved (d8b2-build.md §7.1), shown with "Try again". */
+  servicesFailed: "Couldn't load your services.",
+  /** N10 */
+  none: 'No repositories yet.',
+  chooseOnGitHub: 'Choose repositories on GitHub.',
+  footerHeldLabel: 'Held events:',
+  footerHeld: (days: number) =>
+    ` held for ${days} days. They're recorded once the repository has a service and deploy rule; after ${days} days, they're dropped.`,
+  footerRuleLabel: 'Deploy rule:',
+  /** R3 (founder): "…on the default branch". */
+  footerRule:
+    ' a deployment is recorded when GitHub reports a deployment to the environment you choose, or when the workflow job you choose finishes on the default branch.',
+  footerLimitLabel: 'Plan limit:',
+  footerLimit: " deployments over your plan's monthly limit aren't recorded.",
 } as const
 
 /** "GitHub organization" (board 5), and the other account types. */
@@ -208,3 +293,26 @@ export function installationSettingsUrl(installation: { installation_id: string;
   if (installation.account_type === 'Enterprise') return `https://github.com/enterprises/${login}/settings/installations/${id}`
   return `https://github.com/settings/installations/${id}`
 }
+
+/**
+ * Board 7 (D8b-2): copy on other pages, shown only while the GitHub App is
+ * switched on (GET /api/integrations/github says configured). Switched off,
+ * every page keeps its existing copy, "Coming soon" included.
+ */
+export const SURFACE_COPY = {
+  chipConnect: 'GitHub · Connect →',
+  chipRecording: (n: number) => `GitHub · ${n} ${n === 1 ? 'repository' : 'repositories'} recording`,
+  /** R14 (founder): connected, nothing recording yet. */
+  chipSetupIncomplete: 'GitHub · Setup incomplete',
+  chipAttention: 'GitHub · Needs attention',
+  tileConnect: 'Connect GitHub →',
+  tileManage: 'Manage GitHub connection →',
+  /** Founder ruling (§7.2): members, who can't connect or manage. */
+  tileView: 'View GitHub →',
+  eiNotConnected: 'Connect GitHub to record deployments from GitHub Actions. You can also record them by hand.',
+  eiConnect: 'Connect GitHub →',
+  eiConnected: "GitHub is connected. Deployments appear here after the next deploy that matches a repository's deploy rule.",
+  /** R15: replaces the GitHub Actions method sentence when the records are App-backed. */
+  methodGitHubApp:
+    'Measured from your deployment records: from GitHub Actions through the DevControl Deployments app, and from any deployments recorded by hand.',
+} as const

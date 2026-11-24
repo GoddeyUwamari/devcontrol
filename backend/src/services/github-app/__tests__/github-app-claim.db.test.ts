@@ -11,12 +11,14 @@ import { GitHubAppClient, GitHubClientError, GitHubInstallationDetails } from '.
 import { ingestDelivery } from '../ingest';
 import { processEvent } from '../process';
 import { disconnectInstallation, holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
-import { ConnectionSource, withOrgTransaction } from '../db';
+import { ConnectionSource, withOrgClient, withOrgTransaction } from '../db';
 import { normalizeDelivery } from '../normalize';
 import { createFixtures, enabledConfig, CLIENT_SECRET, WEBHOOK_SECRET } from './fixtures/db';
 import { installationCreated, installationEvent, signedDelivery, uniqueId, workflowJobCompleted } from './fixtures/payloads';
 import { EXPECTED_PERMISSIONS } from '../permissions';
 import { deployRuleBody, storedDeployRule } from '../deploy-rule';
+import { listRepositoryActivity } from '../../../repositories/pipeline-repositories.repository';
+import { MAPPING_REPLAY, RULE_REPLAY } from '../replay';
 
 const fx = createFixtures('d8a-claim');
 const logs: string[] = [];
@@ -522,4 +524,98 @@ describe('D8b-1 fix S-1: an event in flight while its installation is disconnect
     expect(await jobEvents(c.inst)).toEqual([{ org: orgA, status: 'ignored', reason: 'hold_expired', unprocessed: false, recorded: false }]);
     expect(await deploymentsFor(c.serviceId)).toBe(0);
   });
+});
+
+/**
+ * D8b-2 fix round 2 (S-2): a delivery held while the installation was
+ * disconnected keeps its original received_at when a claim releases it. The
+ * pick-up at that claim applies the same 7-day window as a replay and the held
+ * counts (ruling R1): an older deployment candidate is not recorded and its row
+ * is left exactly as the release stored it. Nothing is deleted or changed.
+ */
+describe('D8b-2 fix round 2 (S-2): held during a disconnect, picked up at reconnect only within 7 days', () => {
+  const JOB_RULE = storedDeployRule(deployRuleBody.parse({ mode: 'job', workflow_name: 'CI', job_name: 'deploy-backend' }));
+  const COPIED = 'delivery_id, event, action, event_key, occurred_at, received_at, normalizer_version, facts, payload_sha256';
+
+  beforeAll(() => fx.grantDeploymentWrites());
+
+  it('10 days old with a service and rule: not recorded, row as released; 6 days old: recorded; one minute either side of 7 days decides the same way, and the held count agrees', async () => {
+    const inst = fx.installationId();
+    const repoId = uniqueId();
+    await deliver('installation', installationCreated(inst, INSTALLER, [{ id: repoId, full_name: 'acme/held-window' }]));
+    const f = { githubUserId: INSTALLER, accessible: [inst], repos: [{ id: repoId, fullName: 'acme/held-window' }] };
+    const reclaim = async () =>
+      claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, deps(f));
+    expect((await reclaim()).body.data).toMatchObject({ status: 'connected' });
+    // The repository already has its service and deploy rule.
+    const serviceId = await fx.service(orgA, `held-window-${inst}`);
+    await fx.admin.query('UPDATE pipeline_repositories SET service_id = $1, deploy_rule = $2::jsonb WHERE organization_id = $3 AND github_repo_id = $4',
+      [serviceId, JSON.stringify(JOB_RULE), orgA, repoId]);
+    expect(await withOrgTransaction(fx.app, orgA, (c) => disconnectInstallation(c, orgA, inst))).toEqual({ repositories: 1 });
+
+    // Delivered while disconnected: held (no organization). Then aged.
+    const ages = { tenDays: '10 days', justOutside: '7 days 1 minute', justInside: '6 days 23 hours 59 minutes', sixDays: '6 days' };
+    const jobs = Object.fromEntries(Object.keys(ages).map((k) => [k, uniqueId()])) as Record<keyof typeof ages, number>;
+    for (const [k, ago] of Object.entries(ages) as [keyof typeof ages, string][]) {
+      expect((await deliver('workflow_job', workflowJobCompleted(inst, repoId, { jobId: jobs[k] }))).status).toBe(202);
+      await fx.admin.query(`UPDATE github_held_deliveries SET received_at = NOW() - $2::interval WHERE installation_id = $1 AND facts ->> 'job_id' = $3`,
+        [inst, ago, String(jobs[k])]);
+    }
+    const heldRow = async (jobId: number) => (await fx.admin.query(
+      `SELECT ${COPIED} FROM github_held_deliveries WHERE installation_id = $1 AND facts ->> 'job_id' = $2`, [inst, String(jobId)])).rows;
+    const held = { tenDays: await heldRow(jobs.tenDays), justOutside: await heldRow(jobs.justOutside) };
+    expect(held.tenDays).toHaveLength(1);
+    expect(held.justOutside).toHaveLength(1);
+
+    expect((await reclaim()).body.data).toMatchObject({ status: 'connected', released_events: 4 });
+
+    // Recorded: only the two inside the window.
+    const recorded = (await fx.admin.query(
+      `SELECT (metadata ->> 'github_job_id')::bigint AS job FROM deployments WHERE organization_id = $1 AND service_id = $2 ORDER BY 1`,
+      [orgA, serviceId])).rows.map((r) => Number(r.job));
+    expect(recorded).toEqual([jobs.justInside, jobs.sixDays].sort((a, b) => a - b));
+
+    // Not recorded: each row is what the release copied from the held delivery, never processed.
+    const eventRow = async (jobId: number) => (await fx.admin.query(
+      `SELECT ${COPIED}, held_at = received_at AS held_at_received, processing_status, processing_reason, processing_attempts, processed_at, deployment_id
+         FROM pipeline_events WHERE organization_id = $1 AND installation_id = $2 AND facts ->> 'job_id' = $3`, [orgA, inst, String(jobId)])).rows;
+    const asReleased = { held_at_received: true, processing_status: 'pending', processing_reason: null, processing_attempts: 0, processed_at: null, deployment_id: null };
+    expect(await eventRow(jobs.tenDays)).toEqual([{ ...held.tenDays[0], ...asReleased }]);
+    expect(await eventRow(jobs.justOutside)).toEqual([{ ...held.justOutside[0], ...asReleased }]);
+
+    // The same boundary decides the held count: two unprocessed rows, none counted for either step.
+    const activity = (await withOrgClient(fx.app, orgA, (c) =>
+      listRepositoryActivity(c, orgA, { mapping: MAPPING_REPLAY, rule: RULE_REPLAY }))).get(String(repoId));
+    expect(activity?.heldForMapping ?? 0).toBe(0);
+    expect(activity?.heldForRule ?? 0).toBe(0);
+
+    // A later claim (already connected) picks them up no more than the first: byte for byte unchanged.
+    const whole = async () => (await fx.admin.query(
+      `SELECT row_to_json(e)::text AS j FROM pipeline_events e WHERE organization_id = $1 AND installation_id = $2 AND facts ->> 'job_id' = ANY($3::text[]) ORDER BY 1`,
+      [orgA, inst, [String(jobs.tenDays), String(jobs.justOutside)]])).rows.map((r) => r.j);
+    const before = await whole();
+    expect((await reclaim()).body.data).toMatchObject({ status: 'already_connected' });
+    expect(await whole()).toEqual(before);
+    expect(await deploymentsCount(serviceId)).toBe(2);
+  });
+
+  it('the window is for deployment candidates only: a held installation.created older than 7 days is still processed at the claim', async () => {
+    const inst = fx.installationId();
+    const repoId = uniqueId();
+    await deliver('installation', installationCreated(inst, INSTALLER, [{ id: repoId, full_name: 'acme/old-install' }]));
+    await fx.admin.query(`UPDATE github_held_deliveries SET received_at = NOW() - interval '10 days' WHERE installation_id = $1`, [inst]);
+    // GitHub's repository list fails at the claim: the installation event alone links the repository.
+    const f = { githubUserId: INSTALLER, accessible: [inst] };
+    const failingList = { ...deps(f), github: () => ({ ...fakeClient(f), listInstallationRepositories: async () => { throw new GitHubClientError('github_unavailable'); } }) };
+    const result = await claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, failingList);
+    expect(result.body.data).toMatchObject({ status: 'connected', repositories: 0, released_events: 1 });
+    expect((await fx.admin.query(
+      `SELECT event, processing_status FROM pipeline_events WHERE organization_id = $1 AND installation_id = $2`, [orgA, inst])).rows)
+      .toEqual([{ event: 'installation', processing_status: 'processed' }]);
+    expect((await fx.admin.query('SELECT full_name FROM pipeline_repositories WHERE organization_id = $1 AND installation_id = $2', [orgA, inst])).rows)
+      .toEqual([{ full_name: 'acme/old-install' }]);
+  });
+
+  const deploymentsCount = async (serviceId: string) =>
+    (await fx.admin.query('SELECT count(*)::int AS n FROM deployments WHERE organization_id = $1 AND service_id = $2', [orgA, serviceId])).rows[0].n;
 });

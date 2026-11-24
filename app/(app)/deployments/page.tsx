@@ -30,6 +30,7 @@ import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
 import { Skeleton } from '@/components/ui/skeleton'
 import { isManualRecord } from '@/lib/deployments/record'
 import { RecordDeploymentModal } from '@/components/deployments/record-deployment-modal'
+import { GitHubStatusChip } from '@/components/integrations/github-status-chip'
 import { Rocket, RefreshCw, ArrowRight, XCircle, AlertTriangle, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 
 type EnvironmentFilter = 'all' | DeploymentEnvironment
@@ -244,7 +245,9 @@ function DeploymentsContent() {
             Track all service deployments across environments · Status as recorded by your pipeline or by hand.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Board 7 (D8b-2): the GitHub connection, only while the feature is on; no request in demo mode. */}
+          <GitHubStatusChip enabled={!isDemoActive} />
           <button
             onClick={() => { refetch(); refetchStats() }}
             className="flex items-center gap-2 bg-white text-ink-muted px-4 py-2 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap"

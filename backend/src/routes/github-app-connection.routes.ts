@@ -6,17 +6,18 @@ import { isDemoOrganization } from '../demo/demo-workspace';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
 import { disconnectInstallation, listInstallations } from '../repositories/github-installations.repository';
-import { lastEventReceivedAt } from '../repositories/pipeline-events.repository';
+import { HELD_EVENT_DAYS, lastEventReceivedAt } from '../repositories/pipeline-events.repository';
 import {
   githubRepoIdOf,
   listJobsSeen,
   listRepositories,
+  listRepositoryActivity,
   setRepositoryDeployRule,
   setRepositoryService,
 } from '../repositories/pipeline-repositories.repository';
 import { STATE_PATTERN, claimInstallation, retryClaim, startInstall } from '../services/github-app/claim';
 import { defaultSource, withOrgClient, withOrgTransaction } from '../services/github-app/db';
-import { deployRuleBody, environmentMapProblem, storedDeployRule } from '../services/github-app/deploy-rule';
+import { deployRuleBody, environmentMapProblem, readStoredDeployRule, storedDeployRule } from '../services/github-app/deploy-rule';
 import { permissionDifferences } from '../services/github-app/permissions';
 import { MAPPING_REPLAY, replayRepository, RULE_REPLAY } from '../services/github-app/replay';
 
@@ -188,12 +189,42 @@ router.delete('/installations/:installationId', refuseUnconfigured, requireAdmin
   }
 });
 
-// GET /api/integrations/github/repositories
+// GET /api/integrations/github/repositories (any member of the organization)
+// D8b-2 adds, per repository, only what DevControl has stored for this
+// organization (listRepositoryActivity):
+//   held_events            the events the repository's next step's replay picks up
+//                          (no service: MAPPING_REPLAY; service but no usable rule:
+//                          RULE_REPLAY), counted with the replay's own eligibility
+//                          test (replayEligibleSql, last held_event_days days, ruling
+//                          R1; fix round 2 N-1); 0 once both exist
+//   environments_seen      GitHub environment names (30 days)
+//   jobs_seen              { workflow_name, job_name } (30 days)
+//   last_deployment_at     newest deployment recorded from this repository
+//   over_limit_this_month  deployments refused over the monthly limit this month
+// and held_event_days (7) at the top level, for the screen's footer.
 router.get('/repositories', refuseUnconfigured, async (req, res, next) => {
   try {
     const { organizationId } = orgAndUser(req);
-    const repositories = await withOrgClient(defaultSource, organizationId, (client) => listRepositories(client, organizationId));
-    res.json({ success: true, data: { repositories } });
+    const repositories = await withOrgClient(defaultSource, organizationId, async (client) => {
+      const rows = await listRepositories(client, organizationId);
+      const activity = await listRepositoryActivity(client, organizationId, { mapping: MAPPING_REPLAY, rule: RULE_REPLAY });
+      return rows.map((row) => {
+        const a = activity.get(row.github_repo_id);
+        const rule = readStoredDeployRule(row.deploy_rule);
+        const hasRule = rule !== 'invalid' && rule.mode !== 'none';
+        // What the next step's replay picks up: the mapping's (PUT service) or the rule's (PUT deploy-rule).
+        const held = row.service_id === null ? (a?.heldForMapping ?? 0) : hasRule ? 0 : (a?.heldForRule ?? 0);
+        return {
+          ...row,
+          held_events: held,
+          environments_seen: a?.environments ?? [],
+          jobs_seen: a?.jobs ?? [],
+          last_deployment_at: a?.lastDeployment ?? null,
+          over_limit_this_month: a?.overLimit ?? 0,
+        };
+      });
+    });
+    res.json({ success: true, data: { repositories, held_event_days: HELD_EVENT_DAYS } });
   } catch (error) {
     next(error);
   }

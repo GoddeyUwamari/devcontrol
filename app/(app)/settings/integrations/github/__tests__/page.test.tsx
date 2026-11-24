@@ -394,7 +394,9 @@ describe('connected (board 5 header, summary, disconnect; board 6 banners)', () 
     expect(manage).toHaveAttribute('href', 'https://github.com/organizations/acme-inc/settings/installations/42')
     expect(manage).toHaveAttribute('target', '_blank')
     expect(manage).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(screen.getByTestId('github-plan-limit')).toHaveTextContent("Deployments over your plan's monthly limit aren't recorded.")
+    // D8b-2: the plan-limit sentence moved from under the summary card into board 5's footer.
+    expect(screen.queryByTestId('github-plan-limit')).toBeNull()
+    expect(await screen.findByTestId('github-repo-footer')).toHaveTextContent("Plan limit: deployments over your plan's monthly limit aren't recorded.")
     expect(screen.getByTestId('github-disconnect-row')).toHaveTextContent('Disconnect GitHubStops recording. Your repositories, services, rules and past deployments are kept.Disconnect')
   })
 
@@ -444,10 +446,14 @@ describe('connected (board 5 header, summary, disconnect; board 6 banners)', () 
       { id: 'r3', github_repo_id: '3', installation_id: '42', full_name: 'acme-inc/payments-api', service_id: null, service_name: null, deploy_rule: null, access_state: 'active', removed_at: null, last_event_at: null },
     ]
     renderPage()
-    const list = await screen.findByTestId('github-removed-repositories')
-    expect(list).toHaveTextContent('acme-inc/legacy-billingRemoved from the app on GitHub · past deployments kept · nothing new is recorded')
-    expect(list).not.toHaveTextContent('old-detached')
-    expect(list).not.toHaveTextContent('payments-api')
+    // D8b-2 (R8, R16): the removed row is greyed at the bottom of the table; a detached repository is hidden.
+    const table = await screen.findByTestId('github-repo-table')
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual(['github-repo-row-r3', 'github-repo-row-r1'])
+    expect(rows[1]).toHaveTextContent('acme-inc/legacy-billingRemoved from the app on GitHub · past deployments kept · nothing new is recorded')
+    expect(within(rows[1]).queryByRole('combobox')).toBeNull()
+    expect(table).not.toHaveTextContent('old-detached')
+    expect(screen.getByText('Repositories (1)')).toBeInTheDocument()
   })
 
   it('a member: no disconnect row, no change request possible', async () => {

@@ -5,6 +5,8 @@
  *   setting a deploy rule             -> its 'pending' and 'unmapped' events, and
  *                                        the 'ignored' ones a rule decides
  *
+ * Only events received in the last HELD_EVENT_DAYS (7; D8b-2 ruling R1: older
+ * ones stay stored, untouched, and are no longer recorded).
  * Only workflow_job and deployment_status events, in receipt order, read in
  * keyset pages of REPLAY_BATCH by (received_at, id) until the selection is
  * used up (review S-1: events the new rule still ignores stay in the
@@ -30,7 +32,8 @@ export const MAPPING_REPLAY: ReplaySelection = { statuses: ['pending', 'unmapped
 export const RULE_REPLAY: ReplaySelection = {
   statuses: ['pending', 'unmapped'],
   ignoredReasons: [
-    'no_deploy_rule', 'deploy_rule_invalid', 'not_deploy_job', 'branch_not_matched', 'other_mode', 'unknown_environment', 'legacy_webhook_org',
+    'no_deploy_rule', 'deploy_rule_invalid', 'not_deploy_job', 'branch_not_matched', 'other_mode', 'unknown_environment',
+    'environment_not_matched', 'legacy_webhook_org',
   ],
 };
 

@@ -9,12 +9,13 @@
  *   - null stays "—"; no comparison → no %; no "Connect your CI".
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, within, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ReactNode } from 'react'
 import DORAMetricsPage from '../page'
+import { githubConnectionService } from '@/lib/services/github-connection.service'
 import { emptyData, founderData, mixedData, ODD_BANDS, PIPELINE_ROW, STATS_BASE } from './d4-fixture'
 
 const env = vi.hoisted(() => ({ tier: 'pro', demo: false }))
@@ -45,6 +46,15 @@ vi.mock('@/lib/services/teams.service', () => ({
 }))
 vi.mock('@/lib/api', () => ({
   default: { get: (...a: unknown[]) => apiGet(...a), post: (...a: unknown[]) => apiPost(...a), delete: vi.fn() },
+}))
+// D8b-2 board 7: GET /api/integrations/github. Switched off by default, so the tests above keep proving
+// today's page; the ruling §7.3 tests at the end set it.
+const github = vi.hoisted(() => ({ answer: { configured: false } as unknown, mode: 'ok' as 'ok' | 'fail' | 'pending' }))
+vi.mock('@/lib/services/github-connection.service', () => ({
+  githubConnectionService: {
+    get: vi.fn(() => (github.mode === 'fail' ? Promise.reject(new Error('down')) : github.mode === 'pending' ? new Promise(() => undefined) : Promise.resolve(github.answer))),
+    repositories: vi.fn(async () => ({ repositories: [], held_event_days: 7 })),
+  },
 }))
 // The chart is recharts: expose exactly what it is given.
 vi.mock('recharts', () => ({
@@ -77,6 +87,8 @@ const chartPoints = () => JSON.parse(screen.getByTestId('bar-chart').getAttribut
 beforeEach(() => {
   env.tier = 'pro'
   env.demo = false
+  github.answer = { configured: false }
+  github.mode = 'ok'
   getDORAMetrics.mockReset().mockResolvedValue(ok(founderData()))
   getStats.mockReset().mockResolvedValue({ ...STATS_BASE })
   getAll.mockReset().mockResolvedValue([PIPELINE_ROW])
@@ -560,5 +572,71 @@ describe('Planned cards follow the API', () => {
     await card('deployment-frequency')
     expect(screen.queryByTestId('dora-card-merge-to-production-time')).not.toBeInTheDocument()
     expect(screen.getByTestId('dora-card-failed-deployment-recovery-time')).toBeInTheDocument()
+  })
+})
+
+describe('no-data banner and the GitHub status (D8b-2, founder ruling §7.3)', () => {
+  const noDeployments = () => {
+    getDORAMetrics.mockResolvedValue(ok(emptyData()))
+    getStats.mockResolvedValue({ ...STATS_BASE, total: 0, success: 0, organization_has_deployments: false, last_deployment: null })
+    getAll.mockResolvedValue([])
+  }
+  const INSTALLATION = { installation_id: '42', account_login: 'acme-inc', account_type: 'Organization', permissions_state: 'expected', suspended_at: null, deleted_at: null }
+  const on = (over: Record<string, unknown> = {}) => ({ configured: true, can_manage: true, demo: false, installations: [], last_event_at: null, ...over })
+
+  it('the GitHub status request failed: no GitHub banner at all, never "coming soon"', async () => {
+    noDeployments()
+    github.mode = 'fail'
+    renderPage()
+    await screen.findByTestId('dora-source-line')
+    await waitFor(() => expect(screen.getByRole('button', { name: /Export CSV/ })).toBeDisabled())
+    expect(screen.queryByTestId('dora-no-data-banner')).toBeNull()
+    expect(document.body).not.toHaveTextContent(/coming soon/i)
+  })
+
+  it('the GitHub status is still loading: no banner yet (nothing flashes "coming soon")', async () => {
+    noDeployments()
+    github.mode = 'pending'
+    renderPage()
+    await screen.findByTestId('dora-source-line')
+    expect(screen.queryByTestId('dora-no-data-banner')).toBeNull()
+    expect(document.body).not.toHaveTextContent(/coming soon/i)
+  })
+
+  it('switched on, not connected: the board 7 banner with Connect GitHub for an owner', async () => {
+    noDeployments()
+    github.answer = on()
+    renderPage()
+    const banner = await screen.findByTestId('dora-no-data-banner')
+    expect(banner).toHaveTextContent('Connect GitHub to record deployments from GitHub Actions. You can also record them by hand.')
+    expect(within(banner).getByTestId('dora-banner-connect')).toHaveAttribute('href', '/settings/integrations/github')
+    expect(banner).not.toHaveTextContent(/coming soon/i)
+  })
+
+  it('switched on, connected: the board 7 sentence', async () => {
+    noDeployments()
+    github.answer = on({ installations: [INSTALLATION] })
+    renderPage()
+    expect(await screen.findByTestId('dora-banner-connected')).toHaveTextContent("GitHub is connected. Deployments appear here after the next deploy that matches a repository's deploy rule.")
+  })
+
+  it('fix round 2 (founder): the demo workspace with the feature on: no banner, never "coming soon"', async () => {
+    noDeployments()
+    github.answer = on({ demo: true, can_manage: false, installations: [INSTALLATION] })
+    renderPage()
+    await screen.findByTestId('dora-source-line')
+    await waitFor(() => expect(screen.getByRole('button', { name: /Export CSV/ })).toBeDisabled())
+    await waitFor(() => expect(vi.mocked(githubConnectionService.get)).toHaveBeenCalled())
+    // The answer has landed (the page knows it is the demo workspace), not just "still loading".
+    await vi.mocked(githubConnectionService.get).mock.results[0].value
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(screen.queryByTestId('dora-no-data-banner')).toBeNull()
+    expect(document.body).not.toHaveTextContent(/coming soon/i)
+  })
+
+  it('switched off: today\'s banner, as before', async () => {
+    noDeployments()
+    renderPage()
+    expect(await screen.findByTestId('dora-no-data-banner')).toHaveTextContent('Connecting your CI/CD pipeline is coming soon.')
   })
 })

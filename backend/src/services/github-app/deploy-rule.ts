@@ -71,6 +71,15 @@ export function environmentMapProblem(body: unknown): string | null {
 
 const environmentsRule = z.object({
   mode: z.literal('github_deployments'),
+  /**
+   * D8b-2 ruling R2: record deployments to this one GitHub environment only
+   * (matched without case, trimmed). Optional and without a default, so a rule
+   * saved without it keeps its stored shape and its behaviour (every known
+   * environment name). Its DevControl environment is the name's own (map, then
+   * the default names), else production, as for a job rule.
+   */
+  environment_name: z.string().refine((k) => k.trim().length >= 1 && k.trim().length <= 255)
+    .refine((k) => !/[\u0000-\u001f\u007f]/.test(k)).transform((k) => k.trim()).optional(),
   /** GitHub environment name (any case) -> DevControl environment. Wins over the default names. */
   // Keys are checked as sent and trimmed in the transform, so " prod" and "prod" are seen as the duplicates they are.
   environment_map: z.record(environmentKey, environment).default({})
