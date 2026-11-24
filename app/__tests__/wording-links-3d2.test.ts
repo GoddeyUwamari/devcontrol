@@ -235,7 +235,8 @@ describe('D7: one label and target per link into Services', () => {
     expect(src('app/(app)/services/RegionCoverageCard.tsx')).toMatch(/['"]region-coverage['"]/)
   })
   it('"View regions" is gone from Infrastructure', () => {
-    for (const f of ['overviewModel.ts', 'AccountStrip.tsx']) expect(src(`app/(app)/infrastructure/overview/${f}`)).not.toMatch(/View regions/)
+    // Redesign (Nov 24): the account strip is gone; its region link moved to the notice.
+    for (const f of ['overviewModel.ts', 'RegionNotice.tsx']) expect(src(`app/(app)/infrastructure/overview/${f}`)).not.toMatch(/View regions/)
   })
 })
 

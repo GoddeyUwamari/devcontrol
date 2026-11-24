@@ -42,7 +42,8 @@ describe('Dec 1 (UTC), no billed days yet: no surface shows $0', () => {
   it('Infrastructure tile (unchanged) and Cost by AWS service (no empty table)', () => {
     expect(infraTile(DAY1_NONE)).toMatchObject({ value: '—', captions: [['whole account · billed, from Cost Explorer · no billed days yet this month'], expect.anything()] })
     expect(costByService(ready(DAY1_NONE))).toEqual({
-      status: 'unavailable', sub: null, rows: [],
+      // Infrastructure redesign R5: the spend card's Cost Explorer time is shown here now.
+      status: 'unavailable', sub: null, asOf: '2026-12-01T00:30:00.000Z', rows: [],
       unavailable: 'No billed days yet this month (Dec 1, UTC). Services appear here once AWS Cost Explorer reports them.',
     })
   })

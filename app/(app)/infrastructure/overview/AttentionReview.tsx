@@ -18,6 +18,7 @@ function ReviewDetail({ row, now }: { row: AttentionRow; now: number }) {
         <dt className="text-label uppercase tracking-[0.04em] text-slate-600">What we found</dt>
         <dd className="m-0 break-words text-slate-900">
           {row.found}
+          {row.resourceId && <span data-testid="infra-review-resource-id" className="block font-mono text-meta text-slate-600">{row.resourceId}</span>}
           {row.foundAt && <span className="block text-meta text-slate-600"><RichText parts={['Found on the scan that finished ', { iso: row.foundAt }]} now={now} /></span>}
         </dd>
       </div>
@@ -44,7 +45,7 @@ function ReviewButton({ row, open, controls, onToggle, full = false }: { row: At
       onClick={onToggle}
       aria-expanded={open}
       aria-controls={open ? controls : undefined}
-      aria-label={`${open ? 'Hide' : 'Review'} ${row.resource}`}
+      aria-label={`${open ? 'Hide' : 'Review'} ${row.resource}${row.resourceId ? ` (${row.resourceId})` : ''}`}
       className={`${full ? 'w-full justify-center' : ''} inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1 text-label text-slate-700 hover:border-slate-300`}
     >
       {open ? 'Hide' : 'Review'}
@@ -101,8 +102,10 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
                     <td className="whitespace-nowrap px-4 py-3"><SeverityBadge severity={row.severity.severity} label={row.severity.label} /></td>
                     <th scope="row" className="px-3 py-3 text-left font-normal text-slate-900">{row.issue}</th>
                     <td className="px-3 py-3">
-                      <span className="font-medium text-slate-900">{row.resource}</span>{' '}
-                      <span className="text-meta text-slate-600">{row.resourceKind}</span>
+                      <span className="flex flex-col">
+                        <span className="break-words font-medium text-slate-900">{row.resource}</span>
+                        <span className="text-meta text-slate-600">{row.resourceKind}</span>
+                      </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 font-mono text-meta text-slate-700">{row.region}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -125,9 +128,12 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
             const isOpen = open === row.key
             return (
               <li key={row.key} className="flex flex-col gap-2 border-b border-slate-100 px-4 py-3">
-                <SeverityBadge severity={row.severity.severity} label={row.severity.label} className="w-fit" />
-                <p className="m-0 text-ui text-slate-900">{row.issue}</p>
-                <p className="m-0 break-words text-meta text-slate-600">{row.resource} · {row.resourceKind} · {row.region}</p>
+                <span className="flex items-center justify-between gap-2">
+                  <SeverityBadge severity={row.severity.severity} label={row.severity.label} className="w-fit" />
+                  <span className="font-mono text-meta text-slate-600">{row.region}</span>
+                </span>
+                <p className="m-0 text-ui font-medium text-slate-900">{row.issue}</p>
+                <p className="m-0 break-words text-meta text-slate-600">{row.resource} · {row.resourceKind}</p>
                 <ReviewButton row={row} open={isOpen} controls={id} onToggle={() => toggle(row.key)} full />
                 {isOpen && <div id={id}><ReviewDetail row={row} now={now} /></div>}
               </li>
@@ -141,13 +147,21 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
   const ready = view.status === 'ready' ? view : null
   return (
     <section aria-labelledby="infra-attention-heading" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="flex flex-col gap-1 border-b border-slate-100 px-4 py-3">
-        <h2 id="infra-attention-heading" className="m-0 text-section text-slate-900">{OVERVIEW_COPY.attentionTitle}</h2>
-        <p data-testid="infra-attention-description" className="m-0 text-body text-slate-600">
-          {OVERVIEW_COPY.attentionDescription}
-          {ready && ` ${ready.counts}.`}
-        </p>
-        <p data-testid="infra-attention-account-note" className="m-0 text-meta text-slate-600">{OVERVIEW_COPY.attentionAccountNote}</p>
+      <div className="flex flex-col gap-1 border-b border-slate-100 px-4 py-3 sm:px-6 sm:pt-6 sm:pb-4">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            {/* The heading names the region; the severity line sits beside it, outside the name. */}
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <h2 id="infra-attention-heading" className="m-0 text-section text-slate-900">{OVERVIEW_COPY.attentionTitle}</h2>
+              {ready?.severityLine && <p data-testid="infra-attention-severity" className="m-0 text-body font-medium text-slate-600"><span aria-hidden="true" className="hidden sm:inline">· </span>{ready.severityLine}</p>}
+            </div>
+            <p data-testid="infra-attention-description" className="m-0 text-body text-slate-600">
+              {OVERVIEW_COPY.attentionDescription}
+              {ready && ` ${ready.counts}.`}
+            </p>
+          </div>
+          {ready?.securityLink && <Link href={OVERVIEW_COPY.securityHref} className="text-ui font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.securityFindings}</Link>}
+        </div>
         {ready?.resourceError && (
           <p role="alert" className="m-0 flex flex-wrap items-center gap-2 text-meta text-slate-700">
             {OVERVIEW_COPY.resourcesError}
@@ -160,12 +174,10 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
         {ready?.firstHundred && <p className="m-0 text-meta text-slate-600">{OVERVIEW_COPY.firstHundred}</p>}
       </div>
       {body}
-      {ready && (ready.viewAll !== null || ready.securityLink) && (
-        <div className="flex flex-wrap gap-4 border-t border-slate-100 px-4 py-3 text-ui">
-          {ready.viewAll !== null && <Link href={OVERVIEW_COPY.viewAllHref} className="font-semibold text-violet-700 hover:underline">View all {ready.viewAll} in Services &amp; Ownership →</Link>}
-          {ready.securityLink && <Link href="/security" className="font-semibold text-violet-700 hover:underline">Security findings →</Link>}
-        </div>
-      )}
+      <div className="flex flex-col gap-2 border-t border-slate-100 px-4 py-3 sm:px-6">
+        {ready && ready.viewAll !== null && <Link href={OVERVIEW_COPY.viewAllHref} className="text-ui font-semibold text-violet-700 hover:underline">View all {ready.viewAll} in Services &amp; Ownership →</Link>}
+        <p data-testid="infra-attention-account-note" className="m-0 text-meta text-slate-600">{OVERVIEW_COPY.attentionAccountNote}</p>
+      </div>
     </section>
   )
 }

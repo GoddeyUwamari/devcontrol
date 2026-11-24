@@ -34,7 +34,12 @@
   },
   "infrastructureSpendTile": {
     "key": "spend",
-    "label": "Spend this month",
+    "label": "AWS spend, this month",
+    "info": [],
+    "link": {
+      "text": "Cost by service ↓",
+      "href": "#infra-cost-heading"
+    },
     "value": "$13.30",
     "captions": [
       [
@@ -46,11 +51,15 @@
           "iso": "2026-12-02T18:00:00.000Z"
         }
       ]
+    ],
+    "line": [
+      "Whole account · billed, from Cost Explorer · latest days still updating"
     ]
   },
   "infrastructureCostByService": {
     "status": "ready",
     "sub": "This month, billed",
+    "asOf": "2026-12-02T18:00:00.000Z",
     "rows": [
       {
         "service": "Amazon Elastic Compute Cloud - Compute",

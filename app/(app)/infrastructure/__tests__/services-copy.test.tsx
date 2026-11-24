@@ -4,14 +4,18 @@
  *   for an estimate above $0, the API's own finding counts used only when sent
  *   (never computed here), DynamoDB never labelled S3, and the zero / error /
  *   not-connected states exactly as before;
- * - "What needs attention": a security group reads "<name> (sg-…)", or the
- *   sg- ID alone; the stored identifier, order and links are unchanged.
+ * - "What needs attention": a security group reads its name once, with
+ *   "Security group · account-level" under it and its sg- ID in the Review
+ *   expansion (redesign R7), or the sg- ID alone; the stored identifier, order
+ *   and links are unchanged.
+ * - The redesigned card shows one line and puts the sentences behind ⓘ; the
+ *   sentences themselves (captions) are unchanged.
  * Synthetic data only (account 123456789012, placeholder sg- IDs).
  */
 process.env.TZ = 'UTC'
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, within } from '@testing-library/react'
+import { fireEvent, render, within } from '@testing-library/react'
 import type { RecommendationStats } from '@/lib/types'
 import type { AccountSecurityFinding, SecurityGroupEvidence } from '@/lib/services/account-security-findings.service'
 import { describeOverview, rankAttention, securityGroupLabel, OVERVIEW_COPY, type OverviewInputs } from '../overview/overviewModel'
@@ -75,7 +79,9 @@ describe('savings: estimate > 0', () => {
       'Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above).',
       SOURCE,
     ])
-    expect(JSON.stringify(s)).not.toMatch(/open finding|\b7\b|\b5\b more/)
+    // The sentences compute nothing from the active count; the card's line is the approved "N open opportunities" (ruling 5).
+    expect(JSON.stringify(s.captions)).not.toMatch(/open finding|\b7\b|\b5\b more/)
+    expect(s.line).toEqual(['DevControl estimate · 7 open opportunities'])
   })
 
   it('only one count sent: each is used on its own', () => {
@@ -92,7 +98,9 @@ describe('savings: estimate > 0', () => {
 describe('savings: open findings, no estimate > 0', () => {
   it('"N open findings; none has a dollar estimate yet." then "Up to" lines without "Plus"/"not included above"; neutral, never $0', () => {
     const s = savingsOf({ totalRecommendations: 2, activeRecommendations: 2, potentialSavingsCeilingByResourceType: { S3: 0.01 } })
-    expect(s.value).toBe('No dollar estimate')
+    // Founder mock: "—" with "No dollar estimate yet · N open opportunities", never $0.
+    expect(s.value).toBe('—')
+    expect(s.line).toEqual(['No dollar estimate yet · 2 open opportunities'])
     expect(s.tone).toBeUndefined()
     expect(lines(s.captions)).toEqual([
       '2 open findings; none has a dollar estimate yet.',
@@ -120,7 +128,7 @@ describe('savings: open findings, no estimate > 0', () => {
   })
 
   it('a non-finite total is not an estimate', () => {
-    expect(savingsOf({ activeRecommendations: 2, totalPotentialSavings: Number.NaN }).value).toBe('No dollar estimate')
+    expect(savingsOf({ activeRecommendations: 2, totalPotentialSavings: Number.NaN })).toMatchObject({ value: '—', line: ['No dollar estimate yet · 2 open opportunities'] })
   })
 })
 
@@ -129,12 +137,13 @@ describe('savings: zero, error and not connected are unchanged', () => {
     expect(savingsOf({})).toEqual({
       key: 'savings', label: 'Possible savings', link: { text: 'Review recommendations →', href: '/cost-optimization' },
       value: '$0.00/mo est.', captions: [[SOURCE], [OVERVIEW_COPY.savingsNone]],
+      line: [OVERVIEW_COPY.savingsNone], info: [SOURCE],
     })
   })
   it('error and loading', () => {
     expect(view({ savings: ERROR }).tiles!.savings).toEqual({
       key: 'savings', label: 'Possible savings', link: { text: 'Review recommendations →', href: '/cost-optimization' },
-      value: '—', captions: [[OVERVIEW_COPY.savingsError]],
+      value: '—', captions: [[OVERVIEW_COPY.savingsError]], line: [OVERVIEW_COPY.savingsError], info: [],
     })
     expect(view({ savings: LOADING }).tiles!.savings.value).toBe('…')
   })
@@ -216,14 +225,14 @@ describe('"What needs attention": security groups', () => {
     finding('f-iam', { category: 'iam', severity: 'high', region: null, resource_identifier: 'arn:aws:iam::123456789012:user/example-user', title: 'No MFA', recommendation: 'Enable MFA' }),
   ]
 
-  it('rows show "<name> (sg-…)" or the sg- ID; IAM rows, found text, next step and order are unchanged; the stored finding is untouched', () => {
+  it('rows show the name once (its sg- ID kept for Review) or the sg- ID alone; IAM rows, found text, next step and order are unchanged; the stored finding is untouched', () => {
     const before = JSON.stringify(findings)
     const rows = rankAttention([], findings, null)
-    expect(rows.map((r) => [r.key, r.resource, r.resourceKind])).toEqual([
-      ['account-f-named', `launch-wizard-1 (${SG})`, 'Security group'],
+    expect(rows.map((r) => [r.key, r.resource, r.resourceKind, r.resourceId ?? null])).toEqual([
+      ['account-f-named', 'launch-wizard-1', 'Security group · account-level', SG],
       // Ordered by the stored identifier, as before: arn:aws:ec2… sorts before arn:aws:iam….
-      ['account-f-unnamed', 'sg-0aaaaaaaaaaaaaaaa', 'Security group'],
-      ['account-f-iam', 'arn:aws:iam::123456789012:user/example-user', 'IAM user'],
+      ['account-f-unnamed', 'sg-0aaaaaaaaaaaaaaaa', 'Security group · account-level', null],
+      ['account-f-iam', 'arn:aws:iam::123456789012:user/example-user', 'IAM user', null],
     ])
     expect(rows[0].found).toBe('SSH open to the world (security group)')
     expect(rows[0].nextStep).toEqual({ text: 'Restrict port 22' })
@@ -235,10 +244,15 @@ describe('"What needs attention": security groups', () => {
     const attention = view({ attention: ready(attentionPage([])), accountFindings: ready(findings) }).attention!
     const { container } = render(<AttentionReview view={attention} now={NOW} onRetry={() => {}} />)
     const table = container.querySelector('table')!
-    expect(within(table).getByRole('rowheader', { name: 'SSH open to the world' }).closest('tr')).toHaveTextContent(`launch-wizard-1 (${SG}) Security group`)
-    expect(within(table).getByRole('button', { name: `Review launch-wizard-1 (${SG})` })).toBeInTheDocument()
+    const row = within(table).getByRole('rowheader', { name: 'SSH open to the world' }).closest('tr')!
+    expect(row).toHaveTextContent('launch-wizard-1Security group · account-level')
+    // Redesign R7: the sg- ID is not repeated in the row; the Review button still names it, so two groups with one name stay apart.
+    expect(row.textContent).not.toContain(SG)
+    const review = within(table).getByRole('button', { name: `Review launch-wizard-1 (${SG})` })
     expect(within(table).getByRole('button', { name: 'Review sg-0aaaaaaaaaaaaaaaa' })).toBeInTheDocument()
-    expect([...container.querySelectorAll('ul > li p')].map((p) => p.textContent)).toContain(`launch-wizard-1 (${SG}) · Security group · us-east-1`)
+    expect([...container.querySelectorAll('ul > li p')].map((p) => p.textContent)).toContain('launch-wizard-1 · Security group · account-level')
+    fireEvent.click(review)
+    expect(within(table).getByTestId('infra-review-resource-id')).toHaveTextContent(SG)
     expect([...container.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Security findings →', '/security']])
     expect(container.textContent).not.toMatch(/arn:aws:ec2/)
   })

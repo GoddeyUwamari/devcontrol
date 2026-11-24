@@ -99,8 +99,9 @@ describe('item 5 (RR-L2): never-scanned regions are the Services card rows, home
   })
   it('Infrastructure and Security list the card\'s group, never the home region in it', () => {
     const c = noScanYet()
-    const infra = describeOverview(overviewInputs({ coverage: ready(c) }), R_NOW).checked.filter((l) => l.key.startsWith('other-regions')).map((l) => l.parts.join(''))
-    expect(infra).toEqual(['3 regions not scanned yet'])
+    // Redesign ruling 6: Infrastructure's inventory row lists each gap in Services' words; the home region is its own item, never in the group.
+    const infra = describeOverview(overviewInputs({ coverage: ready(c) }), R_NOW).checked.rows.find((r) => r.key === 'inventory')!.extra
+    expect(infra).toBe('us-east-1 not scanned yet · 3 regions not scanned yet')
     const sec = securityCheckedLines(ready(c), R_NOW).filter((l) => l.key.startsWith('other-regions')).map((l) => l.label)
     expect(sec).toEqual(['3 regions not scanned yet'])
   })
@@ -140,20 +141,22 @@ describe('item 2 (S6): Security', () => {
 })
 
 describe('item 3 (I5): Infrastructure "What we checked"', () => {
-  const line = (c: ServicesCoverage, key: string) => describeOverview(overviewInputs({ coverage: ready(c) }), R_NOW).checked.find((l) => l.key === key)
-  it('switched on: the inventory line carries the Services coverage line, and security groups each region (N5)', () => {
+  // Redesign (founder mock Nov 24): rows with a chip; the inventory chip is the Services coverage line's "n of m".
+  const line = (c: ServicesCoverage, key: string) => describeOverview(overviewInputs({ coverage: ready(c) }), R_NOW).checked.rows.find((l) => l.key === key)
+  it('switched on: the inventory chip carries the Services coverage line\'s count, and security groups each region (N5)', () => {
     const inv = line(transition(), 'inventory')!
-    expect(inv.parts.join('')).toBe('Resource inventory (EC2, S3, CloudFront, Lambda) · 1 of 4 regions checked · 1 with resources · 3 not checked')
-    expect(inv.tone).toBe('warn')
-    expect(line(transition(), 'security-groups')!.parts.join('')).toBe('Security groups: checked in each region the scan covers')
+    expect(inv.detail).toEqual(['EC2, S3, CloudFront, Lambda'])
+    expect(inv.chip).toEqual({ text: '1 of 4 regions', tone: 'warn' })
+    expect(inv.extra).toBe('3 regions not scanned yet')
+    expect(line(transition(), 'security-groups')!.detail).toEqual(['In each region the scan covers'])
   })
   it('switched on, no finished scan: no region named (N4)', () => {
-    expect(line(noScanYet(), 'inventory')!.parts.join('')).toBe('Resource inventory: Not checked yet (no scan has finished)')
+    expect(line(noScanYet(), 'inventory')!).toMatchObject({ detail: ['No scan has finished yet.'], chip: { text: 'Not checked yet', tone: 'muted' } })
     expect(line(noScanYet(), 'security-groups')).toBeUndefined()
   })
-  it('switched off: unchanged', () => {
-    expect(line(tab5('ok'), 'inventory')!.parts.join('')).toMatch(/ · us-east-1: Checked$/)
-    expect(line(tab5('ok'), 'security-groups')!.parts.join('')).toBe('Security groups (us-east-1): checked during each scan')
+  it('switched off: unchanged in substance (home region checked, security groups there)', () => {
+    expect(line(tab5('ok'), 'inventory')!.chip).toEqual({ text: '1 of 4 regions', tone: 'ok' })
+    expect(line(tab5('ok'), 'security-groups')!.detail).toEqual(['us-east-1, during each scan'])
   })
 })
 

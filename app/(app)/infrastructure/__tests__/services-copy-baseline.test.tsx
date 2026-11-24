@@ -136,7 +136,7 @@ describe('baseline: "What needs attention" security-group rows', () => {
     const attention = view(o).attention!
     if (attention.status !== 'ready') throw new Error('attention not ready')
     pin('infra-sg-rows.json', {
-      rows: attention.rows.map((r) => ({ key: r.key, resource: r.resource, resourceKind: r.resourceKind, issue: r.issue, found: r.found, nextStep: r.nextStep })),
+      rows: attention.rows.map((r) => ({ key: r.key, resource: r.resource, resourceKind: r.resourceKind, resourceId: r.resourceId ?? null, issue: r.issue, found: r.found, nextStep: r.nextStep })),
       viewAll: attention.viewAll,
       securityLink: attention.securityLink,
     })

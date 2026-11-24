@@ -33,7 +33,12 @@
   },
   "infrastructureSpendTile": {
     "key": "spend",
-    "label": "Spend this month",
+    "label": "AWS spend, this month",
+    "info": [],
+    "link": {
+      "text": "Cost by service ↓",
+      "href": "#infra-cost-heading"
+    },
     "value": "—",
     "captions": [
       [
@@ -45,11 +50,15 @@
           "iso": "2026-12-01T00:30:00.000Z"
         }
       ]
+    ],
+    "line": [
+      "Whole account · billed, from Cost Explorer · no billed days yet this month"
     ]
   },
   "infrastructureCostByService": {
     "status": "unavailable",
     "sub": null,
+    "asOf": "2026-12-01T00:30:00.000Z",
     "rows": [],
     "unavailable": "No billed days yet this month (Dec 1, UTC). Services appear here once AWS Cost Explorer reports them."
   }

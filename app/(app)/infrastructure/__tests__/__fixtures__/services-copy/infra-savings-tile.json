@@ -18,6 +18,14 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "DevControl estimate · 3 open opportunities"
+    ],
+    "info": [
+      "Estimated savings: $123.45/month. This is a DevControl estimate, not realized savings.",
+      "Plus up to $41.27/month if S3 data qualifies for Standard-IA (upper bound, not included above).",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "estimate > 0, S3 + DynamoDB ceilings, counts 1 and 2": {
@@ -45,6 +53,16 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "DevControl estimate · 5 open opportunities"
+    ],
+    "info": [
+      "Estimated savings: $5.17/month across 1 open finding. This is a DevControl estimate, not realized savings.",
+      "Plus up to $0.01/month if S3 data qualifies for Standard-IA (upper bound, not included above).",
+      "Plus up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound, not included above).",
+      "2 more open findings have no dollar estimate yet.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "estimate > 0, no ceiling, counts 3 and 1": {
@@ -66,6 +84,14 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "DevControl estimate · 4 open opportunities"
+    ],
+    "info": [
+      "Estimated savings: $1,200.00/month across 3 open findings. This is a DevControl estimate, not realized savings.",
+      "1 more open finding has no dollar estimate yet.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "estimate > 0, counts 2 and 0": {
@@ -84,6 +110,13 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "DevControl estimate · 2 open opportunities"
+    ],
+    "info": [
+      "Estimated savings: $10.00/month across 2 open findings. This is a DevControl estimate, not realized savings.",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "no estimate, S3 ceiling, 2 open": {
@@ -93,7 +126,7 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "No dollar estimate",
+    "value": "—",
     "captions": [
       [
         "2 open findings; none has a dollar estimate yet."
@@ -104,6 +137,13 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "No dollar estimate yet · 2 open opportunities"
+    ],
+    "info": [
+      "Up to $0.01/month if S3 data qualifies for Standard-IA (upper bound).",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "no estimate, DynamoDB ceiling only, 1 open": {
@@ -113,7 +153,7 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "No dollar estimate",
+    "value": "—",
     "captions": [
       [
         "1 open finding; none has a dollar estimate yet."
@@ -124,6 +164,13 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "No dollar estimate yet · 1 open opportunity"
+    ],
+    "info": [
+      "Up to $0.02/month if DynamoDB provisioned capacity were cut to its observed peak (upper bound).",
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "no estimate, no ceiling, 3 open": {
@@ -133,7 +180,7 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "No dollar estimate",
+    "value": "—",
     "captions": [
       [
         "3 open findings; none has a dollar estimate yet."
@@ -141,6 +188,12 @@
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
       ]
+    ],
+    "line": [
+      "No dollar estimate yet · 3 open opportunities"
+    ],
+    "info": [
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "zero (no open findings)": {
@@ -158,6 +211,12 @@
       [
         "No cost recommendations right now"
       ]
+    ],
+    "line": [
+      "No cost recommendations right now"
+    ],
+    "info": [
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "zero with a closed history": {
@@ -175,6 +234,12 @@
       [
         "No cost recommendations right now"
       ]
+    ],
+    "line": [
+      "No cost recommendations right now"
+    ],
+    "info": [
+      "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
     ]
   },
   "error": {
@@ -189,7 +254,11 @@
       [
         "Savings couldn't be loaded"
       ]
-    ]
+    ],
+    "line": [
+      "Savings couldn't be loaded"
+    ],
+    "info": []
   },
   "loading": {
     "key": "savings",
@@ -199,7 +268,9 @@
       "href": "/cost-optimization"
     },
     "value": "…",
-    "captions": []
+    "captions": [],
+    "line": null,
+    "info": []
   },
   "not connected": null
 }

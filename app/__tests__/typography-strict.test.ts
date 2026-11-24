@@ -38,16 +38,15 @@ const G1_COMPONENTS = [
 const G1_LEGACY = ['app/(app)/infrastructure/page.tsx', 'app/(app)/services/page.tsx', 'app/(app)/services/RegisteredServices.tsx']
 const G1 = [
   'app/(app)/infrastructure/new/page.tsx',
-  'app/(app)/infrastructure/overview/AccountStrip.tsx',
   'app/(app)/infrastructure/overview/AttentionReview.tsx',
   'app/(app)/infrastructure/overview/CostByService.tsx',
+  'app/(app)/infrastructure/overview/InfoTip.tsx',
   'app/(app)/infrastructure/overview/InfrastructureOverviewV2.tsx',
   'app/(app)/infrastructure/overview/KpiTiles.tsx',
-  'app/(app)/infrastructure/overview/OverviewFooter.tsx',
   'app/(app)/infrastructure/overview/OverviewHeader.tsx',
   'app/(app)/infrastructure/overview/OwnershipGaps.tsx',
   'app/(app)/infrastructure/overview/PlanBanners.tsx',
-  'app/(app)/infrastructure/overview/StatusLine.tsx',
+  'app/(app)/infrastructure/overview/RegionNotice.tsx',
   'app/(app)/infrastructure/overview/WhatWeChecked.tsx',
   'app/(app)/services/AddServiceButton.tsx',
   'app/(app)/services/AllResourcesTable.tsx',

@@ -27,14 +27,12 @@ import { describeOverview, OVERVIEW_COPY, type Loadable } from './overviewModel'
 import { OverviewHeader, type SyncState } from './OverviewHeader'
 import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading } from '@/components/aws/not-connected'
 import { PlanBanners } from './PlanBanners'
-import { AccountStrip } from './AccountStrip'
-import { StatusLine } from './StatusLine'
+import { RegionNotice } from './RegionNotice'
 import { KpiTiles, UnmeasuredKpiTiles } from './KpiTiles'
 import { AttentionReview } from './AttentionReview'
 import { WhatWeChecked } from './WhatWeChecked'
 import { CostByService } from './CostByService'
 import { OwnershipGaps } from './OwnershipGaps'
-import { OverviewFooter } from './OverviewFooter'
 
 /** While a scan is running, coverage is read again this often (as the Services page, M6). */
 export const SCAN_RUNNING_REFETCH_MS = 60_000
@@ -165,29 +163,30 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
   const loading = view.mode === 'loading'
   const notConnected = view.mode === 'no-account'
   return (
-    <main className="mx-auto flex max-w-[1240px] flex-col gap-6 px-4 py-6 sm:px-6">
+    // Operational Health's width and padding (redesign R4); sections 24 px apart, the larger ones 32 px.
+    <main className="mx-auto flex w-full max-w-[1320px] flex-col gap-4 px-4 py-6 sm:gap-6 sm:px-6 sm:py-8 lg:px-14 lg:py-10">
       <OverviewHeader
-        lastScan={view.header.lastScan}
+        status={view.header.status}
         now={now}
+        coverageError={view.mode === 'coverage-error'}
+        onRetry={() => coverageQuery.refetch()}
         showSync={view.header.showSync && !loading}
         scanRunning={view.header.scanRunning}
         sync={sync}
         onSync={handleSync}
         altAction={loading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : null}
-        actions={realMode && (
-          <>
-            <button
-              type="button"
-              onClick={() => (exportPlanRequired ? setExportPlanShown(true) : setExportOpen(true))}
-              data-testid="overview-export-button"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-ui font-semibold border bg-white text-violet-700 border-violet-200 hover:bg-violet-50"
-            >
-              <Download size={14} aria-hidden="true" /> Export inventory
-            </button>
-            {exportPlanRequired && exportPlanShown && (
-              <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.resourceInventoryExport} testId="overview-export-plan-required" />
-            )}
-          </>
+        secondary={realMode && (
+          <button
+            type="button"
+            onClick={() => (exportPlanRequired ? setExportPlanShown(true) : setExportOpen(true))}
+            data-testid="overview-export-button"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-ui font-semibold text-slate-900 hover:bg-slate-50 sm:w-auto"
+          >
+            <Download size={14} aria-hidden="true" /> Export inventory
+          </button>
+        )}
+        below={realMode && exportPlanRequired && exportPlanShown && (
+          <PlanRequiredNotice requiredTier={PLAN_ENTITLEMENTS.resourceInventoryExport} testId="overview-export-plan-required" />
         )}
       />
       {loading ? <NotConnectedLoading tiles={4} /> : notConnected ? (<>
@@ -195,14 +194,14 @@ function OverviewBody({ orgId }: { orgId: string | null }) {
         <NotConnectedCard />
       </>) : (<>
         <PlanBanners limitReached={limitReached} isFree={!!isFree} isStarter={!!isStarter} isPro={!!isPro} />
-        <AccountStrip account={view.account} now={now} coverageError={view.mode === 'coverage-error'} onRetry={() => coverageQuery.refetch()} />
-        <StatusLine status={view.status} now={now} />
+        {view.notice && <RegionNotice notice={view.notice} />}
         {connectedish && view.tiles && <KpiTiles tiles={view.tiles} now={now} />}
-        {connectedish && view.attention && <AttentionReview view={view.attention} now={now} onRetry={() => { attentionQuery.refetch(); accountFindingsQuery.refetch() }} />}
-        <WhatWeChecked lines={view.checked} now={now} />
-        {connectedish && view.costByService && <CostByService view={view.costByService} />}
-        {connectedish && view.ownership && <OwnershipGaps ownership={view.ownership} />}
-        {connectedish && view.footer && <OverviewFooter total={view.footer.total} />}
+        {connectedish && view.attention && <div className="sm:mt-2"><AttentionReview view={view.attention} now={now} onRetry={() => { attentionQuery.refetch(); accountFindingsQuery.refetch() }} /></div>}
+        <div className="grid grid-cols-1 gap-4 sm:mt-2 lg:grid-cols-3 lg:gap-5">
+          <WhatWeChecked view={view.checked} now={now} />
+          {connectedish && view.ownership && <OwnershipGaps ownership={view.ownership} />}
+        </div>
+        {connectedish && view.costByService && <div className="sm:mt-2"><CostByService view={view.costByService} now={now} /></div>}
       </>)}
       {realMode && !exportPlanRequired && (
         <ExportReportsDialog open={exportOpen} onOpenChange={setExportOpen} totalResources={statsQuery.data?.total ?? 0} />
