@@ -157,7 +157,6 @@ export function AttentionReview({ view, now, onRetry }: { view: AttentionView; n
             </div>
             <p data-testid="infra-attention-description" className="m-0 text-body text-slate-600">
               {OVERVIEW_COPY.attentionDescription}
-              {ready && ` ${ready.counts}.`}
             </p>
           </div>
           {ready?.securityLink && <Link href={OVERVIEW_COPY.securityHref} className="text-ui font-semibold text-violet-700 hover:underline">{OVERVIEW_COPY.securityFindings}</Link>}

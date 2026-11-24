@@ -583,10 +583,11 @@ describe('O-K2c never summed, as rendered', () => {
     // Ruling 2 (keep rule): the big number is findings on resources; account-level findings are their own line.
     expect(within(tile).getByTestId('infra-findings-resources')).toHaveTextContent(/^8$/)
     expect(within(tile).getByTestId('infra-findings-account')).toHaveTextContent('+ 4 account-level findings (1 Critical, 1 High)')
+    // Round 2 ruling: the description is the criteria sentence only; the header line carries the counts.
     const description = screen.getByTestId('infra-attention-description')
-    expect(description).toHaveTextContent('23 resources · 2 account-level findings.')
+    expect(description.textContent).toBe(OVERVIEW_COPY.attentionDescription)
     const status = screen.getByTestId('infra-attention-severity')
-    expect(status).toHaveTextContent('· critical and high-severity findings: 3 on resources, 2 account-level')
+    expect(status).toHaveTextContent('· 3 critical and high-severity on resources, 2 account-level')
     // Text node by text node, so adjacent elements ("Low 1" + "2 dismissed") don't run together into a false "12".
     const words = (el: Element) => {
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
@@ -773,7 +774,7 @@ describe('PR 3d-2 wording and links', () => {
   it('D4 + D5: the shared needs-attention sentence, the account-level note under it, and the account rows still listed', async () => {
     await renderSettled()
     expect(screen.getByTestId('infra-attention-description').textContent).toBe(
-      'Critical and high findings, cost recommendations estimated at $100/mo or more, and stopped, degraded or failed resources. 6 resources · 2 account-level findings.',
+      'Critical and high findings, cost recommendations estimated at $100/mo or more, and stopped, degraded or failed resources.',
     )
     expect(screen.getByTestId('infra-attention-account-note').textContent).toBe(
       'This list also includes account-level findings (IAM, security groups). The Services count covers resources only.',

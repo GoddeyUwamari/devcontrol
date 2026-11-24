@@ -333,12 +333,6 @@ export type AttentionView =
   | {
     status: 'ready'
     rows: AttentionRow[]
-    /**
-     * "N resources · M account-level findings": the list's own total and the open
-     * critical/high account findings, each said on its own and never added; a
-     * source that failed says so instead of a number.
-     */
-    counts: string
     resourceError: boolean
     accountError: boolean
     viewAll: number | null
@@ -347,9 +341,10 @@ export type AttentionView =
     /** Only with no rows: what is known, per source (never "nothing" while a source is unknown). */
     empty: { text: string; scope: string | null } | null
     /**
-     * After the heading: "high-severity findings: x on resources, y account-level" (with "critical and"
-     * when either source has a critical one), each source on its own and never added (ruling 2, Q-R1);
-     * null when both sources have none or either didn't load (its failure is said below the heading).
+     * After the heading (founder ruling, Nov 24 round 2): "x high-severity on resources, y account-level"
+     * ("critical and high-severity" when either source has a critical one); a clause whose count is 0 is
+     * left out; each source on its own, never added (ruling 2, Q-R1). null when both have none or either
+     * didn't load (its failure is said below the heading).
      */
     severityLine: string | null
   }
@@ -618,13 +613,18 @@ export function describeOpenSavings(
   return { value: NO_DOLLAR_ESTIMATE, captions }
 }
 
-/** "high-severity findings: x on resources, y account-level" (never one total, ruling 2). */
+/** "x high-severity on resources, y account-level"; a 0 clause left out; never one total (ruling 2). */
 function severityLine(r: SeverityCounts | null, a: SeverityCounts | null): string | null {
   if (!r || !a) return null
   const critical = r.critical + a.critical > 0
-  if (!critical && r.high + a.high === 0) return null
   const of = (c: SeverityCounts) => (critical ? c.critical + c.high : c.high)
-  return `${critical ? 'critical and high-severity' : 'high-severity'} findings: ${of(r)} on resources, ${of(a)} account-level`
+  const label = critical ? 'critical and high-severity' : 'high-severity'
+  const clauses = [
+    ...(of(r) > 0 ? [{ n: of(r), where: 'on resources' }] : []),
+    ...(of(a) > 0 ? [{ n: of(a), where: 'account-level' }] : []),
+  ]
+  if (clauses.length === 0) return null
+  return clauses.map((c, i) => (i === 0 ? `${num(c.n)} ${label} ${c.where}` : `${num(c.n)} ${c.where}`)).join(', ')
 }
 
 function attentionView(i: OverviewInputs, coverage: ServicesCoverage | null): AttentionView {
@@ -639,8 +639,6 @@ function attentionView(i: OverviewInputs, coverage: ServicesCoverage | null): At
   const accountTotal = acc.status === 'ready'
     ? accounts.filter((f) => isOpenAccountFinding(f) && (f.severity === 'critical' || f.severity === 'high')).length
     : null
-  const resourceText = page ? `${page.pagination.total} ${plural(page.pagination.total, 'resource', 'resources')}` : "resources couldn't be loaded"
-  const accountText = accountTotal !== null ? `${accountTotal} account-level ${plural(accountTotal, 'finding', 'findings')}` : "account-level findings couldn't be loaded"
   let empty: { text: string; scope: string | null } | null = null
   if (rows.length === 0) {
     if (!page) empty = { text: OVERVIEW_COPY.attentionEmptyResourceError, scope: null }
@@ -656,7 +654,6 @@ function attentionView(i: OverviewInputs, coverage: ServicesCoverage | null): At
   return {
     status: 'ready',
     rows: rows.slice(0, ATTENTION_SHOWN),
-    counts: `${resourceText} · ${accountText}`,
     resourceError: !page,
     accountError: acc.status === 'error',
     viewAll: total > ATTENTION_SHOWN ? total : null,

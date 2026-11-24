@@ -239,7 +239,7 @@ describe('O-A attention rows', () => {
     const a = view({ attention: ready(attentionPage(many, 140)) }).attention
     if (a?.status !== 'ready') throw new Error('not ready')
     expect(a.rows).toHaveLength(10)
-    expect(a).toMatchObject({ viewAll: 140, counts: '140 resources · 2 account-level findings', securityLink: true, firstHundred: true })
+    expect(a).toMatchObject({ viewAll: 140, securityLink: true, firstHundred: true })
   })
   it('O-A7 a status row carrying a cost reason keeps the status label and the server text', () => {
     const edge = service('edge', { status: 'warning', priority_severity: 'medium', attention_cause: 'status', reason: 'Unattached EBS volume (est. $60/mo)' })
@@ -261,16 +261,16 @@ describe('O-A attention rows', () => {
   describe('empty and partial states, per source (loaded / failed)', () => {
     const noRows = { attention: ready(attentionPage([])), accountFindings: ready([]) }
     it('both loaded, no rows: "Nothing needs review" with its scope', () => {
-      expect(view(noRows).attention).toMatchObject({ status: 'ready', counts: '0 resources · 0 account-level findings', empty: { text: OVERVIEW_COPY.attentionEmpty } })
+      expect(view(noRows).attention).toMatchObject({ status: 'ready', empty: { text: OVERVIEW_COPY.attentionEmpty } })
     })
     it('resources loaded (none), account findings failed: never "Nothing needs review"', () => {
       const a = view({ ...noRows, accountFindings: ERROR }).attention
-      expect(a).toMatchObject({ status: 'ready', accountError: true, resourceError: false, counts: "0 resources · account-level findings couldn't be loaded", empty: { text: OVERVIEW_COPY.attentionEmptyAccountError, scope: null } })
+      expect(a).toMatchObject({ status: 'ready', accountError: true, resourceError: false, empty: { text: OVERVIEW_COPY.attentionEmptyAccountError, scope: null } })
       expect(JSON.stringify(a)).not.toMatch(/Nothing needs review/)
     })
     it('resources failed, account findings loaded (none): never "Nothing needs review"', () => {
       const a = view({ ...noRows, attention: ERROR }).attention
-      expect(a).toMatchObject({ status: 'ready', resourceError: true, accountError: false, counts: "resources couldn't be loaded · 0 account-level findings", empty: { text: OVERVIEW_COPY.attentionEmptyResourceError, scope: null } })
+      expect(a).toMatchObject({ status: 'ready', resourceError: true, accountError: false, empty: { text: OVERVIEW_COPY.attentionEmptyResourceError, scope: null } })
       expect(JSON.stringify(a)).not.toMatch(/Nothing needs review/)
     })
     it('both failed: the error state', () => {
@@ -393,14 +393,20 @@ describe('O-N region notice, flagged (multi-region)', () => {
 })
 
 describe('O-AS the attention severity line (ruling 2: never one total; ruling 3)', () => {
-  it('critical present: "critical and high-severity findings", each source on its own', () => {
-    const a = view().attention!
-    expect(a.status === 'ready' && a.severityLine).toBe('critical and high-severity findings: 3 on resources, 2 account-level')
+  const line = (o: Partial<OverviewInputs>) => { const a = view(o).attention!; return a.status === 'ready' ? a.severityLine : 'not ready' }
+  const highs = (r: number, accounts: number) => ({
+    stats: ready({ ...STATS, findings_by_severity: { critical: 0, high: r, medium: 0, low: 0 } }),
+    accountFindings: ready(Array.from({ length: accounts }, (_, i) => finding(`h${i}`, { severity: 'high' as const }))),
   })
-  it('high only; a source with 0 is still printed', () => {
-    const s = { ...STATS, findings_by_severity: { critical: 0, high: 2, medium: 0, low: 0 } }
-    const a = view({ stats: ready(s), accountFindings: ready([]) }).attention!
-    expect(a.status === 'ready' && a.severityLine).toBe('high-severity findings: 2 on resources, 0 account-level')
+  it('critical present: "critical and high-severity", each source on its own', () => {
+    expect(line({})).toBe('3 critical and high-severity on resources, 2 account-level')
+  })
+  it('high only: "x high-severity on resources, y account-level"', () => {
+    expect(line(highs(2, 2))).toBe('2 high-severity on resources, 2 account-level')
+  })
+  it('a clause whose count is 0 is left out', () => {
+    expect(line(highs(2, 0))).toBe('2 high-severity on resources')
+    expect(line(highs(0, 1))).toBe('1 high-severity account-level')
   })
   it('none, or a source that didn\'t load: no line (the failure is said under the heading)', () => {
     for (const o of [STATES['no-findings'], { accountFindings: ERROR }, { stats: ERROR }]) {
