@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
@@ -24,7 +25,20 @@ vi.mock('@/lib/services/developers.service', () => ({
   },
 }))
 
+// D8b-2 (board 7): the GitHub tile reads GET /api/integrations/github. Switched off by default here,
+// so every test above it keeps proving today's page; the switched-on tile is tested at the end.
+const github = vi.hoisted(() => ({ state: { configured: false } as Record<string, unknown> }))
+vi.mock('@/lib/services/github-connection.service', () => ({
+  githubConnectionService: { get: vi.fn(async () => github.state), repositories: vi.fn(async () => ({ repositories: [], held_event_days: 7 })) },
+}))
+
 import DevelopersPage from '../page'
+import { githubConnectionService } from '@/lib/services/github-connection.service'
+
+function renderPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}><DevelopersPage /></QueryClientProvider>)
+}
 import developersService from '@/lib/services/developers.service'
 
 const ALL_TILES = ['AWS', 'Kubernetes', 'Terraform', 'CloudWatch', 'Datadog', 'Grafana', 'Prometheus', 'New Relic', 'Slack', 'PagerDuty', 'OpsGenie', 'Email', 'GitHub', 'Jira', 'GitLab', 'Linear']
@@ -35,18 +49,19 @@ const tile = (name: string) => screen.getByText(name, { selector: 'p.text-sm' })
 beforeEach(() => {
   vi.clearAllMocks()
   demo.on = false
+  github.state = { configured: false }
 })
 
 describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
   beforeEach(() => { demo.on = demoOn })
 
   it('makes no request for keys or webhooks', () => {
-    render(<DevelopersPage />)
+    renderPage()
     for (const fn of Object.values(developersService)) expect(fn).not.toHaveBeenCalled()
   })
 
   it('shows API keys and webhooks as "Coming soon", with no button or modal', () => {
-    render(<DevelopersPage />)
+    renderPage()
     const keys = screen.getByTestId('api-keys-coming-soon')
     expect(keys.textContent).toContain('API keys')
     expect(keys.textContent).toContain('Coming soon')
@@ -61,12 +76,12 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
   })
 
   it('every integration tile is still listed', () => {
-    render(<DevelopersPage />)
+    renderPage()
     for (const name of ALL_TILES) expect(tile(name)).toBeInTheDocument()
   })
 
   it('tiles that do not exist yet say "Coming soon" and have no button', () => {
-    render(<DevelopersPage />)
+    renderPage()
     for (const name of COMING_SOON_TILES) {
       expect(tile(name).textContent).toContain('Coming soon')
       expect(within(tile(name)).queryByRole('button')).toBeNull()
@@ -75,7 +90,7 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
   })
 
   it('CloudWatch is included with AWS; Slack and email are test-only with a link to alert settings', () => {
-    render(<DevelopersPage />)
+    renderPage()
     expect(tile('CloudWatch').textContent).toContain('Included with AWS')
     expect(tile('CloudWatch').textContent).toContain('Metrics are read through your AWS connection.')
     expect(within(tile('CloudWatch')).queryByRole('button')).toBeNull()
@@ -88,7 +103,7 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
   })
 
   it('no click anywhere produces a fake "Connected"', () => {
-    render(<DevelopersPage />)
+    renderPage()
     const connectedBefore = screen.queryAllByText('Connected').length
     for (const button of screen.getAllByRole('button')) {
       if (within(tile('AWS')).queryAllByRole('button').includes(button)) continue
@@ -99,7 +114,7 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
   })
 
   it('the setup steps: observability is "Coming soon" (not a button); alert channels open alert settings', () => {
-    render(<DevelopersPage />)
+    renderPage()
     expect(document.body.textContent).toContain('Datadog, Grafana and others are coming soon.')
     expect(screen.queryByRole('button', { name: /Connect Datadog|Connect Slack/ })).toBeNull()
     expect(document.body.textContent).toContain('Set up email and Slack and send a test message. Alert delivery is coming soon.')
@@ -108,7 +123,7 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
   })
 
   it('the subtitle says only AWS connects today', () => {
-    render(<DevelopersPage />)
+    renderPage()
     expect(document.body.textContent).toContain('Connect AWS today. API keys, webhooks and more integrations are coming soon.')
     expect(document.body.textContent).not.toMatch(/real-time/i)
   })
@@ -116,15 +131,58 @@ describe.each([false, true])('/developers (demo mode %s)', (demoOn) => {
 
 describe('AWS stays a real connection', () => {
   it('not connected: "Connect →" opens /connect-aws', () => {
-    render(<DevelopersPage />)
+    renderPage()
     fireEvent.click(within(tile('AWS')).getByRole('button', { name: 'Connect →' }))
     expect(push).toHaveBeenCalledWith('/connect-aws')
   })
 
   it('demo: only AWS shows as connected', () => {
     demo.on = true
-    render(<DevelopersPage />)
+    renderPage()
     expect(tile('AWS').textContent).toContain('Connected')
     expect(screen.getAllByText('Connected')).toHaveLength(1)
+  })
+})
+
+describe('the GitHub tile while the GitHub App is switched on (D8b-2, board 7)', () => {
+  const INSTALLATION = { installation_id: '42', account_login: 'acme-inc', account_type: 'Organization', permissions_state: 'expected', suspended_at: null, deleted_at: null }
+  const on = (installations: unknown[]) => ({ configured: true, can_manage: true, demo: false, installations, last_event_at: null })
+
+  it('not connected: "Connect GitHub →" to the GitHub page instead of "Coming soon"', async () => {
+    github.state = on([])
+    renderPage()
+    const link = await screen.findByTestId('developers-github-link')
+    expect(link).toHaveTextContent('Connect GitHub →')
+    expect(link).toHaveAttribute('href', '/settings/integrations/github')
+    expect(tile('GitHub').textContent).not.toContain('Coming soon')
+  })
+
+  it('connected: "Manage GitHub connection →"', async () => {
+    github.state = on([INSTALLATION])
+    renderPage()
+    expect(await screen.findByTestId('developers-github-link')).toHaveTextContent('Manage GitHub connection →')
+  })
+
+  it('switched off: "Coming soon" and no link, as before', async () => {
+    renderPage()
+    await vi.waitFor(() => expect(githubConnectionService.get).toHaveBeenCalled())
+    expect(tile('GitHub').textContent).toContain('Coming soon')
+    expect(screen.queryByTestId('developers-github-link')).toBeNull()
+  })
+
+  it('demo mode: "Coming soon" and no request at all', async () => {
+    demo.on = true
+    github.state = on([INSTALLATION])
+    renderPage()
+    expect(tile('GitHub').textContent).toContain('Coming soon')
+    expect(screen.queryByTestId('developers-github-link')).toBeNull()
+    expect(githubConnectionService.get).not.toHaveBeenCalled()
+  })
+
+  it('the demo workspace: "Coming soon", never its sample as a connection', async () => {
+    github.state = { ...on([INSTALLATION]), demo: true }
+    renderPage()
+    await vi.waitFor(() => expect(githubConnectionService.get).toHaveBeenCalled())
+    expect(tile('GitHub').textContent).toContain('Coming soon')
   })
 })

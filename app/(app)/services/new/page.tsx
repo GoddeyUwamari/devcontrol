@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 import { servicesService } from '@/lib/services/services.service'
 import { teamsService } from '@/lib/services/teams.service'
 import { logError } from '@/lib/safe-log'
+import { returnPathAfterCreate } from './return-path'
 
 // Validation schema using Zod (matches backend schema)
 const serviceSchema = z.object({
@@ -90,7 +91,7 @@ export default function NewServicePage() {
 
     try {
       await promise
-      router.push('/services')
+      router.push(returnPathAfterCreate())
     } catch (error) {
       logError('Error creating service', error)
       setIsSubmitting(false)

@@ -262,6 +262,8 @@ const STRICT = [
   'app/(app)/settings/integrations/github/page.tsx',
   'app/(app)/settings/integrations/github/_components/Connected.tsx',
   'app/(app)/settings/integrations/github/_components/NotConnected.tsx',
+  'app/(app)/settings/integrations/github/_components/Repositories.tsx',
+  'components/integrations/github-status-chip.tsx',
 ]
 
 // Any chain of variants except dark:, including arbitrary ones: md:, hover:, [&_p]:, data-[state=open]:.

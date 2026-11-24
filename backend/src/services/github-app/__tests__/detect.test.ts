@@ -226,3 +226,39 @@ describe('deployment metadata: one writer, one reader (rulings Q7-Q9)', () => {
     expect(extra).not.toHaveProperty('merged_at');
   });
 });
+
+describe('D8b-2 R2: one chosen GitHub environment', () => {
+  it('matches the chosen name without case or surrounding spaces; any other name -> ignored environment_not_matched', () => {
+    const rule = envRule({ environment_name: ' Production ' })
+    expect(rule).toEqual({ v: 1, mode: 'github_deployments', environment_name: 'Production', environment_map: {}, aws_region: null })
+    const hit = detect(statusFacts({ environment: 'production' }), repo(rule))
+    expect(hit.kind === 'record' && hit.candidate.environment).toBe('production')
+    expect(detect(statusFacts({ environment: 'staging' }), repo(rule))).toEqual({ kind: 'skip', status: 'ignored', reason: 'environment_not_matched' })
+    expect(detect(statusFacts({ environment: 'prod' }), repo(rule))).toEqual({ kind: 'skip', status: 'ignored', reason: 'environment_not_matched' })
+  })
+
+  it('its DevControl environment: the map, then the default names, else production', () => {
+    const staging = detect(statusFacts({ environment: 'staging' }), repo(envRule({ environment_name: 'staging' })))
+    expect(staging.kind === 'record' && staging.candidate.environment).toBe('staging')
+    const custom = detect(statusFacts({ environment: 'prod-eu' }), repo(envRule({ environment_name: 'prod-eu' })))
+    expect(custom.kind === 'record' && custom.candidate.environment).toBe('production')
+    const mapped = detect(statusFacts({ environment: 'qa-2' }), repo(envRule({ environment_name: 'qa-2', environment_map: { 'qa-2': 'development' } })))
+    expect(mapped.kind === 'record' && mapped.candidate.environment).toBe('development')
+  })
+
+  it('a stored rule without the field keeps its shape and its behaviour (every known name)', () => {
+    const stored = envRule()
+    expect(stored).not.toHaveProperty('environment_name')
+    expect(readStoredDeployRule(stored)).not.toHaveProperty('environment_name')
+    for (const environment of ['production', 'staging', 'dev']) {
+      expect(detect(statusFacts({ environment }), repo(stored)).kind).toBe('record')
+    }
+  })
+
+  it('the name is validated: empty, too long or with control characters -> refused', () => {
+    for (const environment_name of ['', '   ', 'x'.repeat(256), 'prod\nuction']) {
+      expect(deployRuleBody.safeParse({ mode: 'github_deployments', environment_name }).success).toBe(false)
+    }
+    expect(deployRuleBody.safeParse({ mode: 'job', workflow_name: 'CI', job_name: 'deploy', environment_name: 'production' }).success).toBe(false)
+  })
+})

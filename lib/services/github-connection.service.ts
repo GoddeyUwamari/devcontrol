@@ -38,6 +38,19 @@ export type GitHubConnection =
       last_event_at: string | null
     }
 
+/** A deploy rule as stored (D8a-2 `{ v: 1, mode, ... }`); only the fields the screen reads. */
+export interface StoredDeployRule {
+  v?: number
+  mode?: string
+  workflow_name?: string
+  job_name?: string
+  branch?: string
+  branch_name?: string | null
+  /** D8b-2 (R2): one GitHub environment. Absent on rules that record every known name. */
+  environment_name?: string
+  environment_map?: Record<string, string>
+}
+
 export interface GitHubRepository {
   id: string
   github_repo_id: string
@@ -45,10 +58,48 @@ export interface GitHubRepository {
   full_name: string
   service_id: string | null
   service_name: string | null
-  deploy_rule: { mode?: string } | null
-  access_state: 'active' | 'removed' | string
+  deploy_rule: StoredDeployRule | null
+  access_state: 'accessible' | 'removed' | string
   removed_at: string | null
   last_event_at: string | null
+  /** D8b-2: events a mapping or rule would pick up next, last held_event_days days (0 once both exist). */
+  held_events: number
+  /** D8b-2: GitHub environment names seen on deployment events (30 days). */
+  environments_seen: string[]
+  /** D8b-2: workflow + job names seen on completed jobs (30 days). */
+  jobs_seen: { workflow_name: string; job_name: string }[]
+  /** D8b-2: newest deployment recorded from this repository, or null. */
+  last_deployment_at: string | null
+  /** D8b-2: deployments refused this month because the plan's monthly limit was reached. */
+  over_limit_this_month: number
+}
+
+export interface GitHubRepositoryList {
+  repositories: GitHubRepository[]
+  /** How long held events are picked up (the server's HELD_EVENT_DAYS); null if the server didn't say. */
+  held_event_days: number | null
+}
+
+/** The body of PUT /repositories/:id/deploy-rule that the screen sends (R2, R3: branch and environment use the server defaults). */
+export type DeployRuleRequest =
+  | { mode: 'job'; workflow_name: string; job_name: string }
+  | { mode: 'github_deployments'; environment_name: string }
+
+/** A repository row as received, with D8b-2's fields defaulted so an older server never breaks the table. */
+function parseRepository(raw: Record<string, unknown>): GitHubRepository {
+  const r = raw as unknown as GitHubRepository
+  const count = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0)
+  return {
+    ...r,
+    held_events: count(raw.held_events),
+    environments_seen: Array.isArray(raw.environments_seen) ? raw.environments_seen.filter((e): e is string => typeof e === 'string') : [],
+    jobs_seen: Array.isArray(raw.jobs_seen)
+      ? (raw.jobs_seen as { workflow_name?: unknown; job_name?: unknown }[])
+        .filter((j) => typeof j?.workflow_name === 'string' && typeof j?.job_name === 'string') as GitHubRepository['jobs_seen']
+      : [],
+    last_deployment_at: typeof raw.last_deployment_at === 'string' ? raw.last_deployment_at : null,
+    over_limit_this_month: count(raw.over_limit_this_month),
+  }
 }
 
 export interface ApiAnswer {
@@ -87,12 +138,24 @@ export const githubConnectionService = {
     return parseConnection(res.data?.data)
   },
 
-  async repositories(): Promise<GitHubRepository[]> {
-    const res = await api.get<{ success: boolean; data: { repositories: GitHubRepository[] } }>('/api/integrations/github/repositories')
+  async repositories(): Promise<GitHubRepositoryList> {
+    const res = await api.get<{ success: boolean; data: { repositories: unknown; held_event_days?: unknown } }>('/api/integrations/github/repositories')
     const list = res.data?.data?.repositories
     if (!Array.isArray(list)) throw new Error('The GitHub repositories response was not a list')
-    return list
+    const days = res.data?.data?.held_event_days
+    return {
+      repositories: list.map((r) => parseRepository(r as Record<string, unknown>)),
+      held_event_days: typeof days === 'number' && Number.isInteger(days) && days > 0 ? days : null,
+    }
   },
+
+  /** D8b-2: map a repository to one of the workspace's services, or unmap it (null). */
+  setService: (repositoryId: string, serviceId: string | null) =>
+    answer(api.put(`/api/integrations/github/repositories/${encodeURIComponent(repositoryId)}/service`, { service_id: serviceId }, ANSWER_EVERY_STATUS)),
+
+  /** D8b-2: the repository's deploy rule. */
+  setDeployRule: (repositoryId: string, rule: DeployRuleRequest) =>
+    answer(api.put(`/api/integrations/github/repositories/${encodeURIComponent(repositoryId)}/deploy-rule`, rule, ANSWER_EVERY_STATUS)),
 
   startInstall: () => answer(api.post('/api/integrations/github/install', {}, ANSWER_EVERY_STATUS)),
 

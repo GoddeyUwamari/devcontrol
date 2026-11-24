@@ -97,6 +97,7 @@ export const deploymentsService = {
       resources: d.resources,
       logs: d.logs,
       metadata: d.metadata,
+      githubRepository: typeof d.github_repository?.full_name === 'string' ? d.github_repository.full_name : null,
       createdAt: d.created_at,
       updatedAt: d.updated_at,
     };

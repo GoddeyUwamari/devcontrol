@@ -8,6 +8,8 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { toast } from 'sonner'
 import developersService from '@/lib/services/developers.service'
 import { API_KEYS_AVAILABLE, WEBHOOKS_AVAILABLE, COMING_SOON } from '@/lib/features/coming-soon'
+import { useGitHubConnection } from '@/lib/hooks/use-github-connection'
+import { GITHUB_PAGE_HREF, SURFACE_COPY } from '@/lib/github-connection/copy'
 
 interface ApiKey { id: string; name: string; prefix: string; scopes: string[]; createdAt: string; lastUsedAt: string | null; status: 'active' | 'revoked' }
 interface WebhookEndpoint { id: string; url: string; events: string[]; status: 'active' | 'failing' | 'disabled'; lastTriggeredAt: string | null; createdAt: string }
@@ -108,6 +110,12 @@ export default function DevelopersPage() {
   const [webhookError, setWebhookError] = useState('')
 
   const [integrations, setIntegrations] = useState<Integration[]>(() => INITIAL_INTEGRATIONS(demoMode))
+  // Board 7 (D8b-2): the GitHub tile links to the GitHub page only while the feature is on
+  // (GET /api/integrations/github says configured); otherwise, in demo mode, or while loading, "Coming soon" as before.
+  const github = useGitHubConnection({ enabled: !demoMode })
+  const githubData = !demoMode && github.connection.isSuccess ? github.connection.data : null
+  const githubOn = githubData !== null && githubData.configured && !githubData.demo
+  const githubConnected = githubData !== null && githubData.configured && !githubData.demo && githubData.installations.length > 0
 
   useEffect(() => {
     if (demoMode) return
@@ -381,7 +389,7 @@ export default function DevelopersPage() {
                   const intg = integrations.find(i => i.id === id)
                   if (!intg) return null
                   const meta = integrationMeta[id]
-                  const kind = tileKind(id)
+                  const kind = id === 'github' && githubOn ? 'github' : tileKind(id)
                   const isConnected = kind === 'connect' && intg.status === 'connected'
                   return (
                     <div key={id} className={`bg-white border rounded-xl p-4 flex flex-col gap-2 ${isConnected ? 'border-green-500' : 'border-slate-200'}`}>
@@ -404,6 +412,11 @@ export default function DevelopersPage() {
                       )}
                       {kind === 'test-only' && (
                         <a href="/settings/alerts" className="text-xs text-violet-700 no-underline self-start hover:text-violet-900">Alert settings →</a>
+                      )}
+                      {kind === 'github' && (
+                        <a href={GITHUB_PAGE_HREF} data-testid="developers-github-link" className="text-xs text-violet-700 no-underline self-start hover:text-violet-900">
+                          {githubConnected ? SURFACE_COPY.tileManage : SURFACE_COPY.tileConnect}
+                        </a>
                       )}
                     </div>
                   )

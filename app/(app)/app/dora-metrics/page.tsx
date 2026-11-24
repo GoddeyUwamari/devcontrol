@@ -21,6 +21,8 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import {
   COPY,
   doraCsvFilename,
+  isGitHubAppRow,
+  latestFinished,
   doraCsvText,
   methodSourceSentence,
   sourceLine,
@@ -31,6 +33,8 @@ import {
 } from './_lib/dora-page';
 import { DEMO_DORA_RESPONSE } from './_lib/demo-fixture';
 import { Filters, NoDataBanner, SourceLine } from './_components/HeaderParts';
+import { useGitHubConnection } from '@/lib/hooks/use-github-connection';
+import { githubSurface } from '@/lib/github-connection/surfaces';
 import { MetricCards, type TargetValues } from './_components/MetricCards';
 import { DailyChart } from './_components/DailyChart';
 import { WhatChanged } from './_components/WhatChanged';
@@ -97,6 +101,12 @@ export default function DORAMetricsPage() {
     queryFn: () => deploymentsService.getAll({ limit: LATEST_ROWS }),
     enabled: live,
   });
+  // Board 7 (D8b-2): the GitHub connection, only to choose the banner and method copy. No request in demo mode.
+  const github = useGitHubConnection({ enabled: live });
+  const githubState = live && github.connection.isSuccess
+    ? githubSurface(github.connection.data, github.repositories.isSuccess ? github.repositories.data : undefined)
+    : null;
+  const githubOn = githubState !== null && githubState.kind !== 'off';
   const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({
     queryKey: ['dora-benchmarks'],
     queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; },
@@ -189,7 +199,7 @@ export default function DORAMetricsPage() {
         </div>
       </div>
 
-      {showBanner && <NoDataBanner />}
+      {showBanner && <NoDataBanner github={githubOn ? githubState : null} />}
 
       {/* Loading */}
       {!isDemoActive && isLoading && (
@@ -251,7 +261,7 @@ export default function DORAMetricsPage() {
             <LockedTargets />
           )}
           <DataAndMethod
-            sourceSentence={methodSourceSentence(source.kind, isDemoActive)}
+            sourceSentence={methodSourceSentence(source.kind, isDemoActive, githubOn && isGitHubAppRow(latestFinished(latestRows)))}
             bandsDescription={data?.bands?.description ?? COPY.bandsFallbackDescription}
           />
         </div>

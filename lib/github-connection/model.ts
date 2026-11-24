@@ -4,6 +4,7 @@
  * a board 4 outcome. No rendering, so each rule is tested on its own.
  */
 import type { ApiAnswer, GitHubConnection, GitHubInstallation, GitHubRepository } from '../services/github-connection.service'
+import { hasUsableRule } from './repositories'
 
 export type CardState = 'off' | 'not_connected' | 'connected' | 'attention' | 'demo'
 
@@ -26,16 +27,16 @@ export function linkedRepositories(repositories: readonly GitHubRepository[]): G
 }
 
 /**
- * "Recording": a linked repository with access, a service and a deploy rule
- * other than "Don't record deploys". Nothing about whether a deploy was recorded yet.
+ * "Recording": a linked repository with access, a service and a usable deploy
+ * rule (D8b-2: the same test as the repository table's status). Nothing about
+ * whether a deploy was recorded yet.
  */
 export function isRecording(repository: GitHubRepository): boolean {
   return (
     repository.installation_id !== null &&
     repository.access_state !== 'removed' &&
     repository.service_id !== null &&
-    repository.deploy_rule !== null &&
-    repository.deploy_rule.mode !== 'none'
+    hasUsableRule(repository.deploy_rule)
   )
 }
 

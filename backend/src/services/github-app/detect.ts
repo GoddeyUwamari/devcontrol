@@ -11,7 +11,8 @@
  *   4 the event is not the rule's mode               -> ignored other_mode
  *   5 job: workflow + job name or branch differ      -> ignored not_deploy_job / branch_not_matched
  *   6 no result (cancelled, skipped, inactive, ...)  -> ignored conclusion_<x> / state_<x>
- *   7 environments: unknown environment name         -> ignored unknown_environment
+ *   7 environments: not the chosen environment       -> ignored environment_not_matched (D8b-2 R2)
+ *     environments: unknown environment name         -> ignored unknown_environment
  * A deployment is written once, at the terminal event, and never updated.
  */
 import { DeploymentEnvironment } from '../deployment-status';
@@ -112,7 +113,15 @@ export function detectDeployment(input: DetectionInput): Detection {
   const status = deploymentStatus(facts.state);
   if (!status) return skip('ignored', `state_${code(facts.state)}`);
   if (facts.deployment_id === null) return skip('ignored', 'no_deployment_id');
-  const environment = environmentFor(facts.environment, rule.environment_map);
+  let environment: DeploymentEnvironment | null;
+  if (rule.environment_name !== undefined) {
+    // D8b-2 R2: one chosen GitHub environment; every other name records nothing.
+    const chosen = rule.environment_name.trim().toLowerCase();
+    if (!facts.environment || facts.environment.trim().toLowerCase() !== chosen) return skip('ignored', 'environment_not_matched');
+    environment = environmentFor(facts.environment, rule.environment_map) ?? 'production';
+  } else {
+    environment = environmentFor(facts.environment, rule.environment_map);
+  }
   if (!environment) return skip('ignored', 'unknown_environment');
   return {
     kind: 'record',

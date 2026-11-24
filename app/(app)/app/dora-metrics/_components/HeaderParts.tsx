@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { Info } from 'lucide-react'
 import type { DateRangeOption, Service, Team } from '@/lib/types'
 import { COPY, type SourceInfo } from '../_lib/dora-page'
+import { GITHUB_PAGE_HREF, SURFACE_COPY } from '@/lib/github-connection/copy'
+import type { GitHubSurface } from '@/lib/github-connection/surfaces'
 
 /** Under the subtitle: where the records come from and when the last one was made (data time, not render time). */
 export function SourceLine({ source }: { source: SourceInfo }) {
@@ -22,17 +24,37 @@ export function SourceLine({ source }: { source: SourceInfo }) {
   )
 }
 
-/** No finished deployments and no record at all in the workspace. */
-export function NoDataBanner() {
+/**
+ * No finished deployments and no record at all in the workspace. D8b-2 (board 7,
+ * R15): while the GitHub App is switched on, the text follows the connection
+ * (not connected: connect or record by hand; connected: wait for the next
+ * matching deploy). Off, unknown, or demo workspace: the existing text.
+ */
+export function NoDataBanner({ github = null }: { github?: GitHubSurface | null }) {
+  const notConnected = github?.kind === 'not_connected'
+  const connected = github?.kind === 'connected' || github?.kind === 'attention'
   return (
     <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3.5 sm:px-5" data-testid="dora-no-data-banner" role="status">
       <Info size={16} className="text-ink-info shrink-0 mt-0.5" aria-hidden="true" />
       <div>
-        <p className="text-ui font-semibold text-ink">{COPY.bannerTitle}</p>
-        <p className="text-meta text-ink-body mt-0.5">{COPY.bannerBody}</p>
-        <Link href={COPY.recordHref} className="inline-flex items-center min-h-11 sm:min-h-0 mt-1 text-label text-ink-info no-underline hover:underline">
-          {COPY.bannerLink} →
-        </Link>
+        {connected ? (
+          <p className="text-ui font-semibold text-ink" data-testid="dora-banner-connected">{SURFACE_COPY.eiConnected}</p>
+        ) : (
+          <>
+            <p className="text-ui font-semibold text-ink">{COPY.bannerTitle}</p>
+            <p className="text-meta text-ink-body mt-0.5">{notConnected ? SURFACE_COPY.eiNotConnected : COPY.bannerBody}</p>
+          </>
+        )}
+        <div className="flex flex-wrap gap-x-4">
+          {notConnected && github.canManage && (
+            <Link href={GITHUB_PAGE_HREF} data-testid="dora-banner-connect" className="inline-flex items-center min-h-11 sm:min-h-0 mt-1 text-label text-ink-info no-underline hover:underline">
+              {SURFACE_COPY.eiConnect}
+            </Link>
+          )}
+          <Link href={COPY.recordHref} className="inline-flex items-center min-h-11 sm:min-h-0 mt-1 text-label text-ink-info no-underline hover:underline">
+            {COPY.bannerLink} →
+          </Link>
+        </div>
       </div>
     </div>
   )

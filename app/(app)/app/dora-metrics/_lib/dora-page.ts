@@ -13,6 +13,7 @@ import type {
   DORAMetricsData,
 } from '@/lib/services/dora-metrics.service'
 import type { DeploymentStats, RecordedDeployment } from '@/lib/deployments/status'
+import { SURFACE_COPY } from '@/lib/github-connection/copy'
 
 export const COPY = {
   title: 'Engineering Intelligence',
@@ -307,6 +308,12 @@ export interface SourceInfo {
   kind: SourceKind | 'none' | null
 }
 
+/** The row was written by the GitHub App (D8a-2 metadata). */
+export function isGitHubAppRow(row: RecordedDeployment | null): boolean {
+  const meta = (row?.metadata ?? null) as Record<string, unknown> | null
+  return meta?.connection === 'github_app'
+}
+
 /** The latest finished row among the newest rows (the list is newest first). */
 export function latestFinished(rows: RecordedDeployment[] | null | undefined): RecordedDeployment | null {
   return rows?.find((r) => r.status === 'success' || r.status === 'failed') ?? null
@@ -357,9 +364,15 @@ export function sourceLine(
   return { dot: 'solid', text: `Last record from ${source.label} · ${time}`, kind: source.kind }
 }
 
-/** The "Data and method" source sentence (approved §1.2-A). */
-export function methodSourceSentence(kind: SourceInfo['kind'], demo: boolean): string {
+/**
+ * The "Data and method" source sentence (approved §1.2-A). D8b-2 (board 7,
+ * R15): while the GitHub App is switched on and the latest record is one it
+ * wrote, the GitHub Actions sentence names the app instead of "via webhook";
+ * the legacy-webhook sentence stays for webhook rows until D8c.
+ */
+export function methodSourceSentence(kind: SourceInfo['kind'], demo: boolean, githubAppRecords = false): string {
   if (demo) return 'Demo data: a fixed example, not records from your workspace.'
+  if (kind === 'github_actions' && githubAppRecords) return SURFACE_COPY.methodGitHubApp
   if (kind === 'github_actions') {
     return 'Records come from your pipeline (GitHub Actions, via webhook) and from deployments recorded by hand on the Deployments page.'
   }

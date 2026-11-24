@@ -443,6 +443,8 @@ export interface Deployment {
   resources?: Record<string, unknown>;
   logs?: string;
   metadata?: Record<string, unknown>;
+  /** D8b-2: the repository a GitHub App row came from (detail only), or null. */
+  githubRepository?: string | null;
   createdAt: string;
   updatedAt: string;
 }

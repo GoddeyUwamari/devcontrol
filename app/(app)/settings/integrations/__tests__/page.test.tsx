@@ -22,7 +22,7 @@ const INSTALLATION = {
   permissions_state: 'expected', permission_differences: [], claimed_at: '2026-11-24T10:00:00Z', claimed_by_name: null, suspended_at: null, deleted_at: null,
 }
 const repo = (id: string, over: Record<string, unknown> = {}) => ({
-  id, github_repo_id: id, installation_id: '42', full_name: `acme-inc/${id}`, service_id: 's', service_name: 'svc', deploy_rule: { mode: 'job' },
+  id, github_repo_id: id, installation_id: '42', full_name: `acme-inc/${id}`, service_id: 's', service_name: 'svc', deploy_rule: { v: 1, mode: 'job', workflow_name: 'CI', job_name: 'deploy' },
   access_state: 'active', removed_at: null, last_event_at: null, ...over,
 })
 

@@ -86,7 +86,11 @@ export async function setProcessingOutcome(
  * records it, if that claim comes within HELD_EVENT_DAYS of receipt.
  */
 export const NOT_CLAIMED_REASON = 'installation_not_claimed';
-/** The same 7 days as github_held_deliveries (github_purge_held_deliveries). */
+/**
+ * The same 7 days as github_held_deliveries (github_purge_held_deliveries).
+ * Also the window a mapping or rule replay picks events from, and the window
+ * of the held counts the GitHub screen shows (D8b-2 ruling R1).
+ */
 export const HELD_EVENT_DAYS = 7;
 
 export async function holdUntilClaimed(client: PoolClient, organizationId: string, eventId: string): Promise<void> {
@@ -164,6 +168,11 @@ export interface ReplayPage {
  * deployment_status) in the selection, in receipt order (received_at, id),
  * strictly after `after`. pipeline_events has no created_at column:
  * received_at (DEFAULT NOW()) is the row's creation time.
+ *
+ * D8b-2 ruling R1: only events received in the last HELD_EVENT_DAYS are
+ * picked up ("held for 7 days … after 7 days, they're dropped"). Older events
+ * are neither changed nor deleted here: they stay stored until the retention
+ * purge (D8a-3) exists, and are simply no longer recorded.
  */
 export async function findReplayableEvents(
   client: PoolClient,
@@ -179,9 +188,11 @@ export async function findReplayableEvents(
       WHERE organization_id = $1 AND github_repo_id = $2 AND event IN ('workflow_job', 'deployment_status')
         AND (processing_status = ANY($3::text[]) OR (processing_status = 'ignored' AND processing_reason = ANY($4::text[])))
         AND ($6::timestamptz IS NULL OR (received_at, id) > ($6::timestamptz, $7::uuid))
+        AND received_at >= NOW() - make_interval(days => $8)
       ORDER BY received_at, id
       LIMIT $5`,
-    [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit, after?.at ?? null, after?.id ?? null]
+    [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit, after?.at ?? null, after?.id ?? null,
+      HELD_EVENT_DAYS]
   );
   const events = rows.map((r) => ({
     id: r.id,

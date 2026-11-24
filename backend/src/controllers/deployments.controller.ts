@@ -5,6 +5,8 @@ import { DeploymentEvents } from '../services/deploymentEvents';
 import { WebSocketServer } from '../websocket/server';
 import { emitOnboardingEvent } from '../services/onboardingEvents';
 import { RECORD_MESSAGES } from '../services/deployment-record';
+import { readPipelineMetadata } from '../services/github-app/deployment-metadata';
+import { defaultSource, withOrgClient } from '../services/github-app/db';
 import {
   DEFAULT_PAGE_SIZE,
   DEPLOYMENT_ENVIRONMENTS,
@@ -13,6 +15,31 @@ import {
 } from '../services/deployment-status';
 
 const repository = new DeploymentsRepository();
+
+/**
+ * D8b-2 (deployment detail): the repository a GitHub App row came from, by its
+ * stored GitHub repository id, read on a connection tagged for the caller's
+ * organization (pipeline_repositories is RLS-forced, so another organization's
+ * repository is never found). Only for rows the GitHub App wrote
+ * (readPipelineMetadata): such a row exists only where the D8a tables do.
+ * null when the repository row is gone or the read fails.
+ */
+export async function githubRepositoryOf(
+  organizationId: string,
+  metadata: unknown
+): Promise<{ full_name: string } | null> {
+  const meta = readPipelineMetadata(metadata);
+  if (!meta) return null;
+  try {
+    const rows = await withOrgClient(defaultSource, organizationId, async (client) => (await client.query<{ full_name: string }>(
+      'SELECT full_name FROM pipeline_repositories WHERE organization_id = $1 AND github_repo_id = $2',
+      [organizationId, meta.github_repo_id])).rows);
+    return rows[0] ? { full_name: rows[0].full_name } : null;
+  } catch (error) {
+    console.error('[deployments] repository lookup failed:', (error as { code?: string } | null)?.code ?? 'error');
+    return null;
+  }
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -127,9 +154,10 @@ export class DeploymentsController {
         return;
       }
 
+      const githubRepository = await githubRepositoryOf(organizationId, (deployment as { metadata?: unknown }).metadata);
       const response: ApiResponse = {
         success: true,
-        data: deployment,
+        data: githubRepository ? { ...deployment, github_repository: githubRepository } : deployment,
       };
 
       res.json(response);

@@ -182,3 +182,81 @@ describe('Deployment detail page', () => {
     expect(within(header).getByText('Failed')).toBeInTheDocument()
   })
 })
+
+describe('a row the GitHub App recorded (D8b-2): only what GitHub reported and DevControl stored', () => {
+  const SHA = '0123456789abcdef0123456789abcdef01234567'
+  const JOB = row({
+    deployed_by: 'octo-dev', aws_region: null, deployed_at: '2026-11-20T10:07:30.000Z',
+    github_repository: { full_name: 'acme-inc/payments-api' },
+    metadata: {
+      source: 'github_actions', connection: 'github_app', pipeline_metadata_version: 1, github_repo_id: 9, github_job_id: 7,
+      workflow_name: 'CI', job_name: 'deploy-backend', head_sha: SHA, job_started_at: '2026-11-20T10:00:05.000Z',
+      html_url: 'https://github.com/acme-inc/payments-api/actions/runs/1/job/7',
+    },
+  })
+  const ENV = row({
+    aws_region: null, github_repository: { full_name: 'acme-inc/web-app' },
+    metadata: {
+      source: 'github_deployments', connection: 'github_app', pipeline_metadata_version: 1, github_repo_id: 9, github_deployment_id: 5,
+      github_deployment_status_id: 6, github_environment: 'production', head_sha: SHA, ref: 'main', state: 'success',
+    },
+  })
+  beforeEach(() => {
+    requests.length = 0
+    logViewer.mounted.length = 0
+    localStorage.setItem('accessToken', 'test-access-token')
+    api.defaults.adapter = adapter
+  })
+  afterEach(() => {
+    api.defaults.adapter = originalAdapter
+    localStorage.clear()
+  })
+  const noPlaceholders = () => {
+    expect(document.body.textContent).not.toMatch(/N\/A|In progress|Live Deployment Logs|View in AWS Console/)
+    expect(screen.queryByTestId('live-log-viewer')).toBeNull()
+    expect(logViewer.mounted).toEqual([])
+  }
+
+  it('a workflow-job row: repository, short commit, job, started, real duration, the stored GitHub URL', async () => {
+    reply = JOB
+    renderPage()
+    expect(await screen.findByTestId('deployment-source')).toHaveTextContent('Recorded from GitHub Actions')
+    expect(screen.getByTestId('deployment-repository')).toHaveTextContent('acme-inc/payments-api')
+    expect(screen.getByTestId('deployment-commit')).toHaveTextContent(/^0123456$/)
+    expect(screen.getByTestId('deployment-commit')).toHaveAttribute('title', SHA)
+    expect(screen.getByTestId('deployment-target')).toHaveTextContent('CI › deploy-backend')
+    expect(screen.getByTestId('deployment-started')).toHaveTextContent(new Date('2026-11-20T10:00:05.000Z').toLocaleString())
+    expect(screen.getByTestId('deployment-duration')).toHaveTextContent('7m 25s')
+    expect(screen.getByTestId('deployment-region')).toHaveTextContent('Not recorded')
+    const link = screen.getByTestId('deployment-github-link')
+    expect(link).toHaveTextContent('View on GitHub ↗')
+    expect(link).toHaveAttribute('href', 'https://github.com/acme-inc/payments-api/actions/runs/1/job/7')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    noPlaceholders()
+  })
+
+  it('a deployment-event row: "Recorded from GitHub Deployments", its environment, "—" for what GitHub did not report, no link', async () => {
+    reply = ENV
+    renderPage()
+    expect(await screen.findByTestId('deployment-source')).toHaveTextContent('Recorded from GitHub Deployments')
+    expect(screen.getByTestId('deployment-repository')).toHaveTextContent('acme-inc/web-app')
+    expect(screen.getByTestId('deployment-target')).toHaveTextContent('production')
+    expect(screen.getByTestId('deployment-started')).toHaveTextContent('—')
+    expect(screen.getByTestId('deployment-duration')).toHaveTextContent('—')
+    expect(screen.queryByTestId('deployment-github-link')).toBeNull()
+    expect(screen.queryByText(/View on GitHub/)).toBeNull()
+    noPlaceholders()
+  })
+
+  it('a job row without a start time, URL or repository: "—", no link; a URL that is not GitHub\'s is never linked', async () => {
+    const meta = JOB.metadata as Record<string, unknown>
+    reply = { ...JOB, github_repository: undefined, metadata: { ...meta, job_started_at: null, html_url: 'https://evil.example/x', head_sha: null } }
+    renderPage()
+    expect(await screen.findByTestId('deployment-duration')).toHaveTextContent('—')
+    expect(screen.getByTestId('deployment-started')).toHaveTextContent('—')
+    expect(screen.getByTestId('deployment-repository')).toHaveTextContent('—')
+    expect(screen.getByTestId('deployment-commit')).toHaveTextContent('—')
+    expect(screen.queryByTestId('deployment-github-link')).toBeNull()
+    noPlaceholders()
+  })
+})

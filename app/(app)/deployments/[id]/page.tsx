@@ -11,6 +11,7 @@ import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { deploymentStatusDisplay, type RecordedDeployment as Deployment } from '@/lib/deployments/status';
 import { isManualRecord } from '@/lib/deployments/record';
+import { githubRecordDetail } from '@/lib/deployments/github-record';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 
 /**
@@ -80,6 +81,8 @@ export default function DeploymentDetailsPage() {
 
   const manual = isManualRecord(deployment);
   const version = manual ? recordedVersion(deployment) : null;
+  // D8b-2: a row the GitHub App recorded shows what GitHub reported, nothing else.
+  const github = manual ? null : githubRecordDetail(deployment, deployment.githubRepository);
 
   // The status as recorded; unrecognised values are Unknown.
   const getStatusBadge = (status: string, createdAt: string) => {
@@ -110,6 +113,7 @@ export default function DeploymentDetailsPage() {
             <p className={`${PAGE_SUBTITLE_CLASS} mt-2`}>
               {deployment.environment} • {manual ? MANUAL_DETAIL_COPY.recordedBy : 'Deployed by'} {deployment.deployedBy}
             </p>
+            {github && <p className="text-ui text-muted-foreground mt-1 mb-0" data-testid="deployment-source">{github.sourceLabel}</p>}
           </div>
 
           {/* Status Badge */}
@@ -117,6 +121,44 @@ export default function DeploymentDetailsPage() {
         </div>
       </div>
 
+      {github ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8" data-testid="deployment-github">
+            {([
+              ['Repository', github.repository, 'deployment-repository'],
+              ['Commit', github.commit, 'deployment-commit'],
+              [github.targetLabel, github.target, 'deployment-target'],
+              ['Started', github.started, 'deployment-started'],
+              ['Duration', github.duration, 'deployment-duration'],
+              ['Region', deployment.awsRegion || MANUAL_DETAIL_COPY.notRecorded, 'deployment-region'],
+            ] as const).map(([label, value, testId]) => (
+              <Card key={testId}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-ui font-medium text-muted-foreground">{label}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p
+                    className={`text-section break-words${testId === 'deployment-commit' && github.commitFull ? ' font-mono' : ''}`}
+                    data-testid={testId}
+                    title={testId === 'deployment-commit' ? github.commitFull ?? undefined : undefined}
+                  >
+                    {value}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {/* Only the URL GitHub sent and DevControl stored (job rows); never one built here. */}
+          {github.url ? (
+            <Button variant="outline" size="sm" asChild>
+              <a href={github.url} target="_blank" rel="noopener noreferrer" data-testid="deployment-github-link">
+                View on GitHub ↗
+              </a>
+            </Button>
+          ) : null}
+        </>
+      ) : (
+      <>
       {/* Deployment Details */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Card>
@@ -208,6 +250,8 @@ export default function DeploymentDetailsPage() {
           logStreamName={deploymentId}
         />
       </div>
+      )}
+      </>
       )}
     </div>
   );

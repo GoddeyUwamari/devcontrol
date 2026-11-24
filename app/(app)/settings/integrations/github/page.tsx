@@ -4,17 +4,20 @@ import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useGitHubConnection, GITHUB_CONNECTION_KEY, GITHUB_REPOSITORIES_KEY } from '@/lib/hooks/use-github-connection'
 import { githubConnectionService, type GitHubInstallation } from '@/lib/services/github-connection.service'
-import { COPY } from '@/lib/github-connection/copy'
+import { COPY, REPO_COPY, installationSettingsUrl } from '@/lib/github-connection/copy'
+import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
 import { cn } from '@/lib/utils'
 import { BUTTON_OUTLINE, CARD, Chip, LoadingBlocks, PageHeader } from '@/components/integrations/parts'
 import { ClaimOutcomeCard, ConnectSetup, GitHubOff } from './_components/NotConnected'
-import { ConnectedBanner, DisconnectRow, InstallationBanners, ManageOnGitHub, RemovedRepositories, SummaryCard } from './_components/Connected'
+import { ConnectedBanner, DisconnectRow, InstallationBanners, ManageOnGitHub, SummaryCard } from './_components/Connected'
+import { Repositories } from './_components/Repositories'
+import { DEMO_REPOSITORIES, DEMO_SERVICES } from './_components/demo-sample'
 import { useGitHubClaim } from './_components/useGitHubClaim'
 
 /**
  * /settings/integrations/github (D8b-1): boards 2-4 and 6, and board 5's
- * header, summary card and disconnect row. The repository table, deploy
- * rules and held counts are D8b-2.
+ * header, summary card and disconnect row. D8b-2: board 5's repository table
+ * (services, deploy rules, held counts, plan limit, footer) and board 8.
  *
  * Until GET / answers: grey blocks only. Feature off: board 2, no Connect
  * anywhere (Q10). Demo workspace: a fixed read-only sample, and no request
@@ -23,7 +26,9 @@ import { useGitHubClaim } from './_components/useGitHubClaim'
  */
 export default function GitHubIntegrationPage() {
   const queryClient = useQueryClient()
-  const { connection, repositories } = useGitHubConnection()
+  const { connection, repositories, heldEventDays, wantsRepositories } = useGitHubConnection()
+  // The workspace's own services, for the service selects: only for those who can change a mapping.
+  const services = useRegisteredServices({ enabled: wantsRepositories && connection.data?.configured === true && connection.data.can_manage })
   const claim = useGitHubClaim(connection.data)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -95,8 +100,23 @@ export default function GitHubIntegrationPage() {
       {installations.map((installation) => (
         <SummaryCard key={`summary-${installation.installation_id}`} installation={installation} lastEventAt={data.last_event_at} now={now} />
       ))}
-      <p data-testid="github-plan-limit" className="m-0 text-meta text-ink-muted">{COPY.planLimitNote}</p>
-      {repositories.isSuccess && <RemovedRepositories repositories={repositories.data} />}
+      {repositories.isPending ? <LoadingBlocks testId="github-repositories-loading" /> : repositories.isError ? (
+        <section data-testid="github-repositories-failed" className={cn(CARD, 'flex flex-col items-start gap-3 p-6')}>
+          <p className="m-0 text-ui text-ink-body">{REPO_COPY.loadFailed}</p>
+          <button type="button" onClick={() => void repositories.refetch()} className={BUTTON_OUTLINE}>{COPY.tryAgain}</button>
+        </section>
+      ) : (
+        <Repositories
+          repositories={repositories.data}
+          services={(services.data ?? []).map((s) => ({ id: s.id, name: s.name }))}
+          servicesFailed={services.isError}
+          canManage={canManage}
+          heldEventDays={heldEventDays}
+          now={now}
+          chooseOnGitHubHref={manageTarget ? installationSettingsUrl(manageTarget) : null}
+          onChanged={() => queryClient.invalidateQueries({ queryKey: GITHUB_REPOSITORIES_KEY })}
+        />
+      )}
       {canManage && installations.map((installation) => (
         <DisconnectRow key={`disconnect-${installation.installation_id}`} installation={installation} onDisconnect={disconnect} />
       ))}
@@ -127,7 +147,16 @@ function DemoSample({ now }: { now: number }) {
         <span className="text-ui text-ink-body">{COPY.demoBody}</span>
       </div>
       <SummaryCard installation={DEMO_INSTALLATION} lastEventAt={new Date(now - 4 * 60_000).toISOString()} now={now} />
-      <p className="m-0 text-meta text-ink-muted">{COPY.planLimitNote}</p>
+      <Repositories
+        repositories={DEMO_REPOSITORIES(now)}
+        services={DEMO_SERVICES}
+        canManage={false}
+        demo
+        heldEventDays={null}
+        now={now}
+        chooseOnGitHubHref={null}
+        onChanged={() => Promise.resolve()}
+      />
       <DisconnectRow installation={DEMO_INSTALLATION} disabled />
     </>
   )
