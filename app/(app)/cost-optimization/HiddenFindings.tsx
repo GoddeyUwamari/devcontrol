@@ -21,6 +21,7 @@ import {
   NOT_COUNTED_WHILE_RESOLVED,
   REOPEN,
   REVIEW_EMPTY,
+  dismissedFoundAgainLine,
   SHOW,
   STILL_DETECTED_TITLE,
   VIEWER_CANT_REOPEN,
@@ -269,7 +270,12 @@ export function StillDetectedSlot({ view, actions, onRetry, retrying = false }: 
 }
 
 /** The collapsed review list of every resolved and dismissed finding. Only rendered when /hidden loaded. */
-export function ReviewList({ data, actions }: { data: HiddenFindings; actions: ItemActions }) {
+export function ReviewList({ data, actions, dismissedFoundAgain = null }: {
+  data: HiddenFindings;
+  actions: ItemActions;
+  /** The latest analysis's own count of dismissed findings it found again (null: not recorded); hidden at 0. */
+  dismissedFoundAgain?: number | null;
+}) {
   const [open, setOpen] = useState(false);
   const listId = useId();
   const total = data.summary.resolved + data.summary.dismissed;
@@ -289,6 +295,9 @@ export function ReviewList({ data, actions }: { data: HiddenFindings; actions: I
           {open ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
         </span>
       </button>
+      {dismissedFoundAgain !== null && dismissedFoundAgain > 0 && (
+        <p className="text-meta text-ink-muted mt-2" data-testid="dismissed-found-again">{dismissedFoundAgainLine(dismissedFoundAgain)}</p>
+      )}
       {open && (
         <div id={listId} className="mt-3">
           {data.items.length === 0 ? (

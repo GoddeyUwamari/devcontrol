@@ -1003,7 +1003,9 @@ export default function CostOptimizationPage() {
           {/* ── RESOLVED AND DISMISSED: every decided finding, collapsed (PR 3b), at the bottom. Absent while /hidden is loading or failed. ── */}
           {hiddenView.status === 'ready' && !notConnected && (
             <div className="mt-6">
-              <ReviewList data={hiddenView.data} actions={hiddenActions} />
+              {/* Founder ruling (Nov 24): the latest analysis's own count of dismissed findings found again (scan.counts,
+                  from the same run the Last analysis line names); null while running or when the run didn't record it. */}
+              <ReviewList data={hiddenView.data} actions={hiddenActions} dismissedFoundAgain={scan.counts?.hiddenDismissed ?? null} />
             </div>
           )}
         </>

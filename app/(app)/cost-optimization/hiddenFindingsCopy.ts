@@ -71,6 +71,13 @@ export const VIEWER_CANT_REOPEN = 'Only members and above can reopen findings.' 
 
 /** C19 */
 export const reviewToggleLabel = (count: number) => `Resolved and dismissed (${count})`
+/**
+ * Under the Resolved and dismissed toggle (founder ruling, Nov 24): how many dismissed findings the latest analysis
+ * found again. The count is that run's own recorded suppressed_dismissed_count, never the length of this list.
+ * Not shown for 0 or when the run didn't record it.
+ */
+export const dismissedFoundAgainLine = (count: number) =>
+  `${count} dismissed finding${plural(count, '', 's')} ${plural(count, 'was', 'were')} found again`
 export const SHOW = 'Show'
 export const HIDE = 'Hide'
 
