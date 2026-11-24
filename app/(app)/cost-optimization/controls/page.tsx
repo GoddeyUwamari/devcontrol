@@ -210,8 +210,8 @@ export default function OptimizationControlsPage() {
       <div className="mb-8">
         <h1 className={cn(PAGE_TITLE_CLASS, 'mb-1.5')}>Optimization Controls</h1>
         <p className={cn(PAGE_SUBTITLE_CLASS, 'max-w-xl')}>
-          Tune how DevControl identifies selected cost optimization opportunities for your organization. Only the
-          threshold below is configurable — every other check uses its built-in default.
+          Tune how DevControl identifies selected cost optimization opportunities for your organization.
+          Configurable thresholds are listed below. Every other check uses its built-in default.
         </p>
       </div>
 

@@ -23,7 +23,7 @@ export function LockedBoard() {
           <li key={item.name} data-testid="dora-board-item" className="flex flex-col gap-1 rounded-lg border border-slate-200 px-4 py-3.5 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="m-0 text-ui font-semibold text-ink">{item.name}</h3>
-              {item.ownPlan && <PlanLabel testId="dora-board-item-plan">{PLAN_DISPLAY_NAME[PLAN_ENTITLEMENTS.doraCustomBenchmarks]}</PlanLabel>}
+              {item.ownPlan && <PlanLabel testId="dora-board-item-plan" className="bg-violet-50 border border-violet-200 text-ink-accent">{PLAN_DISPLAY_NAME[PLAN_ENTITLEMENTS.doraCustomBenchmarks]}</PlanLabel>}
             </div>
             <p className="m-0 text-meta text-ink-muted">{item.text}</p>
           </li>

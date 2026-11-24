@@ -2,6 +2,7 @@
 
 import type { AWSServicesStats } from '@/lib/services/aws-services.service'
 import { ComingSoonTag } from './ComingSoonTag'
+import { NO_OWNER_TAG_LABEL } from './ownership'
 
 /**
  * Unowned resources (Q19): how many resources have neither an Owner nor a
@@ -21,14 +22,17 @@ export function UnownedCard({ stats, onShowUnowned, onOpenTeamFilter, redesign =
   const unowned = stats.ownership?.unowned
   if (typeof unowned !== 'number') return null
   const top = stats.teams?.top ?? []
-  const bars = [...top.map((t) => ({ key: `team-${t.team}`, label: t.team, count: t.count, unowned: false })), { key: 'unowned', label: 'Unowned', count: unowned, unowned: true }]
+  const bars = [...top.map((t) => ({ key: `team-${t.team}`, label: t.team, count: t.count, unowned: false })), { key: 'unowned', label: redesign ? NO_OWNER_TAG_LABEL : 'Unowned', count: unowned, unowned: true }]
   const max = Math.max(1, ...bars.map((b) => b.count))
 
   return (
     <section aria-labelledby="unowned-heading" className="bg-white rounded-xl border border-slate-200 p-4 mb-6 flex flex-wrap items-center gap-x-6 gap-y-3">
       <div className="flex-[1_1_320px]">
         <h2 id="unowned-heading" className="m-0 mb-1 text-section text-slate-900">
-          {unowned} resource{unowned === 1 ? ' is' : 's are'} unowned
+          {/* The redesign (in-app polish): "N resources have no owner tag"; the legacy page keeps "are unowned". */}
+          {redesign
+            ? `${unowned} resource${unowned === 1 ? ' has' : 's have'} no owner tag`
+            : <>{unowned} resource{unowned === 1 ? ' is' : 's are'} unowned</>}
         </h2>
         <p className="m-0 text-ui text-slate-600">
           They have neither an Owner nor a Team tag, so nobody is on the hook for them. A resource with only a Team tag counts as owned by that team.

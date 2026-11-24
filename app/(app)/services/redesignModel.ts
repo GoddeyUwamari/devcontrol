@@ -58,7 +58,7 @@ export const REDESIGN_COPY = {
   scanDeadline: "The scan reached its time limit after checking the regions, so some later checks (IAM security, compliance, unused-resource and cost-savings checks) didn't run or didn't finish. Region results are kept; the next scan runs them again.",
   unattributed: "Resource Explorer wasn't available in at least one region on the last scan, so some resource types may be missing there.",
   comingSoon: 'service mapping and owner assignment. Map resources to services and assign owners to see findings, cost, spend and deploys per service.',
-  unknownTooltip: "We couldn't read this resource's tags, so we don't know who owns it. Unowned is different: we read the tags and found neither an Owner nor a Team tag.",
+  unknownTooltip: "We couldn't read this resource's tags, so we don't know who owns it. \"No owner tag\" is different: we read the tags and found neither an Owner nor a Team tag.",
   notCheckedEnd: 'So nothing on this page looks more complete than it is.',
   emptyListAction: 'Run Scan now to scan your connected account.',
   dismiss: 'Dismiss',
@@ -837,7 +837,7 @@ const LINE_ORDER = ['last-scan-failed', 'regions', 'iam', 'cloudfront-tags', 'ta
  */
 export function describeNotChecked(c: ServicesCoverage, stats: AWSServicesStats | undefined, now: number, inTabWarnings: readonly string[]): NotCheckedView {
   const mr = multiRegionOf(c)
-  const base = notCheckedLines(c, stats, now, mr ? [] : inTabWarnings, true)
+  const base = notCheckedLines(c, stats, now, mr ? [] : inTabWarnings, true, true)
     .filter((l) => !(mr && (l.key === 'regions' || l.key.startsWith('warning-'))))
   const regionLines: (NotCheckedLine & { short: string })[] = mr
     ? latestScanNotChecked(mr).map((f) => ({ key: `region-${f.region}`, text: reasonLine(f.code, f.region), short: `${f.region} on the last scan` }))

@@ -6,7 +6,7 @@ import { CheckCircle2, RefreshCw } from 'lucide-react'
 import type { AWSService, AWSServicesPage } from '@/lib/services/aws-services.service'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { TYPE_DISPLAY } from './resourceTypes'
-import { ownerDisplay } from './ownership'
+import { NO_OWNER_TAG_LABEL, TEAM_TAG_ONLY_LABEL, ownerDisplay } from './ownership'
 import { timeAgo } from './coverage'
 import { UnknownOwnerTip } from './UnknownOwnerTip'
 import { ATTENTION_DEFINITION, dayText, type FormerHome } from './redesignModel'
@@ -48,11 +48,13 @@ export function typeLabel(type: string) {
  * ("{owner} · {team}", "No Owner tag · {team}"); tables with their own Team
  * column pass false, so the team is shown once.
  */
-export function OwnerCell({ row, withTeam = true, explainUnknown = false }: { row: AWSService; withTeam?: boolean; explainUnknown?: boolean }) {
+export function OwnerCell({ row, withTeam = true, explainUnknown = false, redesign = false }: { row: AWSService; withTeam?: boolean; explainUnknown?: boolean; redesign?: boolean }) {
   const owner = ownerDisplay(row)
+  // The redesign's labels (in-app polish): "No owner tag" and "Team tag only"; the legacy page keeps its own.
+  const teamOnly = redesign ? TEAM_TAG_ONLY_LABEL : 'No Owner tag'
   switch (owner.kind) {
     case 'unowned':
-      return <span className="rounded px-2 py-0.5 text-label bg-orange-50 text-orange-900">Unowned</span>
+      return <span className="rounded px-2 py-0.5 text-label bg-orange-50 text-orange-900">{redesign ? NO_OWNER_TAG_LABEL : 'Unowned'}</span>
     case 'unknown':
       // The redesign explains Unknown vs Unowned in a tooltip (V2-50).
       if (explainUnknown) return <UnknownOwnerTip label={owner.label} />
@@ -60,7 +62,7 @@ export function OwnerCell({ row, withTeam = true, explainUnknown = false }: { ro
     case 'owner':
       return <span className="text-slate-700">{owner.label}{withTeam && owner.team ? ` · ${owner.team}` : ''}</span>
     case 'team-only':
-      return <span className="text-slate-700">{withTeam ? `No Owner tag · ${owner.team}` : 'No Owner tag'}</span>
+      return <span className="text-slate-700">{withTeam ? `${teamOnly} · ${owner.team}` : teamOnly}</span>
     default:
       return <span className="text-slate-600">—</span>
   }
@@ -77,18 +79,20 @@ export function lastSeenText(iso: string, now: number): string {
 }
 
 /** The expanded row (Q5): fields the list already returned. Nothing is fetched. */
-export function Details({ row }: { row: AWSService }) {
+export function Details({ row, redesign = false }: { row: AWSService; redesign?: boolean }) {
   const [now] = useState(() => Date.now())
   const owner = ownerDisplay(row)
+  // The redesign names the same states as its row chips (in-app polish).
+  const unownedLabel = redesign ? NO_OWNER_TAG_LABEL : 'Unowned'
   const items: [string, string][] = [
     ['Issue', row.reason ?? '—'],
     ['Resource', row.name],
     ['Type', typeLabel(row.type)],
     ['Region', row.aws_region ?? '—'],
     ['Environment', environmentLabel(row)],
-    ['Owner', owner.kind === 'owner' ? owner.label : owner.kind === 'team-only' ? 'No Owner tag' : owner.label],
+    ['Owner', owner.kind === 'owner' ? owner.label : owner.kind === 'team-only' ? (redesign ? TEAM_TAG_ONLY_LABEL : 'No Owner tag') : owner.kind === 'unowned' ? unownedLabel : owner.label],
     ['Team', owner.kind === 'unknown' ? '—' : row.team ?? '—'],
-    ['Ownership', row.ownership ? OWNERSHIP_LABEL[row.ownership] : '—'],
+    ['Ownership', row.ownership === 'unowned' ? unownedLabel : row.ownership ? OWNERSHIP_LABEL[row.ownership] : '—'],
     ['Last seen', row.last_seen_at ? lastSeenText(row.last_seen_at, now) : '—'],
     ['Lifecycle state', STATUS_LABEL[row.status] ?? '—'],
   ]
@@ -220,14 +224,14 @@ export function AttentionTable({ state, totalResources, onViewAll, onShowAll, re
                       <span className="text-meta text-slate-600">{typeLabel(row.type)}</span>
                     </td>
                     <td className={ph('px-3 py-3 whitespace-nowrap font-mono text-meta text-slate-700', PHONE_CELL)} data-label={redesign ? 'Region' : undefined}>{regionText(row)}</td>
-                    <td className={ph('px-3 py-3 whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Owner' : undefined}><OwnerCell row={row} explainUnknown={!!redesign} /></td>
+                    <td className={ph('px-3 py-3 whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Owner' : undefined}><OwnerCell row={row} explainUnknown={!!redesign} redesign={!!redesign} /></td>
                     <td className={ph('px-4 py-3 text-right whitespace-nowrap', PHONE_CELL)} data-label={redesign ? 'Action' : undefined}>
                       <Action row={row} expanded={isOpen} detailsId={detailsId} onToggle={() => setExpanded(isOpen ? null : row.id)} />
                     </td>
                   </tr>
                   {isOpen && (
                     <tr id={detailsId} className={ph('border-b border-slate-100 bg-slate-50', 'max-sm:block')}>
-                      <td colSpan={6} className={ph('px-4 py-4', 'max-sm:block')}><Details row={row} /></td>
+                      <td colSpan={6} className={ph('px-4 py-4', 'max-sm:block')}><Details row={row} redesign={!!redesign} /></td>
                     </tr>
                   )}
                 </Fragment>

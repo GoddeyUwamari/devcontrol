@@ -138,7 +138,7 @@ describe('tab 1: all regions checked', () => {
 
   it('the five summary cards sit above Region coverage, then attention, services, ownership, resources, not checked', async () => {
     const { container } = await show(tab1())
-    const order = ['Summary', 'Region coverage', 'What needs attention', 'Your services', 'resources are unowned', 'All resources']
+    const order = ['Summary', 'Region coverage', 'What needs attention', 'Your services', 'resources have no owner tag', 'All resources']
     const positions = order.map((name) => {
       const el = name === 'Summary' ? screen.getByRole('region', { name }) : screen.getByRole('heading', { name: new RegExp(name) })
       return [...container.querySelectorAll('*')].indexOf(el)
@@ -158,6 +158,16 @@ describe('tab 1: all regions checked', () => {
     expect(text(within(tiles).getByRole('heading', { name: 'Services' }).parentElement!)).toBe('Services0registered')
     expect(text(within(tiles).getByRole('heading', { name: 'AWS spend, month to date' }).parentElement!)).toMatch(/whole account · billed, from Cost Explorer/)
     expect(text(tiles)).not.toMatch(/Coming soon|per service/)
+  })
+
+  // In-app polish: label only. The count, the line under it and Show them are unchanged.
+  it('the Unowned tile is labelled "No owner tag", with the same count, caption and Show them', async () => {
+    await show(tab1())
+    const tiles = screen.getByRole('region', { name: 'Summary' })
+    expect(within(tiles).queryByRole('heading', { name: 'Unowned' })).toBeNull()
+    const tile = within(tiles).getByRole('heading', { level: 2, name: 'No owner tag' }).parentElement!
+    expect(text(tile)).toBe('No owner tag3' + '43% of resources whose tags we could read have neither an Owner nor a Team tag · Show them')
+    expect(within(tile).getByRole('button', { name: 'Show them' })).toBeInTheDocument()
   })
 
   it('green banner after Scan now (scan.id = jobId), muted counts; dismiss returns focus to Scan now', async () => {
@@ -468,18 +478,47 @@ describe('tab 14: Coming soon, ownership, the Unknown tooltip', () => {
     expect(screen.queryByRole('group', { name: 'Group by' })).toBeNull()
     expect(screen.getAllByText('Add Service')).toHaveLength(1)
     expect(screen.queryByText(/Auto Discover|Discovery complete|Region coverage →/)).toBeNull()
-    const own = screen.getByRole('heading', { name: '3 resources are unowned' }).closest('section')!
+    const own = screen.getByRole('heading', { name: '3 resources have no owner tag' }).closest('section')!
     expect(text(own)).toMatch(/They have neither an Owner nor a Team tag, so nobody is on the hook for them\. A resource with only a Team tag counts as owned by that team\./)
     const fills = [...own.querySelectorAll('ul[aria-label="Resources per team"] [aria-hidden="true"], ul[aria-label="Resources per team"] [aria-hidden="true"] > div')].map((el) => el.className)
     expect(fills.length).toBeGreaterThan(0)
     for (const cls of fills) expect(cls).not.toMatch(/violet/)
   })
 
+  // In-app polish (founder rulings 2026-11-24): the redesign names the metric "No owner tag" everywhere; labels only.
+  it('"No owner tag" names the metric: Show filter, card heading and bar, row chips, details, not-checked line', async () => {
+    await show(tab1())
+    expect(document.body.textContent).not.toMatch(/Unowned|unowned/)
+    // Show filter: the label changes, the value and the /stats count do not.
+    const list = screen.getByRole('heading', { name: 'All resources' }).closest('section')!
+    const select = within(list).getByLabelText('Show') as HTMLSelectElement
+    const option = [...select.options].find((o) => o.value === 'unowned')!
+    expect(option.text).toBe('No owner tag (3)')
+    // Card: heading with the count, the same explanation, and the bar row named like the tile.
+    const own = screen.getByRole('heading', { name: '3 resources have no owner tag' }).closest('section')!
+    expect(within(own).getByRole('list', { name: 'Resources per team' }).lastElementChild).toHaveTextContent(/^No owner tag3$/)
+    expect(within(own).getByRole('button', { name: 'Show the 3' })).toBeInTheDocument()
+    // Row chips in All resources and in What needs attention, same orange chip.
+    const chips = within(list).getAllByText('No owner tag')
+    expect(chips).toHaveLength(3)
+    for (const chip of chips) expect(chip).toHaveClass('bg-orange-50', 'text-orange-900')
+    // The expanded row says the same.
+    const unownedRow = chips[0].closest('tr')!
+    fireEvent.click(within(unownedRow).getByRole('button', { name: /View details/ }))
+    const details = unownedRow.nextElementSibling!
+    const field = (term: string) => [...details.querySelectorAll('dt')].find((dt) => dt.textContent === term)!.nextElementSibling!.textContent
+    expect(field('Owner')).toBe('No owner tag')
+    expect(field('Ownership')).toBe('No owner tag')
+    // The not-checked line names the label in quotes; the rest of the sentence is unchanged.
+    const line = notChecked().querySelector('li[data-line="tags-unknown"]')!
+    expect(text(line)).toBe("2 resources: tags couldn't be read, so their owner is unknown, not missing. They are not counted under \"No owner tag\". By type: CloudFront 2.")
+  })
+
   it('Unknown · tags unreadable explains itself on focus, hover and tap; Escape closes; Unowned is plain', async () => {
     await show(tab1())
     const attention = screen.getByRole('heading', { name: 'What needs attention' }).closest('section')!
     const tip = within(attention).getAllByRole('button', { name: /Unknown · tags unreadable/ })[0]
-    expect(tip).toHaveAccessibleDescription("We couldn't read this resource's tags, so we don't know who owns it. Unowned is different: we read the tags and found neither an Owner nor a Team tag.")
+    expect(tip).toHaveAccessibleDescription("We couldn't read this resource's tags, so we don't know who owns it. \"No owner tag\" is different: we read the tags and found neither an Owner nor a Team tag.")
     const body = document.getElementById(tip.getAttribute('aria-describedby')!)!
     expect(body).toHaveAttribute('role', 'tooltip')
     expect(body).toHaveAttribute('data-open', 'false')

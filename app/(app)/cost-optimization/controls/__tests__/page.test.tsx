@@ -98,7 +98,8 @@ describe('Optimization Controls page — real API-backed states for an Enterpris
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
   })
 
-  it('the subtitle names one configurable threshold, keeping the original sentence otherwise', async () => {
+  // In-app polish: the subtitle is true whether one, several or no thresholds are configurable.
+  it('the subtitle says configurable thresholds are listed below, keeping the original first sentence', async () => {
     mockGetConfig.mockResolvedValue([lambdaDefault()])
 
     render(<OptimizationControlsPage />)
@@ -106,8 +107,22 @@ describe('Optimization Controls page — real API-backed states for an Enterpris
     await screen.findByText('Low-usage Lambda functions')
     const subtitle = screen.getByText(/Tune how DevControl identifies/)
     expect(subtitle.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Only the threshold below is configurable — every other check uses its built-in default.'
+      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Configurable thresholds are listed below. Every other check uses its built-in default.'
     )
+  })
+
+  it('with no configurable rules, the same subtitle stands beside the page\'s own message', async () => {
+    mockGetConfig.mockResolvedValue([])
+
+    render(<OptimizationControlsPage />)
+
+    expect(await screen.findByText('No configurable optimization rules are available right now.')).toBeInTheDocument()
+    const subtitle = screen.getByText(/Tune how DevControl identifies/)
+    expect(subtitle.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Configurable thresholds are listed below. Every other check uses its built-in default.'
+    )
+    expect(subtitle).not.toHaveTextContent(/Only the threshold below|Any configurable threshold/)
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0)
   })
 
   it('an older backend that still lists ec2_idle never gets an adjustable EC2 input', async () => {
