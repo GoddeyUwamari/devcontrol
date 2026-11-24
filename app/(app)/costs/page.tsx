@@ -966,7 +966,7 @@ export default function CostsPage() {
               </div>
             )) : (
               <div className="p-6 text-center">
-                <p className="text-meta text-ink-muted m-0">No optimization recommendations yet. Run a cost scan to identify savings opportunities.</p>
+                <p className="text-meta text-ink-muted m-0">No optimization recommendations yet. Run cost analysis to identify savings opportunities.</p>
               </div>
             )}
           </div>

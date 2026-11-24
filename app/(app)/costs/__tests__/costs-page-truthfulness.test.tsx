@@ -235,6 +235,14 @@ describe('Costs page -- savings wording', () => {
     expect(savingsCard.textContent).not.toMatch(/\$0/)
     expect(await screen.findByText('Recommendations could not be retrieved.')).toBeInTheDocument()
   })
+
+  // In-app polish: the action is named as on Cost Optimization's button ("Run cost analysis").
+  it('no recommendations listed: the hint names Run cost analysis, never a "cost scan"', async () => {
+    renderPage()
+
+    expect(await screen.findByText('No optimization recommendations yet. Run cost analysis to identify savings opportunities.')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/cost scan/i)
+  })
 })
 
 describe('Costs page -- zero recommendations before any cost analysis', () => {

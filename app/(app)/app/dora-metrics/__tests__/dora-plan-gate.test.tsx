@@ -105,6 +105,10 @@ describe('DORA page — plan', () => {
     const board = screen.getByTestId('dora-locked-board')
     expect(within(board).getByRole('heading', { level: 2, name: "What you'll be able to measure" })).toBeInTheDocument()
     expect(within(board).getByTestId('dora-board-plan')).toHaveTextContent(/^Optimization Engine$/)
+    // In-app polish: the board's own plan stays the solid label; the Custom targets chip is the light one
+    // (the same classes as Your targets' Revenue Protection chip), so it no longer weighs the same.
+    expect(within(board).getByTestId('dora-board-plan').className).toBe('text-label leading-none rounded-full px-3 py-1.5 bg-foreground text-background')
+    expect(within(board).getByTestId('dora-board-item-plan').className).toBe('text-label leading-none rounded-full px-3 py-1.5 bg-violet-50 border border-violet-200 text-ink-accent')
     expect(within(board).getAllByTestId('dora-board-item').map((item) => item.textContent)).toEqual([
       'Deployment frequencyHow often your team ships changes.',
       'Change failure rateHow often a deployment fails.',
