@@ -59,7 +59,8 @@ vi.mock('@/lib/services/platform-stats.service', () => ({
 }))
 
 const NEW_SUBTITLE = "Know what's running, what needs attention, and who owns it."
-const UNMEASURED_TILES = ['Needs attention', 'Unowned', 'Resources', 'AWS spend, month to date']
+// In-app polish: the redesign's Unowned tile is labelled "No owner tag".
+const UNMEASURED_TILES = ['Needs attention', 'No owner tag', 'Resources', 'AWS spend, month to date']
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

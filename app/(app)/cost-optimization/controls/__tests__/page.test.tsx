@@ -99,7 +99,7 @@ describe('Optimization Controls page — real API-backed states for an Enterpris
   })
 
   // In-app polish: the subtitle is true whether one, several or no thresholds are configurable.
-  it('the subtitle says any configurable threshold is listed below, keeping the original sentence otherwise', async () => {
+  it('the subtitle says configurable thresholds are listed below, keeping the original first sentence', async () => {
     mockGetConfig.mockResolvedValue([lambdaDefault()])
 
     render(<OptimizationControlsPage />)
@@ -107,7 +107,7 @@ describe('Optimization Controls page — real API-backed states for an Enterpris
     await screen.findByText('Low-usage Lambda functions')
     const subtitle = screen.getByText(/Tune how DevControl identifies/)
     expect(subtitle.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Any configurable threshold is listed below — every other check uses its built-in default.'
+      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Configurable thresholds are listed below. Every other check uses its built-in default.'
     )
   })
 
@@ -119,9 +119,9 @@ describe('Optimization Controls page — real API-backed states for an Enterpris
     expect(await screen.findByText('No configurable optimization rules are available right now.')).toBeInTheDocument()
     const subtitle = screen.getByText(/Tune how DevControl identifies/)
     expect(subtitle.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Any configurable threshold is listed below — every other check uses its built-in default.'
+      'Tune how DevControl identifies selected cost optimization opportunities for your organization. Configurable thresholds are listed below. Every other check uses its built-in default.'
     )
-    expect(subtitle).not.toHaveTextContent(/Only the threshold below/)
+    expect(subtitle).not.toHaveTextContent(/Only the threshold below|Any configurable threshold/)
     expect(screen.queryAllByRole('spinbutton')).toHaveLength(0)
   })
 

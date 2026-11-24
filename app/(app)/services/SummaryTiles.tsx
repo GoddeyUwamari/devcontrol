@@ -59,6 +59,14 @@ export function noFlaggedIssuesCaption(shown: string): string {
   return `${shown} ${shown === '1' ? 'resource' : 'resources'} with no flagged issues`
 }
 
+/**
+ * The Unowned tile's label on the redesigned page (in-app polish): the count is
+ * resources whose tags we read and found neither an Owner nor a Team tag, so the
+ * label says what was measured. The flag-off page keeps "Unowned" (its snapshots
+ * must not change).
+ */
+export const NO_OWNER_TAG_LABEL = 'No owner tag'
+
 export const CONNECT_ACCOUNT_TEXT = 'Connect an AWS account'
 export const NOT_SCANNED_TEXT = 'Not scanned yet'
 
@@ -127,6 +135,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
   // found": the inventory tiles show "—" and say why instead.
   const gap = statsState.loading ? null : inventoryGap(coverage, stats?.total)
   const count = (n: number | undefined) => (gap ? '—' : kpi(n, statsState))
+  const unownedLabel = redesign ? NO_OWNER_TAG_LABEL : 'Unowned'
   // Red only when something is flagged.
   const flagged = !notConnected && !gap && !statsState.loading && !statsState.unavailable && (stats?.needs_attention ?? 0) > 0
 
@@ -142,7 +151,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
     return (
       <section aria-label="Summary" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <Tile label="Needs attention" value="—" tone="unmeasured" />
-        <Tile label="Unowned" value="—" tone="unmeasured" />
+        <Tile label={unownedLabel} value="—" tone="unmeasured" />
         <Tile label="Resources" value="—" tone="unmeasured" />
         {servicesTile}
         <Tile label="AWS spend, month to date" value="—" tone="unmeasured" />
@@ -164,7 +173,7 @@ export function SummaryTiles({ stats: statsState, coverage, registered, spend, o
         {gap && <GapCaption gap={gap} />}
       </Tile>
 
-      <Tile label="Unowned" value={count(ownership?.unowned)}>
+      <Tile label={unownedLabel} value={count(ownership?.unowned)}>
         {gap && <GapCaption gap={gap} />}
         {!gap && unownedPercent !== null && !statsState.loading && (
           <p className="m-0 text-meta text-slate-600">

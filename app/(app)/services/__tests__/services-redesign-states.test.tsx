@@ -160,6 +160,16 @@ describe('tab 1: all regions checked', () => {
     expect(text(tiles)).not.toMatch(/Coming soon|per service/)
   })
 
+  // In-app polish: label only. The count, the line under it and Show them are unchanged.
+  it('the Unowned tile is labelled "No owner tag", with the same count, caption and Show them', async () => {
+    await show(tab1())
+    const tiles = screen.getByRole('region', { name: 'Summary' })
+    expect(within(tiles).queryByRole('heading', { name: 'Unowned' })).toBeNull()
+    const tile = within(tiles).getByRole('heading', { level: 2, name: 'No owner tag' }).parentElement!
+    expect(text(tile)).toBe('No owner tag3' + '43% of resources whose tags we could read have neither an Owner nor a Team tag · Show them')
+    expect(within(tile).getByRole('button', { name: 'Show them' })).toBeInTheDocument()
+  })
+
   it('green banner after Scan now (scan.id = jobId), muted counts; dismiss returns focus to Scan now', async () => {
     const c = tab1()
     await show(c)
