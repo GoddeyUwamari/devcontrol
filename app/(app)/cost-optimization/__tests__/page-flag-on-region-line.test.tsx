@@ -21,6 +21,9 @@ const RULES = {
 }
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: async () => [],
     getStats: async () => ({
       totalRecommendations: 0, activeRecommendations: 0, totalPotentialSavings: 0, potentialSavingsByResourceType: {},

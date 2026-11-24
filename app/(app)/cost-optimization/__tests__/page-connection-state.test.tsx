@@ -13,7 +13,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.f
 vi.mock('@/components/demo/demo-mode-toggle', () => ({ useDemoMode: () => false }))
 vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => selector({ enabled: false }) }))
 
-const svc = vi.hoisted(() => ({ getConnection: vi.fn() }))
+const svc = vi.hoisted(() => ({ getConnection: vi.fn(), acknowledgeRunResult: vi.fn(async (_id: string) => undefined) }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
     getAll: async () => [],
@@ -26,6 +26,12 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     getAnalysisRuns: async () => [run({ detected_count: 4, new_count: 4, persisted_count: 4 })],
     getHidden: async () => ({ latestRun: null, summary: { resolved: 0, dismissed: 0, stillDetected: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }, notConfirmed: 0 }, items: [] }),
     analyze: vi.fn(),
+    // A result of a run this user started, waiting to be seen: shown only when connected.
+    getMyRunResult: async () => ({
+      id: 'run-placeholder', state: 'completed', completedAt: null, checksTotal: 1, checksRan: 1, failedChecks: [], services: ['EC2'],
+      newCount: 0, openCount: 4, stillOpen: 4, message: null, findingsUnchanged: false,
+    }),
+    acknowledgeRunResult: (id: string) => svc.acknowledgeRunResult(id),
   },
 }))
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => {
@@ -43,11 +49,10 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><CostOptimizationPage /></QueryClientProvider>)
 }
 
-const banner = () => screen.getByTestId('scan-status-banner')
 // PR2: the shared NotConnectedCard's heading.
 const NOT_CONNECTED = 'No AWS account connected'
 
-beforeEach(() => svc.getConnection.mockReset())
+beforeEach(() => { svc.getConnection.mockReset(); svc.acknowledgeRunResult.mockClear() })
 
 describe('Cost Optimization: connected comes from the server connection state only', () => {
   it.each([
@@ -57,8 +62,10 @@ describe('Cost Optimization: connected comes from the server connection state on
     svc.getConnection.mockResolvedValue(answer)
     renderPage()
     await waitFor(() => expect(screen.getAllByText(NOT_CONNECTED).length).toBeGreaterThan(0))
-    // The stored run's findings are not presented as this connection's result: no analysis banner at all (PR2).
-    expect(screen.queryByTestId('scan-status-banner')).toBeNull()
+    // The stored run's findings are not presented as this connection's result: no banner at all (PR2), and an
+    // unseen result is not shown, so not acknowledged either.
+    expect(screen.queryByTestId('scan-result-banner')).toBeNull()
+    expect(svc.acknowledgeRunResult).not.toHaveBeenCalled()
     // Nor its 4 findings or counts (PR2: stale data from an earlier connection is hidden).
     expect(screen.queryByTestId('opportunities')).toBeNull()
     expect(screen.queryByTestId('summary-card')).toBeNull()
@@ -70,7 +77,7 @@ describe('Cost Optimization: connected comes from the server connection state on
   ])('%s: status unavailable, never connected and never "Connect AWS"', async (_label, arrange) => {
     arrange()
     renderPage()
-    await waitFor(() => expect(within(banner()).getByText("Couldn't load analysis status")).toBeInTheDocument())
+    expect(await screen.findByTestId('last-analysis-unavailable')).toHaveTextContent("Couldn't load analysis status.")
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
   })
 
@@ -81,14 +88,15 @@ describe('Cost Optimization: connected comes from the server connection state on
     expect(screen.getByTestId('connection-loading')).toBeInTheDocument()
     expect(screen.getByTestId('header-action-loading')).toBeInTheDocument()
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
-    expect(screen.queryByTestId('scan-status-banner')).toBeNull()
+    expect(screen.queryByTestId('scan-result-banner')).toBeNull()
     expect(screen.queryByRole('button', { name: /Run cost analysis/ })).toBeNull()
   })
 
   it('connected: the stored run is shown', async () => {
     svc.getConnection.mockResolvedValue({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' })
     renderPage()
-    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'info'))
+    await waitFor(() => expect(screen.getByTestId('last-analysis')).toHaveTextContent(/ ago \(manual\)$/))
+    expect(await screen.findByTestId('scan-result-banner')).toHaveAttribute('data-tone', 'success')
     expect(screen.queryByText(NOT_CONNECTED)).not.toBeInTheDocument()
   })
 })

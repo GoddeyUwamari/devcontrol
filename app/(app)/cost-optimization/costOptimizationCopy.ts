@@ -32,9 +32,15 @@ export const OPEN_OPPORTUNITIES = 'Open opportunities'
 export const ESTIMATED_MONTHLY_SAVINGS = 'Estimated monthly savings'
 export const COVERAGE = 'Coverage'
 
-/** The Coverage card: "9 of 32 checks · 5 services". */
-export const coverageCardLine = (active: number, total: number, services: number) =>
-  `${active} of ${total} checks · ${services} service${plural(services, '', 's')}`
+/**
+ * The Coverage card (scan result banner PR, founder-locked Nov 23): "AWS cost optimization · 11 active checks",
+ * with the live services underneath. Both computed from the Optimization Rule Registry; the catalog's
+ * total (planned rules included) is never shown.
+ */
+export const COVERAGE_SCOPE = 'AWS cost optimization'
+export const coverageCardLine = (active: number) => `${COVERAGE_SCOPE} · ${active} active check${plural(active, '', 's')}`
+/** The services under it, by display name: "EC2 · EBS · RDS · S3 · Lambda · DynamoDB". */
+export const serviceNamesLine = (names: readonly string[]) => names.join(' · ')
 
 /** The savings card when every open figure is an upper bound (founder ruling 4): never a firm total. */
 export const upperBoundOnly = (amount: string) => `Up to ${amount}/mo · upper bound only`
@@ -67,9 +73,6 @@ export const SUMMARY_NO_ESTIMATE = 'No dollar estimate yet for the open opportun
 export const summaryNew = (count: number) => (count === 0 ? 'Nothing new since the last analysis.' : `${count} new since the last analysis.`)
 
 export const HOW_DEVCONTROL_CHECKS = 'How DevControl checks'
-/** The collapsible's header: "9 of 32 checks active · 5 services". */
-export const checksHeaderLine = (active: number, total: number, services: number) =>
-  `${active} of ${total} checks active · ${services} service${plural(services, '', 's')}`
 export const NO_CRITICAL_TIER = 'Only High/Medium/Low severities are currently supported — there is no Critical tier in the underlying data.'
 
 /** The legacy (7b) caveat's second sentence: the checks are now listed in the rail, not below the card. */
@@ -80,9 +83,9 @@ export const HOW_EACH_CHECK_WORKS = 'How each check works'
 export const activeChecksNote = (count: number) =>
   `${count} active check${plural(count, '', 's')} today — not every possible AWS cost optimization.`
 
-/** `services`: the AWS services with at least one active check. */
-export const coverageLine = (active: number, total: number, services: number) =>
-  `${active} of ${total} checks active across ${services} AWS service${plural(services, '', 's')}.`
+/** Founder ruling 6: "11 active checks across EC2 · EBS · …" (`names`: the services with an active check). */
+export const coverageLine = (active: number, names: readonly string[]) =>
+  `${active} active check${plural(active, '', 's')} across ${serviceNamesLine(names)}`
 
 export const plannedToggle = (count: number) => `Planned / Coming soon (${count})`
 

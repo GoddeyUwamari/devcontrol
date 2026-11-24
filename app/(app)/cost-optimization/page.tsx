@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -21,7 +21,7 @@ import awsAccountsService from '@/lib/services/aws-accounts.service';
 import awsServicesService from '@/lib/services/aws-services.service';
 import { awsResourcesService } from '@/lib/services/aws-resources.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
-import type { HiddenFindings, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
+import type { CostRunResult, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
@@ -36,18 +36,20 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice';
 import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected';
 import { analyzeFailureMessage } from './costOptimizationStatus';
-import { deriveCostScanState, runsRefetchInterval } from './costScanState';
+import { RUNNING_REFETCH_MS, deriveCostScanState, runsRefetchInterval } from './costScanState';
 import {
-  BANNER_SOURCE_LABEL,
+  RUNNING_ANALYSIS,
+  RUN_COST_ANALYSIS,
   SOURCE_LABEL,
   STATS_UNAVAILABLE_NOTE,
+  STATUS_UNAVAILABLE_TITLE,
   TRY_AGAIN,
   UNAVAILABLE,
-  analyzeToast,
-  bannerContent,
+  lastAnalysisProblem,
+  resultBannerContent,
 } from './costScanBanner';
-import { CostAnalysisBanner, RunResultBanner, type RunResult } from './CostAnalysisBanner';
-import { ReviewList, StillDetectedSlot, scrollToStillDetected, type HiddenView } from './HiddenFindings';
+import { ScanResultBanner, type ScanResultView } from './ScanResultBanner';
+import { ReviewList, StillDetectedSlot, type HiddenView } from './HiddenFindings';
 import {
   ALREADY_REOPENED,
   DISMISSED_TOAST,
@@ -76,7 +78,6 @@ import {
   UPPER_BOUND,
   VIEW_COSTS,
   activeChecksNote,
-  checksHeaderLine,
   costChecksRegionLine,
   coverageCardLine,
   coverageLine,
@@ -85,6 +86,7 @@ import {
   nothingToActOnBody,
   opportunitiesHeading,
   plannedToggle,
+  serviceNamesLine,
   stillDetectedKpiNote,
   summaryFirmSavings,
   summaryNew,
@@ -146,6 +148,15 @@ const SEVERITY_ROWS: readonly { key: SeverityKey; label: string; color: string }
 
 /** The id of the How DevControl checks section: the empty state's "See what's checked" opens it. */
 const CHECKS_ANCHOR = 'how-devcontrol-checks';
+/** The Opportunities section: the result banner's "See the new opportunity" scrolls to it. */
+const OPPORTUNITIES_ANCHOR = 'opportunities';
+
+/** The result banner's query: this user's latest manual run in this organization, until seen or closed. */
+const RUN_RESULT_KEY = ['cost-run-result'] as const;
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 /** "Nov 18, 2026" from a recommendation's createdAt; nothing for a missing or unreadable date. */
 function foundDate(iso: string | undefined): string | null {
@@ -360,44 +371,109 @@ export default function CostOptimizationPage() {
     onError: () => toast.error('Failed to dismiss recommendation'),
   });
 
-  // "Run cost analysis": its progress and result in the top banner slot (light-lane layout, founder ruling 1),
-  // in place of the Latest analysis banner until closed or auto-hidden. Never a toast.
-  const [runResult, setRunResult] = useState<RunResult | null>(null);
-  const runId = useRef(0);
-  const closeRunResult = useCallback(() => setRunResult(null), []);
+  // ── The result banner (founder-locked behaviour, Nov 23) ──
+  // Only for a run THIS user started with "Run cost analysis", keyed to that run: the server returns this user's
+  // latest manual run in this organization until it is acknowledged (seen while the tab is visible, or closed), so
+  // it shows on the next visit if the run finished after they left, never again once seen, and a later scheduled
+  // run can't replace it. gcTime 0: a remount (navigating back) asks the server again, never replays the cache.
+  const runResultQuery = useQuery({
+    queryKey: RUN_RESULT_KEY,
+    queryFn: costRecommendationsService.getMyRunResult,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? RUNNING_REFETCH_MS : false),
+    enabled: !isDemoActive,
+  });
+  // A result whose run row couldn't be saved (ruling 8): shown for this session only, never acknowledged.
+  const [sessionResult, setSessionResult] = useState<CostRunResult | null>(null);
+  const [closedRunId, setClosedRunId] = useState<string | null>(null);
+  const serverResult = runResultQuery.data ?? null;
+  const shownResult: CostRunResult | null = sessionResult
+    ?? (serverResult && serverResult.state !== 'running' && serverResult.id !== closedRunId ? serverResult : null);
+  const runRunning = isAnalyzing || serverResult?.state === 'running';
+
+  // Seen = shown while the tab is visible: acknowledged once, so a refresh, another tab or device never replays it.
+  // A failed acknowledge leaves it to show again next visit (never lost).
+  const acknowledged = useRef(new Set<string>());
+  const acknowledge = useCallback((runId: string) => {
+    if (acknowledged.current.has(runId)) return;
+    acknowledged.current.add(runId);
+    costRecommendationsService.acknowledgeRunResult(runId).catch(() => acknowledged.current.delete(runId));
+  }, []);
+
+  const closeResult = () => {
+    if (sessionResult) setSessionResult(null);
+    else if (shownResult?.id) {
+      setClosedRunId(shownResult.id);
+      acknowledge(shownResult.id);
+    }
+  };
+
+  // A run this page didn't start (the user left mid-run and came back) finished while they watched: the
+  // findings, totals and status refresh with it.
+  const serverState = serverResult?.state;
+  const previousServerState = useRef(serverState);
+  useEffect(() => {
+    const before = previousServerState.current;
+    previousServerState.current = serverState;
+    if (before === 'running' && serverState && serverState !== 'running') {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
+        queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
+      ]);
+    }
+  }, [serverState, queryClient]);
 
   const handleScan = async () => {
-    const id = ++runId.current;
     setIsAnalyzing(true);
-    setRunResult({ phase: 'running', id });
+    setSessionResult(null);
     try {
       const result = await costRecommendationsService.analyze();
       await Promise.all([
         refetch(),
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
-        // The backend now records this run in cost_analysis_runs -- refresh
-        // so "Last Analysis" reflects it immediately instead of only the
-        // next 60s staleTime refetch.
+        // The backend records this run in cost_analysis_runs: "Last analysis" reflects it at once.
         queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
         // The run records which hidden findings it found again.
         queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
       ]);
-      // The result's "resolved found again" is /hidden's still-detected count, refetched above:
-      // the same number the banner and the Still detected group show (founder ruling 8).
-      // A failed refetch is unknown (null), never the previous answer.
-      const hiddenState = queryClient.getQueryState<HiddenFindings>(['cost-recommendations-hidden']);
-      const stillDetectedNow = hiddenState?.status === 'success' && hiddenState.data ? hiddenState.data.summary.stillDetected.count : null;
-      // The banner's text and colour are analyzeToast()'s (founder ruling 7): the same honest details the toast gave.
-      const message = analyzeToast(result, stillDetectedNow);
-      setRunResult({ phase: 'finished', id, kind: message.kind, text: message.text });
+      // The banner shows the run's own result at once (the same facts GET my-result gives).
+      if (result.result?.id) queryClient.setQueryData(RUN_RESULT_KEY, result.result);
+      else if (result.result) setSessionResult(result.result);
+      else await queryClient.invalidateQueries({ queryKey: RUN_RESULT_KEY });
     } catch (err: unknown) {
-      setRunResult({ phase: 'failed', id, message: analyzeFailureMessage(err) });
-      // The backend recorded this attempt too: the status must not keep showing the previous one.
-      await queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] });
+      // The run's own record says what happened (it may even still be running, e.g. after a proxy timeout).
+      void queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] });
+      const recorded = await queryClient
+        .fetchQuery({ queryKey: RUN_RESULT_KEY, queryFn: costRecommendationsService.getMyRunResult, staleTime: 0 })
+        .catch(() => null);
+      if (!recorded) {
+        // No row (it couldn't be created): this session only, and no claim that the findings are unchanged.
+        setSessionResult({
+          id: null, state: 'failed', completedAt: null, checksTotal: 0, checksRan: 0, failedChecks: [], services: [],
+          newCount: null, openCount: null, stillOpen: null, message: analyzeFailureMessage(err), findingsUnchanged: false,
+        });
+      }
     } finally {
       setIsAnalyzing(false);
     }
   };
+
+  // "See the new opportunity": bring Opportunities into view.
+  const seeNewOpportunities = () => {
+    const section = document.getElementById(OPPORTUNITIES_ANCHOR);
+    if (!section) return;
+    section.scrollIntoView?.({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    section.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+  };
+
+  const resultView: ScanResultView | null = runRunning
+    ? { phase: 'running' }
+    : shownResult ? { phase: 'result', content: resultBannerContent(shownResult) } : null;
 
   const pendingMutation = (id: string) => resolveMutation.isPending && resolveMutation.variables === id
     || dismissMutation.isPending && dismissMutation.variables === id;
@@ -435,19 +511,23 @@ export default function CostOptimizationPage() {
   const monthlyLabel = monthlySavings === null ? null : formatSavingsTotal(monthlySavings, estimatedFindings);
   const bySeverity = statsAvailable ? stats.bySeverity : null;
 
-  // The banner states a resolved finding "found again" only from /hidden's judgement, the
-  // same count the Still detected group and C12 read, so one finding never gets two states.
-  const banner = bannerContent(scan, {
-    hidden: hiddenView.status === 'ready'
-      ? { stillDetected: hiddenView.data.summary.stillDetected.count, notConfirmed: hiddenView.data.summary.notConfirmed }
-      : hiddenView.status,
-    open: activeCount !== null ? activeCount : statsLoading ? 'loading' : 'error',
-  });
-  const bannerMeta = scan.completedAt && scan.source && (scan.key === 'failed' || scan.key === 'partial' || scan.key === 'interrupted' || scan.key.startsWith('completed'))
-    ? `${BANNER_SOURCE_LABEL[scan.source]}, ${formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })}`
-    : undefined;
+  // Ruling 1a: a run that failed or had gaps says so on the Last analysis line, never in a banner.
+  const lastProblem = lastAnalysisProblem(scan);
 
-  const canRunScan = !isAnalyzing && !isDemoActive && awsConnected !== false;
+  const canRunScan = !runRunning && !isDemoActive && awsConnected !== false;
+
+  // The result banner shows (and so is "seen") only where the page renders it.
+  const bannerSlotShown = !isDemoActive && !notConnected && !connectionLoading;
+  const shownRunId = bannerSlotShown && !runRunning && shownResult?.id ? shownResult.id : null;
+  useEffect(() => {
+    if (!shownRunId) return undefined;
+    const ackIfVisible = () => {
+      if (document.visibilityState === 'visible') acknowledge(shownRunId);
+    };
+    ackIfVisible();
+    document.addEventListener('visibilitychange', ackIfVisible);
+    return () => document.removeEventListener('visibilitychange', ackIfVisible);
+  }, [shownRunId, acknowledge]);
   const listedActiveCount = activeCount ?? recommendations.length;
   const hiddenCount = activeCount === null ? 0 : Math.max(0, activeCount - recommendations.length);
   // The legacy caveat names "each listed check" only when the rail lists them, and not while /hidden has failed (no conclusion).
@@ -455,13 +535,13 @@ export default function CostOptimizationPage() {
   // The "Nothing to act on" empty state: only for a completed run that recorded every check as complete and found nothing new.
   const runCounts = scan.key.startsWith('completed') ? scan.counts : null;
   const ranAllChecks = runCounts !== null && runCounts.allChecksComplete && runCounts.new === 0;
-  // Coverage counts the services with at least one active check, so "across N services" is true of the active ones.
+  // Coverage names the services with at least one active check, by display name (ruling 6), all from the registry.
   const activeServices = ruleCatalog.summary.services.filter((s) => s.implementedCount > 0);
+  const activeServiceNames = activeServices.map((s) => s.displayName || s.service);
   const catalogLoaded = ruleCatalog.summary.totalRules > 0;
 
   // High / Medium / Low from /stats; null (shown as "—", never 0) when stats are unavailable.
   const severityCounts = bySeverity ? { high: bySeverity.high, medium: bySeverity.medium, low: bySeverity.low } : null;
-  const severityLine = SEVERITY_ROWS.map((row) => `${row.label} ${severityCounts ? severityCounts[row.key] : '—'}`).join(' · ');
 
   // Upper bounds are never added to the firm total; with no firm figure at all, the card says so (founder ruling 4).
   const ceilingTotal = statsAvailable ? stats.potentialSavingsCeiling : 0;
@@ -495,26 +575,23 @@ export default function CostOptimizationPage() {
     if (!section) return;
     event.preventDefault();
     section.open = true;
-    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    section.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    section.scrollIntoView?.({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
     section.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
   };
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto">
-      {/* ── TOP BANNER SLOT: the Run cost analysis result while it shows, otherwise the latest analysis. Never both. ── */}
-      {!isDemoActive && !notConnected && !connectionLoading && (runResult ? (
-        <RunResultBanner className="mb-6" result={runResult} onClose={closeRunResult} />
-      ) : (
-        <CostAnalysisBanner
+      {/* ── RESULT BANNER: only a run this user started (running, then its result until closed). Never a scheduled run. ── */}
+      {bannerSlotShown && resultView && (
+        <ScanResultBanner
           className="mb-6"
-          content={banner}
-          meta={bannerMeta}
-          resultKey={`${scan.key}|${scan.completedAt ?? ''}`}
-          onRetry={retryStatus}
-          onReview={scrollToStillDetected}
+          view={resultView}
+          onClose={closeResult}
+          onRetry={() => { void handleScan(); }}
+          onSeeNew={seeNewOpportunities}
+          retryDisabled={!canRunScan}
         />
-      ))}
+      )}
 
       {/* ── HEADER: title, purpose, last analysis, Run cost analysis ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
@@ -528,7 +605,13 @@ export default function CostOptimizationPage() {
             <p className="text-meta text-ink-muted mt-2 flex flex-wrap items-center gap-x-1.5" data-testid="last-analysis">
               <span>{LAST_ANALYSIS}</span>
               {scan.key === 'loading' ? <Skeleton className="h-4 w-28" /> : scan.key === 'status_unavailable' ? (
-                <span>{UNAVAILABLE}</span>
+                // Ruling 1c: a small inline error with Retry, not a banner.
+                <span className="inline-flex flex-wrap items-center gap-x-1.5 text-ink-danger" data-testid="last-analysis-unavailable">
+                  <span>{STATUS_UNAVAILABLE_TITLE}.</span>
+                  <button type="button" onClick={retryStatus} className="inline-flex min-h-11 items-center font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800 sm:min-h-0">
+                    {TRY_AGAIN}
+                  </button>
+                </span>
               ) : scan.key === 'not_connected' ? (
                 <span>—</span>
               ) : scan.key === 'never_analyzed' ? (
@@ -536,9 +619,15 @@ export default function CostOptimizationPage() {
               ) : scan.key === 'running' ? (
                 <span>Running…</span>
               ) : scan.completedAt && scan.source ? (
-                <span>{formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })} ({LAST_ANALYSIS_SOURCE[scan.source]})</span>
+                <>
+                  <span>{formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })} ({LAST_ANALYSIS_SOURCE[scan.source]})</span>
+                  {lastProblem && <span className="font-semibold text-ink-warning" data-testid="last-analysis-problem">· {lastProblem}</span>}
+                </>
               ) : (
-                <span>—</span>
+                <>
+                  <span>—</span>
+                  {lastProblem && <span className="font-semibold text-ink-warning" data-testid="last-analysis-problem">· {lastProblem}</span>}
+                </>
               )}
             </p>
           )}
@@ -549,7 +638,7 @@ export default function CostOptimizationPage() {
           <ConnectAwsHeaderButton className="shrink-0" />
         ) : (
           <Button size="lg" onClick={handleScan} disabled={!canRunScan} className="min-h-11 w-full sm:w-auto whitespace-nowrap shrink-0">
-            {isAnalyzing ? <><Loader2 size={16} className="mr-1.5 animate-spin" /> Scanning...</> : <><RefreshCw size={16} className="mr-1.5" /> Run cost analysis</>}
+            {runRunning ? <><Loader2 size={16} className="mr-1.5 animate-spin" /> {RUNNING_ANALYSIS}</> : <><RefreshCw size={16} className="mr-1.5" /> {RUN_COST_ANALYSIS}</>}
           </Button>
         )}
       </div>
@@ -617,12 +706,21 @@ export default function CostOptimizationPage() {
                 {rulesLoading ? <Skeleton className="h-6 w-28" /> : rulesError || !catalogLoaded ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
                 ) : (
-                  <p className="text-section text-slate-900 tabular-nums" data-testid="coverage-card-line">
-                    {/* Each part kept whole, so a narrow card breaks between them, never inside one. */}
-                    {coverageCardLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length).split(' · ').map((part, index, parts) => (
-                      <span key={part}>{index > 0 && ' '}<span className="whitespace-nowrap">{part}{index < parts.length - 1 && ' ·'}</span></span>
-                    ))}
-                  </p>
+                  <>
+                    <p className="text-ui font-semibold text-slate-900 tabular-nums" data-testid="coverage-card-line">
+                      {/* The count is kept whole; "AWS cost optimization" may wrap in the half-width phone card. */}
+                      {coverageCardLine(ruleCatalog.summary.implementedCount).split(' · ').map((part, index, parts) => (
+                        <span key={part}>{index > 0 && ' '}<span className={index > 0 ? 'whitespace-nowrap' : undefined}>{part}{index < parts.length - 1 && ' ·'}</span></span>
+                      ))}
+                    </p>
+                    {activeServiceNames.length > 0 && (
+                      <p className="text-meta text-ink-muted mt-1" data-testid="coverage-services-line">
+                        {serviceNamesLine(activeServiceNames).split(' · ').map((name, index, names) => (
+                          <span key={name}>{index > 0 && ' '}<span className="whitespace-nowrap">{name}{index < names.length - 1 && ' ·'}</span></span>
+                        ))}
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -731,9 +829,9 @@ export default function CostOptimizationPage() {
                   )}
                 </div>
               ) : (
-                <section className="flex flex-col gap-3" aria-labelledby="opportunities-heading" data-testid="opportunities">
+                <section id={OPPORTUNITIES_ANCHOR} className="flex flex-col gap-3 scroll-mt-24" aria-labelledby="opportunities-heading" data-testid="opportunities">
                   <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                    <h2 id="opportunities-heading" className="text-ui font-semibold text-slate-900">{opportunitiesHeading(listedActiveCount)}</h2>
+                    <h2 id="opportunities-heading" tabIndex={-1} className="text-ui font-semibold text-slate-900 outline-none">{opportunitiesHeading(listedActiveCount)}</h2>
                     {hiddenCount > 0 && (
                       <p className="text-label font-normal text-ink-muted">
                         {`Showing ${recommendations.length} of ${activeCount} active opportunities`} · Sorted by highest potential savings first
@@ -837,12 +935,9 @@ export default function CostOptimizationPage() {
           {catalogLoaded && (
             <details id={CHECKS_ANCHOR} className="group mt-6 bg-white border border-slate-200 rounded-xl scroll-mt-24" data-testid="checks-section">
               <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 [&::-webkit-details-marker]:hidden">
+                {/* The title and the expand control only: the counts are on the Coverage card (founder-locked, Nov 23). */}
                 <span className="text-ui font-semibold text-slate-900">{HOW_DEVCONTROL_CHECKS}</span>
-                {/* Phone: the counts wrap onto their own line under the title, the chevron stays beside the title. */}
-                <ChevronDown size={16} className="ml-auto shrink-0 text-ink-muted transition-transform group-open:rotate-180 sm:order-last sm:ml-0" aria-hidden="true" />
-                <span className="text-meta text-ink-muted tabular-nums basis-full min-w-0 sm:basis-auto sm:flex-1" data-testid="checks-summary-line">
-                  {checksHeaderLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)}{!notConnected && ` · ${severityLine}`}
-                </span>
+                <ChevronDown size={16} className="ml-auto shrink-0 text-ink-muted transition-transform group-open:rotate-180" aria-hidden="true" />
               </summary>
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 border-t border-slate-100 px-5 py-5">
                 {implementedRules.length > 0 ? (
@@ -876,12 +971,12 @@ export default function CostOptimizationPage() {
                 ) : <div />}
                 <div className="min-w-0" data-testid="coverage-card">
                   <p className="text-label font-normal text-ink-muted leading-relaxed mb-3" data-testid="coverage-line">
-                    {coverageLine(ruleCatalog.summary.implementedCount, ruleCatalog.summary.totalRules, activeServices.length)}
+                    {coverageLine(ruleCatalog.summary.implementedCount, activeServiceNames)}
                   </p>
                   {activeServices.length > 0 && (
                     <div className="flex flex-wrap gap-1.5" data-testid="coverage-services">
                       {activeServices.map((s) => (
-                        <span key={s.service} className="text-label font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">{s.service}</span>
+                        <span key={s.service} className="text-label font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700">{s.displayName || s.service}</span>
                       ))}
                     </div>
                   )}

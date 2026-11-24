@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { CostDecisionActor, CostRecommendationsRepository } from '../repositories/cost-recommendations.repository';
 import { auditRequestContext } from '../services/auditEvents.service';
-import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnalysisRunsRepository } from '../repositories/cost-analysis-runs.repository';
+import { CostAnalysisRun, CostAnalysisRunDetail, CostAnalysisRunSource, CostAnalysisRunsRepository, acknowledgeRunResult, getRunResultForUser } from '../repositories/cost-analysis-runs.repository';
+import { buildCostRunResult } from '../services/cost-run-result';
 import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, hasEligibleAwsAccount, isAwsAccountAmbiguous } from '../repositories/aws-accounts.repository';
 import { AWS_NOT_CONNECTED_CODE, COST_ANALYSIS_NOT_CONNECTED_MESSAGE } from '../services/aws-connection-messages';
 import costOptimizationService from '../services/cost-optimization.service';
@@ -79,6 +80,7 @@ function classifyRunFailureMessage(rawMessage: string | null): string | null {
   if (!rawMessage) return null;
   if (rawMessage.includes('COST_RESULTS_NOT_SAVED')) return COST_RESULTS_NOT_SAVED_MESSAGE;
   if (rawMessage.includes('COST_CHECKS_FAILED')) return COST_CHECKS_FAILED_MESSAGE;
+  if (rawMessage.includes('SCAN_BUSY')) return SCAN_BUSY_MESSAGE;
   if (rawMessage.includes(PLATFORM_AWS_CREDENTIALS_UNAVAILABLE)) {
     return PLATFORM_AWS_UNAVAILABLE_MESSAGE;
   }
@@ -90,6 +92,37 @@ function classifyRunFailureMessage(rawMessage: string | null): string | null {
   }
   return UNEXPECTED_FAILURE_MESSAGE;
 }
+
+/**
+ * Whether a failed run's stored error is one that is raised before Analyze
+ * writes anything (founder ruling 4, scan result banner): a scan that never got
+ * the lease (busy, or no lease taken), no check completed (reconciliation then
+ * writes nothing and the RI step is skipped), or AWS could not be reached or
+ * isn't connected (raised while the clients are made, before any detector).
+ * Anything else, an unexpected error included, may have come after the
+ * findings were reconciled, so the banner makes no claim about them.
+ */
+export function failedBeforeAnyWrite(rawMessage: string | null): boolean {
+  if (!rawMessage) return false;
+  return ['COST_RESULTS_NOT_SAVED', 'COST_CHECKS_FAILED', 'SCAN_BUSY', PLATFORM_AWS_CREDENTIALS_UNAVAILABLE, 'AWS_NOT_CONNECTED']
+    .some((code) => rawMessage.includes(code));
+}
+
+/** The scan result banner's facts for one run row (cost-run-result.ts). */
+function runResultOf(run: CostAnalysisRun) {
+  return buildCostRunResult({
+    id: run.id,
+    state: run.run_state,
+    completedAt: run.completed_at,
+    checks: run.checks,
+    newCount: run.new_count,
+    openCount: run.open_count,
+    message: runMessage(run),
+    findingsUnchanged: run.run_state === 'failed' && failedBeforeAnyWrite(run.error_message),
+  });
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * status keeps its three original values, so every existing reader of this
@@ -480,7 +513,10 @@ export class CostRecommendationsController {
       // and a connection that changed since the read above creates none either.
       if (leaseTarget) {
         try {
-          const run = await analysisRunsRepository.createFenced(organizationId, {}, { connection: leaseTarget.connection });
+          // The user who pressed Run cost analysis: only they see this run's result banner.
+          const requestUserId = (req as any).user?.userId || (req as any).user?.id;
+          const initiatedByUserId = typeof requestUserId === 'string' && UUID_PATTERN.test(requestUserId) ? requestUserId : null;
+          const run = await analysisRunsRepository.createFenced(organizationId, { initiatedByUserId }, { connection: leaseTarget.connection });
           runId = run.id;
         } catch (trackingErr) {
           if (isConnectionChanged(trackingErr)) throw trackingErr;
@@ -494,7 +530,7 @@ export class CostRecommendationsController {
       }
 
       // Run the analysis against this org's connected AWS account
-      const { observations, riRecommendations, riSucceeded, homeRegion } = await costOptimizationService.analyzeAllResources(
+      const { observations, riRecommendations, riSucceeded, riFailureReason, homeRegion } = await costOptimizationService.analyzeAllResources(
         organizationId,
         undefined,
         leaseTarget ? { expectedConnection: leaseTarget.connection } : {}
@@ -541,7 +577,7 @@ export class CostRecommendationsController {
 
       const insertedCount = nonRIInsertedCount + riInsertedCount;
       const detail: CostAnalysisRunDetail = {
-        summary: summarizeDetectors(observations, riSucceeded, riRecommendations),
+        summary: summarizeDetectors(observations, riSucceeded, riRecommendations, riFailureReason),
         counts: counts ?? null,
       };
 
@@ -580,6 +616,7 @@ export class CostRecommendationsController {
             analysisRunsRepository.markFinished(runId!, organizationId, {
               recommendationsFound: insertedCount,
               totalPotentialSavings: stats.total_potential_savings,
+              openCount: stats.active_recommendations,
               ...detail,
             }, lease.lease)
           );
@@ -601,6 +638,19 @@ export class CostRecommendationsController {
           failedDetectorCount: detail.summary.failedDetectorCount,
           unknownResourceCount: detail.summary.unknownResourceCount,
           counts: detail.counts,
+          // The scan result banner (founder-locked, Nov 23): this run's id (null when its row
+          // couldn't be created: the page then shows this result for the session only) and its facts.
+          runId: runId ?? null,
+          result: buildCostRunResult({
+            id: runId ?? null,
+            state: detail.summary.state,
+            completedAt: new Date().toISOString(),
+            checks: detail.summary.checks,
+            newCount: detail.counts?.new ?? null,
+            openCount: stats.active_recommendations,
+            message: null,
+            findingsUnchanged: false,
+          }),
         },
         message:
           `Analysis complete. Found ${insertedCount} optimization opportunities with estimated potential savings of $${stats.total_potential_savings.toFixed(2)}/month.` +
@@ -770,6 +820,56 @@ export class CostRecommendationsController {
         error: 'Failed to fetch cost analysis runs',
       };
       res.status(500).json(response);
+    }
+  }
+
+  /**
+   * GET /api/cost-recommendations/analysis-runs/my-result
+   * The scan result banner's run: the latest manual run THIS user started in
+   * THIS organization, while its result is not yet seen or closed; otherwise
+   * null. Never a scheduled run, another user's or another organization's run.
+   */
+  async getMyRunResult(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      const userId = (req as any).user?.userId || (req as any).user?.id;
+      if (!organizationId || !userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+      // A user id that isn't a UUID can't have started a recorded run (the column is a UUID).
+      const run = UUID_PATTERN.test(String(userId)) ? await getRunResultForUser(organizationId, userId) : null;
+      const response: ApiResponse = { success: true, data: run ? runResultOf(run) : null };
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching the cost analysis result:', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch the cost analysis result' } as ApiResponse);
+    }
+  }
+
+  /**
+   * POST /api/cost-recommendations/analysis-runs/:id/acknowledge
+   * The initiating user saw or closed the run's result banner: it is never shown
+   * again. 404 for anything else (another user's or organization's run, a
+   * scheduled run, a run still going, no such run); nothing is written then.
+   */
+  async acknowledgeRunResult(req: Request, res: Response): Promise<void> {
+    try {
+      const organizationId = (req as any).user?.organizationId;
+      const userId = (req as any).user?.userId || (req as any).user?.id;
+      if (!organizationId || !userId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+      const runId = String(req.params.id ?? '');
+      if (!UUID_PATTERN.test(runId) || !UUID_PATTERN.test(String(userId)) || !(await acknowledgeRunResult(organizationId, userId, runId))) {
+        res.status(404).json({ success: false, error: 'Analysis result not found' } as ApiResponse);
+        return;
+      }
+      res.status(204).end();
+    } catch (error) {
+      console.error('Error acknowledging the cost analysis result:', error);
+      res.status(500).json({ success: false, error: 'Failed to acknowledge the cost analysis result' } as ApiResponse);
     }
   }
 

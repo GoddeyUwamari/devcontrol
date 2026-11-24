@@ -31,8 +31,8 @@ export type OptimizationRuleStatus = 'implemented' | 'planned';
 export interface OptimizationRule {
   /** Stable, machine-readable identifier. Never reuse or repurpose once shipped. */
   id: string;
-  /** One of OPTIMIZATION_RULE_SERVICES. */
-  service: string;
+  /** One of OPTIMIZATION_RULE_SERVICES: a rule on a service with no display name doesn't compile. */
+  service: OptimizationRuleService;
   name: string;
   detail: string;
   status: OptimizationRuleStatus;
@@ -80,6 +80,36 @@ export const OPTIMIZATION_RULE_SERVICES = [
   'Redshift',
   'Aurora',
 ] as const;
+
+export type OptimizationRuleService = (typeof OPTIMIZATION_RULE_SERVICES)[number];
+
+/**
+ * How each service is named to users (the Coverage card, How DevControl checks,
+ * the scan result banner). Every service in OPTIMIZATION_RULE_SERVICES must
+ * have one: the Record type makes a missing name a compile error, and
+ * optimization-rules.test.ts checks it at run time too.
+ */
+export const OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES: Record<OptimizationRuleService, string> = {
+  EC2: 'EC2',
+  EBS: 'EBS',
+  RDS: 'RDS',
+  S3: 'S3',
+  Lambda: 'Lambda',
+  DynamoDB: 'DynamoDB',
+  'NAT Gateway': 'NAT Gateway',
+  ECS: 'ECS',
+  EKS: 'EKS',
+  CloudWatch: 'CloudWatch',
+  Redshift: 'Redshift',
+  Aurora: 'Aurora',
+};
+
+/** A service's display name; throws for a service with none, so a missing name can never render blank. */
+export function serviceDisplayName(service: string): string {
+  const name = (OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES as Record<string, string | undefined>)[service];
+  if (!name) throw new Error(`Optimization rule service "${service}" has no display name`);
+  return name;
+}
 
 export const OPTIMIZATION_RULES: OptimizationRule[] = [
   // ── EC2 ──────────────────────────────────────────────────────────────
@@ -363,6 +393,8 @@ export function getImplementedOptimizationRules(): OptimizationRule[] {
 
 export interface OptimizationRuleServiceCoverage {
   service: string;
+  /** OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES[service]. */
+  displayName: string;
   implementedCount: number;
   plannedCount: number;
   totalCount: number;
@@ -390,6 +422,7 @@ export function getOptimizationRuleSummary(): OptimizationRuleSummary {
     const rulesForService = OPTIMIZATION_RULES.filter((r) => r.service === service);
     return {
       service,
+      displayName: serviceDisplayName(service),
       implementedCount: rulesForService.filter((r) => r.status === 'implemented').length,
       plannedCount: rulesForService.filter((r) => r.status === 'planned').length,
       totalCount: rulesForService.length,

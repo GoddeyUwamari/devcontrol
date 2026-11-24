@@ -285,7 +285,7 @@ describe('idle RDS: exclusions (skipped, no metric reads, never unknown)', () =>
 describe('idle RDS: listing', () => {
   it('a failed DescribeDBInstances fails the category', async () => {
     const { result } = await detect(accessDenied());
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'permissions' });
   });
 
   it('no instances: a successful, empty observation', async () => {
@@ -307,7 +307,7 @@ describe('idle RDS: listing', () => {
   it('an incomplete listing (page limit reached) fails the category', async () => {
     const rds = fakeClient(() => ({ DBInstances: [db('quiet-db')], Marker: 'more' }));
     const result = await service.detectIdleRDSInstances({ rds, cloudWatch: fakeRdsCloudWatch({}) }, 'us-east-1', NOW);
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'too_many_resources' });
   });
 });
 

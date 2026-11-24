@@ -30,6 +30,9 @@ const svc = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: () => svc.getAll(),
     getStats: () => svc.getStats(),
     getOptimizationRules: () => svc.getOptimizationRules(),

@@ -56,6 +56,9 @@ const HIDDEN = {
 
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: async () => svc.recs,
     getStats: async () => svc.stats,
     getOptimizationRules: async () => RULES,
@@ -104,7 +107,8 @@ describe('PR2: Cost Optimization with no AWS account connected', () => {
   it('KPI cards: Open opportunities and savings "—" without severity counts; Coverage and the disclaimer kept', async () => {
     renderPage()
     await screen.findByTestId('not-connected-card')
-    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent('3 of 5 checks · 3 services'))
+    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 3 active checks$/))
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · S3$/)
     expect(within(kpiCard('Open opportunities')).getByTestId('unmeasured-value')).toHaveTextContent('—')
     expect(within(kpiCard('Estimated monthly savings')).getByTestId('unmeasured-value')).toHaveTextContent('—')
     expect(screen.queryByTestId('severity-chips')).toBeNull()
@@ -117,13 +121,15 @@ describe('PR2: Cost Optimization with no AWS account connected', () => {
     const card = await screen.findByTestId('not-connected-card')
     expect(card.textContent).toBe('No AWS account connectedConnect AWS account')
     expect(within(card).getByRole('link', { name: 'Connect AWS account' })).toHaveAttribute('href', '/connect-aws')
-    expect(screen.queryByTestId('scan-status-banner')).toBeNull()
+    expect(screen.queryByTestId('scan-result-banner')).toBeNull()
     expect(screen.queryByText('AWS not connected')).toBeNull()
     expect(screen.queryByTestId('summary-card')).toBeNull()
     expect(screen.queryByTestId('opportunities')).toBeNull()
     expect(screen.queryByTestId('empty-state')).toBeNull()
     expect(screen.queryByText(/Resolved and dismissed/)).toBeNull()
-    await waitFor(() => expect(screen.getByTestId('checks-summary-line')).toHaveTextContent(/^3 of 5 checks active · 3 services$/))
+    // The checks header: title and expand control only (no counts, no severities).
+    await waitFor(() => expect(screen.getByTestId('checks-section')).toBeInTheDocument())
+    expect(screen.queryByTestId('checks-summary-line')).toBeNull()
   })
 
   it('connection loading: grey blocks only under the title and subtitle', async () => {
@@ -134,22 +140,23 @@ describe('PR2: Cost Optimization with no AWS account connected', () => {
     expect(screen.getByTestId('header-action-loading')).toBeInTheDocument()
     expect(screen.queryByTestId('last-analysis')).toBeNull()
     expect(screen.queryByTestId('summary-cards')).toBeNull()
-    expect(screen.queryByTestId('scan-status-banner')).toBeNull()
+    expect(screen.queryByTestId('scan-result-banner')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByText(DISCLAIMER)).toBeNull()
   })
 })
 
 describe('PR2: Cost Optimization connected is unchanged', () => {
-  it('Run cost analysis, counts with severities, the Summary and the checks header with severities; no card', async () => {
+  it('Run cost analysis, counts with severities, the Summary and the checks header (title only); no card', async () => {
     svc.connection = 'connected'
     renderPage()
     await waitFor(() => expect(kpiCard('Open opportunities')).toHaveTextContent('2'))
     expect(screen.getByRole('button', { name: /Run cost analysis/ })).toBeInTheDocument()
     expect(screen.getByTestId('severity-chips')).toHaveTextContent('High 1')
     await waitFor(() => expect(screen.getByTestId('summary-card')).toBeInTheDocument())
-    expect(screen.getByTestId('checks-summary-line')).toHaveTextContent('3 of 5 checks active · 3 services · High 1 · Medium 0 · Low 1')
-    expect(screen.getByTestId('scan-status-banner')).toBeInTheDocument()
+    expect(screen.queryByTestId('checks-summary-line')).toBeNull()
+    // A run this user didn't start here: no banner (scan result banner PR).
+    expect(screen.queryByTestId('scan-result-banner')).toBeNull()
     expect(await screen.findByText(/Resolved and dismissed/)).toBeInTheDocument()
     expect(screen.queryByTestId('not-connected-card')).toBeNull()
     expect(screen.queryByTestId('connect-aws-header-button')).toBeNull()

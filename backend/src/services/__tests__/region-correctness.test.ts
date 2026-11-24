@@ -156,7 +156,7 @@ describe('the RI check reports whether it completed', () => {
   it('a failed RI check is success: false, not an empty answer', async () => {
     const ec2 = withMockedSend(new EC2Client({ region: 'us-east-1' }), jest.fn().mockRejectedValueOnce(new Error('UnauthorizedOperation')));
 
-    await expect(service.detectReservedInstanceOpportunities(ec2, 'us-east-1')).resolves.toEqual({ success: false, issues: [] });
+    await expect(service.detectReservedInstanceOpportunities(ec2, 'us-east-1')).resolves.toEqual({ success: false, issues: [], failureReason: 'error' });
   });
 
   it('analyzeAllResources reports riSucceeded from the RI check', async () => {

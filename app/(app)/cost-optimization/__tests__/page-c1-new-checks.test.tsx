@@ -3,8 +3,9 @@
  * exactly as GET /api/cost-recommendations/optimization-rules builds it from
  * backend/src/config/optimization-rules.ts (getOptimizationRules +
  * getOptimizationRuleSummary), so the coverage numbers come from the registry
- * itself, never a copy: 11 of 33 checks across 6 services, both new checks
- * listed and explained, 22 planned.
+ * itself, never a copy: 11 active checks across EC2 · EBS · RDS · S3 · Lambda ·
+ * DynamoDB (the catalog's total is never shown: scan result banner PR, ruling
+ * 6), both new checks listed and explained, 22 planned.
  *
  * And the new rows: an idle RDS finding reads "No dollar estimate" under the
  * RDS chip; an old-snapshot finding ("EBS Snapshot" resource type) reads
@@ -21,6 +22,9 @@ import type { CostRecommendation } from '@/lib/types'
 import type { HiddenFindings } from '@/lib/services/cost-recommendations.service'
 import { run } from './fixtures'
 import {
+  OPTIMIZATION_RULES,
+  OPTIMIZATION_RULE_SERVICES,
+  OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES,
   getImplementedOptimizationRules,
   getOptimizationRuleSummary,
   getOptimizationRules,
@@ -34,6 +38,9 @@ vi.mock('@/lib/hooks/use-current-role', () => ({ useCurrentRole: () => 'member' 
 const svc = vi.hoisted(() => ({ getAll: vi.fn(), getStats: vi.fn(), getAnalysisRuns: vi.fn(), getHidden: vi.fn(), getOptimizationRules: vi.fn() }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: () => svc.getAll(),
     getStats: () => svc.getStats(),
     getOptimizationRules: () => svc.getOptimizationRules(),
@@ -92,11 +99,15 @@ beforeEach(() => {
 })
 
 describe('C1: coverage comes from the registry', () => {
-  it('11 of 33 checks across 6 services; both new checks listed and explained; 22 planned; all 11 ran', async () => {
-    renderPage()
-    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent('11 of 33 checks · 6 services'))
-    expect(screen.getByTestId('checks-summary-line')).toHaveTextContent(/^11 of 33 checks active · 6 services/)
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent('11 of 33 checks active across 6 AWS services.')
+  it('11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB; the 33 total never shown; both new checks listed and explained; 22 planned; all 11 ran', async () => {
+    const { container } = renderPage()
+    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 11 active checks$/))
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB$/)
+    // The How DevControl checks header keeps its title and expand control only.
+    expect(screen.queryByTestId('checks-summary-line')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('checks-section')).getByText('How DevControl checks').closest('summary')).toHaveTextContent(/^How DevControl checks$/)
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^11 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB$/)
+    expect(container.textContent).not.toMatch(/\b33\b|of 33/)
     expect(screen.getByTestId('checks-count-note')).toHaveTextContent('11 active checks today — not every possible AWS cost optimization.')
     expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB'])
 
@@ -112,7 +123,31 @@ describe('C1: coverage comes from the registry', () => {
     expect(planned.queryByText('RDS — Idle databases')).not.toBeInTheDocument()
     expect(planned.queryByText(/Idle RDS instances/)).not.toBeInTheDocument()
 
-    await waitFor(() => expect(screen.getByTestId('scan-status-subline')).toHaveTextContent('all 11 active checks ran'))
+    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent('passed all 11 active checks')
+  })
+
+  it('computed, not stored: a new active rule adds a check and its service everywhere the page names them', async () => {
+    OPTIMIZATION_RULES.push({ id: 'zz_fake_rule', service: 'ECS', name: 'Fake ECS check', detail: 'Fake', status: 'implemented', issue: 'Fake Issue' })
+    try {
+      svc.getOptimizationRules.mockResolvedValue({ rules: getOptimizationRules().map((rule) => ({ ...rule, parameters: [] })), summary: getOptimizationRuleSummary() })
+      renderPage()
+      await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
+      expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS$/)
+      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · ECS$/)
+    } finally {
+      OPTIMIZATION_RULES.pop()
+    }
+  })
+
+  it('a new service without a display name fails: the catalog cannot be built', () => {
+    const services = OPTIMIZATION_RULE_SERVICES as unknown as string[]
+    services.push('Unnamed Service')
+    try {
+      expect(() => getOptimizationRuleSummary()).toThrow('has no display name')
+      expect((OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES as Record<string, string>)['Unnamed Service']).toBeUndefined()
+    } finally {
+      services.pop()
+    }
   })
 })
 

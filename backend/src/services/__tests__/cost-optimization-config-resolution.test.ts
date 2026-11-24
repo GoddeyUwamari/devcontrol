@@ -127,7 +127,7 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     expect(lambdaDetectorSpy).not.toHaveBeenCalled();
     expect(ec2DetectorSpy).toHaveBeenCalledTimes(1);
     const lambdaObservation = result.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE);
-    expect(lambdaObservation).toEqual({ issue: ISSUE_LAMBDA_LOW_USAGE, success: false, recommendations: [] });
+    expect(lambdaObservation).toEqual({ issue: ISSUE_LAMBDA_LOW_USAGE, success: false, failureReason: 'error', recommendations: [] });
 
     const ec2Observation = result.observations.find((o) => o.issue === ISSUE_EC2_IDLE_INSTANCE);
     expect(ec2Observation?.success).toBe(true);
@@ -141,7 +141,7 @@ describe('CostOptimizationService.analyzeAllResources — configuration resoluti
     const result = await costOptimizationService.analyzeAllResources('org-6');
 
     expect(lambdaDetectorSpy).not.toHaveBeenCalled();
-    expect(result.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE)).toEqual({ issue: ISSUE_LAMBDA_LOW_USAGE, success: false, recommendations: [] });
+    expect(result.observations.find((o) => o.issue === ISSUE_LAMBDA_LOW_USAGE)).toEqual({ issue: ISSUE_LAMBDA_LOW_USAGE, success: false, failureReason: 'error', recommendations: [] });
   });
 
   it('(7) other detector categories are entirely unaffected by a configuration-resolution failure', async () => {

@@ -117,6 +117,6 @@ describe('CostOptimizationService.detectUnattachedEBSVolumes (ebs_unattached)', 
 
     const result = await (costOptimizationService as any).detectUnattachedEBSVolumes(ec2Client);
 
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'error' });
   });
 });
