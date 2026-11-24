@@ -5,7 +5,7 @@ import { readGitHubAppConfig } from '../config/github-app';
 import { isDemoOrganization } from '../demo/demo-workspace';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
-import { listInstallations } from '../repositories/github-installations.repository';
+import { disconnectInstallation, listInstallations } from '../repositories/github-installations.repository';
 import { lastEventReceivedAt } from '../repositories/pipeline-events.repository';
 import {
   githubRepoIdOf,
@@ -15,8 +15,9 @@ import {
   setRepositoryService,
 } from '../repositories/pipeline-repositories.repository';
 import { STATE_PATTERN, claimInstallation, retryClaim, startInstall } from '../services/github-app/claim';
-import { defaultSource, withOrgClient } from '../services/github-app/db';
+import { defaultSource, withOrgClient, withOrgTransaction } from '../services/github-app/db';
 import { deployRuleBody, environmentMapProblem, storedDeployRule } from '../services/github-app/deploy-rule';
+import { permissionDifferences } from '../services/github-app/permissions';
 import { MAPPING_REPLAY, replayRepository, RULE_REPLAY } from '../services/github-app/replay';
 
 // /api/integrations/github -- the GitHub App connection (D8a-1; the setup
@@ -121,7 +122,16 @@ router.post('/claim/retry', refuseUnconfigured, requireAdmin, refuseDemo, async 
   }
 });
 
+const INSTALLATION_ID = /^[1-9][0-9]{0,18}$/;
+const MANAGING_ROLES = new Set(['owner', 'admin']);
+
 // GET /api/integrations/github -> connection state (any member of the organization)
+//   can_manage: this user may connect, claim and disconnect here (owner/admin,
+//     and not the demo workspace, Q4). The UI reads it instead of the JWT role,
+//     so a demo-workspace owner never sees a Connect button that fails.
+//   demo: the demo workspace (the screen shows its fixed sample, Q9).
+//   installations[].permission_differences: what the granted set differs by
+//     (empty unless permissions_state is 'mismatch'); the raw set stays here.
 router.get('/', async (req, res, next) => {
   if (!readGitHubAppConfig().enabled) {
     res.json({ success: true, data: { configured: false } });
@@ -129,12 +139,49 @@ router.get('/', async (req, res, next) => {
   }
   try {
     const { organizationId } = orgAndUser(req);
+    const demo = await isDemoOrganization(pool, organizationId);
     const data = await withOrgClient(defaultSource, organizationId, async (client) => ({
-      installations: await listInstallations(client, organizationId),
+      installations: (await listInstallations(client, organizationId)).map(({ permissions, ...row }) => ({
+        ...row,
+        permission_differences: permissionDifferences(permissions ?? {}),
+      })),
       last_event_at: await lastEventReceivedAt(client, organizationId),
     }));
-    res.json({ success: true, data: { configured: true, ...data } });
+    const canManage = MANAGING_ROLES.has(String(req.user?.role)) && !demo;
+    res.json({ success: true, data: { configured: true, can_manage: canManage, demo, ...data } });
   } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/integrations/github/installations/:installationId
+// Disconnect (D8-N11, Q6): this organization stops recording from the
+// installation. Its repositories keep their service and deploy rule (detached
+// until a later claim re-links them), and no deployment row or stored event
+// changes. The app stays installed on GitHub; its deliveries are held again.
+router.delete('/installations/:installationId', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
+  const installationId = Number(req.params.installationId);
+  if (!INSTALLATION_ID.test(req.params.installationId) || !Number.isSafeInteger(installationId)) {
+    invalid(res);
+    return;
+  }
+  try {
+    const { organizationId } = orgAndUser(req);
+    const result = await withOrgTransaction(defaultSource, organizationId, (client) =>
+      disconnectInstallation(client, organizationId, installationId));
+    if (result === null) {
+      res.status(404).json({ success: false, error: 'not_found' });
+      return;
+    }
+    console.log(`[github-app] disconnect installation=${installationId} repositories=${result.repositories}`);
+    res.json({ success: true, data: { disconnected: true, repositories: result.repositories } });
+  } catch (error) {
+    // A webhook re-pointing a repository at this installation mid-disconnect
+    // (foreign key 23503): nothing changed; the customer tries again.
+    if ((error as { code?: unknown } | null)?.code === '23503') {
+      res.status(409).json({ success: false, error: 'try_again' });
+      return;
+    }
     next(error);
   }
 });

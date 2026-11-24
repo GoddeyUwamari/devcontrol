@@ -10,7 +10,8 @@ import { claimInstallation, ClaimDeps, retryClaim, startInstall } from '../claim
 import { GitHubAppClient, GitHubClientError, GitHubInstallationDetails } from '../client';
 import { ingestDelivery } from '../ingest';
 import { processEvent } from '../process';
-import { holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
+import { disconnectInstallation, holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
+import { withOrgTransaction } from '../db';
 import { normalizeDelivery } from '../normalize';
 import { createFixtures, enabledConfig, CLIENT_SECRET, WEBHOOK_SECRET } from './fixtures/db';
 import { installationCreated, installationEvent, signedDelivery, uniqueId, workflowJobCompleted } from './fixtures/payloads';
@@ -331,6 +332,46 @@ describe('claim', () => {
     } finally {
       c2.release();
     }
+  });
+
+  it('D8b disconnect: repositories keep their service and rule, events stay, deliveries are held again; another organization cannot disconnect it; a new claim re-links', async () => {
+    const inst = fx.installationId();
+    const repoId = uniqueId();
+    await deliver('installation', installationCreated(inst, INSTALLER, [{ id: repoId, full_name: 'acme/kept-repo' }]));
+    const f = { githubUserId: INSTALLER, accessible: [inst], repos: [{ id: repoId, fullName: 'acme/kept-repo' }] };
+    const first = await claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, deps(f));
+    expect(first.body.data).toMatchObject({ status: 'connected', repositories: 1 });
+    const serviceId = await fx.service(orgA, `kept-${inst}`);
+    const rule = { v: 1, mode: 'none' };
+    await fx.admin.query('UPDATE pipeline_repositories SET service_id = $1, deploy_rule = $2::jsonb WHERE organization_id = $3 AND github_repo_id = $4',
+      [serviceId, JSON.stringify(rule), orgA, repoId]);
+    const eventsBefore = (await fx.admin.query('SELECT count(*)::int AS n FROM pipeline_events WHERE installation_id = $1', [inst])).rows[0].n;
+    expect(eventsBefore).toBeGreaterThan(0);
+    const repoRow = async () => (await fx.admin.query(
+      'SELECT installation_id::text AS installation_id, service_id::text AS service_id, deploy_rule FROM pipeline_repositories WHERE organization_id = $1 AND github_repo_id = $2',
+      [orgA, repoId])).rows;
+
+    // Another organization, through RLS as devcontrol: nothing to disconnect, A unchanged.
+    expect(await withOrgTransaction(fx.app, orgB, (c) => disconnectInstallation(c, orgB, inst))).toBeNull();
+    expect(await owner(inst)).toEqual([{ org: orgA }]);
+    expect(await repoRow()).toEqual([{ installation_id: String(inst), service_id: serviceId, deploy_rule: rule }]);
+
+    // A disconnects.
+    expect(await withOrgTransaction(fx.app, orgA, (c) => disconnectInstallation(c, orgA, inst))).toEqual({ repositories: 1 });
+    expect(await owner(inst)).toEqual([]);
+    expect(await repoRow()).toEqual([{ installation_id: null, service_id: serviceId, deploy_rule: rule }]);
+    expect((await fx.admin.query('SELECT count(*)::int AS n FROM pipeline_events WHERE installation_id = $1', [inst])).rows[0].n).toBe(eventsBefore);
+    // Again: already gone.
+    expect(await withOrgTransaction(fx.app, orgA, (c) => disconnectInstallation(c, orgA, inst))).toBeNull();
+    // GitHub still sends: the delivery is held (no organization), not stored for A.
+    expect((await deliver('workflow_job', workflowJobCompleted(inst, repoId))).status).toBe(202);
+    expect((await fx.admin.query('SELECT count(*)::int AS n FROM pipeline_events WHERE installation_id = $1', [inst])).rows[0].n).toBe(eventsBefore);
+
+    // Connecting again: the installer proof still holds (installation.created is kept in pipeline_events),
+    // and the repository is re-linked with its service and rule.
+    const again = await claimInstallation({ organizationId: orgA, userId: userA, state: await newState(orgA, userA, f), code: CODE, installationId: inst }, deps(f));
+    expect(again.body.data).toMatchObject({ status: 'connected', repositories: 1, released_events: 1 });
+    expect(await repoRow()).toEqual([{ installation_id: String(inst), service_id: serviceId, deploy_rule: rule }]);
   });
 
   it('no token, OAuth code, state, secret or GitHub body in any claim log line', async () => {

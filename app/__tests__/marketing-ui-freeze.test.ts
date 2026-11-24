@@ -36,6 +36,9 @@ const SHARED_REVIEWED = [
   'lib/api.ts',
   'lib/billing/offer.ts',
   'lib/contexts/auth-context.tsx',
+  // D8b-1: the GitHub callback (a sign-in page) reads its copy here, and logout clears the hand-off state. Text and storage only, no styling.
+  'lib/github-connection/copy.ts',
+  'lib/github-connection/pending-claim.ts',
   'lib/gtag.ts',
   'lib/hooks/use-billing-offer.ts',
   'lib/login-redirect.ts',
