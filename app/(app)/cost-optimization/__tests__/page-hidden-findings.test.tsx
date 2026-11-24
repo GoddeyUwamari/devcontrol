@@ -9,7 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostOptimizationPage from '../page'
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service'
-import { LEGACY_RUN, PRODUCTION_RESOLVED_ONLY, run } from './fixtures'
+import { LEGACY_RUN, PRODUCTION_RESOLVED_ONLY, run, waitForLastAnalysis } from './fixtures'
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -33,6 +33,9 @@ const svc = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: () => svc.getAll(),
     getStats: () => svc.getStats(),
     getOptimizationRules: () => svc.getOptimizationRules(),
@@ -149,7 +152,7 @@ const kpiCard = (label: string) => screen.getByText(label).parentElement as HTML
 const reopenButtons = () => screen.queryAllByRole('button', { name: /reopen/i })
 
 async function loaded() {
-  await waitFor(() => expect(screen.getByTestId('scan-status-banner').querySelector('[role="status"]')).not.toHaveAttribute('aria-busy'))
+  await waitForLastAnalysis()
   await waitFor(() => expect(screen.queryByTestId('hidden-loading')).not.toBeInTheDocument())
 }
 
@@ -507,9 +510,8 @@ describe('truly empty (no active, nothing still detected)', () => {
     expect(within(card).getByTestId('empty-all-checks')).toHaveTextContent(/^Nothing to act on right nowYour resources passed all 9 active checks in the last analysis\. DevControl runs the checks again on a schedule and lists anything new here\.See what's checkedView costs →$/)
     expect(within(card).queryByText(EMPTY_HEADLINE)).not.toBeInTheDocument()
     expect(card.className).not.toMatch(/text-center/)
-    // The banner says it once.
-    const banner = screen.getByTestId('scan-status-banner')
-    expect(within(banner).getByText('Analysis complete · nothing new to review.')).toBeInTheDocument()
+    // No banner for a run the user didn't start here (scan result banner PR); the card doesn't add one.
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
     expect(within(card).queryByText(/nothing new to review/)).not.toBeInTheDocument()
   })
 
@@ -543,12 +545,10 @@ describe('truly empty (no active, nothing still detected)', () => {
     expect(within(card).queryAllByText(/^ ?Idle EC2 instances$/)).toHaveLength(0)
   })
 
-  it('truth fix: the run counted 2 resolved found again but /hidden has none still detected: the banner claims no "found again"', async () => {
+  it('truth fix: the run counted 2 resolved found again but /hidden has none still detected: the page claims no "found again"', async () => {
     svc.getAnalysisRuns.mockResolvedValue([PRODUCTION_RESOLVED_ONLY])
     const { container } = renderPage()
     await loaded()
-    const banner = screen.getByTestId('scan-status-banner')
-    expect(within(banner).getByTestId('scan-status-subline')).toHaveTextContent(/· Nothing new to review\.$/)
     expect(container.textContent).not.toMatch(/found again/)
   })
 

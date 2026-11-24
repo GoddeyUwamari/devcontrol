@@ -5,6 +5,8 @@ import type {
   AnalysisResult,
   AnalysisCounts,
   ApiResponse,
+  CheckFailureReason,
+  CostRunResult,
 } from '../types';
 
 // Sanitized shape returned by GET /api/cost-recommendations/analysis-runs --
@@ -44,6 +46,44 @@ export interface CostAnalysisCheck {
   outcome: 'complete' | 'failed';
   detected: number;
   unknown: number;
+  /** A failed check only: why it couldn't run. Absent on older runs. */
+  failure_reason?: CheckFailureReason;
+}
+
+// The scan result banner's types live in lib/types.ts (the marketing pages import lib/types, never this service).
+export type { CheckFailureReason, CostRunResult } from '../types';
+
+const RUN_STATES: readonly CostAnalysisRunState[] = ['running', 'completed', 'partial', 'failed', 'interrupted']
+const FAILURE_REASONS: readonly CheckFailureReason[] = ['permissions', 'rate_limited', 'timeout', 'too_many_resources', 'error']
+
+/** A result from the API, or null when it isn't one (never a guessed state or a count coerced to 0). */
+export function parseCostRunResult(raw: unknown): CostRunResult | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (!RUN_STATES.includes(r.state as CostAnalysisRunState)) return null
+  const count = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null)
+  const failedChecks = Array.isArray(r.failedChecks)
+    ? r.failedChecks.flatMap((entry) => {
+      const e = entry as Record<string, unknown> | null
+      const n = count(e?.count)
+      return e && FAILURE_REASONS.includes(e.reason as CheckFailureReason) && n !== null && n > 0 ? [{ reason: e.reason as CheckFailureReason, count: n }] : []
+    })
+    : []
+  return {
+    id: typeof r.id === 'string' ? r.id : null,
+    state: r.state as CostAnalysisRunState,
+    completedAt: typeof r.completedAt === 'string' ? r.completedAt : null,
+    checksTotal: count(r.checksTotal) ?? 0,
+    checksRan: count(r.checksRan) ?? 0,
+    failedChecks,
+    services: Array.isArray(r.services) ? r.services.filter((name): name is string => typeof name === 'string' && name.trim() !== '') : [],
+    newCount: count(r.newCount),
+    openCount: count(r.openCount),
+    stillOpen: count(r.stillOpen),
+    unknownResourceCount: count(r.unknownResourceCount),
+    message: typeof r.message === 'string' ? r.message : null,
+    findingsUnchanged: r.findingsUnchanged === true,
+  }
 }
 
 // GET /api/cost-recommendations/hidden (PR 3a): resolved and dismissed
@@ -152,6 +192,8 @@ export interface EffectiveOptimizationRuleConfig {
 
 export interface OptimizationRuleServiceCoverage {
   service: string;
+  /** How the service is named to users (backend OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES). */
+  displayName: string;
   implementedCount: number;
   plannedCount: number;
   totalCount: number;
@@ -297,7 +339,21 @@ export const costRecommendationsService = {
       ...('runState' in result ? { runState: result.runState === 'completed' || result.runState === 'partial' ? result.runState : undefined } : {}),
       ...('unknownResourceCount' in result ? { unknownResourceCount: typeof result.unknownResourceCount === 'number' ? result.unknownResourceCount : null } : {}),
       ...('counts' in result ? { counts: parseAnalysisCounts(result.counts) } : {}),
+      // The scan result banner: this run's id (null when its row couldn't be created) and its facts.
+      ...('runId' in result ? { runId: typeof result.runId === 'string' ? result.runId : null } : {}),
+      ...('result' in result ? { result: parseCostRunResult(result.result) } : {}),
     };
+  },
+
+  // The scan result banner's run: this user's latest manual run in this organization, until seen or closed.
+  getMyRunResult: async (): Promise<CostRunResult | null> => {
+    const response = await api.get<ApiResponse<unknown>>('/api/cost-recommendations/analysis-runs/my-result');
+    return parseCostRunResult(handleApiResponse(response));
+  },
+
+  // The user saw or closed the result banner: it is never shown again, on any device.
+  acknowledgeRunResult: async (runId: string): Promise<void> => {
+    await api.post(`/api/cost-recommendations/analysis-runs/${encodeURIComponent(runId)}/acknowledge`);
   },
 
   // History of manual "Run cost analysis" invocations, latest first -- the

@@ -29,6 +29,9 @@ router.get('/stats', authenticateToken, (req, res) => controller.getStats(req, r
 // Manual cost-analysis run history (must be registered before the /:id route
 // below, or Express would treat "analysis-runs" as an :id param)
 router.get('/analysis-runs', authenticateToken, (req, res) => controller.getAnalysisRuns(req, res));
+// The scan result banner (before /:id, like the route above).
+router.get('/analysis-runs/my-result', authenticateToken, (req, res) => controller.getMyRunResult(req, res));
+router.post('/analysis-runs/:id/acknowledge', authenticateToken, (req, res) => controller.acknowledgeRunResult(req, res));
 
 // Findings hidden by a Resolved or Dismissed decision, each judged still
 // detected or not confirmed (before /:id, same reason as above). Read-only,

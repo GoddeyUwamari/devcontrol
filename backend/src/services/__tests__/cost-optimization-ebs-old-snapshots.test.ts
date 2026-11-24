@@ -328,7 +328,7 @@ describe('old EBS snapshots: a failed exclusion read never produces a finding', 
 
   it('a failed DescribeSnapshots fails the category', async () => {
     const { result } = await detect({ snapshots: accessDenied() });
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'permissions' });
   });
 });
 

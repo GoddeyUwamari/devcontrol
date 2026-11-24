@@ -394,7 +394,7 @@ describe('P-2 / AC-3: the detectors read every page, and a cut-off listing is no
     ['Reserved Instances', (s: any) => s.detectReservedInstanceOpportunities(withMockedSend(new EC2Client({ region: HOME }), endless({ Reservations: [] }, 'NextToken')), HOME)],
   ])('G2: %s: a listing that never ends stops at its page limit and is not a success', async (_name, run) => {
     const result = await run(costOptimizationService as any);
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'too_many_resources' });
   });
 
   it('G2: a cut-off Lambda listing deletes no stored recommendation (end to end)', async () => {

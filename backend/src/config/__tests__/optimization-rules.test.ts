@@ -16,6 +16,8 @@
 import {
   OPTIMIZATION_RULES,
   OPTIMIZATION_RULE_SERVICES,
+  OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES,
+  serviceDisplayName,
   getOptimizationRules,
   getImplementedOptimizationRules,
   getOptimizationRuleSummary,
@@ -188,5 +190,62 @@ describe('getOptimizationRuleSummary', () => {
 describe('getOptimizationRules', () => {
   it('returns the same array the registry exports', () => {
     expect(getOptimizationRules()).toBe(OPTIMIZATION_RULES);
+  });
+});
+
+// Scan result banner PR (founder-locked, Nov 23): the Coverage card, the How DevControl checks text and the
+// result banner name services by their display name, all computed from this registry.
+describe('service display names', () => {
+  const services = OPTIMIZATION_RULE_SERVICES as unknown as string[];
+  const names = OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES as Record<string, string>;
+
+  it('every service has a non-empty display name, and the summary carries it', () => {
+    for (const service of OPTIMIZATION_RULE_SERVICES) {
+      expect(typeof OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES[service]).toBe('string');
+      expect(OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES[service].trim()).not.toBe('');
+    }
+    expect(getOptimizationRuleSummary().services.map((s) => s.displayName)).toEqual(
+      OPTIMIZATION_RULE_SERVICES.map((s) => OPTIMIZATION_RULE_SERVICE_DISPLAY_NAMES[s])
+    );
+  });
+
+  it('the active services today are EC2 · EBS · RDS · S3 · Lambda · DynamoDB (11 active checks)', () => {
+    const summary = getOptimizationRuleSummary();
+    expect(summary.implementedCount).toBe(11);
+    expect(summary.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB']);
+  });
+
+  it('adding a rule increments the active count and adds its service (computed, not stored)', () => {
+    const before = getOptimizationRuleSummary();
+    OPTIMIZATION_RULES.push({ id: 'zz_fake_rule', service: 'ECS', name: 'Fake', detail: 'Fake', status: 'implemented', issue: 'Fake Issue' });
+    try {
+      const after = getOptimizationRuleSummary();
+      expect(after.implementedCount).toBe(before.implementedCount + 1);
+      expect(after.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'ECS']);
+    } finally {
+      OPTIMIZATION_RULES.pop();
+    }
+  });
+
+  it('a new service with a display name appears; one without a display name fails loudly', () => {
+    services.push('Fake Service');
+    OPTIMIZATION_RULES.push({ id: 'zz_fake_service_rule', service: 'Fake Service' as never, name: 'Fake', detail: 'Fake', status: 'implemented', issue: 'Fake Service Issue' });
+    try {
+      expect(() => getOptimizationRuleSummary()).toThrow('Optimization rule service "Fake Service" has no display name');
+      names['Fake Service'] = 'Fake Service Name';
+      try {
+        expect(getOptimizationRuleSummary().services.find((s) => s.service === 'Fake Service')).toMatchObject({ displayName: 'Fake Service Name', implementedCount: 1 });
+      } finally {
+        delete names['Fake Service'];
+      }
+    } finally {
+      OPTIMIZATION_RULES.pop();
+      services.pop();
+    }
+  });
+
+  it('serviceDisplayName refuses an unknown service', () => {
+    expect(serviceDisplayName('EC2')).toBe('EC2');
+    expect(() => serviceDisplayName('Nope')).toThrow('has no display name');
   });
 });

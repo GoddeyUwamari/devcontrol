@@ -1,8 +1,11 @@
 /**
- * A failed "Run cost analysis": the user reads the backend's message, never
- * axios's transport text, in the red result banner at the top (light-lane
- * layout, Nov 20; it was a toast), and the status stops showing the previous run.
- * Renders the real page with real axios error objects. Fixture data only.
+ * A failed "Run cost analysis" (scan result banner PR, founder-locked Nov 23):
+ * the red result banner reads the RUN's own record (GET my-result), so it says
+ * what the server recorded, "Your existing findings haven't changed" only when
+ * the server knows that (ruling 4), and a run still going after a proxy timeout
+ * stays "running". With no run row at all (ruling 8) the banner shows the
+ * response's message for this session only, never axios's transport text, and
+ * makes no claim about the findings. Real page, real axios error objects.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -19,6 +22,8 @@ vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: any) => 
 
 const mockAnalyze = vi.fn()
 const mockGetAnalysisRuns = vi.fn()
+const mockMyResult = vi.fn()
+const mockAcknowledge = vi.fn()
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
     getAll: async () => [],
@@ -30,16 +35,25 @@ vi.mock('@/lib/services/cost-recommendations.service', () => ({
     getAnalysisRuns: () => mockGetAnalysisRuns(),
     getHidden: async () => ({ latestRun: null, summary: { resolved: 0, dismissed: 0, stillDetected: { count: 0, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }, notConfirmed: 0 }, items: [] }),
     analyze: () => mockAnalyze(),
+    getMyRunResult: () => mockMyResult(),
+    acknowledgeRunResult: (id: string) => mockAcknowledge(id),
   },
 }))
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => { const accounts = await ([{ id: 'account-1' }]); return { accounts, connection: accounts.length > 0 ? 'connected' : 'not_connected' } } } }))
 vi.mock('@/lib/services/aws-resources.service', () => ({ awsResourcesService: { getDiscoveryJobs: async () => [] } }))
 
 const CHECKS_FAILED = 'None of the cost checks could complete. Try again.'
-const runBanner = () => screen.getByTestId('run-result-banner')
+const resultBanner = () => screen.getByTestId('scan-result-banner')
 const failure = async () => {
-  await waitFor(() => expect(runBanner()).toHaveAttribute('data-phase', 'failed'))
-  return runBanner()
+  await waitFor(() => expect(resultBanner()).toHaveAttribute('data-tone', 'danger'))
+  return resultBanner()
+}
+/** The run's record as GET my-result gives it. */
+function recorded(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'run-placeholder', state: 'failed', completedAt: '2026-11-02T08:00:01.000Z', checksTotal: 0, checksRan: 0, failedChecks: [],
+    services: [], newCount: null, openCount: null, stillOpen: null, unknownResourceCount: null, message: CHECKS_FAILED, findingsUnchanged: true, ...overrides,
+  }
 }
 
 function run(status: 'completed' | 'failed', errorMessage: string | null = null) {
@@ -62,48 +76,83 @@ async function failScan(error: unknown) {
   )
   const button = await screen.findByRole('button', { name: /run cost analysis/i })
   await waitFor(() => expect(button).toBeEnabled())
-  await screen.findByText('Analysis complete')
+  await waitFor(() => expect(screen.getByTestId('last-analysis')).toHaveTextContent(/ ago \(manual\)$/))
+  // Nothing waiting to be seen before the click.
+  expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
   fireEvent.click(button)
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetAnalysisRuns.mockResolvedValue([run('completed')])
+  mockAcknowledge.mockResolvedValue(undefined)
+  // Before the click: nothing pending. After the failure: the run's own record.
+  mockMyResult.mockResolvedValueOnce(null).mockResolvedValue(recorded())
 })
 
 describe('Cost Optimization page: a failed Analyze', () => {
-  it('shows the response body message in a red alert banner, not the transport text and not a toast', async () => {
+  it('a recorded run: the red banner states the run\'s own reason, the unchanged claim it earned, a Try again button; never transport text or a toast', async () => {
     await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
     const banner = await failure()
-    expect(banner).toHaveAttribute('data-tone', 'danger')
-    expect(within(banner).getByRole('alert')).toHaveTextContent(`Cost analysis didn't finish. ${CHECKS_FAILED}`)
+    expect(within(banner).getByRole('alert')).toHaveTextContent(
+      "Cost analysis didn't finishNone of the cost checks could complete. Your existing findings haven't changed."
+    )
+    // Ruling 9: the reason's own trailing "Try again." is dropped; the button says it.
+    expect(banner.textContent).not.toMatch(/complete\. Try again\./)
+    expect(within(banner).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
     expect(banner.textContent).not.toContain('Request failed with status code')
     expect(toastError).not.toHaveBeenCalled()
     expect(toastSuccess).not.toHaveBeenCalled()
+    // Seen: acknowledged once.
+    await waitFor(() => expect(mockAcknowledge).toHaveBeenCalledWith('run-placeholder'))
   })
 
-  it('never shows transport text when the response has no message, e.g. a proxy page', async () => {
+  it('a failure the server can\'t vouch for (unexpected error, interrupted): no "haven\'t changed" claim', async () => {
+    mockMyResult.mockReset()
+    mockMyResult.mockResolvedValueOnce(null).mockResolvedValue(recorded({ state: 'interrupted', message: 'The analysis was interrupted before it finished. Run it again.', findingsUnchanged: false }))
+    await failScan(requestError(409, { success: false, error: 'The analysis was interrupted before it finished. Run it again.' }))
+    const banner = await failure()
+    expect(within(banner).getByTestId('scan-result-description')).toHaveTextContent(/^The analysis was interrupted before it finished\.$/)
+    expect(banner.textContent).not.toMatch(/haven't changed/)
+  })
+
+  it('no run row (ruling 8): the response\'s message for this session only, never transport text, never acknowledged', async () => {
+    mockMyResult.mockReset()
+    mockMyResult.mockResolvedValue(null)
     await failScan(requestError(504, '<html>gateway timeout</html>'))
-    expect(within(await failure()).getByRole('alert')).toHaveTextContent("Cost analysis didn't finish. Scan failed — try again")
+    const banner = await failure()
+    expect(within(banner).getByTestId('scan-result-description')).toHaveTextContent(/^Scan failed — try again\.$/)
+    expect(banner.textContent).not.toMatch(/haven't changed|gateway|status code/)
+    expect(mockAcknowledge).not.toHaveBeenCalled()
+    fireEvent.click(within(banner).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
   })
 
-  it('refreshes run history, so the status stops saying "Analysis complete"', async () => {
+  it('still running on the server after a proxy timeout: the banner and the button stay "running"', async () => {
+    mockMyResult.mockReset()
+    mockMyResult.mockResolvedValueOnce(null).mockResolvedValue(recorded({ state: 'running', completedAt: null, message: null, findingsUnchanged: false }))
+    await failScan(requestError(504, '<html>gateway timeout</html>'))
+    await waitFor(() => expect(resultBanner()).toHaveAttribute('data-phase', 'running'))
+    expect(within(resultBanner()).getByText('Cost analysis running. This can take a few minutes.')).toBeInTheDocument()
+    expect(within(resultBanner()).queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Running analysis…/ })).toBeDisabled()
+    expect(mockAcknowledge).not.toHaveBeenCalled()
+  })
+
+  it('refreshes run history, so the Last analysis line says it didn\'t finish', async () => {
     mockGetAnalysisRuns.mockResolvedValueOnce([run('completed')])
-    mockGetAnalysisRuns.mockResolvedValue([run('failed', CHECKS_FAILED)])
-
-    await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
-    // The failure banner holds the slot until closed; then the latest analysis banner shows the failed run.
-    fireEvent.click(within(await failure()).getByRole('button', { name: 'Dismiss' }))
-
-    expect(await screen.findByText('Last manual cost analysis failed')).toBeInTheDocument()
-    expect(screen.queryByText('Analysis complete')).not.toBeInTheDocument()
-    expect(screen.getAllByText(CHECKS_FAILED).length).toBeGreaterThan(0)
-  })
-
-  it('the button is usable again afterwards', async () => {
+    mockGetAnalysisRuns.mockResolvedValue([{ ...run('failed', CHECKS_FAILED), run_state: 'failed', source: 'manual' }])
     await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
     await failure()
+    await waitFor(() => expect(screen.getByTestId('last-analysis-problem')).toHaveTextContent("· didn't finish"))
+  })
+
+  it('the button is usable again afterwards, and Try again starts a new run', async () => {
+    await failScan(requestError(503, { success: false, error: CHECKS_FAILED }))
+    const banner = await failure()
     await waitFor(() => expect(screen.getByRole('button', { name: /run cost analysis/i })).toBeEnabled())
+    fireEvent.click(within(banner).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(mockAnalyze).toHaveBeenCalledTimes(2))
   })
 })
 

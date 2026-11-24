@@ -1,15 +1,15 @@
-import type { LucideIcon } from 'lucide-react'
-import { AlertTriangle, CheckCircle2, CloudOff, Clock, Info } from 'lucide-react'
-import type { AnalysisResult } from '@/lib/types'
+import type { CheckFailureReason, CostRunResult } from '@/lib/services/cost-recommendations.service'
 import type { ScanBannerTone } from '@/components/ui/scan-status-banner'
 import type { AnalysisSource } from './costOptimizationStatus'
-import type { CostScanCounts, CostScanState } from './costScanState'
+import type { CostScanState } from './costScanState'
 
 /**
- * Every banner and toast string for the Cost Optimization scan state, exactly
- * as approved by the founder on 2026-11-02 (pr2-step1.md §1c and §1g), with
- * PR 3's C1-C5 (pr3-step1.md §5.3, founder decisions 2026-11-03) replacing
- * the hidden-finding wording.
+ * Cost Optimization's scan strings. The page has ONE banner: the result of a
+ * "Run cost analysis" run the current user started (founder-locked behaviour,
+ * Nov 23, with the Stage A rulings 1-9). Scheduled runs never produce a
+ * banner; their failures and gaps show on the "Last analysis" line instead.
+ * Every number comes from the run's own record (CostRunResult); nothing here
+ * is a literal count.
  */
 
 export const SOURCE_LABEL: Record<AnalysisSource, string> = {
@@ -17,225 +17,165 @@ export const SOURCE_LABEL: Record<AnalysisSource, string> = {
   manual: 'Manual cost analysis',
 }
 
-// Approved in PR 1 (step2-plan.md), used here exactly.
+/**
+ * The weekly summary email's partial-analysis sentence is pinned to this text
+ * (connect-aws/__tests__/weekly-email-health-copy.test.ts). The page itself no
+ * longer shows it: a run with gaps is the amber result banner or the Last
+ * analysis line.
+ */
 export const PARTIAL_MESSAGE = "Some cost checks didn't complete, so these results may be incomplete."
-export const INTERRUPTED_MESSAGE = 'The analysis was interrupted before it finished. Run it again.'
 
-export const FAILED_FALLBACK = 'The most recent analysis did not complete.'
 export const STATUS_UNAVAILABLE_TITLE = "Couldn't load analysis status"
-export const STATUS_UNAVAILABLE_DESCRIPTION = "This doesn't mean nothing was found. Try again."
 export const UNAVAILABLE = 'Unavailable'
 export const STATS_UNAVAILABLE_NOTE = "Totals couldn't load. This doesn't mean there are no savings."
 export const TRY_AGAIN = 'Try again'
+/** The result banner's × (the locked mock's label). */
+export const CLOSE_BANNER = 'Close'
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
 
-export function newFound(count: number): string {
-  return `${count} new opportunit${plural(count, 'y', 'ies')} found.`
+// ── The result banner ──
+
+export const RUN_RUNNING = 'Cost analysis running. This can take a few minutes.'
+export const RESULT_COMPLETE_TITLE = 'Cost analysis complete'
+export const RESULT_GAPS_TITLE = 'Cost analysis completed with gaps'
+export const RESULT_FAILED_TITLE = "Cost analysis didn't finish"
+export const GAPS_UP_TO_DATE = 'Findings from the completed checks are up to date.'
+/** Founder ruling 4: only for a failure known to happen before anything was written (the server says which). */
+export const FINDINGS_UNCHANGED = "Your existing findings haven't changed."
+export const RESULT_FAILED_FALLBACK = "The analysis didn't complete."
+export const NO_NEW_OPPORTUNITIES = 'No new opportunities'
+export const NO_OPPORTUNITIES_FOUND = 'No opportunities found'
+
+/** Founder ruling 3. */
+export const FAILURE_REASON_TEXT: Record<CheckFailureReason, string> = {
+  permissions: 'missing permissions',
+  rate_limited: 'AWS rate limiting',
+  timeout: 'a timeout',
+  too_many_resources: 'too many resources to list',
+  error: 'an unexpected error',
+}
+const REASON_ORDER: readonly CheckFailureReason[] = ['permissions', 'rate_limited', 'timeout', 'too_many_resources', 'error']
+
+export const seeNewOpportunities = (count: number) => `See the new ${plural(count, 'opportunity', 'opportunities')}`
+
+/** "EC2, EBS and RDS": commas, so the names don't run into the sub-line's " · " parts. */
+export function serviceList(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
-/** Sentence R. */
-export function stillOpen(count: number): string {
-  return `${count} found earlier ${plural(count, 'is', 'are')} still open.`
-}
-
-/** C2: resolved findings the run found again (omitted when 0). */
-export function resolvedFoundAgain(count: number): string | null {
-  if (count <= 0) return null
-  return `${count} finding${plural(count, '', 's')} you resolved ${plural(count, 'was', 'were')} found again.`
-}
-
-/** C3: dismissed findings the run found again (omitted when 0). */
-export function dismissedFoundAgain(count: number): string | null {
-  if (count <= 0) return null
-  return `${count} finding${plural(count, '', 's')} you dismissed ${plural(count, 'was', 'were')} found again and ${plural(count, 'is', 'are')} still hidden.`
+/** "<M> checks run across EC2, EBS and RDS" (no "across" when no service is known). */
+export function checksRunPart(checks: number, services: readonly string[]): string {
+  const run = `${checks} check${plural(checks, '', 's')} run`
+  return services.length > 0 ? `${run} across ${serviceList(services)}` : run
 }
 
 /**
- * C4 (replaces sentence H): C2 and/or C3, each only when its count isn't 0.
- * `resolved` is /hidden's still-detected count, never the run's own
- * suppressed_resolved_count (the truth fix below).
+ * Founder ruling 2: one clause per reason, largest count first, at most two,
+ * then "and other reasons". `failed` is the run's failed-check count (for a
+ * run recorded before reasons existed, the only thing known).
  */
-export function hiddenFoundAgain(resolved: number, dismissed: number): string | null {
-  return join(resolvedFoundAgain(resolved), dismissedFoundAgain(dismissed)) || null
+export function couldntRunSentence(failedChecks: CostRunResult['failedChecks'], failed: number): string {
+  const groups = [...failedChecks]
+    .filter((group) => group.count > 0)
+    .sort((a, b) => b.count - a.count || REASON_ORDER.indexOf(a.reason) - REASON_ORDER.indexOf(b.reason))
+  const lead = (count: number) => `${count} check${plural(count, '', 's')} couldn't run`
+  if (groups.length === 0) return `${lead(failed)}.`
+  const [first, second] = groups
+  const firstClause = `${lead(first.count)} because of ${FAILURE_REASON_TEXT[first.reason]}`
+  if (groups.length === 1) return `${firstClause}.`
+  const secondClause = `${second.count} because of ${FAILURE_REASON_TEXT[second.reason]}`
+  if (groups.length === 2) return `${firstClause} and ${secondClause}.`
+  return `${firstClause}, ${secondClause}, and other reasons.`
 }
 
-function join(...sentences: (string | false | null | undefined)[]): string {
-  return sentences.filter(Boolean).join(' ')
+/** Resource-level gaps (fix round S-2): "4 resources couldn't be fully checked" (no trailing period). */
+export function resourcesNotFullyChecked(count: number): string {
+  return `${count} resource${plural(count, '', 's')} couldn't be fully checked`
 }
 
-/** Sub-line parts, GitHub-banner style: "a · b". */
-function parts(...items: (string | false | null | undefined)[]): string {
-  return items.filter(Boolean).join(' · ')
+/** Founder ruling 9: the banner has its own Try again button, so the reason's trailing "Try again." goes (banner only). */
+export function withoutTrailingTryAgain(message: string): string {
+  return message.replace(/\s*(Try again|Run it again)\.\s*$/, '').trim()
 }
 
-/**
- * The banner's sub-line names the run this way (tidy mock): "Scheduled
- * analysis, about 2 hours ago" or "Analysis you ran, 5 minutes ago". The Last
- * analysis card keeps SOURCE_LABEL.
- */
-export const BANNER_SOURCE_LABEL: Record<AnalysisSource, string> = {
-  scheduled: 'Scheduled analysis',
-  manual: 'Analysis you ran',
-}
-
-// Tidy mock (founder-approved, Nov 19).
-export const NOTHING_NEW_TITLE = 'Analysis complete · nothing new to review.'
-export const allChecksRan = (count: number) => `all ${count} active check${plural(count, '', 's')} ran`
-export const foundAgainTitle = (count: number) => `Analysis complete · ${resolvedFoundAgain(count)}`
-export const NOTHING_NEW_BESIDES = 'nothing new besides this'
-export const REVIEW_IT = 'Review it'
-export const DISMISS_BANNER = 'Dismiss'
-
-/**
- * What the page knows beyond the run itself. A resolved finding "found again"
- * is /hidden's judgement only (detection.state = still_detected, summed in
- * summary.stillDetected.count): the same number the Still detected group
- * shows, so the banner, the group and C12 never give one finding two states.
- */
-export interface BannerContext {
-  hidden: { stillDetected: number; notConfirmed: number } | 'loading' | 'error'
-  /** Open (ACTIVE) findings, from /stats. */
-  open: number | 'loading' | 'error'
-}
-
-export const UNKNOWN_CONTEXT: BannerContext = { hidden: 'loading', open: 'loading' }
-
-export interface BannerContent {
+export interface ResultBannerContent {
   tone: ScanBannerTone
   title: string
-  description?: string
-  icon?: LucideIcon
-  busy?: boolean
-  loading?: boolean
+  description: string
+  /** "See the new opportunity" / "…opportunities": scrolls to Opportunities. */
+  link?: string
+  /** Try again: starts a new manual run. */
   retry?: boolean
-  /** A "Review it" action that scrolls to the Still detected group. */
-  review?: boolean
-  /** A × closes it until the result changes. Never for a warning, failure or unknown status. */
-  dismissible?: boolean
 }
 
-const UNCHECKED = (unknown: number) => `Nothing was flagged, but ${unknown} resource${plural(unknown, '', 's')} couldn't be fully checked.`
-const CLEAN_RUN = (checks: number) => `All ${checks} checks ran and nothing was flagged. These checks don't cover every possible AWS saving.`
-
-/**
- * A completed run with recorded counts. Green only when the run finished every
- * check with nothing unknown, nothing is open, nothing is still detected and
- * no resolved finding is left unconfirmed; blue when a resolved finding was
- * found again and nothing else is new.
- */
-function completedBanner(c: CostScanCounts, ctx: BannerContext): BannerContent {
-  const hidden = typeof ctx.hidden === 'object' ? ctx.hidden : null
-  const again = hidden?.stillDetected ?? 0
-  const dismissedAgain = dismissedFoundAgain(c.hiddenDismissed)
-  const review = again > 0 || undefined
-  // Something to look at is blue (founder screenshot review, round 3): new or still-open findings use the same
-  // attention style as a resolved finding found again. Green only when nothing needs review; amber/red unchanged.
-  if (c.new > 0) {
-    return { tone: 'info', icon: Info, title: 'Analysis complete', description: join(newFound(c.new), c.refreshed > 0 && stillOpen(c.refreshed), hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
-  }
-  if (c.refreshed > 0) {
-    return { tone: 'info', icon: Info, title: 'Analysis complete', description: join(`No new opportunities. ${stillOpen(c.refreshed)}`, hiddenFoundAgain(again, c.hiddenDismissed)), review, dismissible: true }
-  }
-  if (again > 0) {
-    return { tone: 'info', icon: Info, title: foundAgainTitle(again), description: parts(NOTHING_NEW_BESIDES, dismissedAgain), review: true, dismissible: true }
-  }
-  // Nothing is claimed green or "nothing to review" until /hidden and /stats have answered.
-  if (ctx.hidden === 'loading' || ctx.open === 'loading') return { tone: 'neutral', title: '', loading: true }
-  if (hidden && hidden.notConfirmed === 0 && ctx.open === 0 && c.allChecksComplete && c.unknown === 0) {
-    return { tone: 'success', icon: CheckCircle2, title: NOTHING_NEW_TITLE, description: parts(allChecksRan(c.checksTotal), dismissedAgain), dismissible: true }
-  }
-  if (c.detected === 0 && c.unknown > 0) return { tone: 'info', title: 'Analysis complete', description: UNCHECKED(c.unknown), dismissible: true }
-  if (c.detected === 0 && c.unknown === 0 && c.allChecksComplete) {
-    // The run was clean, but the page can't say "nothing to review" (/hidden or /stats failed, something is open, or unconfirmed).
-    return { tone: 'info', title: 'Analysis complete', description: CLEAN_RUN(c.checksTotal), dismissible: true }
-  }
-  if (c.detected > 0) {
-    // Everything detected was hidden (or a duplicate). C1, with the resolved part only when /hidden confirms it (above).
-    return { tone: 'info', title: 'Analysis complete', description: join(typeof ctx.open === 'number' && ctx.open > 0 ? 'No new opportunities.' : 'Nothing new to review.', dismissedAgain), dismissible: true }
-  }
-  return { tone: 'neutral', title: 'Analysis complete', dismissible: true }
-}
-
-export function bannerContent(s: CostScanState, ctx: BannerContext = UNKNOWN_CONTEXT): BannerContent {
-  const sourceLower = s.source ? SOURCE_LABEL[s.source].toLowerCase() : 'analysis'
-  switch (s.key) {
-    case 'loading':
-      return { tone: 'neutral', title: '', loading: true }
-    case 'status_unavailable':
-      return { tone: 'neutral', icon: AlertTriangle, title: STATUS_UNAVAILABLE_TITLE, description: STATUS_UNAVAILABLE_DESCRIPTION, retry: true }
-    case 'not_connected':
-      return { tone: 'neutral', icon: CloudOff, title: 'AWS not connected', description: 'Connect an AWS account to run cost analysis.' }
-    case 'never_analyzed':
-      return { tone: 'neutral', icon: Clock, title: 'Never analyzed', description: 'AWS is connected, but no cost analysis has completed yet.' }
-    case 'running':
-      return { tone: 'neutral', busy: true, title: 'Analysis in progress', description: 'DevControl is currently checking your account.' }
-    case 'completed_new':
-    case 'completed_open':
-    case 'completed_hidden':
-    case 'completed_unchecked':
-    case 'completed_clean':
-      return s.counts ? completedBanner(s.counts, ctx) : { tone: 'neutral', title: 'Analysis complete', dismissible: true }
-    case 'completed_other':
-      return { tone: 'neutral', title: 'Analysis complete', dismissible: true }
-    case 'completed_unrecorded':
-      return { tone: 'neutral', title: 'Analysis complete', description: 'Per-check results are not yet recorded.', dismissible: true }
-    case 'partial': {
-      const c = s.counts
-      const again = typeof ctx.hidden === 'object' ? ctx.hidden.stillDetected : 0
-      return {
-        tone: 'warning',
-        title: 'Analysis partly complete',
-        description: join(PARTIAL_MESSAGE, c && c.new > 0 && newFound(c.new), hiddenFoundAgain(again, c ? c.hiddenDismissed : 0)),
-        review: again > 0 || undefined,
-      }
+/** The finished run's banner: green, amber or red, from the run's own results (never hard-coded counts). */
+export function resultBannerContent(result: CostRunResult): ResultBannerContent {
+  if (result.state === 'failed' || result.state === 'interrupted') {
+    const reason = withoutTrailingTryAgain(result.message || RESULT_FAILED_FALLBACK)
+    const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`
+    return {
+      tone: 'danger',
+      title: RESULT_FAILED_TITLE,
+      description: result.findingsUnchanged ? `${sentence} ${FINDINGS_UNCHANGED}` : sentence,
+      retry: true,
     }
-    case 'failed':
-      return { tone: 'danger', title: `Last ${sourceLower} failed`, description: s.errorMessage || FAILED_FALLBACK }
-    case 'interrupted':
-      return { tone: 'danger', title: `Last ${sourceLower} was interrupted`, description: INTERRUPTED_MESSAGE }
+  }
+  // Amber for check-level gaps (partial), resource-level gaps (some resources couldn't be fully checked;
+  // founder ruling, fix round S-2), or both, combined: neither is hidden. Green only with neither.
+  const unchecked = result.unknownResourceCount ?? 0
+  if (result.state === 'partial' || unchecked > 0) {
+    const sentences = [`${result.checksRan} of ${result.checksTotal} check${plural(result.checksTotal, '', 's')} ran.`]
+    if (result.state === 'partial') {
+      sentences.push(couldntRunSentence(result.failedChecks, Math.max(0, result.checksTotal - result.checksRan)))
+    }
+    if (unchecked > 0) sentences.push(`${resourcesNotFullyChecked(unchecked)}.`)
+    sentences.push(GAPS_UP_TO_DATE)
+    return { tone: 'warning', title: RESULT_GAPS_TITLE, description: sentences.join(' ') }
+  }
+  // completed: every check ran and every resource was evaluated. A count the run didn't record is left out, never shown as 0.
+  const parts = [checksRunPart(result.checksRan, result.services)]
+  const { newCount, stillOpen, openCount } = result
+  if (newCount !== null && newCount > 0) {
+    parts.push(`${newCount} new opportunit${plural(newCount, 'y', 'ies')} found`)
+    if (stillOpen !== null && stillOpen > 0) parts.push(`${stillOpen} still open from earlier`)
+  } else if (newCount === 0) {
+    if (openCount === 0) parts.push(NO_OPPORTUNITIES_FOUND)
+    else {
+      parts.push(NO_NEW_OPPORTUNITIES)
+      if (stillOpen !== null && stillOpen > 0) parts.push(`${stillOpen} still open from earlier`)
+    }
+  }
+  return {
+    tone: 'success',
+    title: RESULT_COMPLETE_TITLE,
+    description: parts.join(' · '),
+    ...(newCount !== null && newCount > 0 ? { link: seeNewOpportunities(newCount) } : {}),
   }
 }
 
-export type ToastKind = 'success' | 'info' | 'warning'
-
-// "Run cost analysis" result banner (light-lane layout, Nov 20): shown in the top banner slot in place of the
-// Latest analysis banner, never as a toast. A finished run's text is analyzeToast()'s (founder ruling 7).
-export const RUN_RUNNING = 'Cost analysis running. This can take a few minutes.'
-export const RUN_FAILED = "Cost analysis didn't finish."
-/** A finished run (success or info kind) hides itself after this long; a warning or a failure stays until closed. */
-export const RUN_RESULT_AUTO_HIDE_MS = 10_000
+// ── The "Last analysis" line (founder ruling 1a): a scheduled run's failure or gaps, never a banner ──
 
 /**
- * The toast after a successful "Run cost analysis" response: from its run state and counts, never recommendationsFound.
- * `stillDetected` is /hidden's still-detected count after the run (null when /hidden didn't answer): the resolved part
- * of C5 reads it, never the run's suppressedResolved, so the toast, the banner and the group can't disagree
- * (founder ruling 8, Cost Optimization tidy).
+ * "· didn't finish" for a failed or interrupted run; for a finished run, its gaps, as the banner judges them
+ * (fix round S-2): "2 checks couldn't run", "4 resources couldn't be fully checked", or both
+ * ("2 checks couldn't run · 4 resources couldn't be fully checked"); null when it had none.
  */
-export function analyzeToast(
-  result: Pick<AnalysisResult, 'runState' | 'counts' | 'unknownResourceCount'>,
-  stillDetected: number | null,
-): { kind: ToastKind; text: string } {
-  if (result.runState === 'partial') return { kind: 'warning', text: PARTIAL_MESSAGE }
-  const c = result.counts
-  if (!c) return { kind: 'info', text: 'Analysis complete.' }
-  const resolvedAgain = stillDetected ?? 0
-  const unknown = result.unknownResourceCount
-  if (c.new > 0) return { kind: 'info', text: `Analysis complete: ${c.new} new opportunit${plural(c.new, 'y', 'ies')}.` }
-  if (c.persisted > 0) return { kind: 'info', text: 'Analysis complete: no new opportunities.' }
-  if (resolvedAgain > 0 || c.suppressedDismissed > 0) {
-    // C5: only the non-zero parts.
-    const parts = [
-      resolvedAgain > 0 && `${resolvedAgain} resolved found again`,
-      c.suppressedDismissed > 0 && `${c.suppressedDismissed} dismissed found again`,
-    ].filter(Boolean)
-    return { kind: 'info', text: `Analysis complete: nothing new. ${parts.join(', ')}.` }
+export function lastAnalysisProblem(scan: Pick<CostScanState, 'key' | 'failedChecks' | 'uncheckedResources'>): string | null {
+  if (scan.key === 'failed' || scan.key === 'interrupted') return "didn't finish"
+  const finished = scan.key === 'partial' || scan.key.startsWith('completed')
+  if (!finished) return null
+  const parts: string[] = []
+  if (scan.key === 'partial') {
+    const n = scan.failedChecks
+    parts.push(n !== null && n > 0 ? `${n} check${plural(n, '', 's')} couldn't run` : "some checks couldn't run")
   }
-  // The run counted resolved findings found again, but /hidden doesn't confirm any (or didn't answer): no claim.
-  if (c.suppressedResolved > 0) return { kind: 'info', text: 'Analysis complete: nothing new.' }
-  if (c.detected === 0 && typeof unknown === 'number' && unknown > 0) {
-    return { kind: 'info', text: `Analysis complete: nothing flagged, ${unknown} resource${plural(unknown, '', 's')} not fully checked.` }
-  }
-  if (c.detected === 0 && unknown === 0 && result.runState === 'completed') return { kind: 'success', text: 'Analysis complete: nothing flagged.' }
-  return { kind: 'info', text: 'Analysis complete.' }
+  const unchecked = scan.uncheckedResources
+  if (unchecked !== null && unchecked > 0) parts.push(resourcesNotFullyChecked(unchecked))
+  return parts.length > 0 ? parts.join(' · ') : null
 }
+
+// ── The Run cost analysis button (item 5) ──
+export const RUN_COST_ANALYSIS = 'Run cost analysis'
+export const RUNNING_ANALYSIS = 'Running analysis…'

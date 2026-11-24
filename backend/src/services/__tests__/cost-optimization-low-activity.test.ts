@@ -182,7 +182,7 @@ describe('not low-activity and couldn\'t check', () => {
 
   it('a failed instance listing fails the whole category', async () => {
     const result = await setup({ instances: accessDenied() }).run();
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'permissions' });
   });
 
   it('no running instances: a completed check with nothing found', async () => {

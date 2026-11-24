@@ -96,3 +96,13 @@ export function job(overrides: Partial<DiscoveryJob> = {}): DiscoveryJob {
 }
 
 export const RAW_JOB_TEXT = 'Cost analysis: AccessDenied: arn:aws:iam::123456789012:role/placeholder-role is not authorized; SELECT * FROM cost_recommendations'
+
+/**
+ * The page has loaded its scan status: the header's Last analysis line shows an answer (no skeleton). The page has no
+ * latest-analysis banner any more (scan result banner PR, Nov 23), so tests wait on this line instead.
+ */
+export async function waitForLastAnalysis(): Promise<void> {
+  const { screen, waitFor } = await import('@testing-library/react')
+  const { expect } = await import('vitest')
+  await waitFor(() => expect(screen.getByTestId('last-analysis')).toHaveTextContent(/ago|Never|Running…|Couldn't load|—/))
+}

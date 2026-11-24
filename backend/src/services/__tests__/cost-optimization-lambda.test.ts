@@ -136,7 +136,7 @@ describe('CostOptimizationService.detectLowUsageLambdaFunctions (lambda_low_usag
 
     const result = await (costOptimizationService as any).detectLowUsageLambdaFunctions('test-org', lambdaClient, cwClient, DEFAULT_LAMBDA_CONFIG);
 
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'error' });
   });
 
   it('defaults memory to 128MB when MemorySize is absent from the function config', async () => {

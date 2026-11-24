@@ -256,7 +256,7 @@ describe('CostOptimizationService.detectGp2ToGp3Migrations (ebs_gp2_to_gp3)', ()
 
       const result = await (costOptimizationService as any).detectGp2ToGp3Migrations(ec2Client);
 
-      expect(result).toEqual({ success: false, issues: [] });
+      expect(result).toEqual({ success: false, issues: [], failureReason: 'error' });
     });
 
     it('falls back to the VolumeId as the name when there is no Name tag', async () => {

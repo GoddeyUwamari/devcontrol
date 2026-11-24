@@ -40,8 +40,22 @@ export interface CostAnalysisRun {
   unknown_resource_count: number | null;
   checks: CostAnalysisCheck[] | null;
   lease_acquired_at: string | null;
+  /** The user who started a manual run (scan result banner). NULL for discovery runs and older rows. */
+  initiated_by_user_id: string | null;
+  /** When the initiating user saw or closed this run's result banner. NULL = not yet. */
+  result_acknowledged_at: string | null;
+  /** ACTIVE findings right after this manual run reconciled. NULL = not recorded, never 0. */
+  open_count: number | null;
   /** status as a reader should see it: a dead worker's 'running' row reads 'interrupted'. */
   run_state: CostAnalysisRunStatus;
+}
+
+/** A new run row's fields. `initiatedByUserId` only for a manual run (the user who pressed Run cost analysis). */
+export interface RunCreationOptions {
+  source?: CostAnalysisRunSource;
+  discoveryJobId?: string;
+  leaseAcquiredAt?: Date;
+  initiatedByUserId?: string | null;
 }
 
 /** What a finished run records about its detectors and findings. */
@@ -95,14 +109,14 @@ export class CostAnalysisRunsRepository {
    */
   async create(
     organizationId: string,
-    options: { source?: CostAnalysisRunSource; discoveryJobId?: string; leaseAcquiredAt?: Date } = {}
+    options: RunCreationOptions = {}
   ): Promise<CostAnalysisRun> {
     return this.withOrgClient(organizationId, async (client) => {
       const result = await client.query(
-        `INSERT INTO cost_analysis_runs (organization_id, status, started_at, source, discovery_job_id, lease_acquired_at)
-         VALUES ($1, 'running', NOW(), $2, $3, $4)
+        `INSERT INTO cost_analysis_runs (organization_id, status, started_at, source, discovery_job_id, lease_acquired_at, initiated_by_user_id)
+         VALUES ($1, 'running', NOW(), $2, $3, $4, $5)
          RETURNING *`,
-        [organizationId, options.source ?? 'manual', options.discoveryJobId ?? null, options.leaseAcquiredAt ?? null]
+        [organizationId, options.source ?? 'manual', options.discoveryJobId ?? null, options.leaseAcquiredAt ?? null, options.initiatedByUserId ?? null]
       );
       return result.rows[0];
     });
@@ -117,16 +131,16 @@ export class CostAnalysisRunsRepository {
    */
   async createFenced(
     organizationId: string,
-    options: { source?: CostAnalysisRunSource; discoveryJobId?: string; leaseAcquiredAt?: Date },
+    options: RunCreationOptions,
     fence: RunCreationFence
   ): Promise<CostAnalysisRun> {
     return this.withOrgClient(organizationId, async (client) => {
       const insert = async (): Promise<CostAnalysisRun> => {
         const result = await client.query(
-          `INSERT INTO cost_analysis_runs (organization_id, status, started_at, source, discovery_job_id, lease_acquired_at)
-           VALUES ($1, 'running', NOW(), $2, $3, $4)
+          `INSERT INTO cost_analysis_runs (organization_id, status, started_at, source, discovery_job_id, lease_acquired_at, initiated_by_user_id)
+           VALUES ($1, 'running', NOW(), $2, $3, $4, $5)
            RETURNING *`,
-          [organizationId, options.source ?? 'manual', options.discoveryJobId ?? null, options.leaseAcquiredAt ?? null]
+          [organizationId, options.source ?? 'manual', options.discoveryJobId ?? null, options.leaseAcquiredAt ?? null, options.initiatedByUserId ?? null]
         );
         return result.rows[0];
       };
@@ -157,7 +171,7 @@ export class CostAnalysisRunsRepository {
   async markFinished(
     id: string,
     organizationId: string,
-    data: { recommendationsFound: number; totalPotentialSavings: number } & CostAnalysisRunDetail,
+    data: { recommendationsFound: number; totalPotentialSavings: number; openCount?: number | null } & CostAnalysisRunDetail,
     lease: HeldLease
   ): Promise<void> {
     if (data.summary.state === 'failed') {
@@ -168,9 +182,9 @@ export class CostAnalysisRunsRepository {
         await client.query(
           `UPDATE cost_analysis_runs
            SET status = $1, completed_at = NOW(),
-               recommendations_found = $2, total_potential_savings = $3, ${detailAssignments(6)}
+               recommendations_found = $2, total_potential_savings = $3, open_count = $6, ${detailAssignments(7)}
            WHERE id = $4 AND organization_id = $5 AND status = 'running'`,
-          [data.summary.state, data.recommendationsFound, data.totalPotentialSavings, id, organizationId, ...detailValues(data)]
+          [data.summary.state, data.recommendationsFound, data.totalPotentialSavings, id, organizationId, data.openCount ?? null, ...detailValues(data)]
         );
       });
     });
@@ -272,6 +286,73 @@ export class CostAnalysisRunsRepository {
       );
       return result.rows;
     });
+  }
+}
+
+/**
+ * A manual run's state as getLatest() reads it, for a statement whose
+ * organization is $1: 'running' only while the run is alive.
+ */
+function runStateSql(timeoutParam: string, kindParam: string): string {
+  return `CASE
+            WHEN r.status <> 'running' THEN r.status
+            WHEN r.lease_acquired_at IS NULL
+              THEN CASE WHEN r.created_at < NOW() - make_interval(secs => ${timeoutParam}) THEN 'interrupted' ELSE 'running' END
+            WHEN EXISTS (
+              SELECT 1 FROM aws_scan_leases l
+              WHERE l.organization_id = $1 AND l.scan_kind = ${kindParam}
+                AND l.released_at IS NULL AND l.expires_at > clock_timestamp()
+            ) THEN 'running'
+            ELSE 'interrupted'
+          END`;
+}
+
+/**
+ * The scan result banner's run (founder-locked behaviour, Nov 23): the latest
+ * MANUAL run this user started in this organization, any state, or null when
+ * there is none or its result was already seen or closed. Never a discovery
+ * run, another user's run or another organization's run: a later scheduled
+ * run can't take its place, because it can never match. Nothing is written.
+ */
+export async function getRunResultForUser(organizationId: string, userId: string): Promise<CostAnalysisRun | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT set_config('app.current_organization_id', $1, false)", [organizationId]);
+    const result = await client.query<CostAnalysisRun>(
+      `SELECT r.*, ${runStateSql('$3', '$4')} AS run_state
+       FROM cost_analysis_runs r
+       WHERE r.organization_id = $1 AND r.source = 'manual' AND r.initiated_by_user_id = $2
+       ORDER BY r.created_at DESC
+       LIMIT 1`,
+      [organizationId, userId, QUEUED_RUN_TIMEOUT_SECONDS, SCAN_KIND_DISCOVERY]
+    );
+    const run = result.rows[0];
+    return run && run.result_acknowledged_at === null ? run : null;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Records that the initiating user saw or closed this run's result. Only that
+ * user, in that organization, for a manual run that is no longer running;
+ * idempotent (the first time is kept). False when nothing matched: another
+ * user's or organization's run, a discovery run, a run still going, or no run.
+ */
+export async function acknowledgeRunResult(organizationId: string, userId: string, runId: string): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT set_config('app.current_organization_id', $1, false)", [organizationId]);
+    const result = await client.query(
+      `UPDATE cost_analysis_runs r
+       SET result_acknowledged_at = COALESCE(r.result_acknowledged_at, NOW())
+       WHERE r.organization_id = $1 AND r.id = $3 AND r.source = 'manual' AND r.initiated_by_user_id = $2
+         AND (${runStateSql('$4', '$5')}) <> 'running'`,
+      [organizationId, userId, runId, QUEUED_RUN_TIMEOUT_SECONDS, SCAN_KIND_DISCOVERY]
+    );
+    return (result.rowCount ?? 0) > 0;
+  } finally {
+    client.release();
   }
 }
 

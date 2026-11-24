@@ -134,7 +134,7 @@ describe('CostOptimizationService.detectS3LifecycleOptimization (s3_lifecycle)',
 
     const result = await (costOptimizationService as any).detectS3LifecycleOptimization(s3Client, cwClient);
 
-    expect(result).toEqual({ success: false, issues: [] });
+    expect(result).toEqual({ success: false, issues: [], failureReason: 'error' });
   });
 
   it('picks the most recent CloudWatch datapoint when multiple are returned', async () => {

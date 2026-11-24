@@ -128,6 +128,7 @@ import {
   DYNAMODB_CAPACITY_ANALYSIS_WINDOW_DAYS,
   DYNAMODB_CAPACITY_PERIOD_SECONDS,
 } from './dynamodb-capacity-analysis.util';
+import { classifyCheckFailure, type CheckFailureReason } from './cost-analysis-outcome';
 
 // Enterprise Workstream 3B: the low-usage threshold (default 10, same
 // heuristic rationale this comment previously documented -- 30-day window,
@@ -273,6 +274,8 @@ interface DetectorResult {
   rdsIdle?: RdsIdleCheckCounts;
   /** See DetectorObservation.oldSnapshots. */
   oldSnapshots?: OldSnapshotCheckCounts;
+  /** See DetectorObservation.failureReason. */
+  failureReason?: CheckFailureReason;
 }
 
 // One entry per non-RI detector category, tagged with the fixed `issue`
@@ -302,6 +305,8 @@ export interface DetectorObservation {
   rdsIdle?: RdsIdleCheckCounts;
   /** The old EBS snapshot rule's counts by reason (no resource IDs). */
   oldSnapshots?: OldSnapshotCheckCounts;
+  /** A failed category only: why it couldn't run (a class, never error text). */
+  failureReason?: CheckFailureReason;
 }
 
 /** Every private IPv4 and IPv6 address on an instance's network interfaces. */
@@ -376,6 +381,8 @@ class CostOptimizationService {
      * the stored rows must be left as they are.
      */
     riSucceeded: boolean;
+    /** Why the RI check couldn't run (absent when it completed). */
+    riFailureReason?: CheckFailureReason;
     /**
      * The region the home-listed detectors (idle EC2, Elastic IP, EBS, gp2, Lambda,
      * Reserved Instances) listed: their stale recommendations are reconciled in
@@ -441,7 +448,7 @@ class CostOptimizationService {
         }),
         lambdaLowUsageConfigResult.status === 'fulfilled'
           ? this.detectLowUsageLambdaFunctions(organizationId, clients.lambda, clients.cloudWatch, lambdaLowUsageConfigResult.value, clients.region, connection)
-          : Promise.resolve<DetectorResult>({ success: false, issues: [] }),
+          : Promise.resolve<DetectorResult>({ success: false, issues: [], failureReason: 'error' }),
         // Home region only, like every other detector here (multi-region PR 1, FD-1 / H-1).
         this.detectDynamoDBCapacityOptimization(organizationId, clients, clients.region),
         this.detectDynamoDBOnDemandVsProvisionedOptimization(organizationId, clients, clients.region),
@@ -466,7 +473,7 @@ class CostOptimizationService {
       const observations: DetectorObservation[] = [
         {
           issue: ISSUE_EC2_IDLE_INSTANCE,
-          success: idleEC2.success,
+          success: idleEC2.success, failureReason: idleEC2.failureReason,
           recommendations: idleEC2.issues.map(toRequest),
           unknownResourceIds: idleEC2.unknownResourceIds,
           endActiveForUnknown: idleEC2.endActiveForUnknown,
@@ -480,16 +487,16 @@ class CostOptimizationService {
         // DISMISSED rows stay as history. Never success: false -- that would
         // keep stale ACTIVE rows alive indefinitely.
         { issue: ISSUE_RDS_OVERSIZED_INSTANCE, success: true, recommendations: [] },
-        { issue: ISSUE_EC2_UNUSED_ELASTIC_IP, success: unusedEIPs.success, recommendations: unusedEIPs.issues.map(toRequest) },
-        { issue: ISSUE_EBS_UNATTACHED_VOLUME, success: unattachedEBS.success, recommendations: unattachedEBS.issues.map(toRequest) },
-        { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, recommendations: gp2ToGp3.issues.map(toRequest) },
-        { issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, success: s3Lifecycle.success, recommendations: s3Lifecycle.issues.map(toRequest), unknownResourceIds: s3Lifecycle.unknownResourceIds },
-        { issue: ISSUE_LAMBDA_LOW_USAGE, success: lowUsageLambda.success, recommendations: lowUsageLambda.issues.map(toRequest), unknownResourceIds: lowUsageLambda.unknownResourceIds },
-        { issue: ISSUE_DYNAMODB_CAPACITY, success: dynamoDBCapacity.success, recommendations: dynamoDBCapacity.issues.map(toRequest), unknownResourceIds: dynamoDBCapacity.unknownResourceIds },
-        { issue: ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED, success: dynamoDBModeComparison.success, recommendations: dynamoDBModeComparison.issues.map(toRequest), unknownResourceIds: dynamoDBModeComparison.unknownResourceIds },
+        { issue: ISSUE_EC2_UNUSED_ELASTIC_IP, success: unusedEIPs.success, failureReason: unusedEIPs.failureReason, recommendations: unusedEIPs.issues.map(toRequest) },
+        { issue: ISSUE_EBS_UNATTACHED_VOLUME, success: unattachedEBS.success, failureReason: unattachedEBS.failureReason, recommendations: unattachedEBS.issues.map(toRequest) },
+        { issue: ISSUE_EBS_GP2_TO_GP3, success: gp2ToGp3.success, failureReason: gp2ToGp3.failureReason, recommendations: gp2ToGp3.issues.map(toRequest) },
+        { issue: ISSUE_S3_LIFECYCLE_OPTIMIZATION, success: s3Lifecycle.success, failureReason: s3Lifecycle.failureReason, recommendations: s3Lifecycle.issues.map(toRequest), unknownResourceIds: s3Lifecycle.unknownResourceIds },
+        { issue: ISSUE_LAMBDA_LOW_USAGE, success: lowUsageLambda.success, failureReason: lowUsageLambda.failureReason, recommendations: lowUsageLambda.issues.map(toRequest), unknownResourceIds: lowUsageLambda.unknownResourceIds },
+        { issue: ISSUE_DYNAMODB_CAPACITY, success: dynamoDBCapacity.success, failureReason: dynamoDBCapacity.failureReason, recommendations: dynamoDBCapacity.issues.map(toRequest), unknownResourceIds: dynamoDBCapacity.unknownResourceIds },
+        { issue: ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED, success: dynamoDBModeComparison.success, failureReason: dynamoDBModeComparison.failureReason, recommendations: dynamoDBModeComparison.issues.map(toRequest), unknownResourceIds: dynamoDBModeComparison.unknownResourceIds },
         {
           issue: ISSUE_RDS_IDLE_INSTANCE,
-          success: idleRDS.success,
+          success: idleRDS.success, failureReason: idleRDS.failureReason,
           recommendations: idleRDS.issues.map(toRequest),
           unknownResourceIds: idleRDS.unknownResourceIds,
           endActiveForUnknown: idleRDS.endActiveForUnknown,
@@ -497,7 +504,7 @@ class CostOptimizationService {
         },
         {
           issue: ISSUE_EBS_OLD_SNAPSHOT,
-          success: oldSnapshots.success,
+          success: oldSnapshots.success, failureReason: oldSnapshots.failureReason,
           recommendations: oldSnapshots.issues.map(toRequest),
           unknownResourceIds: oldSnapshots.unknownResourceIds,
           oldSnapshots: oldSnapshots.oldSnapshots,
@@ -508,6 +515,7 @@ class CostOptimizationService {
         observations,
         riRecommendations: riOpportunities.issues.map(toRequest),
         riSucceeded: riOpportunities.success,
+        riFailureReason: riOpportunities.failureReason,
         homeRegion: clients.region,
       };
     } catch (error) {
@@ -548,9 +556,9 @@ class CostOptimizationService {
       });
     } catch (error) {
       console.error('Error listing EC2 instances for the low-activity check:', (error as Error)?.name ?? 'Error');
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
-    if (!listing.complete) return { success: false, issues: [] };
+    if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
     const instances = listing.items.flatMap((reservation) => reservation.Instances ?? []).filter((i): i is Instance & { InstanceId: string } => !!i.InstanceId);
     const counts = emptyLowActivityCounts();
@@ -669,9 +677,9 @@ class CostOptimizationService {
       });
     } catch (error) {
       console.error('Error listing RDS instances for the idle check:', (error as Error)?.name ?? 'Error');
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
-    if (!listing.complete) return { success: false, issues: [] };
+    if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
     const issues: OptimizationIssue[] = [];
     const unknownResourceIds: string[] = [];
@@ -792,9 +800,9 @@ class CostOptimizationService {
       });
     } catch (error) {
       console.error('Error listing EBS snapshots for the old-snapshot check:', (error as Error)?.name ?? 'Error');
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
-    if (!listing.complete) return { success: false, issues: [] };
+    if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
     const issues: OptimizationIssue[] = [];
     const unknownResourceIds: string[] = [];
@@ -1013,7 +1021,7 @@ class CostOptimizationService {
       return { success: true, issues };
     } catch (error) {
       console.error('Error detecting unused Elastic IPs:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
   }
 
@@ -1039,7 +1047,7 @@ class CostOptimizationService {
         }));
         return { items: page.Volumes || [], nextToken: page.NextToken };
       });
-      if (!listing.complete) return { success: false, issues: [] };
+      if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
       const issues: OptimizationIssue[] = [];
 
@@ -1073,7 +1081,7 @@ class CostOptimizationService {
       return { success: true, issues };
     } catch (error) {
       console.error('Error detecting unattached EBS volumes:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
   }
 
@@ -1119,7 +1127,7 @@ class CostOptimizationService {
         }));
         return { items: page.Volumes || [], nextToken: page.NextToken };
       });
-      if (!listing.complete) return { success: false, issues: [] };
+      if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
       const issues: OptimizationIssue[] = [];
 
@@ -1168,7 +1176,7 @@ class CostOptimizationService {
       return { success: true, issues };
     } catch (error) {
       console.error('Error detecting gp2-to-gp3 migration opportunities:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
   }
 
@@ -1220,7 +1228,7 @@ class CostOptimizationService {
         const page = await s3Client.send(new ListBucketsCommand({ ContinuationToken: token }));
         return { items: page.Buckets || [], nextToken: page.ContinuationToken };
       });
-      if (!listing.complete) return { success: false, issues: [] };
+      if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
       const issues: OptimizationIssue[] = [];
       // Buckets listed but not evaluated this scan: a per-bucket read failed or gave no
@@ -1314,7 +1322,7 @@ class CostOptimizationService {
       return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting S3 lifecycle optimization opportunities:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
   }
 
@@ -1401,7 +1409,7 @@ class CostOptimizationService {
         },
         MAX_LIST_FUNCTIONS_PAGES
       );
-      if (!listing.complete) return { success: false, issues: [] };
+      if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
       const issues: OptimizationIssue[] = [];
       const unknownResourceIds: string[] = [];
@@ -1452,7 +1460,7 @@ class CostOptimizationService {
       return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting low-usage Lambda functions:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
   }
 
@@ -1709,7 +1717,7 @@ class CostOptimizationService {
       return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting DynamoDB capacity optimization opportunities:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     } finally {
       if (client) client.release();
     }
@@ -2173,7 +2181,7 @@ class CostOptimizationService {
       return { success: true, issues, unknownResourceIds };
     } catch (error) {
       console.error('Error detecting DynamoDB on-demand vs provisioned optimization opportunities:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     } finally {
       if (client) client.release();
     }
@@ -2470,7 +2478,7 @@ class CostOptimizationService {
         }));
         return { items: page.Reservations || [], nextToken: page.NextToken };
       });
-      if (!instances.complete) return { success: false, issues: [] };
+      if (!instances.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
 
       // Get existing Reserved Instances. DescribeReservedInstances has no pages: one
       // call is the whole listing.
@@ -2536,7 +2544,7 @@ class CostOptimizationService {
       return { success: true, issues };
     } catch (error) {
       console.error('Error detecting RI opportunities:', error);
-      return { success: false, issues: [] };
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
     }
   }
 

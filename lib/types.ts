@@ -729,6 +729,9 @@ export interface AnalysisResult {
   runState?: 'completed' | 'partial';
   unknownResourceCount?: number | null;
   counts?: AnalysisCounts | null;
+  /** The scan result banner: this run's row id (null when it couldn't be created) and its facts. */
+  runId?: string | null;
+  result?: CostRunResult | null;
 }
 
 /** How one analysis's findings ended (POST /analyze `counts`). */
@@ -943,4 +946,35 @@ export interface CircularDependency {
   path: string;
   dependencyIds: string[];
   severity: string;
+}
+
+/** Why a check couldn't run (backend cost-analysis-outcome.ts): a class, never error text. */
+export type CheckFailureReason = 'permissions' | 'rate_limited' | 'timeout' | 'too_many_resources' | 'error';
+
+/**
+ * The scan result banner's facts for ONE manual run (backend cost-run-result.ts):
+ * GET /analysis-runs/my-result, and POST /analyze's `result`. Built by the
+ * server from that run's own record, never from live totals.
+ */
+export interface CostRunResult {
+  /** null only when the run's row couldn't be created: that result is shown for the session and never acknowledged. */
+  id: string | null;
+  state: 'running' | 'completed' | 'partial' | 'failed' | 'interrupted';
+  completedAt: string | null;
+  checksTotal: number;
+  checksRan: number;
+  /** Largest count first. */
+  failedChecks: { reason: CheckFailureReason; count: number }[];
+  /** Display names of the services whose checks ran. */
+  services: string[];
+  newCount: number | null;
+  openCount: number | null;
+  /** openCount - newCount; null when either is unknown. */
+  stillOpen: number | null;
+  /** Resources the checks that ran couldn't fully evaluate (the run's unknown_resource_count); above 0 = amber. null when not recorded. */
+  unknownResourceCount: number | null;
+  /** A failed or interrupted run's fixed text; null otherwise. */
+  message: string | null;
+  /** Only for a failure known to happen before anything was written. */
+  findingsUnchanged: boolean;
 }

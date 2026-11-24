@@ -13,8 +13,33 @@ import type { DetectorObservation } from './cost-optimization.service';
 import type { LowActivityCheckCounts } from './low-activity-evaluation';
 import type { RdsIdleCheckCounts } from './rds-idle-evaluation';
 import type { OldSnapshotCheckCounts } from './ebs-old-snapshot-evaluation';
+import { AwsCallTimeoutError, isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
 
 export type CheckOutcome = 'complete' | 'failed';
+
+/**
+ * Why a check couldn't run (scan result banner, founder ruling 3): a class,
+ * never error text. permissions: AWS said "not allowed". rate_limited: AWS said
+ * "slow down" and the retries ran out. timeout: a call or the scan's deadline
+ * ran out. too_many_resources: a listing stopped at its page cap. error:
+ * anything else, including DevControl's own failures.
+ */
+export type CheckFailureReason = 'permissions' | 'rate_limited' | 'timeout' | 'too_many_resources' | 'error';
+
+export const CHECK_FAILURE_REASONS: readonly CheckFailureReason[] = ['permissions', 'rate_limited', 'timeout', 'too_many_resources', 'error'];
+
+// ScanDeadlineError (region-run.ts): the whole scan's deadline ran out, a timeout by ruling 3 (review N-4).
+const TIMEOUT_ERROR_NAMES = new Set(['TimeoutError', 'AbortError', 'RequestTimeout', 'RequestTimeoutException', 'ScanDeadlineError']);
+
+/** The class of a detector's caught error. Reads the error's name/code/status only, never its message. */
+export function classifyCheckFailure(error: unknown): CheckFailureReason {
+  if (error instanceof AwsCallTimeoutError) return 'timeout';
+  const name = (error as { name?: unknown } | null)?.name;
+  if (typeof name === 'string' && TIMEOUT_ERROR_NAMES.has(name)) return 'timeout';
+  if (isThrottlingError(error)) return 'rate_limited';
+  if (isAccessDeniedError(error)) return 'permissions';
+  return 'error';
+}
 export type CostAnalysisTerminalState = 'completed' | 'partial' | 'failed';
 
 /** One detector's result. Stored as JSON: never error text, ARNs or resource IDs. */
@@ -24,6 +49,8 @@ export interface CostAnalysisCheck {
   outcome: CheckOutcome;
   detected: number;
   unknown: number;
+  /** A failed check only: why it couldn't run. Absent on runs recorded before it existed. */
+  failure_reason?: CheckFailureReason;
   /**
    * The low-activity EC2 check only (FP2b-Q21): how many instances it
    * evaluated, found low-activity, found active (by reason) and couldn't check
@@ -92,7 +119,8 @@ function ruleIdForIssue(issue: string): string | null {
 export function summarizeDetectors(
   observations: DetectorObservation[],
   riSucceeded: boolean,
-  riRecommendations: CreateRecommendationRequest[]
+  riRecommendations: CreateRecommendationRequest[],
+  riFailureReason?: CheckFailureReason
 ): DetectorSummary {
   const checks: CostAnalysisCheck[] = observations
     .filter((observation) => observation.issue !== ISSUE_RDS_OVERSIZED_INSTANCE)
@@ -102,6 +130,7 @@ export function summarizeDetectors(
       outcome: observation.success ? 'complete' : 'failed',
       detected: observation.success ? observation.recommendations.length : 0,
       unknown: observation.unknownResourceIds?.length ?? 0,
+      ...(observation.success ? {} : { failure_reason: observation.failureReason ?? 'error' }),
       ...(observation.success && observation.lowActivity ? { low_activity: observation.lowActivity } : {}),
       ...(observation.success && observation.rdsIdle ? { rds_idle: observation.rdsIdle } : {}),
       ...(observation.success && observation.oldSnapshots ? { old_snapshots: observation.oldSnapshots } : {}),
@@ -112,6 +141,7 @@ export function summarizeDetectors(
     outcome: riSucceeded ? 'complete' : 'failed',
     detected: riSucceeded ? riRecommendations.length : 0,
     unknown: 0,
+    ...(riSucceeded ? {} : { failure_reason: riFailureReason ?? 'error' }),
   });
 
   const failedDetectorCount = checks.filter((check) => check.outcome === 'failed').length;

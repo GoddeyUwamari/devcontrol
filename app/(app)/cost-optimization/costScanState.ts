@@ -49,6 +49,10 @@ export interface CostScanState {
   /** A failed run's message, only when it is one of the fixed texts below; otherwise null. */
   errorMessage: string | null
   counts: CostScanCounts | null
+  /** The run's failed-check count (the Last analysis line's "N checks couldn't run"); null when not recorded. */
+  failedChecks: number | null
+  /** The run's unknown_resource_count (the Last analysis line's "N resources couldn't be fully checked"); null when not recorded. */
+  uncheckedResources: number | null
 }
 
 /** What a react-query result tells this derivation. */
@@ -76,6 +80,7 @@ export const SAFE_RUN_MESSAGES: readonly string[] = [
   "Some cost checks didn't complete, so these results may be incomplete.",
   'The analysis was interrupted before it finished. Run it again.',
   'The analysis did not complete due to an unexpected error.',
+  'A scan is already running for this AWS account. Try again in a few minutes.',
   'DevControl cannot reach AWS right now. This is not a problem with your AWS account or role; please try again shortly.',
   'No AWS account connected for this organization.',
   'AWS Cost Explorer or CloudWatch is not enabled for this account.',
@@ -86,7 +91,7 @@ export function safeRunMessage(message: string | null | undefined): string | nul
 }
 
 function state(key: CostScanStateKey, extra: Partial<CostScanState> = {}): CostScanState {
-  return { key, source: null, completedAt: null, errorMessage: null, counts: null, ...extra }
+  return { key, source: null, completedAt: null, errorMessage: null, counts: null, failedChecks: null, uncheckedResources: null, ...extra }
 }
 
 const isLoading = <T>(query: QueryView<T>) => !query.isError && query.data === undefined
@@ -131,7 +136,11 @@ function completedKey(counts: CostScanCounts | null): CostScanStateKey {
 function fromRun(run: CostAnalysisRun): CostScanState {
   const runState = run.run_state ?? run.status
   const source: AnalysisSource = run.source === 'discovery' ? 'scheduled' : 'manual'
-  const base = { source, completedAt: run.completed_at }
+  const failedChecks = Array.isArray(run.checks)
+    ? run.checks.filter((check) => check.outcome === 'failed').length
+    : typeof run.failed_detector_count === 'number' ? run.failed_detector_count : null
+  const uncheckedResources = typeof run.unknown_resource_count === 'number' ? run.unknown_resource_count : null
+  const base = { source, completedAt: run.completed_at, failedChecks, uncheckedResources }
   switch (runState) {
     case 'running':
       return state('running', { source })

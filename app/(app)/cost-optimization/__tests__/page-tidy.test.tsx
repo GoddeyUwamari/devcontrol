@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostOptimizationPage from '../page'
 import type { CostRecommendation } from '@/lib/types'
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service'
-import { checks, run } from './fixtures'
+import { run, waitForLastAnalysis } from './fixtures'
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -26,6 +26,9 @@ const svc = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
   costRecommendationsService: {
+    // The scan result banner: nothing waiting to be seen.
+    getMyRunResult: async () => null,
+    acknowledgeRunResult: async () => undefined,
     getAll: () => svc.getAll(),
     getStats: () => svc.getStats(),
     getOptimizationRules: () => svc.getOptimizationRules(),
@@ -113,12 +116,10 @@ function renderPage() {
   return render(<QueryClientProvider client={queryClient}><CostOptimizationPage /></QueryClientProvider>)
 }
 
-const banner = () => screen.getByTestId('scan-status-banner')
-const subline = () => within(banner()).getByTestId('scan-status-subline')
 const kpiCard = (label: string) => screen.getByText(label).parentElement as HTMLElement
 
 async function loaded() {
-  await waitFor(() => expect(banner().querySelector('[role="status"]')).not.toHaveAttribute('aria-busy'))
+  await waitForLastAnalysis()
   await waitFor(() => expect(screen.queryByTestId('hidden-loading')).not.toBeInTheDocument())
 }
 
@@ -133,110 +134,6 @@ beforeEach(() => {
   svc.getDiscoveryJobs.mockResolvedValue([])
 })
 
-describe('top banner', () => {
-  it('sits at the very top, above the page header', async () => {
-    renderPage()
-    await loaded()
-    const heading = screen.getByRole('heading', { level: 1, name: 'Cost Optimization' })
-    expect(banner().compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('GREEN only when finished + 0 open + 0 still detected', async () => {
-    renderPage()
-    await loaded()
-    expect(banner()).toHaveAttribute('data-tone', 'success')
-    expect(within(banner()).getByText('Analysis complete · nothing new to review.')).toBeInTheDocument()
-    expect(subline()).toHaveTextContent(/^Scheduled analysis, .+ ago · all 9 active checks ran$/)
-    expect(within(banner()).queryByRole('button', { name: 'Review it' })).not.toBeInTheDocument()
-  })
-
-  it('a manual run reads "Analysis you ran, …"', async () => {
-    svc.getAnalysisRuns.mockResolvedValue([run()])
-    renderPage()
-    await loaded()
-    expect(subline()).toHaveTextContent(/^Analysis you ran, .+ ago · all 9 active checks ran$/)
-  })
-
-  it.each([
-    ['an open finding', () => { svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1 })); svc.getAll.mockResolvedValue([rec('a', 4)]) }],
-    ['a still-detected finding', () => { svc.getHidden.mockResolvedValue(hidden([item('a')])) }],
-    ['an unconfirmed resolved finding', () => { svc.getHidden.mockResolvedValue(hidden([NOT_CONFIRMED])) }],
-    ['/hidden failed', () => { svc.getHidden.mockRejectedValue(new Error('x')) }],
-    ['/stats failed', () => { svc.getStats.mockRejectedValue(new Error('x')) }],
-    ['a resource not fully checked', () => { svc.getAnalysisRuns.mockResolvedValue([run({ unknown_resource_count: 1 })]) }],
-    ['a partial run', () => { svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'partial', status: 'failed', checks: checks(1) })]) }],
-    ['a failed run', () => { svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'failed', status: 'failed' })]) }],
-    ['a legacy run', () => { svc.getAnalysisRuns.mockResolvedValue([run({ run_state: undefined, checks: undefined, new_count: undefined })]) }],
-    ['run status unavailable', () => { svc.getAnalysisRuns.mockRejectedValue(new Error('x')) }],
-  ])('never green with %s', async (_label, arrange) => {
-    arrange()
-    renderPage()
-    await waitFor(() => expect(banner().querySelector('[role="status"]')).not.toHaveAttribute('aria-busy'))
-    await waitFor(() => expect(screen.queryByTestId('hidden-loading')).not.toBeInTheDocument())
-    expect(banner()).not.toHaveAttribute('data-tone', 'success')
-    expect(banner().textContent).not.toMatch(/nothing new to review\.$/)
-  })
-
-  it('amber partial and red failed keep their states and have no ×', async () => {
-    svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'partial', status: 'failed', checks: checks(1) })])
-    const first = renderPage()
-    await loaded()
-    expect(banner()).toHaveAttribute('data-tone', 'warning')
-    expect(within(banner()).getByText('Analysis partly complete')).toBeInTheDocument()
-    expect(within(banner()).queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
-    first.unmount()
-    svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'failed', status: 'failed' })])
-    renderPage()
-    await loaded()
-    expect(banner()).toHaveAttribute('data-tone', 'danger')
-    expect(within(banner()).queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
-  })
-
-  it('BLUE for a resolved finding found again, with Review it scrolling to the Still detected group and focusing it', async () => {
-    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', detected_count: 1, suppressed_resolved_count: 1 })])
-    svc.getHidden.mockResolvedValue(hidden([item('a')]))
-    const scrollIntoView = vi.fn()
-    Element.prototype.scrollIntoView = scrollIntoView
-    renderPage()
-    await loaded()
-    expect(banner()).toHaveAttribute('data-tone', 'info')
-    expect(within(banner()).getByText('Analysis complete · 1 finding you resolved was found again.')).toBeInTheDocument()
-    expect(subline()).toHaveTextContent(/^Scheduled analysis, .+ ago · nothing new besides this$/)
-    fireEvent.click(within(banner()).getByRole('button', { name: 'Review it' }))
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('still-detected'))
-    expect(screen.getByTestId('still-detected-slot')).toHaveAttribute('id', 'still-detected')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Still detected (1)' }))
-  })
-
-  it('round 3: new or still-open opportunities are blue (something to look at), never purple', async () => {
-    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, totalPotentialSavings: 4, estimatedFindings: 1 }))
-    svc.getAll.mockResolvedValue([rec('open', 4)])
-    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', detected_count: 1, new_count: 1, persisted_count: 1 })])
-    const first = renderPage()
-    await loaded()
-    expect(banner()).toHaveAttribute('data-tone', 'info')
-    expect(banner().className).toMatch(/bg-blue-50/)
-    expect(banner().className).not.toMatch(/violet/)
-    expect(subline()).toHaveTextContent(/· 1 new opportunity found\.$/)
-    first.unmount()
-    svc.getAnalysisRuns.mockResolvedValue([run({ detected_count: 1, refreshed_count: 1, persisted_count: 1 })])
-    renderPage()
-    await loaded()
-    expect(banner()).toHaveAttribute('data-tone', 'info')
-  })
-
-  it('× closes a dismissible result until the result changes', async () => {
-    renderPage()
-    await loaded()
-    fireEvent.click(within(banner()).getByRole('button', { name: 'Dismiss' }))
-    expect(screen.queryByTestId('scan-status-banner')).not.toBeInTheDocument()
-    // The summary cards, the header's last analysis line and the rest of the page stay.
-    expect(screen.getByTestId('last-analysis')).toBeInTheDocument()
-    expect(screen.getByText('Open opportunities')).toBeInTheDocument()
-  })
-})
-
 describe('truth fix: one finding gets exactly one state', () => {
   it('the founder\'s case: the run counted 1 resolved found again, /hidden says it is not confirmed: only C12', async () => {
     svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', detected_count: 1, suppressed_resolved_count: 1 })])
@@ -245,16 +142,17 @@ describe('truth fix: one finding gets exactly one state', () => {
     await loaded()
     expect(screen.getAllByText("1 resolved finding couldn't be re-checked by the latest analysis.")).toHaveLength(1)
     expect(container.textContent).not.toMatch(/found again/)
-    expect(within(banner()).queryByRole('button', { name: 'Review it' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Review it' })).not.toBeInTheDocument()
   })
 
-  it('the same finding still detected: "found again" in the banner and the group, no C12', async () => {
+  it('the same finding still detected: "found again" in the group only (no banner since the scan result banner PR), no C12', async () => {
     svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', detected_count: 1, suppressed_resolved_count: 1 })])
     svc.getHidden.mockResolvedValue(hidden([item('a')]))
     const { container } = renderPage()
     await loaded()
-    expect(within(banner()).getByText(/1 finding you resolved was found again/)).toBeInTheDocument()
+    expect(screen.queryByTestId('scan-result-banner')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Still detected (1)' })).toBeInTheDocument()
+    expect(within(screen.getByTestId('still-detected-slot')).getByTestId('still-detected-meta')).toHaveTextContent(/found again in the analysis/)
     expect(container.textContent).not.toMatch(/couldn't be re-checked/)
   })
 })
@@ -287,7 +185,7 @@ describe('Still detected group', () => {
     expect(screen.getByTestId('kpi-still-detected')).toHaveTextContent('+ 3 still detected (below)')
   })
 
-  it('alongside open findings: the opportunities first, then the group, then the review list at the bottom; banner names both', async () => {
+  it('alongside open findings: the opportunities first, then the group, then the review list at the bottom', async () => {
     svc.getAnalysisRuns.mockResolvedValue([run({ detected_count: 2, new_count: 1, persisted_count: 1, suppressed_resolved_count: 1 })])
     svc.getStats.mockResolvedValue(stats({ activeRecommendations: 1, totalPotentialSavings: 4, estimatedFindings: 1, bySeverity: { high: 0, medium: 0, low: 1 } }))
     svc.getAll.mockResolvedValue([rec('open', 4)])
@@ -302,8 +200,6 @@ describe('Still detected group', () => {
     const reviewList = screen.getByTestId('review-list')
     expect(column).not.toContainElement(reviewList)
     expect(screen.getByTestId('checks-section').compareDocumentPosition(reviewList) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(subline()).toHaveTextContent(/1 new opportunity found\. 1 finding you resolved was found again\.$/)
-    expect(within(banner()).getByRole('button', { name: 'Review it' })).toBeInTheDocument()
   })
 
   it('not hidden by resolved/dismissed history: shown open while the review list stays collapsed', async () => {
@@ -342,7 +238,7 @@ describe('How DevControl checks: what DevControl checks and coverage', () => {
     renderPage()
     await loaded()
     const coverage = screen.getByTestId('coverage-card')
-    expect(within(coverage).getByTestId('coverage-line')).toHaveTextContent('3 of 5 checks active across 3 AWS services.')
+    expect(within(coverage).getByTestId('coverage-line')).toHaveTextContent(/^3 active checks across EC2 · EBS · S3\.$/)
     expect(within(within(coverage).getByTestId('coverage-services')).getAllByText(/.+/).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'S3'])
     const planned = within(coverage).getByTestId('planned-checks') as HTMLDetailsElement
     expect(planned.open).toBe(false)
@@ -358,7 +254,9 @@ describe('How DevControl checks: what DevControl checks and coverage', () => {
     })
     renderPage()
     await loaded()
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent('1 of 2 checks active across 1 AWS service.')
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^1 active check across EC2\.$/)
+    expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 1 active check$/)
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2$/)
     expect(screen.getByTestId('checks-count-note')).toHaveTextContent(/^1 active check today/)
     expect(screen.getByText('Planned / Coming soon (1)')).toBeInTheDocument()
   })

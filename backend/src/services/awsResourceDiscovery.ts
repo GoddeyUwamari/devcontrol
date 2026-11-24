@@ -2133,7 +2133,7 @@ export class AWSResourceDiscoveryService {
         scan.checkpoint();
         // PR 1b: a multi-region scan counts the cost pass's CloudWatch calls (home region's log line).
         if (scanDeadline) costPassCalls = new CloudWatchCallCounter();
-        const { observations, riRecommendations, riSucceeded, homeRegion } = scanDeadline
+        const { observations, riRecommendations, riSucceeded, riFailureReason, homeRegion } = scanDeadline
           ? await costOptimizationService.analyzeAllResources(organizationId, scanContext, { signal: scanDeadline.signal, onCall: costPassCalls!.onCall })
           : await costOptimizationService.analyzeAllResources(organizationId, scanContext);
         // Stopped while it ran (PR 1b, M-2): its answers are incomplete, nothing of it is stored.
@@ -2189,7 +2189,7 @@ export class AWSResourceDiscoveryService {
           });
         }
 
-        const costSummary = summarizeDetectors(observations, riSucceeded, riRecommendations);
+        const costSummary = summarizeDetectors(observations, riSucceeded, riRecommendations, riFailureReason);
         const costDetail = { summary: costSummary, counts: costCounts ?? null };
 
         if (costSummary.state === 'failed') {
