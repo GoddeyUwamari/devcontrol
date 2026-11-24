@@ -14,12 +14,13 @@ import GitHubIntegrationPage from '../page'
 
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
 vi.mock('@/lib/github-connection/navigate', () => ({ goToGitHub: vi.fn() }))
-const servicesState: { data: { id: string; name: string }[] | undefined; isError: boolean } = { data: [], isError: false }
+const refetchServices = vi.fn()
+const servicesState: { data: { id: string; name: string }[] | undefined; isError: boolean; refetch: () => void } = { data: [], isError: false, refetch: () => refetchServices() }
 const servicesEnabled = vi.fn()
 vi.mock('@/lib/hooks/use-registered-services', () => ({
   useRegisteredServices: ({ enabled }: { enabled: boolean }) => {
     servicesEnabled(enabled)
-    return enabled ? servicesState : { data: undefined, isError: false }
+    return enabled ? servicesState : { data: undefined, isError: false, refetch: vi.fn() }
   },
 }))
 
@@ -196,6 +197,28 @@ describe('board 5: each repository state, from the server row', () => {
     expect(await screen.findByTestId('github-repositories-failed')).toHaveTextContent("Couldn't load repositories.")
     expect(screen.queryByTestId('github-repo-table')).toBeNull()
     expect(document.body.textContent).not.toMatch(/payments-api|web-app|Demo data/)
+  })
+})
+
+describe('the workspace\'s services could not be listed (founder ruling §7.1)', () => {
+  it('"Couldn\'t load your services." with Try again, which reads them again; selects disabled, nothing sent', async () => {
+    servicesState.data = undefined
+    servicesState.isError = true
+    renderPage()
+    const failed = await screen.findByTestId('github-services-failed')
+    expect(failed).toHaveTextContent("Couldn't load your services.")
+    fireEvent.click(within(failed).getByRole('button', { name: 'Try again' }))
+    expect(refetchServices).toHaveBeenCalledTimes(1)
+    expect(within(await row('r-web')).getByLabelText('Service for web-app')).toBeDisabled()
+    expect(mockPut).not.toHaveBeenCalled()
+  })
+
+  it('members never see it (they get no selects)', async () => {
+    servicesState.isError = true
+    connection = on({ can_manage: false })
+    renderPage()
+    await table()
+    expect(screen.queryByTestId('github-services-failed')).toBeNull()
   })
 })
 

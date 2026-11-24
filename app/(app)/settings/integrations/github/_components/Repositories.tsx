@@ -29,7 +29,7 @@ import {
   type RowStatus,
   type ServiceOption,
 } from '@/lib/github-connection/repositories'
-import { CARD, TEXT_LINK } from '@/components/integrations/parts'
+import { BUTTON_OUTLINE, CARD, TEXT_LINK } from '@/components/integrations/parts'
 
 /**
  * Board 5 (desktop table) and board 8 (phone cards) of the GitHub screen
@@ -58,6 +58,8 @@ export interface RepositoriesProps {
   repositories: readonly GitHubRepository[]
   services: readonly ServiceOption[]
   servicesFailed?: boolean
+  /** Read the workspace's services again ("Try again" next to "Couldn't load your services."). */
+  onRetryServices?: () => void
   canManage: boolean
   /** The demo sample: everything shown, nothing enabled, nothing sent. */
   demo?: boolean
@@ -233,7 +235,15 @@ export function Repositories(props: RepositoriesProps) {
         </div>
         {createService}
       </div>
-      {props.servicesFailed && editable && <p data-testid="github-services-failed" role="alert" className="m-0 text-meta text-ink-danger md:px-6 md:pt-3">{REPO_COPY.servicesFailed}</p>}
+      {props.servicesFailed && editable && (
+        // Founder ruling (§7.1): approved, with a "Try again" button like N9.
+        <div data-testid="github-services-failed" role="alert" className="flex flex-wrap items-center gap-3 md:px-6 md:pt-3">
+          <p className="m-0 text-meta text-ink-danger">{REPO_COPY.servicesFailed}</p>
+          {props.onRetryServices && (
+            <button type="button" data-testid="github-services-retry" onClick={props.onRetryServices} className={BUTTON_OUTLINE}>{COPY.tryAgain}</button>
+          )}
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <p data-testid="github-repositories-none" className="m-0 text-ui text-ink-muted md:px-6 md:py-5">

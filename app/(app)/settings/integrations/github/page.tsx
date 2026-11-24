@@ -110,6 +110,7 @@ export default function GitHubIntegrationPage() {
           repositories={repositories.data}
           services={(services.data ?? []).map((s) => ({ id: s.id, name: s.name }))}
           servicesFailed={services.isError}
+          onRetryServices={() => void services.refetch()}
           canManage={canManage}
           heldEventDays={heldEventDays}
           now={now}

@@ -163,6 +163,15 @@ describe('the GitHub tile while the GitHub App is switched on (D8b-2, board 7)',
     expect(await screen.findByTestId('developers-github-link')).toHaveTextContent('Manage GitHub connection →')
   })
 
+  it.each([[[]], [[INSTALLATION]]])('a member (can_manage false): "View GitHub →" to the GitHub page, never Connect or Manage (installations: %j)', async (installations) => {
+    github.state = { ...on(installations), can_manage: false }
+    renderPage()
+    const link = await screen.findByTestId('developers-github-link')
+    expect(link).toHaveTextContent('View GitHub →')
+    expect(link).toHaveAttribute('href', '/settings/integrations/github')
+    expect(document.body.textContent).not.toMatch(/Connect GitHub →|Manage GitHub connection →/)
+  })
+
   it('switched off: "Coming soon" and no link, as before', async () => {
     renderPage()
     await vi.waitFor(() => expect(githubConnectionService.get).toHaveBeenCalled())

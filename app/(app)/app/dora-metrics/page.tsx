@@ -107,6 +107,9 @@ export default function DORAMetricsPage() {
     ? githubSurface(github.connection.data, github.repositories.isSuccess ? github.repositories.data : undefined)
     : null;
   const githubOn = githubState !== null && githubState.kind !== 'off';
+  // Founder ruling (d8b2-build.md §7.3): until GET /api/integrations/github has answered, or if it
+  // failed, no banner at all (never "coming soon" while the feature may be on). Switched off: today's banner.
+  const githubUnknown = live && !github.connection.isSuccess;
   const { data: benchmarksData, refetch: refetchBenchmarks } = useQuery<{ success: boolean; data: CustomBenchmark[] }>({
     queryKey: ['dora-benchmarks'],
     queryFn: async () => { const r = await api.get<{ success: boolean; data: CustomBenchmark[] }>(BENCHMARK_API); return r.data; },
@@ -199,7 +202,7 @@ export default function DORAMetricsPage() {
         </div>
       </div>
 
-      {showBanner && <NoDataBanner github={githubOn ? githubState : null} />}
+      {showBanner && !githubUnknown && <NoDataBanner github={githubOn ? githubState : null} />}
 
       {/* Loading */}
       {!isDemoActive && isLoading && (

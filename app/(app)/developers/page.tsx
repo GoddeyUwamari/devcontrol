@@ -116,6 +116,9 @@ export default function DevelopersPage() {
   const githubData = !demoMode && github.connection.isSuccess ? github.connection.data : null
   const githubOn = githubData !== null && githubData.configured && !githubData.demo
   const githubConnected = githubData !== null && githubData.configured && !githubData.demo && githubData.installations.length > 0
+  // Founder ruling (d8b2-build.md §7.2): owners and admins get Connect / Manage, as the chip; members "View GitHub →".
+  const githubCanManage = githubData !== null && githubData.configured && githubData.can_manage
+  const githubTileText = !githubCanManage ? SURFACE_COPY.tileView : githubConnected ? SURFACE_COPY.tileManage : SURFACE_COPY.tileConnect
 
   useEffect(() => {
     if (demoMode) return
@@ -415,7 +418,7 @@ export default function DevelopersPage() {
                       )}
                       {kind === 'github' && (
                         <a href={GITHUB_PAGE_HREF} data-testid="developers-github-link" className="text-xs text-violet-700 no-underline self-start hover:text-violet-900">
-                          {githubConnected ? SURFACE_COPY.tileManage : SURFACE_COPY.tileConnect}
+                          {githubTileText}
                         </a>
                       )}
                     </div>

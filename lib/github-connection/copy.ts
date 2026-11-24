@@ -214,7 +214,7 @@ export const REPO_COPY = {
   saveMaybe: 'The save may still be processing. Refresh this list to check.',
   /** N9 */
   loadFailed: "Couldn't load repositories.",
-  /** Not in §g: the workspace's services could not be listed (flagged in d8b2-build.md). */
+  /** Founder-approved (d8b2-build.md §7.1), shown with "Try again". */
   servicesFailed: "Couldn't load your services.",
   /** N10 */
   none: 'No repositories yet.',
@@ -305,6 +305,8 @@ export const SURFACE_COPY = {
   chipAttention: 'GitHub · Needs attention',
   tileConnect: 'Connect GitHub →',
   tileManage: 'Manage GitHub connection →',
+  /** Founder ruling (§7.2): members, who can't connect or manage. */
+  tileView: 'View GitHub →',
   eiNotConnected: 'Connect GitHub to record deployments from GitHub Actions. You can also record them by hand.',
   eiConnect: 'Connect GitHub →',
   eiConnected: "GitHub is connected. Deployments appear here after the next deploy that matches a repository's deploy rule.",
