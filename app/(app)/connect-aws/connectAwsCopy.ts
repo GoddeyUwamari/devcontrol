@@ -195,8 +195,16 @@ export const CONTINUE_TO_DASHBOARD = 'Continue to dashboard →'
 /** The actions only DevControlReadExtras grants; SecurityAudit and ViewOnlyAccess both grant the other four. */
 export const INLINE_POLICY_ACTIONS: readonly string[] = ['ce:GetCostAndUsage', 'resource-explorer-2:Search']
 
+/**
+ * Actions ViewOnlyAccess grants and SecurityAudit does not: the calls the Resource Explorer check
+ * makes before its Search. Shown only when AWS refused one of them (region-access PR 1 N-1).
+ */
+export const VIEW_ONLY_ACCESS_ACTIONS: readonly string[] = ['resource-explorer-2:GetIndex', 'resource-explorer-2:GetDefaultView']
+
 /** What to do about one action the permission check could not confirm. */
 export function permissionFixText(action: string, status: 'denied' | 'not_verified'): string {
+  // Founder-approved 2026-11-25 (region-access PR 1 fix round, N-1).
+  if (status === 'denied' && VIEW_ONLY_ACCESS_ACTIONS.includes(action)) return "To fix: ViewOnlyAccess allows this. Check that it's attached to the role."
   if (INLINE_POLICY_ACTIONS.includes(action)) {
     if (status === 'denied') return "To fix: this permission comes from the DevControlReadExtras inline policy. Check that it's attached and that its JSON matches the policy on this page."
     return action === 'resource-explorer-2:Search'

@@ -36,6 +36,11 @@ export type PermissionCheckStatus = 'verified' | 'denied' | 'not_verified'
 export interface PermissionCheckEntry {
   action: string
   status: PermissionCheckStatus
+  /**
+   * Only on a denied entry: the call AWS refused when it was not `action` itself but a call
+   * made before it (the Resource Explorer check's GetIndex or GetDefaultView, region-access PR 1 N-1).
+   */
+  refusedAction?: string
 }
 export interface PermissionCheckReport {
   checks: PermissionCheckEntry[]
@@ -267,6 +272,15 @@ export const NO_CONNECTION_CHECKS: ConnectionChecks = {
 
 const LAST_RESULTS: readonly string[] = ['ok', 'failing', 'lost']
 const PERMISSION_STATUSES: readonly string[] = ['verified', 'denied', 'not_verified']
+/** The only refusedAction values the backend sends (connect-permission-check.ts PREREQUISITE_ACTIONS). */
+const REFUSED_PREREQUISITES: readonly string[] = ['resource-explorer-2:GetIndex', 'resource-explorer-2:GetDefaultView']
+
+/** One saved permission entry as the page uses it: a refusedAction is kept only on a denied Resource Explorer entry, and only when known. */
+function permissionEntry({ action, status, refusedAction }: PermissionCheckEntry): PermissionCheckEntry {
+  return action === 'resource-explorer-2:Search' && status === 'denied' && typeof refusedAction === 'string' && REFUSED_PREREQUISITES.includes(refusedAction)
+    ? { action, status, refusedAction }
+    : { action, status }
+}
 const ATTACHED: readonly string[] = ['attached', 'missing']
 const READ_EXTRAS: readonly string[] = ['matches', 'differs', 'missing', 'unreadable']
 
@@ -304,7 +318,7 @@ export function parseConnectionChecks(body: unknown): ConnectionChecks | null {
           checks: permission.checks
             .filter((c): c is PermissionCheckEntry =>
               !!c && typeof (c as PermissionCheckEntry).action === 'string' && PERMISSION_STATUSES.includes((c as PermissionCheckEntry).status))
-            .map(({ action, status }) => ({ action, status })),
+            .map(permissionEntry),
           checkedAt: permission.checkedAt,
         }
       : null

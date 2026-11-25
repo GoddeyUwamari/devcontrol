@@ -417,6 +417,23 @@ describe('Connect AWS page: checking and connected', () => {
     expectNoRemovedText()
   })
 
+  it.each(['resource-explorer-2:GetDefaultView', 'resource-explorer-2:GetIndex'])('T10b Resource Explorer %s refused (N-1): the row names the refused call and ViewOnlyAccess, never Search or DevControlReadExtras', async (refusedAction) => {
+    mockConnect.mockResolvedValue({
+      account: ACCOUNT,
+      permissionCheck: { checks: ALL_VERIFIED.map((c) => c.action === 'resource-explorer-2:Search' ? { ...c, status: 'denied', refusedAction } : c) },
+    })
+    renderPage()
+    fireEvent.click(await fillValidRoleArnAndGetButton())
+    const panel = await screen.findByTestId('permission-warnings')
+    expect([...panel.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      `Search Resource Explorer ${refusedAction} — AWS refused this call. DevControl features that rely on it may not work until the role allows it.To fix: ViewOnlyAccess allows this. Check that it's attached to the role.`,
+    ])
+    expect(panel.textContent).not.toContain('resource-explorer-2:Search')
+    expect(panel.textContent).not.toContain('DevControlReadExtras')
+    expect(within(panel).queryByText('DevControlReadExtras (JSON)')).toBeNull()
+    expect(screen.getByTestId('fact-permissions').textContent).toMatch(/5 of 6 passed/)
+  })
+
   it('T11 a server without the permission check: board 4 without the Permission checks fact', async () => {
     mockConnect.mockResolvedValue({ account: ACCOUNT, permissionCheck: null })
     renderPage()
@@ -824,6 +841,9 @@ describe('Connect AWS page: fix text per action', () => {
     ['resource-explorer-2:Search', 'denied', "To fix: this permission comes from the DevControlReadExtras inline policy. Check that it's attached and that its JSON matches the policy on this page."],
     ['ce:GetCostAndUsage', 'not_verified', "To check: this permission comes from DevControlReadExtras. Check that it's attached."],
     ['resource-explorer-2:Search', 'not_verified', 'To check: this permission comes from DevControlReadExtras. If it is attached, Resource Explorer may not be set up in this account.'],
+    // Region-access PR 1 N-1: the Resource Explorer calls made before the Search come from ViewOnlyAccess only.
+    ['resource-explorer-2:GetIndex', 'denied', "To fix: ViewOnlyAccess allows this. Check that it's attached to the role."],
+    ['resource-explorer-2:GetDefaultView', 'denied', "To fix: ViewOnlyAccess allows this. Check that it's attached to the role."],
     ...['ec2:DescribeRegions', 's3:ListAllMyBuckets', 'lambda:ListFunctions', 'cloudwatch:GetMetricData'].flatMap((action) => [
       [action, 'denied', "To fix: SecurityAudit and ViewOnlyAccess both allow this. Check that they're attached to the role."],
       [action, 'not_verified', "To check: SecurityAudit and ViewOnlyAccess both allow this. Check that they're attached to the role."],

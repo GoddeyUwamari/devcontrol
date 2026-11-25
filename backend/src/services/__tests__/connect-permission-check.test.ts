@@ -8,6 +8,7 @@ import { GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
 import { GetDefaultViewCommand, GetIndexCommand, SearchCommand } from '@aws-sdk/client-resource-explorer-2';
 import {
   PERMISSION_CHECKS,
+  knownRefusedAction,
   permissionStatusOf,
   runPermissionCheck,
   type ProbeClients,
@@ -180,6 +181,10 @@ describe('runPermissionCheck: the Resource Explorer Search probe (region-access 
     return report.checks.find((e) => e.action === 'resource-explorer-2:Search')!.status;
   };
   const searches = (mock: jest.Mock) => mock.mock.calls.filter(([command]) => command instanceof SearchCommand).map(([command]) => command.input);
+  const searchEntry = async (resourceExplorer: jest.Mock) => {
+    const report = await runPermissionCheck({ credentials: creds, region: 'eu-central-1', context: 'test', clients: clients({ resourceExplorer }) });
+    return report.checks.find((e) => e.action === 'resource-explorer-2:Search');
+  };
 
   it('index + default view: Search is sent WITH the view ARN, and is verified', async () => {
     const mock = explorer();
@@ -202,16 +207,40 @@ describe('runPermissionCheck: the Resource Explorer Search probe (region-access 
     expect(searches(mock)).toEqual([{ ViewArn: VIEW_ARN, QueryString: '', MaxResults: 1 }]);
   });
 
+  it('Search 403 itself: the entry names no other refused call (review N-1)', async () => {
+    expect(await searchEntry(explorer({ search: throws(awsError('AccessDeniedException', 403)) })))
+      .toEqual({ action: 'resource-explorer-2:Search', status: 'denied' });
+  });
+
   it('GetDefaultView refused (403): denied by the existing rule, not "no view"; no Search', async () => {
     const mock = explorer({ view: throws(awsError('AccessDeniedException', 403)) });
     expect(await searchStatus(mock)).toBe('denied');
     expect(searches(mock)).toEqual([]);
   });
 
+  it('GetDefaultView refused (403): the entry names GetDefaultView as the refused call, not Search (review N-1)', async () => {
+    expect(await searchEntry(explorer({ view: throws(awsError('AccessDeniedException', 403)) }))).toEqual({
+      action: 'resource-explorer-2:Search',
+      status: 'denied',
+      refusedAction: 'resource-explorer-2:GetDefaultView',
+    });
+    expect(JSON.stringify(warnSpy.mock.calls)).toContain(
+      'Permission check resource-explorer-2:Search: denied (AccessDeniedException at resource-explorer-2:GetDefaultView) for test'
+    );
+  });
+
   it('GetDefaultView failing otherwise (throttled): not_verified by the existing rule; no Search', async () => {
     const mock = explorer({ view: throws(awsError('ThrottlingException', 400)) });
     expect(await searchStatus(mock)).toBe('not_verified');
     expect(searches(mock)).toEqual([]);
+  });
+
+  it('a prerequisite failing without a refusal (throttled, not found) carries no refusedAction; the log names the call', async () => {
+    expect(await searchEntry(explorer({ view: throws(awsError('ThrottlingException', 400)) })))
+      .toEqual({ action: 'resource-explorer-2:Search', status: 'not_verified' });
+    expect(await searchEntry(explorer({ index: throws(awsError('ResourceNotFoundException', 404)) })))
+      .toEqual({ action: 'resource-explorer-2:Search', status: 'not_verified' });
+    expect(JSON.stringify(warnSpy.mock.calls)).toContain('not_verified (ThrottlingException at resource-explorer-2:GetDefaultView)');
   });
 
   it('no index (ResourceNotFoundException, or an index being created): no GetDefaultView, no Search, not_verified', async () => {
@@ -226,5 +255,44 @@ describe('runPermissionCheck: the Resource Explorer Search probe (region-access 
     const mock = explorer({ index: throws(awsError('AccessDeniedException', 403)) });
     expect(await searchStatus(mock)).toBe('denied');
     expect(searches(mock)).toEqual([]);
+  });
+
+  it('GetIndex refused (403): the entry names GetIndex as the refused call, not Search (review N-1)', async () => {
+    expect(await searchEntry(explorer({ index: throws(awsError('AccessDeniedException', 403)) }))).toEqual({
+      action: 'resource-explorer-2:Search',
+      status: 'denied',
+      refusedAction: 'resource-explorer-2:GetIndex',
+    });
+  });
+
+  it('a refused prerequisite never leaks onto another probe: other actions carry no refusedAction', async () => {
+    const report = await runPermissionCheck({
+      credentials: creds,
+      region: 'eu-central-1',
+      context: 'test',
+      clients: clients({
+        resourceExplorer: explorer({ view: throws(awsError('AccessDeniedException', 403)) }),
+        s3: jest.fn().mockRejectedValue(awsError('AccessDenied', 403)),
+      }),
+    });
+    expect(report.checks.filter((e) => 'refusedAction' in e).map((e) => e.action)).toEqual(['resource-explorer-2:Search']);
+  });
+});
+
+describe('knownRefusedAction (what is stored and served as refusedAction)', () => {
+  const SEARCH = 'resource-explorer-2:Search';
+
+  it('keeps GetIndex and GetDefaultView on a denied Resource Explorer Search entry only', () => {
+    expect(knownRefusedAction(SEARCH, 'denied', 'resource-explorer-2:GetIndex')).toBe('resource-explorer-2:GetIndex');
+    expect(knownRefusedAction(SEARCH, 'denied', 'resource-explorer-2:GetDefaultView')).toBe('resource-explorer-2:GetDefaultView');
+    expect(knownRefusedAction(SEARCH, 'not_verified', 'resource-explorer-2:GetDefaultView')).toBeUndefined();
+    expect(knownRefusedAction(SEARCH, 'verified', 'resource-explorer-2:GetIndex')).toBeUndefined();
+    expect(knownRefusedAction('lambda:ListFunctions', 'denied', 'resource-explorer-2:GetIndex')).toBeUndefined();
+  });
+
+  it('drops anything else (another action, AWS text, a non-string)', () => {
+    for (const value of ['resource-explorer-2:Search', 's3:ListAllMyBuckets', 'User: arn:aws:sts::123456789012:x', '', null, undefined, 7, {}]) {
+      expect(knownRefusedAction(SEARCH, 'denied', value)).toBeUndefined();
+    }
   });
 });
