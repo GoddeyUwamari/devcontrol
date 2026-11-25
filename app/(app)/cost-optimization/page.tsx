@@ -189,9 +189,16 @@ function foundDate(iso: string | undefined): string | null {
  * "Up to $X/mo" with "upper bound" in grey, no basis as "No dollar estimate" in grey.
  */
 function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
-  // An idle RDS estimate missing a price field or a figure above $0 is no estimate here (C1b B-2): never "$0/mo".
-  const rdsWithheld = rdsIdleEstimateWithheld(rec);
-  const kind = rdsWithheld ? null : savingsBasisKind(rec);
+  // An idle RDS estimate missing a price field or a figure above $0 is no estimate here (C1b B-2): never "$0/mo",
+  // never the figure with an unapproved line. Grey like any figure with no basis; nothing under it.
+  if (rdsIdleEstimateWithheld(rec)) {
+    return (
+      <div className="sm:text-right" data-testid="opportunity-savings">
+        <p className="text-section tabular-nums sm:whitespace-nowrap text-ink-muted">{NO_DOLLAR_ESTIMATE}</p>
+      </div>
+    );
+  }
+  const kind = savingsBasisKind(rec);
   // An idle RDS instance-hour estimate's explanation (C1b): this card only, never the compact rows elsewhere.
   const rdsExplanation = rdsIdleSavingsExplanation(rec);
   return (
@@ -199,7 +206,7 @@ function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
       <p className={cn('text-section tabular-nums sm:whitespace-nowrap', kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
         {isLowActivityFinding(rec)
           ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency, savingsBasisKind(rec))
-          : rdsWithheld ? NO_DOLLAR_ESTIMATE : formatRecommendationSavings(rec, formatSavingsCurrency)}
+          : formatRecommendationSavings(rec, formatSavingsCurrency)}
       </p>
       {isSavingsCeiling(rec) && (
         <p className="text-label text-ink-muted font-medium">{UPPER_BOUND}</p>
