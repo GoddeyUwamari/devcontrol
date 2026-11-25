@@ -50,6 +50,35 @@ export function lowActivityListPriceBasis(instanceType: string): string {
   return `Estimated from list price for ${instanceType} in us-east-1. ${LOW_ACTIVITY_STORAGE_NOTE}`
 }
 
+// ─── Idle RDS instance-hour estimate (C1b) ──────────────────────────────────
+
+const IDLE_RDS_ISSUE = 'Idle RDS Instance'
+
+/** What every idle RDS explanation ends with (founder-approved copy, C1b Q11). */
+const RDS_IDLE_SAVINGS_CAVEATS =
+  "instance hours only; a reserved instance would lower the actual saving. Storage and backups are still billed while it's stopped, and AWS restarts a stopped database after 7 days."
+
+const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+
+/**
+ * The explanation under an idle RDS finding's figure on the Cost Optimization
+ * card: only for an estimate (savings_basis 'estimated:', see
+ * lib/savings-basis.ts), never for "No dollar estimate". Region, class, engine
+ * and deployment are the finding's own price key (metadata.price_*, written by
+ * backend/src/services/rds-idle-evaluation.ts rdsIdleSavingsMetadata). If one
+ * is missing, the same sentence without the specifics -- never a guessed value.
+ */
+export function rdsIdleSavingsExplanation(rec: { issue?: string | null; metadata?: Record<string, unknown> | null }): string | null {
+  if (rec.issue !== IDLE_RDS_ISSUE) return null
+  const m = rec.metadata
+  if (!m || typeof m.savings_basis !== 'string' || !m.savings_basis.startsWith('estimated:')) return null
+  const { price_region: region, price_instance_class: instanceClass, price_engine_label: engine, price_deployment: deployment } = m
+  if (nonEmpty(region) && nonEmpty(instanceClass) && nonEmpty(engine) && nonEmpty(deployment)) {
+    return `Estimated from the ${region} on-demand list price for ${instanceClass} (${engine}, ${deployment}), ${RDS_IDLE_SAVINGS_CAVEATS}`
+  }
+  return `Estimated from the on-demand list price, ${RDS_IDLE_SAVINGS_CAVEATS}`
+}
+
 /** Shown read-only on Optimization Controls where the adjustable ec2_idle control was (C-6). */
 export const LOW_ACTIVITY_FIXED_THRESHOLDS =
   'Low-activity instances: peak CPU under 10% and network under 5 MB a day, every day for 30 days, and not behind a load balancer or in an Auto Scaling group. These thresholds are fixed.'

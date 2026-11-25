@@ -28,7 +28,7 @@ import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { cn, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
 import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings, savingsBasisKind } from '@/lib/savings-basis';
-import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline } from '@/lib/finding-display';
+import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline, rdsIdleSavingsExplanation } from '@/lib/finding-display';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -190,6 +190,8 @@ function foundDate(iso: string | undefined): string | null {
  */
 function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
   const kind = savingsBasisKind(rec);
+  // An idle RDS instance-hour estimate's explanation (C1b): this card only, never the compact rows elsewhere.
+  const rdsExplanation = rdsIdleSavingsExplanation(rec);
   return (
     <div className="sm:text-right" data-testid="opportunity-savings">
       <p className={cn('text-section tabular-nums sm:whitespace-nowrap', kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
@@ -209,6 +211,9 @@ function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
             ? lowActivityListPriceBasis(rec.metadata.instance_type)
             : LOW_ACTIVITY_STORAGE_NOTE}
         </p>
+      )}
+      {rdsExplanation && (
+        <p className="text-label text-ink-muted font-medium sm:max-w-[16rem] sm:ml-auto" data-testid="rds-idle-savings-basis">{rdsExplanation}</p>
       )}
     </div>
   );

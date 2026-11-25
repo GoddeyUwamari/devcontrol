@@ -115,7 +115,7 @@ describe('C1: coverage comes from the registry', () => {
     expect(names).toHaveLength(12)
     expect(names).toEqual(expect.arrayContaining(['Idle RDS instances', 'Old EBS snapshots']))
     const how = within(screen.getByTestId('how-checks-work'))
-    expect(how.getByText('No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; no dollar estimate')).toBeInTheDocument()
+    expect(how.getByText("No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; savings are instance hours at the region's list price, not storage or backups")).toBeInTheDocument()
     expect(how.getByText('Your own snapshots older than 180 days that no registered AMI, AWS Backup plan or Data Lifecycle Manager policy uses; locked snapshots are excluded; savings shown as an upper bound')).toBeInTheDocument()
 
     const planned = within(screen.getByTestId('planned-checks'))
@@ -157,7 +157,7 @@ describe('C1: the new findings on the page', () => {
     svc.getStats.mockResolvedValue(stats())
   })
 
-  it('idle RDS: RDS chip, its check named, "No dollar estimate"', async () => {
+  it('idle RDS (a C1 row stored before C1b: $0, no basis): RDS chip, its check named, "No dollar estimate", no C1b explanation', async () => {
     renderPage()
     const cards = await screen.findAllByTestId('opportunity-card')
     const card = cards.find((c) => within(c).queryByText('Idle RDS Instance'))!
@@ -165,6 +165,7 @@ describe('C1: the new findings on the page', () => {
     expect(within(card).getByTestId('opportunity-meta')).toHaveTextContent('Idle RDS instances')
     expect(card).toHaveTextContent('No dollar estimate')
     expect(card).not.toHaveTextContent('$')
+    expect(within(card).queryByTestId('rds-idle-savings-basis')).not.toBeInTheDocument()
   })
 
   it('old snapshot: EBS chip (its rule\'s service), its check named, "Up to $25/mo" upper bound', async () => {

@@ -245,6 +245,12 @@ describe('C1 counts on the run record (C1 review S-1)', () => {
       not_flagged: { connections: 0, cpu_peak: 0, read_iops: 0, write_iops: 0 },
       couldnt_check: { not_available: 0, too_new: 0, cloudwatch_failed: 2, cloudwatch_incomplete: 0 },
       excluded: { aurora: 1, db_cluster_member: 0, read_replica: 0, read_replica_source: 0, rds_custom: 0, stopped: 1 },
+      // C1b: nothing flagged, so nothing priced or unpriced.
+      priced: 0,
+      no_price: {
+        missing_engine_or_class: 0, missing_license_model: 0, missing_deployment: 0, unknown_placement: 0, outposts: 0,
+        local_zone: 0, unsupported_engine_or_license: 0, no_price_for_region: 0, no_price_for_configuration: 0,
+      },
     });
     expect(snapshotCheck).toMatchObject({ rule_id: 'ebs_old_snapshots', outcome: 'complete', detected: 1, unknown: 0 });
     expect(snapshotCheck.old_snapshots).toEqual({

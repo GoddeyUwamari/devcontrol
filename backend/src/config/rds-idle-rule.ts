@@ -25,8 +25,18 @@
  * that opens and closes between two samples can be missed. The CPU and IOPS
  * limits are the backstop.
  *
- * No dollar figure: DevControl has no defensible RDS instance or storage price
- * source, so findings carry no savings estimate and a fixed Low severity.
+ * Savings (version 2, C1b): an estimate of instance hours only -- the exact
+ * on-demand instance-hour price for the instance's region, engine, licence
+ * model, instance class and deployment (Single-AZ / Multi-AZ), from
+ * config/aws-pricing.ts rdsInstanceHourlyPrice, x 730 hours. Storage,
+ * Provisioned IOPS, storage throughput, backups, snapshots, Extended Support,
+ * the public IPv4 address and any reservation or discount are outside the
+ * figure. Severity comes from the estimate (the NAT gateway rule's policy). A
+ * key with no exact price (unknown licence model or deployment, an Outposts or
+ * Local Zone instance, Oracle CDB, SQL Server Developer, Db2 marketplace, a
+ * region or class the table doesn't have) gets no dollar figure and a fixed Low
+ * severity -- never $0 as a figure and never another key's price. Version 1
+ * stored no figure at all.
  *
  * RDS_IDLE_RULE is copied verbatim into every finding it produces
  * (metadata.rule), so a finding stays reconstructable after the rule changes.
@@ -46,7 +56,7 @@ function deepFreeze<T>(value: T): T {
 
 export const RDS_IDLE_RULE = deepFreeze({
   id: 'rds_idle',
-  version: 1,
+  version: 2,
   window: { days: 30, basis: 'complete_utc_days', settle_lag_hours: 2 },
   metrics: {
     namespace: 'AWS/RDS',
@@ -68,7 +78,18 @@ export const RDS_IDLE_RULE = deepFreeze({
     evaluated_status: 'available',
     excluded: ['aurora', 'db_cluster_member', 'read_replica', 'read_replica_source', 'rds_custom', 'stopped'],
   },
-  savings: { estimate: 'none', reason: 'no_price_source', severity: 'LOW' },
+  savings: {
+    basis: 'estimate',
+    price: 'regional_on_demand_instance_hour',
+    key: ['region', 'engine', 'license_model', 'instance_class', 'deployment'],
+    hours_per_month: 730,
+    includes: ['instance_hours'],
+    excludes: ['storage', 'provisioned_iops', 'storage_throughput', 'backup_storage', 'snapshots', 'extended_support', 'public_ipv4', 'reservations_and_discounts'],
+    not_priced: ['outposts', 'local_zone', 'oracle_cdb', 'sqlserver_developer', 'db2_marketplace', 'unknown_license_model', 'unknown_deployment'],
+    missing_price: 'no_estimate',
+    severity: 'from_estimate',
+    severity_without_price: 'LOW',
+  },
 } as const);
 
 export type RdsIdleRule = typeof RDS_IDLE_RULE;
