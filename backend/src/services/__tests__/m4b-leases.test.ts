@@ -35,7 +35,7 @@ import {
   onTaggedConnection,
 } from '../scan-session';
 import { DISCOVERY_WARNING_SCAN_LEASE_LOST } from '../discovery-warnings';
-import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { explorerBeforeSearch, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 
 const dbConfig = () => ({
   host: process.env.DB_HOST || 'localhost',
@@ -105,7 +105,8 @@ function fake(answers: Record<string, (input: any) => any>) {
 function explorer(before?: () => Promise<void>): ResourceExplorer2Client {
   const client = new ResourceExplorer2Client({ region: HOME });
   (client as any).send = jest.fn(async (command: unknown) => {
-    if (isGetIndex(command)) return ACTIVE_INDEX;
+    const beforeSearch = explorerBeforeSearch(command);
+    if (beforeSearch) return beforeSearch;
     if (before) await before();
     return { Resources: [], Count: { TotalResources: 0, Complete: true } };
   });

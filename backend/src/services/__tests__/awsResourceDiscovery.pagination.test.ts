@@ -33,6 +33,7 @@ import {
 import { ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { ResourceExplorerService } from '../resourceExplorer.service';
+import { DEFAULT_VIEW } from './helpers/scan-source';
 
 /**
  * AWS SDK v3's generated paginators (paginateDescribeInstances, paginateListServices,
@@ -164,10 +165,12 @@ describe('AWSResourceDiscoveryService pagination', () => {
       const client = withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), send);
 
       const explorer = new ResourceExplorerService();
-      const result = await explorer.search(client, 'us-east-1');
+      const result = await explorer.search(client, 'us-east-1', DEFAULT_VIEW.ViewArn);
 
       const searchCalls = send.mock.calls.filter(([cmd]) => cmd instanceof SearchCommand);
       expect(searchCalls).toHaveLength(2); // paginateSearch followed NextToken, never one call
+      // Region-access PR 1: every page names the view (never a Search without a ViewArn).
+      expect(searchCalls.map(([cmd]) => (cmd as SearchCommand).input.ViewArn)).toEqual([DEFAULT_VIEW.ViewArn, DEFAULT_VIEW.ViewArn]);
       expect(result.success).toBe(true);
       if (!result.success) throw new Error('unreachable');
       expect(result.resources).toHaveLength(15);
@@ -183,7 +186,7 @@ describe('AWSResourceDiscoveryService pagination', () => {
       const client = withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), send);
 
       const explorer = new ResourceExplorerService();
-      const result = await explorer.search(client, 'us-east-1');
+      const result = await explorer.search(client, 'us-east-1', DEFAULT_VIEW.ViewArn);
 
       const searchCalls = send.mock.calls.filter(([cmd]) => cmd instanceof SearchCommand);
       expect(searchCalls).toHaveLength(1);
@@ -224,7 +227,7 @@ describe('AWSResourceDiscoveryService pagination', () => {
       const client = withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), send);
 
       const explorer = new ResourceExplorerService();
-      const searchResult = await explorer.search(client, 'us-east-1');
+      const searchResult = await explorer.search(client, 'us-east-1', DEFAULT_VIEW.ViewArn);
       expect(searchResult.success).toBe(true);
       if (!searchResult.success) throw new Error('unreachable');
 

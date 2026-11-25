@@ -52,6 +52,26 @@ describe('parseConnectionChecks', () => {
     })
   })
 
+  it('refusedAction (region-access PR 1 N-1): kept only on a denied Resource Explorer Search entry, and only GetIndex or GetDefaultView', () => {
+    const SEARCH = 'resource-explorer-2:Search'
+    const checks = [
+      { action: SEARCH, status: 'denied', refusedAction: 'resource-explorer-2:GetDefaultView' },
+      { action: SEARCH, status: 'denied', refusedAction: 'resource-explorer-2:GetIndex' },
+      { action: SEARCH, status: 'denied', refusedAction: 'User: arn:aws:sts::123456789012:x' },
+      { action: SEARCH, status: 'not_verified', refusedAction: 'resource-explorer-2:GetIndex' },
+      { action: 'ce:GetCostAndUsage', status: 'denied', refusedAction: 'resource-explorer-2:GetIndex' },
+      { action: SEARCH, status: 'denied', refusedAction: 7 },
+    ]
+    expect(parseConnectionChecks({ ...body, permissionCheck: { checks, checkedAt: AT } })!.permissionCheck!.checks).toEqual([
+      { action: SEARCH, status: 'denied', refusedAction: 'resource-explorer-2:GetDefaultView' },
+      { action: SEARCH, status: 'denied', refusedAction: 'resource-explorer-2:GetIndex' },
+      { action: SEARCH, status: 'denied' },
+      { action: SEARCH, status: 'not_verified' },
+      { action: 'ce:GetCostAndUsage', status: 'denied' },
+      { action: SEARCH, status: 'denied' },
+    ])
+  })
+
   it('checkAgain only when the server sent it (owner)', () => {
     expect(parseConnectionChecks(body)!.checkAgain).toBeUndefined()
     expect(parseConnectionChecks({ ...body, checkAgain: { availableAt: null } })!.checkAgain).toEqual({ availableAt: null })

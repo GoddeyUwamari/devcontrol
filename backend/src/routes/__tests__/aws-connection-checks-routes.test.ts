@@ -356,6 +356,59 @@ describe('POST /api/aws/accounts: the new connection\'s checks are saved', () =>
   });
 });
 
+describe('Resource Explorer prerequisite refused (region-access PR 1 review N-1): refusedAction is saved and served', () => {
+  /** GetIndex ACTIVE; GetDefaultView refused with a 403; Search would answer (never reached). */
+  function refuseDefaultView() {
+    (probes.resourceExplorer.send as jest.Mock).mockImplementation(async (command: object) => {
+      const name = command.constructor.name;
+      if (name === 'GetIndexCommand') return { State: 'ACTIVE', Type: 'LOCAL' };
+      if (name === 'GetDefaultViewCommand') {
+        throw Object.assign(new Error('User: arn:aws:sts::123456789012:assumed-role/DevControlRole/x is not authorized'), {
+          name: 'AccessDeniedException',
+          $metadata: { httpStatusCode: 403 },
+        });
+      }
+      return {};
+    });
+  }
+  const reEntry = (checksList: Array<Record<string, unknown>>) => checksList.find((c) => c.action === 'resource-explorer-2:Search');
+
+  it('connect: the Search entry is denied with refusedAction GetDefaultView in the response, the row and the reload', async () => {
+    refuseDefaultView();
+    const who = await insertOrg();
+    actAs(who);
+    const res = await connect(roleArnFor(uniqueAccountId()));
+    expect(res.status).toBe(201);
+    const expected = { action: 'resource-explorer-2:Search', status: 'denied', refusedAction: 'resource-explorer-2:GetDefaultView' };
+    expect(reEntry(res.body.permissionCheck.checks)).toEqual(expected);
+    expect(reEntry((await checksRow(who.orgId)).permission_results)).toEqual(expected);
+    const reload = await checks(app2.url);
+    expect(reEntry(reload.body.data.permissionCheck.checks)).toEqual(expected);
+    // Every other entry is served as before: action and status only.
+    for (const entry of reload.body.data.permissionCheck.checks) {
+      if (entry.action !== 'resource-explorer-2:Search') expect(Object.keys(entry).sort()).toEqual(['action', 'status']);
+    }
+    expect(JSON.stringify(reload.body)).not.toMatch(/not authorized|123456789012/);
+  });
+
+  it('a stored refusedAction that is unknown, AWS text, on another action, or on an entry that is not denied is never served', async () => {
+    const who = await connected();
+    await pool.query(`UPDATE aws_connection_checks SET permission_results = $2::jsonb WHERE organization_id = $1`, [who.orgId, JSON.stringify([
+      { action: 'resource-explorer-2:Search', status: 'denied', refusedAction: 'User: arn:aws:sts::123456789012:x' },
+      { action: 's3:ListAllMyBuckets', status: 'verified', refusedAction: 'resource-explorer-2:GetIndex' },
+      { action: 'ce:GetCostAndUsage', status: 'not_verified', refusedAction: 'resource-explorer-2:GetDefaultView' },
+      { action: 'lambda:ListFunctions', status: 'denied', refusedAction: 'resource-explorer-2:GetIndex' },
+    ])]);
+    const res = await checks();
+    expect(res.body.data.permissionCheck.checks).toEqual([
+      { action: 'resource-explorer-2:Search', status: 'denied' },
+      { action: 's3:ListAllMyBuckets', status: 'verified' },
+      { action: 'ce:GetCostAndUsage', status: 'not_verified' },
+      { action: 'lambda:ListFunctions', status: 'denied' },
+    ]);
+  });
+});
+
 describe('GET /api/aws/accounts/checks and connection.health', () => {
   it('after a reload (another app instance): the saved results; never the role ID; checkAgain for the owner only', async () => {
     const who = await connected();

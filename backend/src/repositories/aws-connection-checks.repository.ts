@@ -33,7 +33,7 @@ import {
   type HealthRow,
 } from '../services/connection-health';
 import type { PolicyCompareResult } from '../services/connect-policy-compare';
-import type { PermissionCheckEntry } from '../services/connect-permission-check';
+import { knownRefusedAction, type PermissionCheckEntry } from '../services/connect-permission-check';
 import type { SourceStatus } from '../services/source-outcome';
 import { insertAuditEventInTransaction, type AuditRequestContext } from '../services/auditEvents.service';
 
@@ -82,6 +82,12 @@ export interface ConnectionChecksRow extends HealthRow {
 }
 
 type Db = Pick<ClientBase, 'query'>;
+
+/** The fields of a permission entry that are stored and served: action, status, and a known refusedAction (knownRefusedAction). */
+function savedPermissionEntry({ action, status, refusedAction }: PermissionCheckEntry): PermissionCheckEntry {
+  const refused = knownRefusedAction(action, status, refusedAction);
+  return refused ? { action, status, refusedAction: refused } : { action, status };
+}
 
 /** PostgreSQL's undefined_table: the migration is not applied yet. */
 export function isChecksTableMissing(error: unknown): boolean {
@@ -262,7 +268,7 @@ export async function saveCheckResults(
             SET permission_results = $3::jsonb, permission_checked_at = $4, permission_trigger = $5, updated_at = now()
           WHERE organization_id = $1 AND aws_account_id = $2
             AND (permission_checked_at IS NULL OR permission_checked_at <= $4)`,
-        [organizationId, awsAccountRowId, JSON.stringify(found.permission.checks.map(({ action, status }) => ({ action, status }))), found.permission.at, found.permission.trigger]
+        [organizationId, awsAccountRowId, JSON.stringify(found.permission.checks.map(savedPermissionEntry)), found.permission.at, found.permission.trigger]
       );
     }
     if (found.policy) await updatePolicy(client, organizationId, awsAccountRowId, found.policy);
@@ -394,7 +400,7 @@ export function connectionChecksView(row: ConnectionChecksRow | null, now: Date)
       ? {
           checks: row.permission_results
             .filter((c) => c && typeof c.action === 'string' && PERMISSION_STATUSES.has(c.status))
-            .map(({ action, status }) => ({ action, status })),
+            .map(savedPermissionEntry),
           checkedAt: iso(row.permission_checked_at)!,
           trigger: row.permission_trigger as PermissionTrigger,
         }

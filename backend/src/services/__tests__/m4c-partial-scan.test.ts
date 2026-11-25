@@ -29,7 +29,7 @@ import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-s
 import { ResourceExplorer2Client, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { ACTIVE_INDEX, TestLeases, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { explorerBeforeSearch, TestLeases, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService, { DetectorObservation } from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AccountSecurityFindingsRepository } from '../../repositories/account-security-findings.repository';
@@ -180,7 +180,7 @@ async function latestJob(orgId: string) {
 
 function emptyResourceExplorer(): ResourceExplorer2Client {
   return withMockedSend(new ResourceExplorer2Client({ region: HOME }), async (command) =>
-    isGetIndex(command) ? ACTIVE_INDEX : { Resources: [], Count: { TotalResources: 0, Complete: true } }
+    explorerBeforeSearch(command) ?? { Resources: [], Count: { TotalResources: 0, Complete: true } }
   );
 }
 
@@ -545,7 +545,8 @@ describe('AC-3 G2/G3/G5/G8: discovery never reconciles a source that did not ans
     const page = (n: number): REResource[] =>
       Array.from({ length: 100 }, (_, i) => ({ Arn: `arn:aws:sns:${HOME}:${ACCOUNT_ID}:topic-${n}-${i}`, Region: HOME, Service: 'sns', ResourceType: 'sns:topic', Properties: [] }));
     const explorer = withMockedSend(new ResourceExplorer2Client({ region: HOME }), async (command) => {
-      if (isGetIndex(command)) return ACTIVE_INDEX;
+      const beforeSearch = explorerBeforeSearch(command);
+      if (beforeSearch) return beforeSearch;
       const n = Number(command.input?.NextToken ?? 0);
       return { Resources: page(n), Count: { TotalResources: 1000, Complete: true }, ...(n < 9 ? { NextToken: String(n + 1) } : {}) };
     });

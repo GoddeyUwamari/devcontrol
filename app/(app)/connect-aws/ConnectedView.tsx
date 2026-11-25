@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import awsAccountsService, { type AwsAccount, type ConnectionChecks, type HomeRegionAccountView, type PermissionCheckReport } from '@/lib/services/aws-accounts.service'
+import awsAccountsService, { type AwsAccount, type ConnectionChecks, type HomeRegionAccountView, type PermissionCheckEntry, type PermissionCheckReport } from '@/lib/services/aws-accounts.service'
 import awsServicesService, { type ServicesCoverage } from '@/lib/services/aws-services.service'
 import { HOME_REGION_ONLY_NOTE, describeCoverage, formatScanTime } from '../services/coverage'
 import { useNowEachLocalDay } from '../services/useNowEachLocalDay'
@@ -151,7 +151,9 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
   const checks = permission?.checks ?? null
   const attention = (checks ?? []).filter((check) => check.status !== 'verified')
   const passed = (checks ?? []).filter((check) => check.status === 'verified')
-  const showInlinePolicy = attention.some((check) => INLINE_POLICY_ACTIONS.includes(check.action))
+  // The action whose policy the row points at: the refused prerequisite call when there is one (N-1).
+  const refusedOf = (check: PermissionCheckEntry) => check.refusedAction ?? check.action
+  const showInlinePolicy = attention.some((check) => INLINE_POLICY_ACTIONS.includes(refusedOf(check)))
 
   const discovery = coverageQuery.isError ? (
     <span role="alert" className="flex flex-wrap items-center gap-2">
@@ -239,11 +241,11 @@ export function ConnectedView({ account, justConnected, orgId, onGoToDashboard, 
               {attention.map((check) => (
                 <li key={check.action} className="text-ui text-ink-body">
                   <span className="font-medium text-ink">{PERMISSION_CHECK_LABELS[check.action] ?? check.action}</span>{' '}
-                  <code className="font-mono text-meta text-ink-accent">{check.action}</code>
+                  <code className="font-mono text-meta text-ink-accent">{refusedOf(check)}</code>
                   {' — '}
                   {check.status === 'denied' ? STATUS_DENIED : STATUS_NOT_CHECKED}
                   <span data-testid="permission-fix" className="block text-meta text-ink-muted mt-0.5">
-                    {permissionFixText(check.action, check.status === 'denied' ? 'denied' : 'not_verified')}
+                    {permissionFixText(refusedOf(check), check.status === 'denied' ? 'denied' : 'not_verified')}
                   </span>
                 </li>
               ))}

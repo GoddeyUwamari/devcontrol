@@ -5,8 +5,10 @@
  */
 import { DescribeRegionsCommand } from '@aws-sdk/client-ec2';
 import { GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
+import { GetDefaultViewCommand, GetIndexCommand, SearchCommand } from '@aws-sdk/client-resource-explorer-2';
 import {
   PERMISSION_CHECKS,
+  knownRefusedAction,
   permissionStatusOf,
   runPermissionCheck,
   type ProbeClients,
@@ -30,13 +32,29 @@ function awsError(name: string, status?: number): Error {
 
 type Mocks = Record<keyof ProbeClients, jest.Mock>;
 
+const VIEW_ARN = 'arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/00000000-0000-4000-8000-00000000000c';
+
+/**
+ * A Resource Explorer client set up for a Search (region-access PR 1): GetIndex ACTIVE,
+ * GetDefaultView naming a view, Search answering. Each answer can be replaced.
+ */
+function explorer(answers: { index?: () => unknown; view?: () => unknown; search?: () => unknown } = {}): jest.Mock {
+  return jest.fn(async (command: unknown) => {
+    if (command instanceof GetIndexCommand) return (answers.index ?? (() => ({ State: 'ACTIVE', Type: 'LOCAL' })))();
+    if (command instanceof GetDefaultViewCommand) return (answers.view ?? (() => ({ ViewArn: VIEW_ARN })))();
+    if (command instanceof SearchCommand) return (answers.search ?? (() => ({ Resources: [] })))();
+    throw new Error('unexpected command');
+  });
+}
+const throws = (error: Error) => () => { throw error; };
+
 /** Probe clients whose send() is a mock; `mocks` exposes those mocks by client name. */
 function clients(overrides: Partial<Mocks> = {}): ProbeClients & { mocks: Mocks } {
   const ok = () => jest.fn().mockResolvedValue({});
   // DescribeRegions must list the home region as enabled, as AWS does.
   const regions = () => jest.fn().mockResolvedValue({ Regions: [{ RegionName: 'us-east-1', OptInStatus: 'opt-in-not-required', Endpoint: 'ec2.us-east-1.amazonaws.com' }] });
   const mocks: Mocks = {
-    ec2: regions(), s3: ok(), lambda: ok(), cloudWatch: ok(), costExplorer: ok(), resourceExplorer: ok(),
+    ec2: regions(), s3: ok(), lambda: ok(), cloudWatch: ok(), costExplorer: ok(), resourceExplorer: explorer(),
     ...overrides,
   };
   const wrapped = Object.fromEntries(Object.entries(mocks).map(([k, send]) => [k, { send }])) as unknown as ProbeClients;
@@ -140,7 +158,11 @@ describe('runPermissionCheck', () => {
     const ce = c.mocks.costExplorer.mock.calls[0][0];
     expect(ce).toBeInstanceOf(GetCostAndUsageCommand);
     expect(ce.input).toEqual({ TimePeriod: { Start: '2026-11-02', End: '2026-11-03' }, Granularity: 'DAILY', Metrics: ['UnblendedCost'] });
-    for (const mock of Object.values(c.mocks)) expect(mock).toHaveBeenCalledTimes(1);
+    for (const [name, mock] of Object.entries(c.mocks)) expect([name, mock.mock.calls.length]).toEqual([name, name === 'resourceExplorer' ? 3 : 1]);
+    // Region-access PR 1: GetIndex, GetDefaultView, then one Search WITH the default view's ARN.
+    const re = c.mocks.resourceExplorer.mock.calls.map(([command]) => command);
+    expect(re.map((command) => command.constructor)).toEqual([GetIndexCommand, GetDefaultViewCommand, SearchCommand]);
+    expect(re[2].input).toEqual({ ViewArn: VIEW_ARN, QueryString: '', MaxResults: 1 });
   });
 
   it('the result and logs carry no AWS message or account metadata', async () => {
@@ -150,5 +172,127 @@ describe('runPermissionCheck', () => {
     expect(text).not.toContain('not authorized');
     expect(text).not.toContain('123456789012');
     expect(text).not.toContain('secret-example');
+  });
+});
+
+describe('runPermissionCheck: the Resource Explorer Search probe (region-access PR 1)', () => {
+  const searchStatus = async (resourceExplorer: jest.Mock) => {
+    const report = await runPermissionCheck({ credentials: creds, region: 'eu-central-1', context: 'test', clients: clients({ resourceExplorer }) });
+    return report.checks.find((e) => e.action === 'resource-explorer-2:Search')!.status;
+  };
+  const searches = (mock: jest.Mock) => mock.mock.calls.filter(([command]) => command instanceof SearchCommand).map(([command]) => command.input);
+  const searchEntry = async (resourceExplorer: jest.Mock) => {
+    const report = await runPermissionCheck({ credentials: creds, region: 'eu-central-1', context: 'test', clients: clients({ resourceExplorer }) });
+    return report.checks.find((e) => e.action === 'resource-explorer-2:Search');
+  };
+
+  it('index + default view: Search is sent WITH the view ARN, and is verified', async () => {
+    const mock = explorer();
+    expect(await searchStatus(mock)).toBe('verified');
+    expect(searches(mock)).toEqual([{ ViewArn: VIEW_ARN, QueryString: '', MaxResults: 1 }]);
+  });
+
+  it('index + no default view (GetDefaultView answers with no ViewArn): no Search, not_verified, never denied', async () => {
+    for (const view of [() => ({}), () => ({ ViewArn: '' }), () => undefined]) {
+      const mock = explorer({ view });
+      expect(await searchStatus(mock)).toBe('not_verified');
+      expect(searches(mock)).toEqual([]);
+    }
+    expect(JSON.stringify(warnSpy.mock.calls)).toContain('resource-explorer-2:Search: not_verified (ResourceExplorerNoDefaultView)');
+  });
+
+  it('index + default view + Search 403: still denied (a real refusal)', async () => {
+    const mock = explorer({ search: throws(awsError('AccessDeniedException', 403)) });
+    expect(await searchStatus(mock)).toBe('denied');
+    expect(searches(mock)).toEqual([{ ViewArn: VIEW_ARN, QueryString: '', MaxResults: 1 }]);
+  });
+
+  it('Search 403 itself: the entry names no other refused call (review N-1)', async () => {
+    expect(await searchEntry(explorer({ search: throws(awsError('AccessDeniedException', 403)) })))
+      .toEqual({ action: 'resource-explorer-2:Search', status: 'denied' });
+  });
+
+  it('GetDefaultView refused (403): denied by the existing rule, not "no view"; no Search', async () => {
+    const mock = explorer({ view: throws(awsError('AccessDeniedException', 403)) });
+    expect(await searchStatus(mock)).toBe('denied');
+    expect(searches(mock)).toEqual([]);
+  });
+
+  it('GetDefaultView refused (403): the entry names GetDefaultView as the refused call, not Search (review N-1)', async () => {
+    expect(await searchEntry(explorer({ view: throws(awsError('AccessDeniedException', 403)) }))).toEqual({
+      action: 'resource-explorer-2:Search',
+      status: 'denied',
+      refusedAction: 'resource-explorer-2:GetDefaultView',
+    });
+    expect(JSON.stringify(warnSpy.mock.calls)).toContain(
+      'Permission check resource-explorer-2:Search: denied (AccessDeniedException at resource-explorer-2:GetDefaultView) for test'
+    );
+  });
+
+  it('GetDefaultView failing otherwise (throttled): not_verified by the existing rule; no Search', async () => {
+    const mock = explorer({ view: throws(awsError('ThrottlingException', 400)) });
+    expect(await searchStatus(mock)).toBe('not_verified');
+    expect(searches(mock)).toEqual([]);
+  });
+
+  it('a prerequisite failing without a refusal (throttled, not found) carries no refusedAction; the log names the call', async () => {
+    expect(await searchEntry(explorer({ view: throws(awsError('ThrottlingException', 400)) })))
+      .toEqual({ action: 'resource-explorer-2:Search', status: 'not_verified' });
+    expect(await searchEntry(explorer({ index: throws(awsError('ResourceNotFoundException', 404)) })))
+      .toEqual({ action: 'resource-explorer-2:Search', status: 'not_verified' });
+    expect(JSON.stringify(warnSpy.mock.calls)).toContain('not_verified (ThrottlingException at resource-explorer-2:GetDefaultView)');
+  });
+
+  it('no index (ResourceNotFoundException, or an index being created): no GetDefaultView, no Search, not_verified', async () => {
+    for (const index of [throws(awsError('ResourceNotFoundException', 404)), () => ({ State: 'CREATING' }), () => ({})]) {
+      const mock = explorer({ index });
+      expect(await searchStatus(mock)).toBe('not_verified');
+      expect(mock.mock.calls.map(([command]) => command.constructor)).toEqual([GetIndexCommand]);
+    }
+  });
+
+  it('GetIndex refused (403): denied by the existing rule; no Search', async () => {
+    const mock = explorer({ index: throws(awsError('AccessDeniedException', 403)) });
+    expect(await searchStatus(mock)).toBe('denied');
+    expect(searches(mock)).toEqual([]);
+  });
+
+  it('GetIndex refused (403): the entry names GetIndex as the refused call, not Search (review N-1)', async () => {
+    expect(await searchEntry(explorer({ index: throws(awsError('AccessDeniedException', 403)) }))).toEqual({
+      action: 'resource-explorer-2:Search',
+      status: 'denied',
+      refusedAction: 'resource-explorer-2:GetIndex',
+    });
+  });
+
+  it('a refused prerequisite never leaks onto another probe: other actions carry no refusedAction', async () => {
+    const report = await runPermissionCheck({
+      credentials: creds,
+      region: 'eu-central-1',
+      context: 'test',
+      clients: clients({
+        resourceExplorer: explorer({ view: throws(awsError('AccessDeniedException', 403)) }),
+        s3: jest.fn().mockRejectedValue(awsError('AccessDenied', 403)),
+      }),
+    });
+    expect(report.checks.filter((e) => 'refusedAction' in e).map((e) => e.action)).toEqual(['resource-explorer-2:Search']);
+  });
+});
+
+describe('knownRefusedAction (what is stored and served as refusedAction)', () => {
+  const SEARCH = 'resource-explorer-2:Search';
+
+  it('keeps GetIndex and GetDefaultView on a denied Resource Explorer Search entry only', () => {
+    expect(knownRefusedAction(SEARCH, 'denied', 'resource-explorer-2:GetIndex')).toBe('resource-explorer-2:GetIndex');
+    expect(knownRefusedAction(SEARCH, 'denied', 'resource-explorer-2:GetDefaultView')).toBe('resource-explorer-2:GetDefaultView');
+    expect(knownRefusedAction(SEARCH, 'not_verified', 'resource-explorer-2:GetDefaultView')).toBeUndefined();
+    expect(knownRefusedAction(SEARCH, 'verified', 'resource-explorer-2:GetIndex')).toBeUndefined();
+    expect(knownRefusedAction('lambda:ListFunctions', 'denied', 'resource-explorer-2:GetIndex')).toBeUndefined();
+  });
+
+  it('drops anything else (another action, AWS text, a non-string)', () => {
+    for (const value of ['resource-explorer-2:Search', 's3:ListAllMyBuckets', 'User: arn:aws:sts::123456789012:x', '', null, undefined, 7, {}]) {
+      expect(knownRefusedAction(SEARCH, 'denied', value)).toBeUndefined();
+    }
   });
 });

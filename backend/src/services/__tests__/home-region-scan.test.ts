@@ -29,7 +29,7 @@ import costOptimizationService from '../cost-optimization.service';
 import { LeaseTiming, isScanAlreadyRunning } from '../scan-session';
 import { DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
 import { ISSUE_EC2_IDLE_INSTANCE } from '../../config/optimization-rules';
-import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, refreshPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { ACTIVE_INDEX, DEFAULT_VIEW, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, refreshPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -96,6 +96,7 @@ function regionClients(log: Call[], region: string): any {
     securityHub: {},
     resourceExplorer: fake(log, region, 'resource-explorer-2', {
       GetIndexCommand: () => ACTIVE_INDEX,
+      GetDefaultViewCommand: () => DEFAULT_VIEW,
       SearchCommand: () => ({ Resources: [], Count: { TotalResources: 0, Complete: true } }),
     }),
     getDynamoDBClientForRegion: () => ({}),

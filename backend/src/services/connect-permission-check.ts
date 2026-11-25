@@ -11,7 +11,8 @@
  *                 a permission boundary, a service control policy or an explicit
  *                 deny: the error does not say which.
  *   not_verified  anything else: a timeout, throttling, a service not set up
- *                 (for example no Resource Explorer view), a missing credential,
+ *                 (for example no Resource Explorer index or default view in the
+ *                 home region: no Search is then made), a missing credential,
  *                 or any error that is not an authorization error.
  *
  * It tests the operations listed in PERMISSION_CHECKS and nothing else. It is
@@ -23,15 +24,23 @@
  * ce:GetCostAndUsage is billed by AWS at USD 0.01 per request to the customer's
  * account; this check makes one such request per connect.
  *
+ * The Resource Explorer probe asks GetIndex and GetDefaultView before its Search.
+ * When AWS refuses one of those two calls, the entry is still
+ * resource-explorer-2:Search / denied, and `refusedAction` names the call AWS
+ * refused. That call is granted by ViewOnlyAccess, not by the Search grant in
+ * DevControlReadExtras (region-access PR 1 review N-1).
+ *
  * No result carries an AWS message, ARN, account metadata or credential: only
- * the action name and its state. Errors are logged by name only.
+ * the action name, its state and, for a refused prerequisite, that call's
+ * action name. Errors are logged by name only.
  */
 import { EC2Client } from '@aws-sdk/client-ec2';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand, type ListFunctionsCommandOutput } from '@aws-sdk/client-lambda';
 import { CloudWatchClient, GetMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
-import { ResourceExplorer2Client, SearchCommand } from '@aws-sdk/client-resource-explorer-2';
+import { GetDefaultViewCommand, GetIndexCommand, ResourceExplorer2Client, SearchCommand } from '@aws-sdk/client-resource-explorer-2';
+import { isUsableIndexState } from './resourceExplorer.service';
 import type { TemporaryRoleCredentials } from './connect-role-check';
 import { describeAccountRegions } from './region-list';
 import { projectLambdaFunction } from './aws-response-projections';
@@ -47,9 +56,29 @@ export type CheckedAction =
   | 'ce:GetCostAndUsage'
   | 'resource-explorer-2:Search';
 
+/** The calls the Resource Explorer probe makes before its Search (both granted by ViewOnlyAccess). */
+export type PrerequisiteAction = 'resource-explorer-2:GetIndex' | 'resource-explorer-2:GetDefaultView';
+export const PREREQUISITE_ACTIONS: readonly PrerequisiteAction[] = ['resource-explorer-2:GetIndex', 'resource-explorer-2:GetDefaultView'];
+
 export interface PermissionCheckEntry {
   action: CheckedAction;
   status: PermissionStatus;
+  /**
+   * Only on a `denied` entry whose refused call was not `action` itself but a call
+   * made before it (the Resource Explorer probe's GetIndex or GetDefaultView).
+   * Absent otherwise.
+   */
+  refusedAction?: PrerequisiteAction;
+}
+
+/**
+ * A stored or received entry's `refusedAction`, kept only on a denied Resource Explorer Search
+ * entry and only when it is one of that probe's prerequisites.
+ */
+export function knownRefusedAction(action: unknown, status: unknown, value: unknown): PrerequisiteAction | undefined {
+  return action === 'resource-explorer-2:Search' && status === 'denied' && PREREQUISITE_ACTIONS.includes(value as PrerequisiteAction)
+    ? (value as PrerequisiteAction)
+    : undefined;
 }
 
 export interface PermissionCheckReport {
@@ -95,6 +124,53 @@ class RegionListOutcomeError extends Error {
   }
 }
 
+/**
+ * Thrown by the Resource Explorer probe when the home region is not set up for a
+ * Search (region-access PR 1): no usable index, or an index with no default view. Its
+ * name is not a permission error, so the action is not_verified, never denied, and no
+ * Search is made.
+ */
+class ResourceExplorerNotSetUpError extends Error {
+  constructor(name: 'ResourceExplorerNoIndex' | 'ResourceExplorerNoDefaultView') {
+    super('Resource Explorer is not set up for a search in this region');
+    this.name = name;
+  }
+}
+
+/** The prerequisite call each thrown error came from (set by `prerequisite`, read by runPermissionCheck). */
+const prerequisiteOf = new WeakMap<object, PrerequisiteAction>();
+
+/** Sends a call made before the probe's own action and remembers, for its error, which call that was. */
+async function prerequisite<T>(action: PrerequisiteAction, call: Promise<T>): Promise<T> {
+  try {
+    return await call;
+  } catch (error: unknown) {
+    if (error !== null && typeof error === 'object') prerequisiteOf.set(error, action);
+    throw error;
+  }
+}
+
+/**
+ * The Resource Explorer Search probe (region-access PR 1), the same gate as the scan's
+ * (awsResourceDiscovery.ts inventoryResourceExplorer): GetIndex, then GetDefaultView,
+ * then Search WITH the default view's ARN. A Search without a ViewArn is refused (403)
+ * by the role's view/* grant in a region with no default view, which read as "denied".
+ * A failed GetIndex or GetDefaultView is classified as any probe error is; a refused
+ * one is reported with its own action name (`refusedAction`).
+ */
+async function resourceExplorerSearchProbe(c: ProbeClients, signal: AbortSignal): Promise<void> {
+  const index = (await prerequisite('resource-explorer-2:GetIndex', c.resourceExplorer.send(new GetIndexCommand({}), { abortSignal: signal }))) as
+    | { State?: unknown }
+    | undefined;
+  if (!isUsableIndexState(index?.State)) throw new ResourceExplorerNotSetUpError('ResourceExplorerNoIndex');
+  const view = (await prerequisite('resource-explorer-2:GetDefaultView', c.resourceExplorer.send(new GetDefaultViewCommand({}), { abortSignal: signal }))) as
+    | { ViewArn?: unknown }
+    | undefined;
+  const viewArn = view?.ViewArn;
+  if (typeof viewArn !== 'string' || viewArn.length === 0) throw new ResourceExplorerNotSetUpError('ResourceExplorerNoDefaultView');
+  await c.resourceExplorer.send(new SearchCommand({ ViewArn: viewArn, QueryString: '', MaxResults: 1 }), { abortSignal: signal });
+}
+
 export const PERMISSION_CHECKS: readonly Probe[] = [
   {
     // Through region-list.ts, the one module allowed to call DescribeRegions.
@@ -137,7 +213,7 @@ export const PERMISSION_CHECKS: readonly Probe[] = [
       Metrics: ['UnblendedCost'],
     }), { abortSignal: signal }),
   },
-  { action: 'resource-explorer-2:Search', run: (c, signal) => c.resourceExplorer.send(new SearchCommand({ QueryString: '', MaxResults: 1 }), { abortSignal: signal }) },
+  { action: 'resource-explorer-2:Search', run: (c, signal) => resourceExplorerSearchProbe(c, signal) },
 ];
 
 /** Error names AWS uses for "your permissions do not allow this". Deliberately not every 403. */
@@ -206,8 +282,13 @@ export async function runPermissionCheck(params: {
     } catch (error: unknown) {
       const status = permissionStatusOf(error);
       const name = (error as { name?: unknown } | null)?.name;
-      console.warn(`[Connect AWS] Permission check ${action}: ${status} (${typeof name === 'string' ? name.slice(0, 64) : 'unknown error'}) for ${params.context}`);
-      return { action, status };
+      const failedAt = error !== null && typeof error === 'object' ? prerequisiteOf.get(error) : undefined;
+      console.warn(
+        `[Connect AWS] Permission check ${action}: ${status} (${typeof name === 'string' ? name.slice(0, 64) : 'unknown error'}`
+        + `${failedAt ? ` at ${failedAt}` : ''}) for ${params.context}`
+      );
+      const refusedAction = knownRefusedAction(action, status, failedAt);
+      return refusedAction ? { action, status, refusedAction } : { action, status };
     } finally {
       if (timer) clearTimeout(timer);
     }
