@@ -91,6 +91,7 @@ describe('HeroSection copy', () => {
       ['Compute', 'Idle EC2 instances · Unused Elastic IPs · Reserved Instances'],
       ['Storage', 'Unattached EBS · gp2 → gp3 · Old EBS snapshots · S3 lifecycle'],
       ['Data & Serverless', 'Idle RDS · DynamoDB capacity · Lambda usage'],
+      ['Network', 'Idle NAT gateways'],
     ])
     expect(text(scanBlocks[3])).toBe('Estimated monthly savings where supported by available data.')
 

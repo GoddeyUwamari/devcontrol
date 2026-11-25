@@ -96,6 +96,8 @@ function neutralizeOtherDetectors() {
     // "RDS is never called" still proves the retired oversized detector calls nothing.
     'detectIdleRDSInstances',
     'detectOldEBSSnapshots',
+    // C2: reads EC2 and CloudWatch only; neutralised like the others.
+    'detectIdleNatGateways',
   ]) {
     jest.spyOn(costOptimizationService as any, detector).mockResolvedValue({ success: true, issues: [] });
   }

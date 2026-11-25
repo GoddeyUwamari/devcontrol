@@ -100,6 +100,22 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
     const backup = fakeClient((command: any) => (command.constructor.name === 'ListBackupVaultsCommand' ? { BackupVaultList: [] } : { RecoveryPoints: [] }));
     return (await service.detectOldEBSSnapshots({ ec2, backup }, 'us-east-1')).issues;
   },
+  nat_gateway_idle: async () => {
+    // C2: an available zonal NAT gateway created long before the window, with an
+    // hourly 0 for all five metrics in every hour of the 32-day window and no routes.
+    const DAY = 24 * 60 * 60 * 1000;
+    const ec2 = fakeClient((command: any) => (command.constructor.name === 'DescribeNatGatewaysCommand'
+      ? { NatGateways: [{ NatGatewayId: 'nat-placeholder-guard', State: 'available', ConnectivityType: 'public', CreateTime: new Date(Date.now() - 90 * DAY), NatGatewayAddresses: [{ AllocationId: 'eipalloc-placeholder-guard', PublicIp: '192.0.2.10' }] }] }
+      : { RouteTables: [] }));
+    const cw = fakeClient((command: any) => {
+      const start = (command.input.StartTime as Date).getTime();
+      const end = (command.input.EndTime as Date).getTime();
+      const Timestamps: Date[] = [];
+      for (let t = start; t < end; t += 60 * 60 * 1000) Timestamps.push(new Date(t));
+      return { MetricDataResults: (command.input.MetricDataQueries as any[]).map((q) => ({ Id: q.Id, Timestamps, Values: Timestamps.map(() => 0), StatusCode: 'Complete' })) };
+    });
+    return (await service.detectIdleNatGateways({ ec2, cloudWatch: cw }, 'us-east-1')).issues;
+  },
 };
 
 // Implemented rules not driven above. Each names the test file (in this
@@ -153,6 +169,12 @@ describe('savings basis guard: behavioural', () => {
   it('ebs_old_snapshots states its figure as a ceiling, never an estimate', async () => {
     const [issue] = await DRIVEN.ebs_old_snapshots();
     expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('ceiling');
+  });
+
+  it('nat_gateway_idle states its figure as an estimate (regional hourly list price), never a ceiling', async () => {
+    const [issue] = await DRIVEN.nat_gateway_idle();
+    expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('estimate');
+    expect(issue.potentialSavings).toBe(32.85);
   });
 
   it('s3_lifecycle states its figure as a ceiling, never an estimate', async () => {

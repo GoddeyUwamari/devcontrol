@@ -2,6 +2,8 @@ import { addReconcileCounts, EMPTY_RECONCILE_COUNTS, summarizeDetectors } from '
 import { getOptimizationRules, ISSUE_EBS_OLD_SNAPSHOT, ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY, ISSUE_RDS_IDLE_INSTANCE, ISSUE_RDS_OVERSIZED_INSTANCE } from '../../config/optimization-rules';
 import { emptyRdsIdleCounts } from '../rds-idle-evaluation';
 import { emptyOldSnapshotCounts } from '../ebs-old-snapshot-evaluation';
+import { emptyNatIdleCounts } from '../nat-gateway-idle-evaluation';
+import { ISSUE_NAT_GATEWAY_IDLE } from '../../config/optimization-rules';
 import type { DetectorObservation } from '../cost-optimization.service';
 import type { CreateRecommendationRequest } from '../../types';
 
@@ -106,9 +108,30 @@ describe('summarizeDetectors', () => {
     expect(checks[1]).not.toHaveProperty('old_snapshots');
   });
 
+  it('C2: the idle NAT gateway check adds its counts by reason -- counts only, no gateway IDs', () => {
+    const natIdle = emptyNatIdleCounts();
+    Object.assign(natIdle, { evaluated: 5, flagged: 1 });
+    natIdle.not_flagged.packets_from_destination = 1;
+    natIdle.couldnt_check.cloudwatch_incomplete = 1;
+    natIdle.couldnt_check.routes_unreadable = 1;
+    natIdle.excluded.regional = 1;
+    const { checks } = summarizeDetectors([{ ...ok(ISSUE_NAT_GATEWAY_IDLE, [], ['nat-placeholder-1', 'nat-placeholder-2']), natIdle }], true, []);
+    expect(checks[0]).toEqual({ rule_id: 'nat_gateway_idle', issue: ISSUE_NAT_GATEWAY_IDLE, outcome: 'complete', detected: 0, unknown: 2, nat_idle: natIdle });
+    expect(JSON.stringify(checks)).not.toContain('nat-placeholder');
+    // Every reason Stage A §5.2 names is a key, even at zero (plus unrecognised, which fails safe).
+    expect(Object.keys(natIdle.not_flagged).sort()).toEqual(['active_connections', 'bytes_from_destination', 'bytes_from_source', 'packets_from_destination', 'packets_from_source']);
+    expect(Object.keys(natIdle.couldnt_check).sort()).toEqual(['cloudwatch_failed', 'cloudwatch_incomplete', 'pending', 'routes_unreadable', 'too_new', 'unrecognised']);
+    expect(Object.keys(natIdle.excluded).sort()).toEqual(['deleted', 'deleting', 'failed', 'regional']);
+  });
+
+  it('a failed idle NAT gateway check records no counts', () => {
+    const { checks } = summarizeDetectors([{ ...bad(ISSUE_NAT_GATEWAY_IDLE), natIdle: emptyNatIdleCounts() }], true, []);
+    expect(checks[0]).not.toHaveProperty('nat_idle');
+  });
+
   it('every implemented rule can be named by a check', () => {
     const implemented = getOptimizationRules().filter((rule) => rule.status === 'implemented');
-    expect(implemented).toHaveLength(11);
+    expect(implemented).toHaveLength(12);
     for (const rule of implemented) expect(rule.issue).toEqual(expect.any(String));
   });
 });

@@ -12,7 +12,11 @@ import {
   DescribeSnapshotsCommand,
   DescribeImagesCommand,
   DescribeLockedSnapshotsCommand,
+  DescribeNatGatewaysCommand,
+  DescribeRouteTablesCommand,
   Instance,
+  NatGateway,
+  RouteTable,
   Reservation,
   Snapshot,
   Image,
@@ -71,6 +75,26 @@ import {
   type OldSnapshotCheckCounts,
   type SnapshotCouldntCheckReason,
 } from './ebs-old-snapshot-evaluation';
+import { NAT_GATEWAY_IDLE_RULE, NAT_GATEWAY_RESOURCE_TYPE } from '../config/nat-gateway-idle-rule';
+import {
+  NAT_METRICS,
+  NAT_METRIC_DEFINITIONS,
+  NAT_PRICE_EVIDENCE,
+  emptyNatIdleCounts,
+  judgeNatMetrics,
+  judgeNatScope,
+  natElasticIpCount,
+  natGatewayRouteTables,
+  natIdleDescription,
+  natIdleFindingMetadata,
+  natIdleSavings,
+  natIdleSavingsBasis,
+  natIdleWindow,
+  type NatIdleCheckCounts,
+  type NatMetric,
+  type NatMetricReading,
+  type NatMetricReadings,
+} from './nat-gateway-idle-evaluation';
 import { pool } from '../config/database';
 import {
   EC2_PRICE_SOURCE_DEFAULT,
@@ -99,6 +123,7 @@ import {
   ISSUE_DYNAMODB_ON_DEMAND_VS_PROVISIONED,
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
+  ISSUE_NAT_GATEWAY_IDLE,
 } from '../config/optimization-rules';
 import {
   estimateEBSMonthlyCost,
@@ -276,6 +301,8 @@ interface DetectorResult {
   oldSnapshots?: OldSnapshotCheckCounts;
   /** See DetectorObservation.failureReason. */
   failureReason?: CheckFailureReason;
+  /** See DetectorObservation.natIdle. */
+  natIdle?: NatIdleCheckCounts;
 }
 
 // One entry per non-RI detector category, tagged with the fixed `issue`
@@ -307,6 +334,8 @@ export interface DetectorObservation {
   oldSnapshots?: OldSnapshotCheckCounts;
   /** A failed category only: why it couldn't run (a class, never error text). */
   failureReason?: CheckFailureReason;
+  /** The idle NAT gateway rule's counts by reason (no resource IDs). */
+  natIdle?: NatIdleCheckCounts;
 }
 
 /** Every private IPv4 and IPv6 address on an instance's network interfaces. */
@@ -437,7 +466,7 @@ class CostOptimizationService {
     }
 
     try {
-      const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities, idleRDS, oldSnapshots] = await Promise.all([
+      const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities, idleRDS, oldSnapshots, idleNat] = await Promise.all([
         this.detectLowActivityEC2Instances(clients, clients.region),
         this.detectUnusedElasticIPs(clients.ec2, clients.region),
         this.detectUnattachedEBSVolumes(clients.ec2, clients.region),
@@ -456,6 +485,8 @@ class CostOptimizationService {
         // C1, home region only like the rest.
         this.detectIdleRDSInstances(clients, clients.region),
         this.detectOldEBSSnapshots(clients, clients.region),
+        // C2, home region only like the rest.
+        this.detectIdleNatGateways(clients, clients.region),
       ]);
 
       const toRequest = (issue: OptimizationIssue): CreateRecommendationRequest => ({
@@ -508,6 +539,14 @@ class CostOptimizationService {
           recommendations: oldSnapshots.issues.map(toRequest),
           unknownResourceIds: oldSnapshots.unknownResourceIds,
           oldSnapshots: oldSnapshots.oldSnapshots,
+        },
+        {
+          issue: ISSUE_NAT_GATEWAY_IDLE,
+          success: idleNat.success, failureReason: idleNat.failureReason,
+          recommendations: idleNat.issues.map(toRequest),
+          unknownResourceIds: idleNat.unknownResourceIds,
+          endActiveForUnknown: idleNat.endActiveForUnknown,
+          natIdle: idleNat.natIdle,
         },
       ];
 
@@ -979,6 +1018,156 @@ class CostOptimizationService {
       return new Set((listing.items as Volume[]).flatMap((volume) => (volume.VolumeId ? [volume.VolumeId] : [])));
     } catch (error) {
       console.error('[OldSnapshots] DescribeVolumes failed; candidates are reported as not checked:', (error as Error)?.name ?? 'Error');
+      return null;
+    }
+  }
+
+  /**
+   * Idle NAT gateways (C2; the rule: config/nat-gateway-idle-rule.ts, applied by
+   * nat-gateway-idle-evaluation.ts). Home region only.
+   *
+   * Lists the region's NAT gateways (DescribeNatGateways, every page; an
+   * incomplete or failed listing fails the category). Only when a gateway is in
+   * scope (available, zonal) are the other reads made, in parallel: the region's
+   * route tables (DescribeRouteTables, every page) and 32 complete UTC days of
+   * hourly ActiveConnectionCount (Maximum) and PacketsIn/BytesIn from source and
+   * destination (Sum) for every candidate, in GetMetricData batches. A failed
+   * metric read makes the affected gateways "couldn't check"; a failed or
+   * incomplete route listing makes every candidate "couldn't check" -- never
+   * idle. Couldn't-check gateways go in unknownResourceIds with
+   * endActiveForUnknown (traffic can resume, so a finding never outlives its
+   * evidence; decisions stay open). The run's counts by reason go on the result
+   * (natIdle).
+   *
+   * Savings: an estimate (savings_basis 'estimated:'), the region's hourly list
+   * price x 730 hours. No price for the region, or provisioned bandwidth: no
+   * dollar figure and a fixed Low severity.
+   */
+  private async detectIdleNatGateways(
+    clients: Pick<AWSClients, 'ec2' | 'cloudWatch'>,
+    region: string,
+    now: Date = new Date()
+  ): Promise<DetectorResult> {
+    let listing: Listing<NatGateway>;
+    try {
+      listing = await listAllPages('idle NAT gateways: DescribeNatGateways', async (token) => {
+        const page = await clients.ec2.send(new DescribeNatGatewaysCommand({ MaxResults: 1000, NextToken: token }));
+        return { items: page.NatGateways || [], nextToken: page.NextToken };
+      });
+    } catch (error) {
+      console.error('Error listing NAT gateways for the idle check:', (error as Error)?.name ?? 'Error');
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
+    }
+    if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
+
+    const issues: OptimizationIssue[] = [];
+    const unknownResourceIds: string[] = [];
+    const counts = emptyNatIdleCounts();
+    const done = (): DetectorResult => ({ success: true, issues, unknownResourceIds, endActiveForUnknown: true, natIdle: counts });
+
+    const candidates: Array<NatGateway & { NatGatewayId: string }> = [];
+    for (const gateway of listing.items) {
+      if (!gateway.NatGatewayId) continue;
+      counts.evaluated += 1;
+      const scope = judgeNatScope(gateway);
+      if (scope.kind === 'excluded') {
+        counts.excluded[scope.reason] += 1;
+        continue;
+      }
+      if (scope.kind === 'couldnt_check') {
+        counts.couldnt_check[scope.reason] += 1;
+        unknownResourceIds.push(gateway.NatGatewayId);
+        continue;
+      }
+      candidates.push(gateway as NatGateway & { NatGatewayId: string });
+    }
+    if (candidates.length === 0) return done();
+
+    const window = natIdleWindow(now);
+    const { namespace, dimension, period_seconds } = NAT_GATEWAY_IDLE_RULE.metrics;
+    const prefixes: Record<NatMetric, string> = { connections: 'nc', packetsFromSource: 'ps', packetsFromDestination: 'pd', bytesFromSource: 'bs', bytesFromDestination: 'bd' };
+    const queries: BatchMetricQuery[] = candidates.flatMap((gateway, i) =>
+      NAT_METRICS.map((metric) => ({
+        id: `${prefixes[metric]}${i}`,
+        namespace,
+        metricName: NAT_METRIC_DEFINITIONS[metric].metric,
+        dimensions: [{ Name: dimension, Value: gateway.NatGatewayId }],
+        period: period_seconds,
+        stat: NAT_METRIC_DEFINITIONS[metric].stat,
+      }))
+    );
+
+    const [routeTables, fetched] = await Promise.all([
+      this.readRouteTables(clients.ec2),
+      fetchMetricDataBatchWithStatus(clients.cloudWatch, queries, window.start, window.end).catch((error) => {
+        console.error('[IdleNAT] CloudWatch read failed; every gateway is reported as not checked:', (error as Error)?.name ?? 'Error');
+        return null;
+      }),
+    ]);
+    const reading = (id: string): NatMetricReading => ({
+      outcome: fetched?.statuses.get(id)?.outcome ?? 'query_failed',
+      series: fetched?.results.get(id) ?? null,
+    });
+
+    candidates.forEach((gateway, i) => {
+      const readings = Object.fromEntries(NAT_METRICS.map((metric) => [metric, reading(`${prefixes[metric]}${i}`)])) as NatMetricReadings;
+      const verdict = judgeNatMetrics(readings, gateway.CreateTime, window);
+      if (verdict.kind === 'not_idle') {
+        counts.not_flagged[verdict.reason] += 1;
+        return;
+      }
+      if (verdict.kind === 'couldnt_check') {
+        counts.couldnt_check[verdict.reason] += 1;
+        unknownResourceIds.push(gateway.NatGatewayId);
+        return;
+      }
+      const tables = routeTables === null ? null : natGatewayRouteTables(routeTables, gateway.NatGatewayId);
+      if (tables === null) {
+        counts.couldnt_check.routes_unreadable += 1;
+        unknownResourceIds.push(gateway.NatGatewayId);
+        return;
+      }
+
+      counts.flagged += 1;
+      const elasticIpCount = natElasticIpCount(gateway);
+      const savings = natIdleSavings(gateway, region);
+      const nameTag = gateway.Tags?.find((tag) => tag.Key === 'Name');
+      issues.push({
+        resourceId: gateway.NatGatewayId,
+        resourceName: nameTag?.Value || gateway.NatGatewayId,
+        resourceType: NAT_GATEWAY_RESOURCE_TYPE,
+        issue: ISSUE_NAT_GATEWAY_IDLE,
+        description: natIdleDescription({ routeTables: tables, elasticIpCount }),
+        potentialSavings: savings.kind === 'estimate' ? savings.monthly : 0,
+        severity: savings.kind === 'estimate' ? this.calculateSeverity(savings.monthly) : 'LOW',
+        awsRegion: region,
+        metadata: {
+          ...natIdleFindingMetadata({ gateway, window, evaluatedAt: now, createTime: gateway.CreateTime as Date, routeTables: tables }),
+          ...(savings.kind === 'estimate'
+            ? {
+                savings_basis: natIdleSavingsBasis(region, savings.pricePerHour, elasticIpCount > 0),
+                price_per_hour: savings.pricePerHour,
+                price_region: region,
+                ...NAT_PRICE_EVIDENCE,
+              }
+            : { savings_note: savings.note, severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE }),
+        },
+      });
+    });
+    return done();
+  }
+
+  /** Every route table in the region, or null when the listing is not complete or fails. */
+  private async readRouteTables(ec2Client: EC2Client): Promise<RouteTable[] | null> {
+    try {
+      const listing = await listAllPages('idle NAT gateways: DescribeRouteTables', async (token) => {
+        const page = await ec2Client.send(new DescribeRouteTablesCommand({ MaxResults: 100, NextToken: token }));
+        return { items: page.RouteTables || [], nextToken: page.NextToken };
+      });
+      if (!listing.complete) return null;
+      return listing.items as RouteTable[];
+    } catch (error) {
+      console.error('[IdleNAT] DescribeRouteTables failed; candidates are reported as not checked:', (error as Error)?.name ?? 'Error');
       return null;
     }
   }

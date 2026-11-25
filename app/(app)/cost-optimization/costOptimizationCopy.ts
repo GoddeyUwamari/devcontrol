@@ -19,6 +19,13 @@ export const stillDetectedKpiNote = (count: number) => `+ ${count} still detecte
 export const NOTHING_TO_ACT_ON = 'Nothing to act on right now'
 export const nothingToActOnBody = (checks: number) =>
   `Your resources passed all ${checks} active check${plural(checks, '', 's')} in the last analysis. DevControl runs the checks again on a schedule and lists anything new here.`
+/**
+ * The same empty state when the run couldn't fully check some resources (C2, founder ruling 2, Nov 24):
+ * "passed all N active checks" would not be true, so it says what was and wasn't checked, then keeps the
+ * schedule sentence (founder ruling, Nov 24). `unchecked` is the run record's unknown_resource_count.
+ */
+export const nothingFoundSomeUncheckedBody = (unchecked: number) =>
+  `No opportunities found in the resources DevControl could check. ${unchecked} resource${plural(unchecked, '', 's')} couldn't be fully checked. DevControl runs the checks again on a schedule and lists anything new here.`
 export const SEE_WHATS_CHECKED = "See what's checked"
 export const VIEW_COSTS = 'View costs →'
 
