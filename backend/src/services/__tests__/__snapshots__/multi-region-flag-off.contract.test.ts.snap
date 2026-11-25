@@ -171,6 +171,12 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
       },
       {
         "client": "resource-explorer-2",
+        "command": "GetDefaultViewCommand",
+        "input": {},
+        "region": "us-east-1",
+      },
+      {
+        "client": "resource-explorer-2",
         "command": "GetIndexCommand",
         "input": {},
         "region": "us-east-1",
@@ -180,6 +186,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "command": "SearchCommand",
         "input": {
           "QueryString": "",
+          "ViewArn": "arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/<uuid>",
         },
         "region": "us-east-1",
       },
@@ -1150,6 +1157,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
       "elbv2:DescribeTagsCommand",
       "cloudfront:ListDistributionsCommand",
       "resource-explorer-2:GetIndexCommand",
+      "resource-explorer-2:GetDefaultViewCommand",
       "resource-explorer-2:SearchCommand",
       "s3-control:GetPublicAccessBlockCommand",
       "s3:GetBucketPolicyCommand",
@@ -1379,6 +1387,12 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
       },
       {
         "client": "resource-explorer-2",
+        "command": "GetDefaultViewCommand",
+        "input": {},
+        "region": "us-east-1",
+      },
+      {
+        "client": "resource-explorer-2",
         "command": "GetIndexCommand",
         "input": {},
         "region": "us-east-1",
@@ -1388,6 +1402,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "command": "SearchCommand",
         "input": {
           "QueryString": "",
+          "ViewArn": "arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/<uuid>",
         },
         "region": "us-east-1",
       },
@@ -2417,6 +2432,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
       "elbv2:DescribeTagsCommand",
       "cloudfront:ListDistributionsCommand",
       "resource-explorer-2:GetIndexCommand",
+      "resource-explorer-2:GetDefaultViewCommand",
       "resource-explorer-2:SearchCommand",
       "s3-control:GetPublicAccessBlockCommand",
       "s3:GetBucketPolicyCommand",
@@ -2602,6 +2618,12 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
       },
       {
         "client": "resource-explorer-2",
+        "command": "GetDefaultViewCommand",
+        "input": {},
+        "region": "us-east-1",
+      },
+      {
+        "client": "resource-explorer-2",
         "command": "GetIndexCommand",
         "input": {},
         "region": "us-east-1",
@@ -2611,6 +2633,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
         "command": "SearchCommand",
         "input": {
           "QueryString": "",
+          "ViewArn": "arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/<uuid>",
         },
         "region": "us-east-1",
       },
@@ -3674,6 +3697,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
       "elbv2:DescribeTagsCommand",
       "cloudfront:ListDistributionsCommand",
       "resource-explorer-2:GetIndexCommand",
+      "resource-explorer-2:GetDefaultViewCommand",
       "resource-explorer-2:SearchCommand",
       "s3-control:GetPublicAccessBlockCommand",
       "s3:GetBucketPolicyCommand",

@@ -19,6 +19,7 @@ import * as externalIdRepository from '../../repositories/aws-external-id.reposi
 import { ensureSharedFixtureTable } from './shared-fixture-tables';
 import type { RoleCheckPolicy } from '../../services/connect-role-check';
 import type { ProbeClients } from '../../services/connect-permission-check';
+import { explorerBeforeSearch } from '../../services/__tests__/helpers/scan-source';
 
 const mockStsSend = jest.fn();
 jest.mock('@aws-sdk/client-sts', () => ({
@@ -96,11 +97,13 @@ const CREDENTIALS = { AccessKeyId: 'ASIAEXAMPLE', SecretAccessKey: 'secret-examp
 
 function probeClients(denied: Array<keyof ProbeClients> = []): ProbeClients {
   // DescribeRegions answers with the home region enabled, as AWS does.
-  const success = (key: keyof ProbeClients) => key === 'ec2'
+  // Resource Explorer answers GetIndex (active) and GetDefaultView (a view) before its
+  // Search (region-access PR 1: the probe searches only with the default view's ARN).
+  const success = (key: keyof ProbeClients, command: unknown) => key === 'ec2'
     ? { Regions: [{ RegionName: 'us-east-1', OptInStatus: 'opt-in-not-required', Endpoint: 'ec2.us-east-1.amazonaws.com' }] }
-    : {};
+    : key === 'resourceExplorer' ? explorerBeforeSearch(command) ?? {} : {};
   const make = (key: keyof ProbeClients) => ({
-    send: jest.fn(denied.includes(key) ? () => Promise.reject(awsError('AccessDenied', 403)) : () => Promise.resolve(success(key))),
+    send: jest.fn(denied.includes(key) ? () => Promise.reject(awsError('AccessDenied', 403)) : (command: unknown) => Promise.resolve(success(key, command))),
   });
   return {
     ec2: make('ec2'), s3: make('s3'), lambda: make('lambda'),

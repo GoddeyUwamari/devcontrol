@@ -34,7 +34,7 @@ import { DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX 
 import * as foundation from '../../repositories/multi-region-foundation.repository';
 import { RE_RECONCILED_TYPES } from '../resourceExplorer.service';
 import { AwsAccountAmbiguousError, isAwsAccountAmbiguous } from '../../repositories/aws-accounts.repository';
-import { ACTIVE_INDEX, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource, refreshPlaceholderAccount } from './helpers/scan-source';
+import { explorerBeforeSearch, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource, refreshPlaceholderAccount } from './helpers/scan-source';
 
 const dbConfig = () => ({
   host: process.env.DB_HOST || 'localhost',
@@ -97,7 +97,7 @@ function fake(answers: Record<string, Answer>) {
 
 function explorer(page: () => any): ResourceExplorer2Client {
   const client = new ResourceExplorer2Client({ region: HOME });
-  (client as any).send = jest.fn(async (command: unknown) => (isGetIndex(command) ? ACTIVE_INDEX : page()));
+  (client as any).send = jest.fn(async (command: unknown) => (explorerBeforeSearch(command) ?? page()));
   return client;
 }
 

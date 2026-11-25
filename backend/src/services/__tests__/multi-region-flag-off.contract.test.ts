@@ -66,6 +66,7 @@ const FUNCTION_ARN = `arn:aws:lambda:${HOME}:${ACCOUNT}:function:placeholder-fn`
 const DB_ARN = `arn:aws:rds:${HOME}:${ACCOUNT}:db:placeholder-db`;
 const LB_ARN = `arn:aws:elasticloadbalancing:${HOME}:${ACCOUNT}:loadbalancer/app/placeholder-lb/0000000000000001`;
 const INDEX_ARN = `arn:aws:resource-explorer-2:${HOME}:${ACCOUNT}:index/00000000-0000-4000-8000-00000000000b`;
+const VIEW_ARN = `arn:aws:resource-explorer-2:${HOME}:${ACCOUNT}:view/default-view/00000000-0000-4000-8000-00000000000c`;
 const LAUNCHED = new Date('2026-01-01T00:00:00Z');
 
 interface Call {
@@ -238,6 +239,8 @@ function mockAwsClients(log: Call[], scenario: Scenario) {
   const backup = fake(log, 'backup', HOME, { ListRecoveryPointsByResourceCommand: () => ({ RecoveryPoints: [] }) });
   const resourceExplorer = fake(log, 'resource-explorer-2', HOME, {
     GetIndexCommand: () => ({ Arn: INDEX_ARN, Type: 'LOCAL', State: 'ACTIVE' }),
+    // Region-access PR 1: the default view every Search now names (ViewArn).
+    GetDefaultViewCommand: () => ({ ViewArn: VIEW_ARN }),
     SearchCommand: () => ({ Resources: scenario.explorerArns.map(explorerResource), Count: { TotalResources: scenario.explorerArns.length, Complete: true } }),
   });
   const dynamodb = fake(log, 'dynamodb', HOME, {});

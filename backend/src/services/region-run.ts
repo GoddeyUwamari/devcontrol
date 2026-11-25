@@ -80,6 +80,12 @@ export function isScanDeadline(error: unknown): error is ScanDeadlineError {
 /** A source outcome inside a region, with why it failed (one of the codes above). */
 export interface RegionSourceOutcome extends SourceOutcome {
   reason?: string;
+  /**
+   * Region-access PR 1: the call that failed, as `<source>:<operation>:<AWS error name>`
+   * (region-log-context.ts sourceDiagnostic). Set only where the failing call is known
+   * exactly (today: the Resource Explorer source's GetIndex, GetDefaultView and Search).
+   */
+  diagnostic?: string;
 }
 
 /** Enabled in the account's list, but AWS does not accept the session there yet. */
@@ -127,7 +133,11 @@ export function regionScanResult(
   // An organization policy refusing the region explains every other refusal in it.
   const reasons = counted.map((o) => o.reason).filter((reason): reason is string => !!reason);
   const reason = reasons.includes(REGION_CODE_ACCESS_DENIED_SCP) ? REGION_CODE_ACCESS_DENIED_SCP : reasons[0];
-  return { status: base.status, errorCode: reason ?? defaultCode(base.status) };
+  const errorCode = reason ?? defaultCode(base.status);
+  // Region-access PR 1: the diagnostic of a source that failed with exactly this status
+  // and code, when one is known (never another code's).
+  const diagnostic = counted.find((o) => o.diagnostic && (o.reason ?? defaultCode(base.status)) === errorCode)?.diagnostic;
+  return diagnostic ? { status: base.status, errorCode, diagnostic } : { status: base.status, errorCode };
 }
 
 function defaultCode(status: HomeRegionScanResult['status']): string {
@@ -279,6 +289,8 @@ export class RegionRun {
       resource_pool: this.pool,
       outcome: result?.status ?? 'not_recorded',
       reason: result?.errorCode ?? null,
+      // Region-access PR 1: the failing call, `<source>:<operation>:<AWS error name>` (null: none known).
+      diagnostic: result?.diagnostic ?? null,
       get_metric_data_metrics: this.getMetricDataMetrics,
       get_metric_statistics_requests: this.getMetricStatisticsRequests,
       // PR 1b: the cost pass's own CloudWatch counts (home region; 0 elsewhere; null: it did not run).
@@ -301,6 +313,7 @@ export function notStartedLogLine(organizationId: string, region: string, costPa
     resource_pool: null,
     outcome: SCAN_BUDGET_RESULT.status,
     reason: SCAN_BUDGET_RESULT.errorCode,
+    diagnostic: null,
     get_metric_data_metrics: 0,
     get_metric_statistics_requests: 0,
     cost_pass_get_metric_data_metrics: costPass?.getMetricDataMetrics ?? null,

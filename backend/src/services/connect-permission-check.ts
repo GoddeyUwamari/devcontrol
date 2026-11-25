@@ -11,7 +11,8 @@
  *                 a permission boundary, a service control policy or an explicit
  *                 deny: the error does not say which.
  *   not_verified  anything else: a timeout, throttling, a service not set up
- *                 (for example no Resource Explorer view), a missing credential,
+ *                 (for example no Resource Explorer index or default view in the
+ *                 home region: no Search is then made), a missing credential,
  *                 or any error that is not an authorization error.
  *
  * It tests the operations listed in PERMISSION_CHECKS and nothing else. It is
@@ -31,7 +32,8 @@ import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand, type ListFunctionsCommandOutput } from '@aws-sdk/client-lambda';
 import { CloudWatchClient, GetMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
-import { ResourceExplorer2Client, SearchCommand } from '@aws-sdk/client-resource-explorer-2';
+import { GetDefaultViewCommand, GetIndexCommand, ResourceExplorer2Client, SearchCommand } from '@aws-sdk/client-resource-explorer-2';
+import { isUsableIndexState } from './resourceExplorer.service';
 import type { TemporaryRoleCredentials } from './connect-role-check';
 import { describeAccountRegions } from './region-list';
 import { projectLambdaFunction } from './aws-response-projections';
@@ -95,6 +97,35 @@ class RegionListOutcomeError extends Error {
   }
 }
 
+/**
+ * Thrown by the Resource Explorer probe when the home region is not set up for a
+ * Search (region-access PR 1): no usable index, or an index with no default view. Its
+ * name is not a permission error, so the action is not_verified, never denied, and no
+ * Search is made.
+ */
+class ResourceExplorerNotSetUpError extends Error {
+  constructor(name: 'ResourceExplorerNoIndex' | 'ResourceExplorerNoDefaultView') {
+    super('Resource Explorer is not set up for a search in this region');
+    this.name = name;
+  }
+}
+
+/**
+ * The Resource Explorer Search probe (region-access PR 1), the same gate as the scan's
+ * (awsResourceDiscovery.ts inventoryResourceExplorer): GetIndex, then GetDefaultView,
+ * then Search WITH the default view's ARN. A Search without a ViewArn is refused (403)
+ * by the role's view/* grant in a region with no default view, which read as "denied".
+ * A failed GetIndex or GetDefaultView is classified as any probe error is.
+ */
+async function resourceExplorerSearchProbe(c: ProbeClients, signal: AbortSignal): Promise<void> {
+  const index = (await c.resourceExplorer.send(new GetIndexCommand({}), { abortSignal: signal })) as { State?: unknown } | undefined;
+  if (!isUsableIndexState(index?.State)) throw new ResourceExplorerNotSetUpError('ResourceExplorerNoIndex');
+  const view = (await c.resourceExplorer.send(new GetDefaultViewCommand({}), { abortSignal: signal })) as { ViewArn?: unknown } | undefined;
+  const viewArn = view?.ViewArn;
+  if (typeof viewArn !== 'string' || viewArn.length === 0) throw new ResourceExplorerNotSetUpError('ResourceExplorerNoDefaultView');
+  await c.resourceExplorer.send(new SearchCommand({ ViewArn: viewArn, QueryString: '', MaxResults: 1 }), { abortSignal: signal });
+}
+
 export const PERMISSION_CHECKS: readonly Probe[] = [
   {
     // Through region-list.ts, the one module allowed to call DescribeRegions.
@@ -137,7 +168,7 @@ export const PERMISSION_CHECKS: readonly Probe[] = [
       Metrics: ['UnblendedCost'],
     }), { abortSignal: signal }),
   },
-  { action: 'resource-explorer-2:Search', run: (c, signal) => c.resourceExplorer.send(new SearchCommand({ QueryString: '', MaxResults: 1 }), { abortSignal: signal }) },
+  { action: 'resource-explorer-2:Search', run: (c, signal) => resourceExplorerSearchProbe(c, signal) },
 ];
 
 /** Error names AWS uses for "your permissions do not allow this". Deliberately not every 403. */

@@ -132,6 +132,30 @@ export function isGetIndex(command: unknown): boolean {
   return (command as { constructor?: { name?: string } } | null)?.constructor?.name === 'GetIndexCommand';
 }
 
+/**
+ * What GetDefaultView answers for a region with a default view (region-access PR 1).
+ * Every Search is made only after GetDefaultView names a view, and with that view's
+ * ARN, so a fake Resource Explorer client of a scan whose search should run answers it.
+ */
+export const DEFAULT_VIEW = Object.freeze({
+  ViewArn: 'arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/00000000-0000-4000-8000-00000000000c',
+});
+
+/** Whether a command sent to a fake client is Resource Explorer's GetDefaultView. */
+export function isGetDefaultView(command: unknown): boolean {
+  return (command as { constructor?: { name?: string } } | null)?.constructor?.name === 'GetDefaultViewCommand';
+}
+
+/**
+ * A fake Resource Explorer client's answer to the calls made before a Search: GetIndex
+ * (ACTIVE_INDEX) and GetDefaultView (DEFAULT_VIEW); null for any other command.
+ */
+export function explorerBeforeSearch(command: unknown): typeof ACTIVE_INDEX | typeof DEFAULT_VIEW | null {
+  if (isGetIndex(command)) return ACTIVE_INDEX;
+  if (isGetDefaultView(command)) return DEFAULT_VIEW;
+  return null;
+}
+
 /** How long a test lease is held: no heartbeat renews it, so it outlives any one test file. */
 const TEST_LEASE_TTL_SECONDS = 60 * 60;
 

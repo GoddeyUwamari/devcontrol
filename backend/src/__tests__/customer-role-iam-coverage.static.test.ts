@@ -110,6 +110,8 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-resource-explorer-2:SearchCommand': read('resource-explorer-2:Search'),
   // Multi-region PR 1 (A5): whether a region has an index, before any Search (ViewOnlyAccess v47).
   'client-resource-explorer-2:GetIndexCommand': read('resource-explorer-2:GetIndex'),
+  // Region-access PR 1: the region's default view, whose ARN every Search names (ViewOnlyAccess v47).
+  'client-resource-explorer-2:GetDefaultViewCommand': read('resource-explorer-2:GetDefaultView'),
   'client-securityhub:GetEnabledStandardsCommand': read('securityhub:GetEnabledStandards'),
   'client-securityhub:DescribeStandardsCommand': read('securityhub:DescribeStandards'),
   'client-securityhub:GetFindingsCommand': read('securityhub:GetFindings'),
@@ -136,7 +138,7 @@ const PLATFORM_FILES = new Set([path.join('services', 'platform-sts.ts')]);
 
 /** The request resource for actions that are scoped by resource in the inline policy. */
 const REQUEST_RESOURCE: Record<string, (account: string) => string> = {
-  // No ViewArn is sent, so AWS authorizes against the region's default view.
+  // Every Search names the region's default view (ViewArn, region-access PR 1), so AWS authorizes it against that view.
   'resource-explorer-2:Search': (account) =>
     `arn:aws:resource-explorer-2:us-east-1:${account}:view/default-view/00000000-0000-4000-8000-00000000000a`,
 };
@@ -342,6 +344,15 @@ describe('customer role: SDK calls against the policy set', () => {
     expect(evaluate(statements, 'resource-explorer-2:Search', `arn:aws:resource-explorer-2:eu-west-1:${EXAMPLE_ACCOUNT}:view/v/0`)).toBe('allowed');
     expect(evaluate(statements, 'resource-explorer-2:Search', resourceFor('resource-explorer-2:Search', otherAccount))).toBe('implicitDeny');
     expect(evaluate(statements, 'resource-explorer-2:Search', `arn:aws:resource-explorer-2:us-east-1:${EXAMPLE_ACCOUNT}:managed-view/m/0`)).toBe('implicitDeny');
+    // Region-access PR 1: with no view ARN to match there is nothing the view/* grant allows,
+    // which is why a Search never goes without a ViewArn (no-viewless-search.static.test.ts).
+    expect(evaluate(statements, 'resource-explorer-2:Search', '*')).toBe('implicitDeny');
+  });
+
+  it('GetIndex and GetDefaultView, asked before every Search, are allowed by the managed policies on "*"', () => {
+    const statements = policySet();
+    expect(evaluate(statements, 'resource-explorer-2:GetIndex', '*')).toBe('allowed');
+    expect(evaluate(statements, 'resource-explorer-2:GetDefaultView', '*')).toBe('allowed');
   });
 
   it('every approved Deny action is explicitly denied by the policy set', () => {

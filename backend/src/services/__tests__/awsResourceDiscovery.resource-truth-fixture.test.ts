@@ -23,7 +23,7 @@ import { BackupClient } from '@aws-sdk/client-backup';
 import { ResourceExplorer2Client } from '@aws-sdk/client-resource-explorer-2';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { ACTIVE_INDEX, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { ACTIVE_INDEX, DEFAULT_VIEW, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import costOptimizationService from '../cost-optimization.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
@@ -175,6 +175,7 @@ function mockAws(scenario: Scenario) {
   });
   const resourceExplorer = client(new ResourceExplorer2Client(at), {
     GetIndexCommand: () => ACTIVE_INDEX,
+    GetDefaultViewCommand: () => DEFAULT_VIEW,
     SearchCommand: () => ({
       Resources: [
         tagged(`arn:aws:ec2:${REGION}:${ACCOUNT_ID}:instance/${INSTANCE_ID}`, 'AWS::EC2::Instance', 'ec2'),

@@ -14,7 +14,7 @@
  * machine (resourceReconciliation.service.ts) depends on.
  */
 import { failedSourceStatus, type SourceStatus } from './source-outcome';
-import { GetIndexCommand, ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
+import { GetDefaultViewCommand, GetIndexCommand, ResourceExplorer2Client, SearchCommand, Resource as REResource } from '@aws-sdk/client-resource-explorer-2';
 import { ResourceType, TagsState } from '../types/aws-resources.types';
 import { listAllPages } from '../utils/awsCallPolicy';
 import { errorNameOf, regionSafe } from './region-log-context';
@@ -156,11 +156,41 @@ export type IndexState =
 
 const USABLE_INDEX_STATES = new Set(['ACTIVE', 'UPDATING']);
 
+/** Whether GetIndex's State lets a Search use the index (ACTIVE or UPDATING). Shared with the Connect probe. */
+export function isUsableIndexState(state: unknown): boolean {
+  return typeof state === 'string' && USABLE_INDEX_STATES.has(state);
+}
+
+/**
+ * The region's default view (region-access PR 1), asked with GetDefaultView after GetIndex
+ * says the region has a usable index. Search is always sent WITH this view's ARN: a Search
+ * without a ViewArn makes AWS authorize it against no view, and the role's Search grant
+ * (view/* ARNs only) then cannot match, so AWS refuses it with a 403 that looks exactly
+ * like a real refusal (region-access stage-a.md, Addendum 1).
+ *
+ *   view     GetDefaultView answered with a ViewArn: Search with it
+ *   no_view  GetDefaultView answered, with no ViewArn: the region has no default view;
+ *            no Search (the existing "no default view" warning)
+ *   failed   GetDefaultView itself failed: classified like any failed call
+ *            (failedSourceStatus); never read as "no view"
+ */
+export type DefaultViewState =
+  | { state: 'view'; viewArn: string }
+  | { state: 'no_view' }
+  | { state: 'failed'; error: unknown; status: SourceStatus };
+
+/** The Resource Explorer calls a scan makes, for its diagnostics (region-log-context.ts sourceDiagnostic). */
+export type ResourceExplorerOperation = 'GetIndex' | 'GetDefaultView' | 'Search';
+
 /**
  * Whether a Search failure is AWS's "no default view" answer (multi-region PR 1, review
  * M-3): 401 UnauthorizedException. With no ViewArn, Search uses the region's default
  * view; when the region has none, or the caller cannot use it, AWS answers 401
  * (AWS Resource Explorer API Reference, Search). Not an AccessDenied (403).
+ *
+ * Region-access PR 1: every Search now names its view, and a region with no default view
+ * is found by GetDefaultView before any Search. This stays as a fallback for a 401 on a
+ * Search with a view (the view could not be used). A 403 is never read as "no view".
  */
 export function isNoDefaultView(error: unknown): boolean {
   const e = error as { name?: unknown; $metadata?: { httpStatusCode?: unknown } } | null | undefined;
@@ -180,7 +210,7 @@ export class ResourceExplorerService {
   async indexState(client: ResourceExplorer2Client): Promise<IndexState> {
     try {
       const index = await client.send(new GetIndexCommand({}));
-      return index.State && USABLE_INDEX_STATES.has(index.State) ? { state: 'indexed', type: index.Type } : { state: 'not_indexed' };
+      return isUsableIndexState(index.State) ? { state: 'indexed', type: index.Type } : { state: 'not_indexed' };
     } catch (error: unknown) {
       if ((error as { name?: unknown } | null)?.name === 'ResourceNotFoundException') return { state: 'not_indexed' };
       return { state: 'failed', error, status: failedSourceStatus(error) };
@@ -188,18 +218,35 @@ export class ResourceExplorerService {
   }
 
   /**
-   * Searches the connected account's Resource Explorer index for the given region.
-   * Never throws — a failed/errored call (no index/view provisioned, throttling,
-   * permission error, network failure, a failure partway through pagination, etc.)
+   * The region's (the client's) default view (DefaultViewState). Asked only once GetIndex
+   * says the region has a usable index. Never throws; never creates anything: a region
+   * with no default view is reported, never given one.
+   */
+  async defaultView(client: ResourceExplorer2Client): Promise<DefaultViewState> {
+    try {
+      const answer = await client.send(new GetDefaultViewCommand({}));
+      const viewArn = answer?.ViewArn;
+      return typeof viewArn === 'string' && viewArn.length > 0 ? { state: 'view', viewArn } : { state: 'no_view' };
+    } catch (error: unknown) {
+      return { state: 'failed', error, status: failedSourceStatus(error) };
+    }
+  }
+
+  /**
+   * Searches the connected account's Resource Explorer index for the given region,
+   * through `viewArn` (the region's default view, from defaultView()). The view is
+   * always passed explicitly: never a Search without a ViewArn (region-access PR 1).
+   * Never throws — a failed/errored call (throttling, permission error, network
+   * failure, a failure partway through pagination, etc.)
    * comes back as `{ success: false }` so callers never mistake "the query broke"
    * for "the query succeeded and found nothing." A successful search that may have
    * been cut off comes back with `complete: false` (see SearchResult).
    */
-  async search(client: ResourceExplorer2Client, region: string): Promise<SearchResult> {
+  async search(client: ResourceExplorer2Client, region: string, viewArn: string): Promise<SearchResult> {
     try {
       let countIncomplete = false;
       const listing = await listAllPages('Resource Explorer: Search', async (token) => {
-        const page = await client.send(new SearchCommand({ QueryString: '', NextToken: token }));
+        const page = await client.send(new SearchCommand({ ViewArn: viewArn, QueryString: '', NextToken: token }));
         if (page.Count?.Complete === false) countIncomplete = true;
         return { items: page.Resources || [], nextToken: page.NextToken };
       });

@@ -22,6 +22,7 @@ import { ClientBase, PoolClient } from 'pg';
 import { HeldLease, withFencedTransaction } from '../services/scan-lease';
 import type { ListedRegion } from '../services/region-list';
 import type { HomeRegionScanResult } from '../services/region-scan-status';
+import { safeDiagnostic } from '../services/region-log-context';
 
 /** A connection the caller has already tagged with the organization. */
 type Executor = Pick<PoolClient, 'query'>;
@@ -250,7 +251,10 @@ export async function recordRegionList(client: ClientBase, lease: HeldLease, reg
  * last_scan_started_at (the job's own started_at), last_scan_finished_at,
  * last_success_at (now() for `ok`; every other status keeps the previous
  * value), consecutive_failures (0 for `ok`, +1 for a failure, kept for
- * `partial`), updated_at. The list columns and last_error_message are never
+ * `partial`), updated_at, and last_error_message (region-access PR 1: the result's
+ * diagnostic, `<source>:<operation>:<AWS error name>`, only when it has exactly that
+ * shape and the result has a code; otherwise NULL, so every scan replaces it as it
+ * replaces last_error_code, and an `ok` scan clears it). The list columns are never
  * written; no row is inserted or deleted. A row whose last scan started after
  * this scan's job is left as it is, so an older scan never overwrites a newer
  * one's status.
@@ -318,6 +322,7 @@ async function writeRegionScanStatus(
       `UPDATE aws_account_regions r
           SET last_scan_status = $5::text,
               last_error_code = $6,
+              last_error_message = CASE WHEN $6::varchar IS NULL THEN NULL ELSE $7::text END,
               last_scan_started_at = j.started_at,
               last_scan_finished_at = now(),
               last_success_at = CASE WHEN $5::text = 'ok' THEN now() ELSE r.last_success_at END,
@@ -331,7 +336,16 @@ async function writeRegionScanStatus(
         WHERE r.organization_id = $1 AND r.aws_account_id = $2 AND r.region = $3
           AND j.id = $4 AND j.organization_id = $1
           AND (r.last_scan_started_at IS NULL OR r.last_scan_started_at <= j.started_at)`,
-      [organizationId, awsAccountId, scan.region, scan.jobId, scan.result.status, scan.result.errorCode]
+      [
+        organizationId,
+        awsAccountId,
+        scan.region,
+        scan.jobId,
+        scan.result.status,
+        scan.result.errorCode,
+        // Never AWS text: only a value of the diagnostic shape is written (region-log-context.ts).
+        scan.result.errorCode === null ? null : safeDiagnostic(scan.result.diagnostic),
+      ]
     );
     return result.rowCount ?? 0;
   });

@@ -79,7 +79,7 @@ import {
   mapWithDynamicConcurrency,
   withCallPolicyOnClients,
 } from '../utils/awsCallPolicy';
-import { SourceOutcome, authorizesCleanup, failedSourceStatus } from './source-outcome';
+import { SourceOutcome, SourceStatus, authorizesCleanup, failedSourceStatus } from './source-outcome';
 import { LeaseLossReason, LeaseLostError, isLeaseLost, linkScanLeaseJob } from './scan-lease';
 import { describeAccountRegions } from './region-list';
 import {
@@ -90,7 +90,7 @@ import {
   recordRegionList,
   recordRegionScanStatus,
 } from '../repositories/multi-region-foundation.repository';
-import { errorNameOf, inRegionLogContext, regionSafe } from './region-log-context';
+import { errorNameOf, inRegionLogContext, regionSafe, sourceDiagnostic } from './region-log-context';
 import { HOME_REGION_SOURCES, HomeRegionScanResult, RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
 import {
   NON_HOME_REGION_SOURCES,
@@ -179,7 +179,15 @@ import { addReconcileCounts, summarizeDetectors } from './cost-analysis-outcome'
 import { AccountSecurityFindingsRepository, AccountFindingCategory } from '../repositories/account-security-findings.repository';
 import { securityAuditService } from './securityAudit.service';
 import { PoolClient } from 'pg';
-import { ResourceExplorerService, GENERIC_RESOURCE_TYPES, RE_RECONCILED_TYPES, NormalizedResourceEntry, SearchResult, isNoDefaultView } from './resourceExplorer.service';
+import {
+  ResourceExplorerService,
+  GENERIC_RESOURCE_TYPES,
+  RE_RECONCILED_TYPES,
+  NormalizedResourceEntry,
+  SearchResult,
+  isNoDefaultView,
+  type ResourceExplorerOperation,
+} from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
 import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
@@ -547,6 +555,11 @@ export class AWSResourceDiscoveryService {
    *     index in the customer's account), the warning resource_explorer_no_index, and
    *     no Resource Explorer outcome (the source is not counted in the region's
    *     status). A failed GetIndex fails the source as a failed Search does.
+   *   - Region-access PR 1: then GetDefaultView. No default view: no Search, the
+   *     warning resource_explorer_no_view and no outcome, exactly as the Search 401
+   *     (review M-3). A default view: Search WITH its ViewArn, so a 403 is a real
+   *     refusal. A failed GetDefaultView fails the source as a failed Search does
+   *     (never "no view"). A failure records which call failed (outcome.diagnostic).
    *   - Only the region's own results are kept (A4, ResourceExplorerService.normalize),
    *     so they are reconciled in their own region, and only when that region's
    *     search was complete.
@@ -575,16 +588,39 @@ export class AWSResourceDiscoveryService {
       ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX);
       return { outcome: null, terminated, warning: DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX };
     }
-    const searchResult: SearchResult =
+    // Region-access PR 1: an index, then the region's default view (GetDefaultView), and
+    // a Search only WITH that view's ARN. A region with no default view is the existing
+    // "no default view" state (no Search, no outcome, the region not denied); a failed
+    // GetIndex or GetDefaultView fails the source as a failed Search does.
+    const view = index.state === 'indexed' ? await this.resourceExplorer.defaultView(clients.resourceExplorer) : null;
+    if (view?.state === 'no_view') {
+      console.warn(
+        `⚠️  [Discovery] Resource Explorer in ${region} has an index but no default view: no search was made there and nothing was created; ` +
+          `the generic types were not listed or reconciled in this region`
+      );
+      ctx.warnings.push(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW);
+      return { outcome: null, terminated, warning: DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW };
+    }
+    const failedCall: { operation: ResourceExplorerOperation; error: unknown; status: SourceStatus } | null =
       index.state === 'failed'
+        ? { operation: 'GetIndex', error: index.error, status: index.status }
+        : view?.state === 'failed'
+          ? { operation: 'GetDefaultView', error: view.error, status: view.status }
+          : null;
+    // Here the index is usable and the view known (every other case returned or failed above).
+    const viewArn = view?.state === 'view' ? view.viewArn : null;
+    const searchResult: SearchResult =
+      failedCall
         ? {
             success: false,
-            error: (index.error as { message?: string } | undefined)?.message || 'Unknown Resource Explorer error',
-            status: index.status,
-            cause: index.error,
+            error: (failedCall.error as { message?: string } | undefined)?.message || 'Unknown Resource Explorer error',
+            status: failedCall.status,
+            cause: failedCall.error,
           }
-        : await this.resourceExplorer.search(clients.resourceExplorer, region);
-    if (!searchResult.success && index.state === 'indexed' && isNoDefaultView(searchResult.cause)) {
+        : viewArn
+          ? await this.resourceExplorer.search(clients.resourceExplorer, region, viewArn)
+          : { success: false, error: 'No Resource Explorer view to search', status: 'failed' };
+    if (!searchResult.success && !failedCall && isNoDefaultView(searchResult.cause)) {
       // Review M-3: an index, but no default view the role can use (Search 401). Treated
       // as not indexed, with its own warning: no Resource Explorer outcome, no reconcile.
       console.warn(
@@ -601,10 +637,14 @@ export class AWSResourceDiscoveryService {
       // An AccessDenied is 'denied' (AWS connect PR D1, refused sources); any other failure 'failed'.
       status: !searchResult.success ? searchResult.status ?? 'failed' : searchResult.complete ? 'complete' : 'truncated',
     };
-    if (!searchResult.success && ctx.run) {
-      const failure = classifyRegionFailure(searchResult.cause);
-      outcome.status = failure.status;
-      outcome.reason = failure.reason;
+    if (!searchResult.success) {
+      // Region-access PR 1 (c): which call failed, by source, operation and AWS error name only.
+      outcome.diagnostic = sourceDiagnostic(RESOURCE_EXPLORER_SOURCE, failedCall?.operation ?? 'Search', searchResult.cause);
+      if (ctx.run) {
+        const failure = classifyRegionFailure(searchResult.cause);
+        outcome.status = failure.status;
+        outcome.reason = failure.reason;
+      }
     }
 
     if (searchResult.success) {
@@ -682,9 +722,11 @@ export class AWSResourceDiscoveryService {
       // GetIndex or Search failed (throttling, permission error, etc.) -- this is "no data
       // this cycle", not "everything is gone". Skip both the generic upsert and
       // reconciliation entirely; every aws_resources row keeps its last-known-good state.
+      // In a region run: the reason code and the failed call (source, operation and AWS
+      // error name: GetIndex, GetDefaultView or Search), never AWS text (region-access PR 1).
       console.error(
         `❌ [Discovery] Resource Explorer search failed, skipping generic inventory + reconciliation:`,
-        ctx.run ? `${region} (${outcome.reason})` : searchResult.error
+        ctx.run ? `${region} (${outcome.reason}, ${outcome.diagnostic})` : searchResult.error
       );
       ctx.errors.push(`Resource Explorer: ${searchResult.error}`);
     }

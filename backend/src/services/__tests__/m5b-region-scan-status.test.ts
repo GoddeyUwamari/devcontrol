@@ -563,3 +563,56 @@ describe('recordHomeRegionScanStatus: two organizations under row-level security
     });
   });
 });
+
+describe('region-access PR 1 (c): last_error_message holds only the sanitised diagnostic', () => {
+  const DIAGNOSTIC = 'resource-explorer:Search:AccessDeniedException';
+
+  it('a failure with a code and a diagnostic stores exactly `<source>:<operation>:<AWS error name>`', async () => {
+    await withSchema(async (env) => {
+      const { org, db, held, jobId } = await scanned(env);
+      expect(await write(db, held, jobId, { status: 'denied', errorCode: 'access_denied', diagnostic: DIAGNOSTIC })).toBe(1);
+      expect((await rowsOf(env, org))[HOME]).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied', last_error_message: DIAGNOSTIC });
+      expect(await write(db, held, jobId, { status: 'denied', errorCode: 'access_denied', diagnostic: 'resource-explorer:GetDefaultView:AccessDeniedException' }, OTHER)).toBe(1);
+      expect((await rowsOf(env, org))[OTHER].last_error_message).toBe('resource-explorer:GetDefaultView:AccessDeniedException');
+    });
+  });
+
+  it.each([
+    ['AWS message text', 'User: arn:aws:sts::123456789012:assumed-role/x/s is not authorized to perform: resource-explorer-2:Search'],
+    ['an ARN', 'arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/0'],
+    ['a 12-digit number in the error name', 'resource-explorer:Search:Error123456789012'],
+    ['a request id', 'resource-explorer:Search:AccessDeniedException:00000000-0000-4000-8000-0000000000aa'],
+    ['an extra segment with spaces', 'resource-explorer:Search:Access Denied'],
+  ])('a diagnostic carrying %s is never stored: the status is written, the message is NULL', async (_label, diagnostic) => {
+    await withSchema(async (env) => {
+      const { org, db, held, jobId } = await scanned(env);
+      expect(await write(db, held, jobId, { status: 'denied', errorCode: 'access_denied', diagnostic })).toBe(1);
+      expect((await rowsOf(env, org))[HOME]).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied', last_error_message: null });
+    });
+  });
+
+  it('no code (the flag-off home status): no message even with a diagnostic (the error_only_with_code CHECK), and the write still lands', async () => {
+    await withSchema(async (env) => {
+      const { org, db, held, jobId } = await scanned(env);
+      expect(await write(db, held, jobId, { status: 'denied', errorCode: null, diagnostic: DIAGNOSTIC })).toBe(1);
+      expect((await rowsOf(env, org))[HOME]).toMatchObject({ last_scan_status: 'denied', last_error_code: null, last_error_message: null });
+    });
+  });
+
+  it('every scan replaces it as it replaces the code: ok clears it, ok with a warning code clears it, another failure without a diagnostic clears it', async () => {
+    await withSchema(async (env) => {
+      const { org, db, held, jobId } = await scanned(env);
+      const message = async () => (await rowsOf(env, org))[HOME].last_error_message;
+      await write(db, held, jobId, { status: 'denied', errorCode: 'access_denied', diagnostic: DIAGNOSTIC });
+      expect(await message()).toBe(DIAGNOSTIC);
+      await write(db, held, jobId, { status: 'ok', errorCode: null });
+      expect(await message()).toBeNull();
+      await write(db, held, jobId, { status: 'denied', errorCode: 'access_denied', diagnostic: DIAGNOSTIC });
+      await write(db, held, jobId, { status: 'ok', errorCode: 'resource_explorer_no_view' });
+      expect(await message()).toBeNull();
+      await write(db, held, jobId, { status: 'denied', errorCode: 'access_denied', diagnostic: DIAGNOSTIC });
+      await write(db, held, jobId, { status: 'failed', errorCode: 'error' });
+      expect(await message()).toBeNull();
+    });
+  });
+});

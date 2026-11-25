@@ -29,7 +29,7 @@ import { ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balan
 import { CloudFrontClient } from '@aws-sdk/client-cloudfront';
 import { AWSResourceDiscoveryService } from '../awsResourceDiscovery';
 import { AWSClientFactory } from '../aws-client-factory.service';
-import { ACTIVE_INDEX, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
+import { DEFAULT_VIEW, explorerBeforeSearch, connectPlaceholderAccount, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 import { ComplianceScannerService } from '../complianceScanner';
 import { ResourceExplorerService, SEARCH_RESULT_LIMIT } from '../resourceExplorer.service';
 import costOptimizationService from '../cost-optimization.service';
@@ -106,7 +106,7 @@ function vpc(n: number): REResource {
 }
 
 function resourceExplorer(page: { Resources: REResource[]; Count?: { TotalResources?: number; Complete?: boolean } }) {
-  return withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), jest.fn(async (command: unknown) => (isGetIndex(command) ? ACTIVE_INDEX : page)));
+  return withMockedSend(new ResourceExplorer2Client({ region: 'us-east-1' }), jest.fn(async (command: unknown) => (explorerBeforeSearch(command) ?? page)));
 }
 
 function mockAwsClients(overrides: Record<string, unknown> = {}) {
@@ -158,18 +158,18 @@ describe('ResourceExplorerService.search: completeness', () => {
   const explorer = new ResourceExplorerService();
 
   it('is complete when AWS says the count is exhaustive and the result is under the limit', async () => {
-    const result = await explorer.search(resourceExplorer({ Resources: [vpc(1)], Count: { TotalResources: 1, Complete: true } }), 'us-east-1');
+    const result = await explorer.search(resourceExplorer({ Resources: [vpc(1)], Count: { TotalResources: 1, Complete: true } }), 'us-east-1', DEFAULT_VIEW.ViewArn);
     expect(result).toMatchObject({ success: true, complete: true });
   });
 
   it('is incomplete when AWS reports the count as not exhaustive', async () => {
-    const result = await explorer.search(resourceExplorer({ Resources: [vpc(1)], Count: { TotalResources: 1000, Complete: false } }), 'us-east-1');
+    const result = await explorer.search(resourceExplorer({ Resources: [vpc(1)], Count: { TotalResources: 1000, Complete: false } }), 'us-east-1', DEFAULT_VIEW.ViewArn);
     expect(result).toMatchObject({ success: true, complete: false });
   });
 
   it('is incomplete when the result reaches the 1,000-result limit, whatever the count says', async () => {
     const resources = Array.from({ length: SEARCH_RESULT_LIMIT }, (_, i) => ({ ...vpc(1), Arn: `arn:aws:sns:us-east-1:${ACCOUNT_ID}:topic-${i}` }));
-    const result = await explorer.search(resourceExplorer({ Resources: resources }), 'us-east-1');
+    const result = await explorer.search(resourceExplorer({ Resources: resources }), 'us-east-1', DEFAULT_VIEW.ViewArn);
     expect(result).toMatchObject({ success: true, complete: false });
   });
 });

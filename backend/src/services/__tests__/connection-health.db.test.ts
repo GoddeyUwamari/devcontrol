@@ -345,10 +345,11 @@ describe('refused sources (CP-D11, D1-D9)', () => {
 
   it('a Resource Explorer AccessDenied is denied (not failed); another failure stays failed', async () => {
     const service = new ResourceExplorerService();
+    const VIEW_ARN = 'arn:aws:resource-explorer-2:us-east-1:123456789012:view/default-view/00000000-0000-4000-8000-00000000000c';
     const failing = (error: Error) => ({ send: jest.fn().mockRejectedValue(error) }) as any;
-    expect(await service.search(failing(Object.assign(new Error('no'), { name: 'AccessDeniedException', $metadata: { httpStatusCode: 403 } })), 'us-east-1'))
+    expect(await service.search(failing(Object.assign(new Error('no'), { name: 'AccessDeniedException', $metadata: { httpStatusCode: 403 } })), 'us-east-1', VIEW_ARN))
       .toMatchObject({ success: false, status: 'denied' });
-    expect(await service.search(failing(Object.assign(new Error('no index'), { name: 'UnauthorizedException', $metadata: { httpStatusCode: 401 } })), 'us-east-1'))
+    expect(await service.search(failing(Object.assign(new Error('no index'), { name: 'UnauthorizedException', $metadata: { httpStatusCode: 401 } })), 'us-east-1', VIEW_ARN))
       .toMatchObject({ success: false, status: 'failed' });
   });
 });

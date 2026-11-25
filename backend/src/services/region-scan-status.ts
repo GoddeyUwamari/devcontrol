@@ -32,6 +32,12 @@ export interface HomeRegionScanResult {
    * code) and, on an `ok` region, for its Resource Explorer warning (PR 2, RR-M2).
    */
   errorCode: string | null;
+  /**
+   * Region-access PR 1: the failing call that set a failure's code, as
+   * `<source>:<operation>:<AWS error name>` (region-log-context.ts sourceDiagnostic), when
+   * that call is known; stored in last_error_message. Absent otherwise. Never AWS text.
+   */
+  diagnostic?: string;
 }
 
 /** Failure statuses, worst first: a source's status is the region's. */
