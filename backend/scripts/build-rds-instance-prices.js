@@ -28,13 +28,18 @@
  * rule never evaluates Aurora, RDS Custom or cluster members.
  *
  * Output (only what the lookup needs):
- *   { "source": {...provenance...},
+ *   { "source": {...provenance: URLs, version, published, retrieved, unit...},
  *     "prices": { "<region>": { "<api engine>|<api licence model>": { "<class>": [singleAz, multiAz] } } } }
  * keyed by the values DescribeDBInstances returns (Engine, LicenseModel,
  * DBInstanceClass), with null where AWS publishes no price for that deployment.
  * Only the engine/licence pairs in ENGINE_LICENCE_MAP are written; any other
  * pair (Oracle CDB, SQL Server Developer, Db2 marketplace, anything unknown) has
  * no entry, so it gets no dollar figure.
+ *
+ * The table carries no per-file SHA-256: the hashes are printed by the check
+ * (one line per region) and kept with the build evidence, never committed. A
+ * 64-hex hash can hold a 12-digit run, which the repository's account-ID guard
+ * (config/__tests__/aws-account-id-literals.test.ts) rightly rejects.
  *
  * Regions written: every region in the index except EXCLUDED_REGIONS, the
  * same 34 commercial regions as the EBS snapshot and NAT gateway tables
@@ -194,7 +199,6 @@ function main() {
       published: index.publicationDate,
       retrieved: opt.retrieved || null,
       unit: 'USD per instance hour, on-demand',
-      region_sha256: Object.fromEntries(regions.filter((r) => !EXCLUDED_REGIONS[r]).map((r) => [r, results[r].sha256])),
     },
     prices,
   };

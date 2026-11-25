@@ -27,8 +27,8 @@ import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { cn, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { DEFAULT_PRICE_DISCLOSURE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings, savingsBasisKind } from '@/lib/savings-basis';
-import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline, rdsIdleSavingsExplanation } from '@/lib/finding-display';
+import { DEFAULT_PRICE_DISCLOSURE, NO_DOLLAR_ESTIMATE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings, savingsBasisKind } from '@/lib/savings-basis';
+import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline, rdsIdleEstimateWithheld, rdsIdleSavingsExplanation } from '@/lib/finding-display';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -189,7 +189,9 @@ function foundDate(iso: string | undefined): string | null {
  * "Up to $X/mo" with "upper bound" in grey, no basis as "No dollar estimate" in grey.
  */
 function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
-  const kind = savingsBasisKind(rec);
+  // An idle RDS estimate missing a price field or a figure above $0 is no estimate here (C1b B-2): never "$0/mo".
+  const rdsWithheld = rdsIdleEstimateWithheld(rec);
+  const kind = rdsWithheld ? null : savingsBasisKind(rec);
   // An idle RDS instance-hour estimate's explanation (C1b): this card only, never the compact rows elsewhere.
   const rdsExplanation = rdsIdleSavingsExplanation(rec);
   return (
@@ -197,7 +199,7 @@ function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
       <p className={cn('text-section tabular-nums sm:whitespace-nowrap', kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
         {isLowActivityFinding(rec)
           ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency, savingsBasisKind(rec))
-          : formatRecommendationSavings(rec, formatSavingsCurrency)}
+          : rdsWithheld ? NO_DOLLAR_ESTIMATE : formatRecommendationSavings(rec, formatSavingsCurrency)}
       </p>
       {isSavingsCeiling(rec) && (
         <p className="text-label text-ink-muted font-medium">{UPPER_BOUND}</p>

@@ -60,23 +60,45 @@ const RDS_IDLE_SAVINGS_CAVEATS =
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 
+type RdsIdleRow = { issue?: string | null; metadata?: Record<string, unknown> | null; potentialSavings?: number | null }
+
+/** An idle RDS finding whose savings_basis says it carries an estimate ('estimated:', see lib/savings-basis.ts). */
+function claimsRdsIdleEstimate(rec: RdsIdleRow): boolean {
+  if (rec.issue !== IDLE_RDS_ISSUE) return false
+  const basis = rec.metadata?.savings_basis
+  return typeof basis === 'string' && basis.startsWith('estimated:')
+}
+
+/**
+ * True for an idle RDS finding that claims an estimate but can't show one
+ * (C1b fix round, B-2): one of its four price_* fields (region, class, engine
+ * label, deployment) is missing or empty, or its figure is missing, not a
+ * number, or not above $0 -- a stored 0 included. The Cost Optimization card
+ * then reads "No dollar estimate" with no explanation, never "$0/mo" and never
+ * the figure with a sentence that isn't the approved one. The backend writes
+ * all four fields with every estimate, and the smallest priced figure is
+ * $11.68, so only stored data this code didn't write can reach this.
+ */
+export function rdsIdleEstimateWithheld(rec: RdsIdleRow): boolean {
+  if (!claimsRdsIdleEstimate(rec)) return false
+  const m = rec.metadata!
+  const fields = [m.price_region, m.price_instance_class, m.price_engine_label, m.price_deployment]
+  const figure = rec.potentialSavings
+  return !(fields.every(nonEmpty) && typeof figure === 'number' && Number.isFinite(figure) && figure > 0)
+}
+
 /**
  * The explanation under an idle RDS finding's figure on the Cost Optimization
- * card: only for an estimate (savings_basis 'estimated:', see
- * lib/savings-basis.ts), never for "No dollar estimate". Region, class, engine
- * and deployment are the finding's own price key (metadata.price_*, written by
- * backend/src/services/rds-idle-evaluation.ts rdsIdleSavingsMetadata). If one
- * is missing, the same sentence without the specifics -- never a guessed value.
+ * card: only for a complete estimate (see rdsIdleEstimateWithheld), never for
+ * "No dollar estimate". Region, class, engine and deployment are the finding's
+ * own price key (metadata.price_*, written by
+ * backend/src/services/rds-idle-evaluation.ts rdsIdleSavingsMetadata). The
+ * approved sentence is the only one: no fallback wording, no guessed value.
  */
-export function rdsIdleSavingsExplanation(rec: { issue?: string | null; metadata?: Record<string, unknown> | null }): string | null {
-  if (rec.issue !== IDLE_RDS_ISSUE) return null
-  const m = rec.metadata
-  if (!m || typeof m.savings_basis !== 'string' || !m.savings_basis.startsWith('estimated:')) return null
-  const { price_region: region, price_instance_class: instanceClass, price_engine_label: engine, price_deployment: deployment } = m
-  if (nonEmpty(region) && nonEmpty(instanceClass) && nonEmpty(engine) && nonEmpty(deployment)) {
-    return `Estimated from the ${region} on-demand list price for ${instanceClass} (${engine}, ${deployment}), ${RDS_IDLE_SAVINGS_CAVEATS}`
-  }
-  return `Estimated from the on-demand list price, ${RDS_IDLE_SAVINGS_CAVEATS}`
+export function rdsIdleSavingsExplanation(rec: RdsIdleRow): string | null {
+  if (!claimsRdsIdleEstimate(rec) || rdsIdleEstimateWithheld(rec)) return null
+  const m = rec.metadata!
+  return `Estimated from the ${m.price_region} on-demand list price for ${m.price_instance_class} (${m.price_engine_label}, ${m.price_deployment}), ${RDS_IDLE_SAVINGS_CAVEATS}`
 }
 
 /** Shown read-only on Optimization Controls where the adjustable ec2_idle control was (C-6). */

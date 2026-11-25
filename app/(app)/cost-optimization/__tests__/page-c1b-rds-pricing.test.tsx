@@ -172,3 +172,57 @@ describe('C1b: compact rows stay "$X/mo"', () => {
     expect(row.textContent).not.toMatch(/Estimated from the|instance hours only/)
   })
 })
+
+// Fix round (review B-2, Z1-Z3): an idle RDS row that claims an estimate ('estimated:') but lacks one of its four
+// price fields, or whose figure is missing or 0, reads "No dollar estimate" on the card -- never "$0/mo", never the
+// figure with a sentence that isn't the approved one, and no explanation line at all.
+describe('C1b fix round B-2: an incomplete idle RDS estimate is no estimate on the card', () => {
+  const NO_STATS = stats({ totalPotentialSavings: 0, potentialSavingsByResourceType: {}, estimatedFindings: 0, unestimatedFindings: 1, bySeverity: { high: 0, medium: 1, low: 0 } })
+  // The figure as stored data could arrive: a number, or null / undefined / NaN (cast past the type on purpose).
+  const incomplete = (metadata: Record<string, unknown>, potentialSavings: number | null | undefined) =>
+    rec({ id: 'rec-rds-incomplete', resourceId: 'placeholder-db-4', resourceName: 'placeholder-db-4', potentialSavings: potentialSavings as number, severity: 'MEDIUM', metadata: { rule_version: 2, ...metadata } })
+  const KEY = PRICED.metadata as Record<string, unknown>
+
+  async function expectNoEstimate(row: CostRecommendation) {
+    svc.getAll.mockResolvedValue([row])
+    svc.getStats.mockResolvedValue(NO_STATS)
+    renderPage()
+    const c = await card('placeholder-db-4')
+    const savings = within(c).getByTestId('opportunity-savings')
+    expect(savings).toHaveTextContent(/^No dollar estimate$/)
+    expect(savings.querySelector('p')).toHaveClass('text-ink-muted')
+    expect(savings.querySelector('p')).not.toHaveClass('text-slate-900')
+    expect(c).not.toHaveTextContent('$')
+    expect(within(c).queryByTestId('rds-idle-savings-basis')).not.toBeInTheDocument()
+    expect(c.textContent).not.toMatch(/Estimated from the|instance hours only|on-demand list price/)
+  }
+
+  it.each(['price_region', 'price_instance_class', 'price_engine_label', 'price_deployment'])('Z1: %s missing, real figure $52.56 -> "No dollar estimate", no explanation', async (field) => {
+    const metadata = Object.fromEntries(Object.entries(KEY).filter(([name]) => name !== field))
+    await expectNoEstimate(incomplete(metadata, 52.56))
+  })
+
+  it.each(['price_region', 'price_instance_class', 'price_engine_label', 'price_deployment'])('Z2: %s missing and the figure missing (the service maps it to 0) -> "No dollar estimate", never "$0/mo"', async (field) => {
+    const metadata = Object.fromEntries(Object.entries(KEY).filter(([name]) => name !== field))
+    await expectNoEstimate(incomplete(metadata, 0))
+  })
+
+  it.each([['null', null], ['undefined', undefined], ['NaN', Number.NaN]])('Z2: all fields present, figure %s -> "No dollar estimate"', async (_label, figure) => {
+    await expectNoEstimate(incomplete(KEY, figure))
+  })
+
+  it('Z3: all four fields present and a stored figure of exactly 0 -> "No dollar estimate", not "$0/mo" with the approved line', async () => {
+    await expectNoEstimate(incomplete(KEY, 0))
+  })
+
+  it('a complete estimate beside an incomplete one: only the complete card shows its figure and the approved line', async () => {
+    svc.getAll.mockResolvedValue([PRICED, incomplete(KEY, 0)])
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 2, totalRecommendations: 2, unestimatedFindings: 1, bySeverity: { high: 0, medium: 2, low: 0 } }))
+    renderPage()
+    const priced = await card('placeholder-db-1')
+    expect(within(priced).getByTestId('opportunity-savings').querySelector('p')).toHaveTextContent(/^\$53\/mo$/)
+    expect(within(priced).getByTestId('rds-idle-savings-basis').textContent).toBe(APPROVED_US_EAST_1)
+    expect(within(await card('placeholder-db-4')).getByTestId('opportunity-savings')).toHaveTextContent(/^No dollar estimate$/)
+    expect(screen.getAllByTestId('rds-idle-savings-basis')).toHaveLength(1)
+  })
+})

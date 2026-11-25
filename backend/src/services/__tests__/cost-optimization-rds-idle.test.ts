@@ -450,12 +450,18 @@ describe('C1b: the instance-hour estimate (exact regional price x 730)', () => {
   });
 
   const OUTPOST = [{ SubnetIdentifier: 'subnet-placeholder', SubnetOutpost: { Arn: 'arn:aws:outposts:us-east-1:111122223333:outpost/op-placeholder' } }];
+  // C1b fix round S-1: a subnet group mixing a regional subnet and an Outposts subnet is on an Outpost (any subnet).
+  const REGIONAL_SUBNET = { SubnetIdentifier: 'subnet-placeholder-regional', SubnetOutpost: {} };
+  const MIXED_REGIONAL_FIRST = [REGIONAL_SUBNET, OUTPOST[0]];
+  const MIXED_OUTPOST_FIRST = [OUTPOST[0], REGIONAL_SUBNET];
   it.each([
     ['no licence model returned', 'missing_license_model', { LicenseModel: undefined }],
     ['no MultiAZ returned', 'missing_deployment', { MultiAZ: undefined }],
     ['no engine returned', 'missing_engine_or_class', { Engine: undefined }],
     ['no class returned', 'missing_engine_or_class', { DBInstanceClass: undefined }],
     ['on an Outpost', 'outposts', { DBSubnetGroup: { Subnets: OUTPOST } }],
+    ['S-1: a subnet group mixing a regional and an Outposts subnet (regional listed first)', 'outposts', { DBSubnetGroup: { Subnets: MIXED_REGIONAL_FIRST } }],
+    ['S-1: a subnet group mixing an Outposts and a regional subnet (Outposts listed first)', 'outposts', { DBSubnetGroup: { Subnets: MIXED_OUTPOST_FIRST } }],
     ['no subnets returned (placement unknown)', 'unknown_placement', { DBSubnetGroup: undefined }],
     ['no Availability Zone returned', 'unknown_placement', { AvailabilityZone: undefined }],
     ['in a Local Zone', 'local_zone', { AvailabilityZone: 'us-east-1-bos-1a' }],
@@ -478,6 +484,16 @@ describe('C1b: the instance-hour estimate (exact regional price x 730)', () => {
     expect(finding.metadata.severity_basis).toBe('fixed_low_unknown_price');
     expect(classifySavingsBasis(finding.metadata.savings_basis)).toBeNull();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['regional listed first', MIXED_REGIONAL_FIRST],
+    ['Outposts listed first', MIXED_OUTPOST_FIRST],
+  ])('S-1: a mixed subnet group (%s) is recorded as on an Outpost: on_outposts true, reason outposts, no price fields', async (_label, subnets) => {
+    const [finding] = (await detectOne(pricedDb('mixed-db', { DBSubnetGroup: { DBSubnetGroupName: 'placeholder', Subnets: subnets } }))).issues;
+    expect(finding.metadata).toMatchObject({ on_outposts: true, availability_zone: 'us-east-1a', savings_note: 'outposts' });
+    expect(finding.potentialSavings).toBe(0);
+    expect(finding.metadata.price_region).toBeUndefined();
   });
 
   it.each(['us-gov-west-1', 'xx-nowhere-1'])('home region %s (not in the table): no_price_for_region, never another region\'s price', async (region) => {

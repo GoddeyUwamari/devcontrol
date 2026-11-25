@@ -27,7 +27,7 @@ import {
 import PRICE_FILE from '../rds-instance-prices.json';
 
 const table = PRICE_FILE as unknown as {
-  source: Record<string, unknown> & { region_sha256: Record<string, string> };
+  source: Record<string, unknown>;
   prices: Record<string, Record<string, Record<string, [number | null, number | null]>>>;
 };
 
@@ -48,14 +48,17 @@ describe('the price table: provenance and shape', () => {
     expect(table.source.offer_url_template).toBe('https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/<version>/<region>/index.json');
   });
 
-  it('covers exactly the 34 commercial regions of the snapshot and NAT tables, each with its offer file hash; no GovCloud or Local Zone', () => {
+  it('covers exactly the 34 commercial regions of the snapshot and NAT tables; no GovCloud or Local Zone', () => {
     const regions = Object.keys(table.prices).sort();
     expect(regions).toHaveLength(34);
     expect(regions).toEqual(Object.keys(NAT_GATEWAY_HOURLY_USD_BY_REGION).sort());
     expect(regions).toEqual(Object.keys(EBS_SNAPSHOT_STANDARD_PER_GB_MONTH_USD_BY_REGION).sort());
-    expect(Object.keys(table.source.region_sha256).sort()).toEqual(regions);
-    for (const hash of Object.values(table.source.region_sha256)) expect(hash).toMatch(/^[0-9a-f]{64}$/);
     expect(regions.filter((r) => r.startsWith('us-gov-') || r.split('-').length > 3)).toEqual([]);
+  });
+
+  it('carries provenance only: no offer file hashes (they stay in the build evidence; a hex hash can trip the account-ID guard)', () => {
+    expect(Object.keys(table.source)).toEqual(['index_url', 'offer_url_template', 'version', 'published', 'retrieved', 'unit']);
+    expect(JSON.stringify(table.source)).not.toMatch(/[0-9a-f]{64}/);
   });
 
   it('stores lookup fields only: every row is [Single-AZ, Multi-AZ], each a positive finite $/hour or null, at least one set', () => {
@@ -271,6 +274,9 @@ describe('build-rds-instance-prices.js: the uniqueness check fails closed', () =
     const written = JSON.parse(fs.readFileSync(result.out, 'utf8'));
     expect(written.prices).toEqual({ 'us-east-1': { 'postgres|postgresql-license': { 'db.m5.large': [0.178, 0.356] } } });
     expect(written.source).toMatchObject({ version: VERSION, published: '2099-01-01T00:00:00Z', retrieved: '2099-01-02' });
+    // The per-file hash is printed by the check, never written to the table.
+    expect(written.source).not.toHaveProperty('region_sha256');
+    expect(result.stdout).toMatch(/PASS us-east-1: .* sha256 [0-9a-f]{64}/);
   });
 
   it.each([
