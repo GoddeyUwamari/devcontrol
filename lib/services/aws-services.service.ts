@@ -234,9 +234,11 @@ export interface RegionCoverage {
   /** A known code (partial's two truncation codes, or region-access PR (b)'s three Resource Explorer codes), never text; null otherwise. */
   last_error_code: string | null
   /**
-   * Scans in a row that reached the status write with a failed home-region
-   * source. A scan that stopped before the write is not counted: not "failed
-   * attempts in a row".
+   * Scans in a row that reached the status write with a failed or denied
+   * status: 0 after ok, +1 after a failure, kept after partial, except 0
+   * after a partial with a Resource Explorer failure code (region-access
+   * PR (b): only the optional source failed). A scan that stopped before the
+   * write is not counted: not "failed attempts in a row".
    */
   consecutive_failures: number
   /** The status is older than about 2 scan intervals (server clock); never for never_scanned. */

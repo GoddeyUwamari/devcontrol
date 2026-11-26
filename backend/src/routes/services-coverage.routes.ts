@@ -383,10 +383,13 @@ export interface RegionCoverage {
   /** A code on REGION_ERROR_CODES, or null; never the stored message. */
   last_error_code: string | null;
   /**
-   * Scans in a row that REACHED the status write with a failed home-region
-   * source (m5-plan.md §14, §14.1). A scan that stopped before the write
-   * (credentials, lost lease, fatal error) is not counted: this is not
-   * "failed attempts in a row".
+   * Scans in a row that REACHED the status write with a failed or denied
+   * status (m5-plan.md §14, §14.1): 0 after `ok`, +1 after a failure, kept
+   * after a `partial`, except 0 after a `partial` whose code is a Resource
+   * Explorer failure code (region-access PR (b): only the optional source
+   * failed, so the scan was not a failed scan). A scan that stopped before
+   * the write (credentials, lost lease, fatal error) is not counted: this is
+   * not "failed attempts in a row". Writer: multi-region-foundation.repository.ts.
    */
   consecutive_failures: number;
   /** A status was written and last_scan_finished_at is older than STALE_AFTER_SECONDS (database clock). */

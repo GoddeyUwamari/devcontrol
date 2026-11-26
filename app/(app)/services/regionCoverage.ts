@@ -24,7 +24,16 @@
  */
 import type { RegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
 import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
-import { DISCOVERY_WARNING_LISTING_TRUNCATED, resourceExplorerFailureText, scopeIsCompleted, shownWarnings, warningNotes } from './coverage'
+import {
+  DISCOVERY_WARNING_LISTING_TRUNCATED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED,
+  resourceExplorerFailureText,
+  scopeIsCompleted,
+  shownWarnings,
+  warningNotes,
+} from './coverage'
 
 // ── Counts ──
 
@@ -89,15 +98,38 @@ export function latestAttempt(coverage: ServicesCoverage): LatestAttempt {
 
 /**
  * The Phase 1 job-warning note (coverage.ts warningNotes) that the home
- * region's partial note already says. Only the index truncation: the
- * Resource Explorer search is a home source, so its code always means the
- * home region. discovery_listing_truncated is also added by S3 and CloudFront
- * listings (account-wide), so its job note is kept.
+ * region's partial note already says: the index truncation, and the three
+ * Resource Explorer failure codes (region-access PR (b)), whose home-region
+ * sentence is the home row's own. discovery_listing_truncated is also added
+ * by S3 and CloudFront listings (account-wide), so its job note is kept.
  */
 const TRUNCATION_CODES: readonly string[] = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED]
 
 const WARNING_NOTE_KEY: Record<string, string> = {
   [DISCOVERY_WARNING_TRUNCATED_INDEX]: 'deletion-paused',
+  [DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED]: 'resource-explorer-denied',
+  [DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED]: 'resource-explorer-throttled',
+  [DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED]: 'resource-explorer-failed',
+}
+
+/**
+ * Region-access PR (b), S-1: any region's failed Resource Explorer call adds
+ * its code to the scan's one shared warning list, and warningNotes words the
+ * code with the home region. With region rows, the code is the home region's
+ * only when the home row carries it (as coverage.ts homeRegionWarnings reads
+ * it for the redesign, RR-M2); otherwise it is dropped here, and the region's
+ * own row and status note say it. With no region list there are no rows and
+ * only the home region was scanned, so the codes are kept.
+ */
+const RESOURCE_EXPLORER_FAILURE_CODES: readonly string[] = [
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED,
+]
+
+function homeRegionCodes(codes: readonly string[], homeRow: RegionCoverage | undefined, known: boolean): string[] {
+  if (!known) return [...codes]
+  return codes.filter((code) => !RESOURCE_EXPLORER_FAILURE_CODES.includes(code) || code === homeRow?.last_error_code)
 }
 
 // ── Times ──
@@ -500,10 +532,11 @@ export function describeRegionCoverage(coverage: ServicesCoverage, now: number, 
   if (s3Elsewhere > 0) chips.push({ key: 's3', state: 'global', region: 'S3 in other regions', note: `${s3Elsewhere}${notInLast(s3.in_last_scan)}` })
 
   // The job's warnings keep their Phase 1 notes, except the one the home
-  // region's partial note already says (same truncation code, Q8).
+  // region's partial note already says (same code, Q8), and a Resource
+  // Explorer failure code the home row does not carry (another region's, S-1).
   const homeStatus = known ? coverage.region_status!.find((r) => r.home) : undefined
   const saidByHome = homeStatus?.status === 'partial' && homeStatus.last_error_code ? WARNING_NOTE_KEY[homeStatus.last_error_code] : undefined
-  for (const note of warningNotes(jobWarnings, inTabWarnings, home.region)) {
+  for (const note of warningNotes(homeRegionCodes(jobWarnings, homeStatus, known), homeRegionCodes(inTabWarnings, homeStatus, known), home.region)) {
     if (note.key === saidByHome) continue
     notes.push({ key: `warning-${note.key}`, tone: note.tone, title: note.title, parts: [note.body] })
   }

@@ -10,7 +10,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
 import { DELETION_DETECTION_PAUSED_TEXT, DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
-import { describeCoverage, DISCOVERY_WARNING_LISTING_TRUNCATED, LISTING_TRUNCATED_TEXT } from '../coverage'
+import {
+  describeCoverage, DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED, DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED, LISTING_TRUNCATED_TEXT, resourceExplorerFailureText,
+} from '../coverage'
 import {
   describeRegionCoverage, footerText, formatExact, formatWhen, hasRegionCoverage, latestAttempt, regionCounts, richText,
   REGION_COPY, SCAN_INTERVAL_TEXT, type RegionCoverageView,
@@ -238,6 +241,31 @@ describe('V5 partial', () => {
       expect(describeCoverage(c, NOW).notes.map((n) => n.body)).toContain(DELETION_DETECTION_PAUSED_TEXT)
       expect(notCheckedLines(c, undefined, NOW, [], true).map((l) => l.text)).toContain(DELETION_DETECTION_PAUSED_TEXT)
     })
+  })
+})
+
+describe('S-1 (region-access PR (b)): a Resource Explorer failure code is worded with the home region only when the home row carries it', () => {
+  const RE_CODES = [DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED, DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED, DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED]
+  const job = (warnings: string[]) => ({ last_scan: { status: 'completed', started_at: hoursAgo(2.1), completed_at: hoursAgo(2), warnings } })
+  const euPartial = (code: string) => region('eu-west-1', { status: 'partial', last_error_code: code, last_scan_finished_at: hoursAgo(2), last_success_at: hoursAgo(30) })
+  const others = (code: string) => OTHER_REGIONS.map((r) => (r === 'eu-west-1' ? euPartial(code) : region(r)))
+
+  it.each(RE_CODES)('%s refused in eu-west-1 (home us-east-1 complete): no note claims the home region', (code) => {
+    // From the job row and from this tab's discovery run alike.
+    for (const v of [view(prod(job([code]), HOME_OK, others(code))), view(prod({}, HOME_OK, others(code)), [code])]) {
+      expect(notes(v)).not.toContain(resourceExplorerFailureText(code, 'us-east-1'))
+      expect(JSON.stringify(v.notes)).not.toMatch(/Resource Explorer[^"]* in us-east-1/)
+      expect(v.notes.map((n) => n.key)).not.toContain(`warning-${code.replace(/_/g, '-')}`)
+      expect(notes(v).filter((n) => n === resourceExplorerFailureText(code, 'eu-west-1'))).toHaveLength(1)
+    }
+  })
+
+  it.each(RE_CODES)('%s in the home region: its sentence appears once in the notes', (code) => {
+    const home = { ...HOME_OK, status: 'partial' as const, last_error_code: code, last_success_at: hoursAgo(30) }
+    for (const v of [view(prod(job([code]), home)), view(prod({}, home), [code])]) {
+      expect(notes(v).filter((n) => n === resourceExplorerFailureText(code, 'us-east-1'))).toHaveLength(1)
+      expect(v.notes.map((n) => n.key)).toContain('status-us-east-1')
+    }
   })
 })
 
