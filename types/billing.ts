@@ -61,6 +61,8 @@ export interface BillingTrialState {
 export interface BillingUsage {
   /** null when it could not be read. limit null means unlimited. */
   awsResources: { used: number; limit: number | null } | null;
+  /** Registered services and the plan's services limit, as POST /api/services enforces them. */
+  services?: { used: number; limit: number | null } | null;
 }
 
 export interface BillingActions {

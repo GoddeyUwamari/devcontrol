@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -25,6 +26,15 @@ import { cn } from '@/lib/utils'
 import { servicesService } from '@/lib/services/services.service'
 import { teamsService } from '@/lib/services/teams.service'
 import { logError } from '@/lib/safe-log'
+import { useServiceLimit } from '@/lib/hooks/use-service-limit'
+import {
+  SERVICE_LIMIT_CONTACT_HREF,
+  SERVICE_LIMIT_COPY,
+  SERVICE_LIMIT_SEE_PLANS_HREF,
+  SERVICE_LIMIT_UPDATE_BILLING_HREF,
+} from '@/lib/service-limit/copy'
+import { serviceLimitRefusalMessage } from '@/lib/service-limit/refusal'
+import type { ServiceLimit } from '@/lib/types'
 import { returnPathAfterCreate } from './return-path'
 
 // Validation schema using Zod (matches backend schema)
@@ -44,9 +54,38 @@ const serviceSchema = z.object({
 
 type ServiceFormData = z.infer<typeof serviceSchema>
 
+const NOTICE_LINK = 'font-semibold text-ink-accent underline'
+
+/**
+ * At the services limit (stage-a C1-C5): why no service can be created, with
+ * the plan's way forward. Existing services are never affected. Explanatory
+ * only: POST /api/services refuses on its own (402).
+ */
+function ServiceLimitNotice({ limit }: { limit: ServiceLimit & { max: number } }) {
+  const c = SERVICE_LIMIT_COPY
+  let body: React.ReactNode
+  if (limit.reason) {
+    body = <>{c.holdBody(limit.freePlan, limit.max, limit.used)} <Link href={SERVICE_LIMIT_UPDATE_BILLING_HREF} className={NOTICE_LINK}>{c.updateBilling}</Link></>
+  } else if (limit.upgradeAvailable) {
+    body = <>{c.planBody(limit.plan, limit.max, limit.used)} <Link href={SERVICE_LIMIT_SEE_PLANS_HREF} className={NOTICE_LINK}>{c.seePlans}</Link></>
+  } else {
+    body = <>{c.planBody(limit.plan, limit.max, limit.used)} {c.managedLead}<a href={SERVICE_LIMIT_CONTACT_HREF} className={NOTICE_LINK}>{c.contactUs}</a>.</>
+  }
+  return (
+    <div role="status" data-testid="service-limit-notice" className="rounded-lg border border-border bg-muted px-4 py-3">
+      <p className="m-0 text-ui font-semibold text-ink">{c.title}</p>
+      <p className="m-0 mt-1 text-ui text-ink-body">{body}</p>
+    </div>
+  )
+}
+
 export default function NewServicePage() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const limitReasonId = useId()
+  const serviceLimit = useServiceLimit()
+  const limit = serviceLimit.data
+  const atLimit = limit !== undefined && limit.reached && limit.max !== null
 
   // Fetch teams for dropdown
   const { data: teams = [], isLoading: teamsLoading } = useQuery({
@@ -69,31 +108,32 @@ export default function NewServicePage() {
   const teamId = watch('teamId')
 
   const onSubmit = async (data: ServiceFormData) => {
+    // At the limit nothing is sent (the button is disabled too); the server refuses on its own anyway.
+    if (atLimit) return
     setIsSubmitting(true)
-
-    const promise = servicesService.create({
-      name: data.name,
-      template: data.template,
-      owner: data.owner,
-      teamId: data.teamId,
-      description: data.description || undefined,
-      githubUrl: data.githubUrl || undefined,
-    })
-
-    toast.promise(promise, {
-      loading: 'Creating service...',
-      success: 'Service created successfully!',
-      error: (err) => {
-        setIsSubmitting(false)
-        return err.message || 'Failed to create service'
-      },
-    })
+    const toastId = toast.loading('Creating service...')
 
     try {
-      await promise
+      await servicesService.create({
+        name: data.name,
+        template: data.template,
+        owner: data.owner,
+        teamId: data.teamId,
+        description: data.description || undefined,
+        githubUrl: data.githubUrl || undefined,
+      })
+      toast.success('Service created successfully!', { id: toastId })
       router.push(returnPathAfterCreate())
     } catch (error) {
       logError('Error creating service', error)
+      // C7: the server's own message, never the HTTP client's generic one; the notice then shows.
+      const refusal = serviceLimitRefusalMessage(error)
+      if (refusal) {
+        toast.error(SERVICE_LIMIT_COPY.notCreatedTitle, { id: toastId, description: refusal })
+        void serviceLimit.refetch()
+      } else {
+        toast.error((error as Error)?.message || 'Failed to create service', { id: toastId })
+      }
       setIsSubmitting(false)
     }
   }
@@ -128,6 +168,7 @@ export default function NewServicePage() {
           </div>
         </CardHeader>
         <CardContent>
+          {atLimit && <div className="mb-6"><ServiceLimitNotice limit={{ ...limit, max: limit.max as number }} /></div>}
           <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Service Name */}
             <div className="space-y-2">
@@ -258,7 +299,8 @@ export default function NewServicePage() {
             <div className="flex items-center gap-4 pt-4 border-t">
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting || teams.length === 0}
+                disabled={!isValid || isSubmitting || teams.length === 0 || atLimit}
+                aria-describedby={atLimit ? limitReasonId : undefined}
                 className="min-w-[140px]"
               >
                 {isSubmitting ? (
@@ -281,6 +323,7 @@ export default function NewServicePage() {
               >
                 Cancel
               </Button>
+              {atLimit && <span id={limitReasonId} data-testid="service-limit-submit-reason" className="text-meta text-ink-muted">{SERVICE_LIMIT_COPY.submitReason}</span>}
             </div>
           </form>
         </CardContent>

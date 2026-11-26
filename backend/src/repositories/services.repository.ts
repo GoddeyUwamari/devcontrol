@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { Service, ServiceFilters, CreateServiceRequest, UpdateServiceRequest } from '../types';
 
@@ -62,8 +63,15 @@ export class ServicesRepository {
   // organization -- checked and row-locked in the same statement as the
   // insert, so the team can't be deleted in between. Returns null when it
   // doesn't (missing, or another organization's); callers must not
-  // distinguish those cases to the client.
-  async create(service: CreateServiceRequest, organizationId: string): Promise<Service | null> {
+  // distinguish those cases to the client. `executor` is the creating
+  // transaction's client (ServicesController.create: the services limit is
+  // checked on it under SERVICES_QUOTA_LOCK_SQL first); the request's own
+  // connection otherwise.
+  async create(
+    service: CreateServiceRequest,
+    organizationId: string,
+    executor: Pick<PoolClient, 'query'> = pool
+  ): Promise<Service | null> {
     const values = [
       service.name,
       service.template,
@@ -76,7 +84,7 @@ export class ServicesRepository {
     ];
 
     if (service.team_id === undefined || service.team_id === null) {
-      const result = await pool.query(
+      const result = await executor.query(
         `
       INSERT INTO services (name, template, owner, team_id, github_url, description, status, organization_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -97,7 +105,7 @@ export class ServicesRepository {
       FOR SHARE OF t
       RETURNING *
     `;
-    const result = await pool.query(query, values);
+    const result = await executor.query(query, values);
     return result.rows[0] || null;
   }
 

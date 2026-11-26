@@ -463,6 +463,14 @@ function resolveMaxUsers(
   return lowered ? TIER_LIMITS.free.maxUsers : (org.max_users || TIER_LIMITS[tier].maxUsers);
 }
 
+function resolveMaxServices(
+  org: { max_services: number | null },
+  tier: SubscriptionTier,
+  lowered: boolean
+): number {
+  return lowered ? TIER_LIMITS.free.maxServices : (org.max_services || TIER_LIMITS[tier].maxServices);
+}
+
 function resolveMaxDeploymentsPerMonth(
   org: { max_deployments_per_month: number | null },
   tier: SubscriptionTier,
@@ -553,6 +561,118 @@ export async function deploymentMonthlyLimit(executor: Pool | PoolClient, organi
 }
 
 /**
+ * The per-organization lock every service creation takes FIRST, inside its
+ * own transaction, so count-then-insert cannot overshoot the services limit.
+ * Its own namespace: never 'deployments_quota:' (github-app/record.ts) nor
+ * 'organization_memberships:' (lockOrganizationMemberships).
+ */
+export const SERVICES_QUOTA_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended('services_quota:' || $1::text, 0))";
+
+/** The upgrade page the services limit points to (as D8b's "See plans"). */
+export const SERVICES_UPGRADE_URL = '/settings/billing/upgrade';
+
+/**
+ * An organization's services limit and usage, resolved exactly as
+ * checkResourceLimit('services') resolves the limit (entitlementOf: a hold
+ * or a terminal subscription gives the Free limit; otherwise the stored
+ * max_services, else the plan default; -1 = unlimited). `used` counts every
+ * services row of the organization, whatever its status (stage-a FQ1).
+ */
+export interface ServiceCapacity {
+  used: number;
+  /** -1 = unlimited. */
+  limit: number;
+  effectiveTier: SubscriptionTier;
+  /** Set when a billing hold is why the limit is the Free one. */
+  reason: TierRequiredReason | null;
+  /** upgradeAvailableOf: never for a managed plan or the top plan. */
+  upgradeAvailable: boolean;
+}
+
+export async function serviceCapacityOf(executor: Pool | PoolClient, organizationId: string): Promise<ServiceCapacity> {
+  const { rows } = await executor.query(
+    `SELECT subscription_tier, max_services,
+            billing_lifecycle_state, grace_period_ends_at, stripe_subscription_id, subscription_status, id
+     FROM organizations WHERE id = $1 AND deleted_at IS NULL`,
+    [organizationId]
+  );
+  if (rows.length === 0) {
+    throw new Error('Organization not found');
+  }
+  const org = rows[0];
+  const { storedTier, effectiveTier, hold } = entitlementOf(org);
+  const limit = resolveMaxServices(org, effectiveTier, effectiveTier !== storedTier);
+  const counted = await executor.query(
+    'SELECT COUNT(*)::int AS used FROM services WHERE organization_id = $1',
+    [organizationId]
+  );
+  return {
+    used: counted.rows[0].used,
+    limit,
+    effectiveTier,
+    reason: hold === 'payment' ? 'BILLING_RESTRICTED' : hold === 'subscription_inactive' ? 'SUBSCRIPTION_INACTIVE' : null,
+    upgradeAvailable: upgradeAvailableOf(org),
+  };
+}
+
+/** Whether one more service fits (-1 = unlimited). */
+export function serviceCapacityAllowsOneMore(capacity: Pick<ServiceCapacity, 'used' | 'limit'>): boolean {
+  return capacity.limit === -1 || capacity.used + 1 <= capacity.limit;
+}
+
+/** The customer-facing plan name for a tier, or null for a tier the catalog does not know (never the id). */
+function planNameOf(tier: string): string | null {
+  return Object.prototype.hasOwnProperty.call(PLAN_NAME, tier) ? PLAN_NAME[tier as SubscriptionTier] : null;
+}
+
+/** Refused service creation: 402 RESOURCE_LIMIT_REACHED with the approved message (stage-a C9). */
+export class ServiceLimitReachedError extends Error {
+  readonly statusCode = 402;
+  readonly code = 'RESOURCE_LIMIT_REACHED';
+  constructor(public readonly capacity: ServiceCapacity) {
+    super(serviceLimitMessage(capacity));
+    this.name = 'ServiceLimitReachedError';
+  }
+}
+
+/** C9: plan names only, never an internal tier id. */
+export function serviceLimitMessage(capacity: Pick<ServiceCapacity, 'used' | 'limit' | 'effectiveTier'>): string {
+  const plan = planNameOf(capacity.effectiveTier);
+  const subject = plan ? `Your ${plan} plan` : 'Your plan';
+  return `${subject} includes ${capacity.limit} services, and this workspace has ${capacity.used}. Existing services aren't affected.`;
+}
+
+/** The 402 body (stage-a §6.3). */
+export function serviceLimitResponse(capacity: ServiceCapacity) {
+  return {
+    success: false as const,
+    error: serviceLimitMessage(capacity),
+    code: 'RESOURCE_LIMIT_REACHED' as const,
+    details: {
+      resourceType: 'services' as const,
+      currentUsage: capacity.used,
+      maxLimit: capacity.limit,
+      plan: planNameOf(capacity.effectiveTier),
+      ...(capacity.reason ? { reason: capacity.reason } : {}),
+    },
+    upgrade: { available: capacity.upgradeAvailable, url: SERVICES_UPGRADE_URL },
+  };
+}
+
+/**
+ * Throws ServiceLimitReachedError unless one more service fits. Must run on
+ * the creating transaction's client, after SERVICES_QUOTA_LOCK_SQL, so the
+ * count and the insert that follows it see the same rows.
+ */
+export async function assertServiceCapacity(client: PoolClient, organizationId: string): Promise<ServiceCapacity> {
+  const capacity = await serviceCapacityOf(client, organizationId);
+  if (!serviceCapacityAllowsOneMore(capacity)) {
+    throw new ServiceLimitReachedError(capacity);
+  }
+  return capacity;
+}
+
+/**
  * Get organization's resource limits and current usage
  */
 async function getOrganizationLimits(organizationId: string): Promise<{
@@ -614,7 +734,7 @@ async function getOrganizationLimits(organizationId: string): Promise<{
   return {
     tier,
     limits: {
-      maxServices: restricted ? TIER_LIMITS.free.maxServices : (org.max_services || TIER_LIMITS[tier].maxServices),
+      maxServices: resolveMaxServices(org, tier, restricted),
       maxUsers: resolveMaxUsers(org, tier, restricted),
       maxDeploymentsPerMonth: resolveMaxDeploymentsPerMonth(org, tier, restricted),
       maxResources: TIER_LIMITS[tier].maxResources,

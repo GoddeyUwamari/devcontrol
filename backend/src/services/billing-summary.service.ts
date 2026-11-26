@@ -8,7 +8,9 @@
  *  - trial: whether the organization used its trial, whether one is running
  *    and when it ends, and whether it is eligible now;
  *  - usage: AWS resources counted and the limit, exactly as checkResourceLimit
- *    enforces them, or null when they cannot be read;
+ *    enforces them, and registered services and their limit, exactly as
+ *    POST /api/services enforces them (serviceCapacityOf); each null when it
+ *    cannot be read;
  *  - actions: what the page may offer.
  *
  * Dates, price and interval come from Stripe data this server already
@@ -20,6 +22,7 @@ import stripeService, { isSalesLedTier, isTerminalSubscriptionStatus } from './s
 import {
   entitlementOf,
   getResourceUsage,
+  serviceCapacityOf,
   isOrgRestricted,
   planSourceOf,
   upgradeAvailableOf,
@@ -55,6 +58,7 @@ export interface BillingSummary {
   };
   usage: {
     awsResources: { used: number; limit: number | null } | null;
+    services: { used: number; limit: number | null } | null;
   };
   actions: {
     /** Checkout (a new subscription), change-plan (the recorded one), or neither (our team, or Revenue Protection). */
@@ -100,6 +104,16 @@ async function awsResourceUsageOf(organizationId: string): Promise<BillingSummar
   }
 }
 
+async function serviceUsageOf(organizationId: string): Promise<BillingSummary['usage']['services']> {
+  try {
+    const { used, limit } = await serviceCapacityOf(pool, organizationId);
+    return { used, limit: limit === -1 ? null : limit };
+  } catch (error) {
+    console.error(`[Billing] Could not read service usage for organization ${organizationId}:`, error instanceof Error ? error.name : 'error');
+    return null;
+  }
+}
+
 /** The organization's billing summary, or null if it does not exist. */
 export async function billingSummaryOf(organizationId: string): Promise<BillingSummary | null> {
   const { rows } = await pool.query(
@@ -140,7 +154,7 @@ export async function billingSummaryOf(organizationId: string): Promise<BillingS
       endsAt: trialActive ? snapshot?.trialEnd ?? null : null,
       eligible: isTrialEnabled() && selfServe === 'checkout' && row.trial_eligible === true,
     },
-    usage: { awsResources: await awsResourceUsageOf(organizationId) },
+    usage: { awsResources: await awsResourceUsageOf(organizationId), services: await serviceUsageOf(organizationId) },
     actions: {
       selfServe,
       showUpgrade: upgradeAvailableOf(row),

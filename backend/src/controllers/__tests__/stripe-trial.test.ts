@@ -888,9 +888,32 @@ describe('the billing summary', () => {
       plan: { storedTier: 'free', effectiveTier: 'free', entitlementHold: null, source: 'none', isTopPlan: false },
       subscription: null,
       trial: { used: false, active: false, endsAt: null, eligible: true },
-      usage: { awsResources: { used: 0, limit: 20 } },
+      // services: this fixture leaves max_services at the column default (10), and the stored
+      // value applies (service-limits stage-a G2; production drift fixed by the admin package).
+      usage: { awsResources: { used: 0, limit: 20 }, services: { used: 0, limit: 10 } },
       actions: { selfServe: 'checkout', showUpgrade: true, manageSubscription: false },
     });
+  });
+
+  it('services usage: counted and limited as POST /api/services enforces them (plan default, hold, unlimited)', async () => {
+    const { orgId } = await insertOrg();
+    await pool.query('UPDATE organizations SET max_services = NULL WHERE id = $1', [orgId]);
+    await pool.query(
+      `INSERT INTO services (name, template, owner, status, organization_id)
+       SELECT 'trial-usage-' || g, 'api', 'owner@example.com', 'archived', $1 FROM generate_series(1, 3) g`,
+      [orgId]
+    );
+    expect((await summary(orgId)).body.data.usage.services).toEqual({ used: 3, limit: 5 });
+
+    const held = await insertOrg({ tier: 'pro', status: 'paused', subscriptionId: `sub_test_${uniqueSuffix()}` });
+    jest.spyOn(stripeService, 'getSubscription').mockRejectedValue(Object.assign(new Error('down'), { name: 'StripeConnectionError' }));
+    await pool.query('UPDATE organizations SET max_services = 100 WHERE id = $1', [held.orgId]);
+    expect((await summary(held.orgId)).body.data.usage.services).toEqual({ used: 0, limit: 5 });
+
+    const top = await insertOrg({ tier: 'enterprise' });
+    await pool.query('UPDATE organizations SET max_services = -1 WHERE id = $1', [top.orgId]);
+    expect((await summary(top.orgId)).body.data.usage.services).toEqual({ used: 0, limit: null });
+    await pool.query('DELETE FROM services WHERE organization_id = $1', [orgId]);
   });
 
   it('trialing: trial end, price and interval from the subscription data received; Stripe is not called to render it', async () => {
@@ -955,7 +978,9 @@ describe('the billing summary', () => {
   it('usage that cannot be read is null (shown as unavailable), never a made-up number', async () => {
     const { orgId } = await insertOrg();
     jest.spyOn(middleware, 'getResourceUsage').mockRejectedValue(new Error('relation missing'));
-    expect((await summary(orgId)).body.data.usage).toEqual({ awsResources: null });
+    expect((await summary(orgId)).body.data.usage).toEqual({ awsResources: null, services: { used: 0, limit: 10 } });
+    jest.spyOn(middleware, 'serviceCapacityOf').mockRejectedValue(new Error('relation missing'));
+    expect((await summary(orgId)).body.data.usage).toEqual({ awsResources: null, services: null });
   });
 
   it('never carries a Stripe subscription or customer id; members read the same summary', async () => {

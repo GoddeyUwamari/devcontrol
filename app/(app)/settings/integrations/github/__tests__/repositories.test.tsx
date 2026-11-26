@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import GitHubIntegrationPage from '../page'
+import { Repositories } from '../_components/Repositories'
 
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
 vi.mock('@/lib/github-connection/navigate', () => ({ goToGitHub: vi.fn() }))
@@ -21,6 +22,16 @@ vi.mock('@/lib/hooks/use-registered-services', () => ({
   useRegisteredServices: ({ enabled }: { enabled: boolean }) => {
     servicesEnabled(enabled)
     return enabled ? servicesState : { data: undefined, isError: false, refetch: vi.fn() }
+  },
+}))
+
+// The services limit (stage-a C8): undefined = unknown, as when the hook is disabled.
+const serviceLimitState: { data: { reached: boolean; upgradeAvailable: boolean } | undefined } = { data: undefined }
+const serviceLimitEnabled = vi.fn()
+vi.mock('@/lib/hooks/use-service-limit', () => ({
+  useServiceLimit: ({ enabled }: { enabled: boolean }) => {
+    serviceLimitEnabled(enabled)
+    return enabled ? serviceLimitState : { data: undefined }
   },
 }))
 
@@ -92,6 +103,7 @@ beforeEach(() => {
   repositoriesStatus = 200
   servicesState.data = SERVICES
   servicesState.isError = false
+  serviceLimitState.data = undefined
   mockGet.mockImplementation((url: string) => {
     if (url === '/api/integrations/github') return ok({ success: true, data: connection })
     if (url === '/api/integrations/github/repositories') {
@@ -440,5 +452,54 @@ describe('members and the demo workspace', () => {
     expect(within(t).getByText('Use “web-app”')).toBeDisabled()
     expect(mockGet.mock.calls.map(([u]) => u)).toEqual(['/api/integrations/github'])
     expect(mockPut).not.toHaveBeenCalled()
+  })
+})
+
+describe('C8: at the services limit, "Create a service →" becomes the limit line', () => {
+  it('reached, upgrade offered: "Service limit reached · See plans" (to the upgrade page); no create link; mapping to an existing service unchanged', async () => {
+    serviceLimitState.data = { reached: true, upgradeAvailable: true }
+    renderPage()
+    const line = await screen.findByTestId('github-service-limit')
+    expect(line).toHaveTextContent('Service limit reached · See plans')
+    expect(within(line).getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/settings/billing/upgrade')
+    expect(screen.queryByTestId('github-create-service')).toBeNull()
+    const web = await row('r-web')
+    expect(within(web).getByLabelText('Service for web-app')).not.toBeDisabled()
+  })
+
+  it('reached, no upgrade offered (managed plan): only "Service limit reached" -- no "See plans", no link (Addendum 2 ruling 1)', async () => {
+    serviceLimitState.data = { reached: true, upgradeAvailable: false }
+    renderPage()
+    const line = await screen.findByTestId('github-service-limit')
+    expect(line.textContent).toBe('Service limit reached')
+    expect(line).not.toHaveTextContent(/See plans|·/)
+    expect(within(line).queryByRole('link')).toBeNull()
+    expect(screen.queryByTestId('github-create-service')).toBeNull()
+  })
+
+  it('below the limit or unknown: "Create a service →" as before', async () => {
+    serviceLimitState.data = { reached: false, upgradeAvailable: true }
+    renderPage()
+    expect(await screen.findByTestId('github-create-service')).toHaveAttribute('href', '/services/new?returnTo=%2Fsettings%2Fintegrations%2Fgithub')
+    expect(screen.queryByTestId('github-service-limit')).toBeNull()
+  })
+
+  it('the limit is read only for those who can manage mappings (members never ask; their view is unchanged)', async () => {
+    connection = on({ can_manage: false })
+    serviceLimitState.data = { reached: true, upgradeAvailable: true }
+    renderPage()
+    await table()
+    expect(serviceLimitEnabled).not.toHaveBeenCalledWith(true)
+    expect(screen.queryByTestId('github-service-limit')).toBeNull()
+    expect(screen.queryByTestId('github-create-service')).toBeNull()
+  })
+
+  it('the demo sample is unchanged even if a reached limit were passed: the disabled "Create a service →"', () => {
+    render(
+      <Repositories repositories={[]} services={[]} canManage={false} demo heldEventDays={null} now={NOW}
+        chooseOnGitHubHref={null} onChanged={() => Promise.resolve()} serviceLimit={{ reached: true, upgradeAvailable: true }} />,
+    )
+    expect(screen.getByTestId('github-create-service')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByTestId('github-service-limit')).toBeNull()
   })
 })

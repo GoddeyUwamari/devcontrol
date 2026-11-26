@@ -6,6 +6,7 @@ import { useGitHubConnection, GITHUB_CONNECTION_KEY, GITHUB_REPOSITORIES_KEY } f
 import { githubConnectionService, type GitHubInstallation } from '@/lib/services/github-connection.service'
 import { COPY, REPO_COPY, installationSettingsUrl } from '@/lib/github-connection/copy'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
+import { useServiceLimit } from '@/lib/hooks/use-service-limit'
 import { cn } from '@/lib/utils'
 import { BUTTON_OUTLINE, CARD, Chip, LoadingBlocks, PageHeader } from '@/components/integrations/parts'
 import { ClaimOutcomeCard, ConnectSetup, GitHubOff } from './_components/NotConnected'
@@ -28,7 +29,10 @@ export default function GitHubIntegrationPage() {
   const queryClient = useQueryClient()
   const { connection, repositories, heldEventDays, wantsRepositories } = useGitHubConnection()
   // The workspace's own services, for the service selects: only for those who can change a mapping.
-  const services = useRegisteredServices({ enabled: wantsRepositories && connection.data?.configured === true && connection.data.can_manage })
+  const canMapServices = wantsRepositories && connection.data?.configured === true && connection.data.can_manage
+  const services = useRegisteredServices({ enabled: canMapServices })
+  // At the services limit, "Create a service →" becomes the limit line (C8).
+  const serviceLimit = useServiceLimit({ enabled: canMapServices })
   const claim = useGitHubClaim(connection.data)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -116,6 +120,7 @@ export default function GitHubIntegrationPage() {
           now={now}
           chooseOnGitHubHref={manageTarget ? installationSettingsUrl(manageTarget) : null}
           onChanged={() => queryClient.invalidateQueries({ queryKey: GITHUB_REPOSITORIES_KEY })}
+          serviceLimit={serviceLimit.data}
         />
       )}
       {canManage && installations.map((installation) => (

@@ -167,6 +167,11 @@ export const REPO_COPY = {
   title: (n: number) => `Repositories (${n})`,
   subtitle: 'The repositories you chose on GitHub. Each needs a service and a deploy rule before anything is recorded.',
   createService: 'Create a service →',
+  /**
+   * Stage-a C8 (founder-approved, service limits Addendum 1): replaces createService only at the services limit,
+   * followed by " · See plans" when an upgrade is offered; alone for a managed plan (Addendum 2 ruling 1).
+   */
+  serviceLimitReached: 'Service limit reached',
   colRepository: 'Repository',
   colService: 'Service',
   colRule: 'Deploy rule',

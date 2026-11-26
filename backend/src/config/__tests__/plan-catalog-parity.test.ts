@@ -1,7 +1,7 @@
 /**
  * The UI's plan numbers (lib/plan/plan-limits.json, read by the plan catalog
  * that every pricing surface renders) equal what the server enforces:
- * resource and seat limits, resource types per plan, and the trial's length
+ * resource, seat and services limits, resource types per plan, and the trial's length
  * and plans. Read with fs, as connect-policy-compare.test.ts reads the
  * frontend policy file (backend Jest can't import frontend TS).
  */
@@ -27,6 +27,10 @@ describe('plan catalog numbers = server limits', () => {
 
   it.each(TIERS)('%s: team members', (tier) => {
     expect(limits.teamMembers[tier]).toBe(unlimitedAsNull(TIER_LIMITS[tier].maxUsers));
+  });
+
+  it.each(TIERS)('%s: services', (tier) => {
+    expect(limits.services[tier]).toBe(unlimitedAsNull(TIER_LIMITS[tier].maxServices));
   });
 
   it.each(TIERS)('%s: resource types', (tier) => {
