@@ -55,7 +55,8 @@ async function existingRowOutcome(
   return { status: 'processed', reason, deploymentId: row.id };
 }
 
-const QUOTA_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended('deployments_quota:' || $1::text, 0))";
+/** The per-organization quota lock; also taken first by the scheduled retry's guard (D8a-3, retry.ts). */
+export const QUOTA_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended('deployments_quota:' || $1::text, 0))";
 
 /** The earliest merged pull request of the repository whose merge commit is `sha`, or null. */
 async function mergedPullRequestFor(client: PoolClient, organizationId: string, githubRepoId: number, sha: string | null): Promise<PullRequestFacts | null> {

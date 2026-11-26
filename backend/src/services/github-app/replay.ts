@@ -5,7 +5,7 @@
  *   setting a deploy rule             -> its 'pending' and 'unmapped' events, and
  *                                        the 'ignored' ones a rule decides
  *
- * Only events received in the last HELD_EVENT_DAYS (7; D8b-2 ruling R1: older
+ * Only events received in the last HELD_EVENT_HOURS (168; D8b-2 ruling R1: older
  * ones stay stored, untouched, and are no longer recorded).
  * Only workflow_job and deployment_status events, in receipt order, read in
  * keyset pages of REPLAY_BATCH by (received_at, id) until the selection is
@@ -14,8 +14,9 @@
  * Each event goes through the same processing as a live delivery (its own
  * transaction, the same quota lock, ON CONFLICT on the deployment keys), so a
  * replay is idempotent. A replay never deletes or changes an
- * existing deployment row. Retries of 'failed' and 'over_limit' events are
- * the scheduled job's (D8a-3).
+ * existing deployment row. The scheduled retry (D8a-3, retry.ts) tries
+ * transient 'failed' and never-processed 'pending' events again; 'over_limit'
+ * events are never retried (founder ruling 3).
  *
  * 'legacy_webhook_org' is in both selections (review S-2): once
  * GITHUB_WEBHOOK_ORG_ID is unset, re-saving the deploy rule (or mapping the

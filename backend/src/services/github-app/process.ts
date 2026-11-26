@@ -6,7 +6,7 @@
  * Runs only after the event row is committed. A failure marks the event
  * 'failed' with a reason code and never deletes it.
  */
-import { PoolClient } from 'pg';
+import { DatabaseError, PoolClient } from 'pg';
 import { EventToProcess, holdUntilClaimed, NOT_CLAIMED_REASON, ProcessingStatus, setProcessingOutcome } from '../../repositories/pipeline-events.repository';
 import { findRepositoryForEvent, markRepositoryRemoved, upsertRepository } from '../../repositories/pipeline-repositories.repository';
 import { applyInstallationLifecycle, lockOwnClaim } from '../../repositories/github-installations.repository';
@@ -14,6 +14,7 @@ import { ConnectionSource, withOrgClient, withOrgTransaction } from './db';
 import { permissionsStateOf } from './permissions';
 import { detectDeployment } from './detect';
 import { recordDeployment } from './record';
+import { connectTimeoutReason, CONNECTION_LOST_REASON, isConnectionLoss, isTransientFailure, nodeErrorReason } from './failure-class';
 
 interface ProcessingOutcome {
   status: ProcessingStatus;
@@ -100,10 +101,18 @@ export function isLegacyWebhookOrganization(organizationId: string): boolean {
   return legacy !== '' && legacy === organizationId.toLowerCase();
 }
 
-/** Postgres SQLSTATE as a reason code, or a generic code. Never an error message. */
-function failureReason(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? `db_${code.toLowerCase()}` : 'processing_error';
+/**
+ * The stored reason code for a processing failure (failure-class.ts lists
+ * the forms). Never an error message. Only a Postgres error (node-pg's
+ * DatabaseError) is stored as db_<sqlstate>: a Node error code of the same
+ * shape (EPIPE, EBUSY) is node_<code> (fix round 2, S-2).
+ */
+export function failureReason(error: unknown): string {
+  if (error instanceof DatabaseError && typeof error.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code)) {
+    return `db_${error.code.toLowerCase()}`;
+  }
+  if (isConnectionLoss(error)) return CONNECTION_LOST_REASON;
+  return connectTimeoutReason(error) ?? nodeErrorReason(error) ?? 'processing_error';
 }
 
 /**
@@ -123,8 +132,55 @@ export async function processStoredEvent(
   event: EventToProcess,
   processor: EventProcessor = processEvent
 ): Promise<ProcessingOutcome> {
+  return (await runProcessing(source, organizationId, event, processor, null)) as ProcessingOutcome;
+}
+
+/**
+ * The scheduled retry's guard (D8a-3 ruling 4): runs first inside the
+ * processing transaction. True: process. False: the event is no longer what
+ * the retry picked; nothing is written. It takes its locks before the claim
+ * lock, so it must take them in an order the other paths can't reverse
+ * (retry.ts).
+ */
+export type ProcessingGuard = (client: PoolClient) => Promise<boolean>;
+
+/** The guard said no, or it never passed (it failed, or the transaction around it couldn't start): nothing was written. */
+export const SKIPPED = 'skipped' as const;
+
+/**
+ * processStoredEvent for the scheduled retry: the same processing, after the
+ * guard. Until the guard has passed, any error skips the event without
+ * marking it 'failed' (fix round 2, S-1): getting the connection, tagging it
+ * for the organization, BEGIN, or the guard's own locks and re-check (a lock
+ * or statement timeout, say). Nothing ran, so trying again later is safe;
+ * and without the row lock another transaction may be finishing the event,
+ * and a 'failed' stamped over that would be wrong.
+ */
+export async function processRetryCandidate(
+  source: ConnectionSource,
+  organizationId: string,
+  event: EventToProcess,
+  guard: ProcessingGuard,
+  processor: EventProcessor = processEvent
+): Promise<ProcessingOutcome | typeof SKIPPED> {
+  return runProcessing(source, organizationId, event, processor, guard);
+}
+
+async function runProcessing(
+  source: ConnectionSource,
+  organizationId: string,
+  event: EventToProcess,
+  processor: EventProcessor,
+  guard: ProcessingGuard | null
+): Promise<ProcessingOutcome | typeof SKIPPED> {
+  // Unguarded (live, replay, claim): processing is under way from the start.
+  let guardPassed = guard === null;
   try {
     return await withOrgTransaction(source, organizationId, async (client) => {
+      if (guard) {
+        if (!(await guard(client))) return SKIPPED;
+        guardPassed = true;
+      }
       if (!(await lockOwnClaim(client, organizationId, Number(event.installationId)))) {
         await holdUntilClaimed(client, organizationId, event.id);
         return { status: 'pending', reason: NOT_CLAIMED_REASON };
@@ -134,10 +190,17 @@ export async function processStoredEvent(
       return outcome;
     });
   } catch (error) {
+    // S-1: guarded, and the guard never passed (connect, the tenant tag, BEGIN, the guard itself): skip, write nothing.
+    if (!guardPassed) return SKIPPED;
     const outcome: ProcessingOutcome = { status: 'failed', reason: failureReason(error) };
-    await withOrgClient(source, organizationId, (client) =>
+    const linked = await withOrgClient(source, organizationId, (client) =>
       setProcessingOutcome(client, organizationId, event.id, outcome.status, outcome.reason)
-    ).catch(() => undefined);
+    ).catch(() => null);
+    // Ruling 8: a failure the scheduled retry will never try again is logged (codes only, never a message).
+    // N-2: a row linked to its deployment (its COMMIT landed) is retried whatever its code (retryEligibleSql).
+    if (!isTransientFailure(outcome.reason)) {
+      console.log(`[github-app] processing failed event=${event.id} reason=${outcome.reason} retry=${linked === true ? 'committed' : 'no'}`);
+    }
     return outcome;
   }
 }

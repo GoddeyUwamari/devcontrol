@@ -204,6 +204,14 @@ const INVENTORY: Record<string, Entry> = {
       { file: 'jobs/grace-period-enforcement.job.ts', pattern: /UPDATE organizations o[\s\S]{0,400}\$\{DEMO_EXCLUSION_SQL\}/, why: 'the UPDATE applies the helper' },
     ],
   },
+  'jobs/github-app-events.job.ts': {
+    status: 'excluded', jobClass: 'GitHubAppEventsJob', selection: ['jobs/github-app-events.job.ts'],
+    reason: 'D8a-3: retries and expires stored GitHub App events one organization at a time; the organizations come from listOrganizationIds.',
+    evidence: [
+      { file: 'jobs/github-app-events.job.ts', pattern: /listOrganizations: listOrganizationIds/, why: 'the job visits the organizations listOrganizationIds selects' },
+      { file: 'jobs/github-app-events.job.ts', pattern: /function listOrganizationIds[\s\S]{0,300}\$\{DEMO_EXCLUSION_SQL\}/, why: 'the selection applies the helper' },
+    ],
+  },
   'server.ts#setInterval': {
     status: 'excluded', selection: ['metrics/index.ts'],
     reason: 'Prometheus business gauges every 30 s, aggregated over all organizations.',
