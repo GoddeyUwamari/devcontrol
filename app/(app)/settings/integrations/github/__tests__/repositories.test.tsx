@@ -467,12 +467,14 @@ describe('C8: at the services limit, "Create a service →" becomes the limit li
     expect(within(web).getByLabelText('Service for web-app')).not.toBeDisabled()
   })
 
-  it('reached, no upgrade offered (managed plan): the same line, "See plans" not a link', async () => {
+  it('reached, no upgrade offered (managed plan): only "Service limit reached" -- no "See plans", no link (Addendum 2 ruling 1)', async () => {
     serviceLimitState.data = { reached: true, upgradeAvailable: false }
     renderPage()
     const line = await screen.findByTestId('github-service-limit')
-    expect(line).toHaveTextContent('Service limit reached · See plans')
+    expect(line.textContent).toBe('Service limit reached')
+    expect(line).not.toHaveTextContent(/See plans|·/)
     expect(within(line).queryByRole('link')).toBeNull()
+    expect(screen.queryByTestId('github-create-service')).toBeNull()
   })
 
   it('below the limit or unknown: "Create a service →" as before', async () => {

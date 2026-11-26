@@ -234,10 +234,12 @@ export function Repositories(props: RepositoriesProps) {
 
   const createService = editable && props.serviceLimit?.reached
     ? (
+      // Addendum 2 ruling 1: a managed plan (no upgrade offered) shows only "Service limit reached".
       <span data-testid="github-service-limit" className="text-meta text-ink-muted">
-        {REPO_COPY.serviceLimitReached} · {props.serviceLimit.upgradeAvailable
-          ? <Link href={SEE_PLANS_HREF} className="font-semibold text-ink-accent underline">{REPO_COPY.seePlans}</Link>
-          : <span className="font-semibold">{REPO_COPY.seePlans}</span>}
+        {REPO_COPY.serviceLimitReached}
+        {props.serviceLimit.upgradeAvailable && (
+          <> · <Link href={SEE_PLANS_HREF} className="font-semibold text-ink-accent underline">{REPO_COPY.seePlans}</Link></>
+        )}
       </span>
     )
     : editable
