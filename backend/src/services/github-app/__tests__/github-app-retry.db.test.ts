@@ -16,16 +16,19 @@
  * concurrent retries, the run lock, the flag, fairness across organizations,
  * the time budget, and organization isolation.
  */
-import { PoolClient } from 'pg';
+import net from 'net';
+import { DatabaseError, Pool, PoolClient } from 'pg';
+import { installTenantTagReset } from '../../../config/database';
 import { NORMALIZER_VERSION } from '../contract';
 import { deployRuleBody, storedDeployRule } from '../deploy-rule';
 import { ConnectionSource, withOrgClient } from '../db';
 import { ingestDelivery } from '../ingest';
 import { normalizeDelivery } from '../normalize';
-import { EventProcessor, processEvent, processStoredEvent } from '../process';
+import { EventProcessor, failureReason, processEvent, processStoredEvent } from '../process';
+import { QUOTA_LOCK_SQL } from '../record';
 import { MAPPING_REPLAY, RULE_REPLAY } from '../replay';
 import { expireOrganization, retryOrganization } from '../retry';
-import { TRANSIENT_FAILURE_REASONS } from '../failure-class';
+import { isTransientFailure, TRANSIENT_FAILURE_REASONS } from '../failure-class';
 import {
   expireClaimHolds,
   expireStaleClaimHolds,
@@ -42,7 +45,7 @@ import {
 } from '../../../repositories/pipeline-events.repository';
 import { listRepositoryActivity } from '../../../repositories/pipeline-repositories.repository';
 import { GitHubAppEventsJob, RETRY_LOCK_KEY } from '../../../jobs/github-app-events.job';
-import { CLIENT_SECRET, createFixtures, enabledConfig, WEBHOOK_SECRET } from './fixtures/db';
+import { CLIENT_SECRET, createFixtures, dbConfig, enabledConfig, WEBHOOK_SECRET } from './fixtures/db';
 import { pullRequestClosed, signedDelivery, uniqueId, workflowJobCompleted } from './fixtures/payloads';
 
 jest.setTimeout(180_000);
@@ -132,10 +135,24 @@ const eventCount = async (org: string) => (await fx.admin.query('SELECT count(*)
 const retry = (org: string, limit = 50, processor?: EventProcessor, log: (l: string) => void = quiet) =>
   retryOrganization(fx.app, org, { limit, processor, log });
 
-/** A processor that always throws a Postgres-coded error (as a transient or permanent failure would). */
+/** A Postgres error as node-pg throws it: a DatabaseError carrying the SQLSTATE. */
+const pgError = (code: string, message = 'planted failure message that must never be logged') =>
+  Object.assign(new DatabaseError(message, 0, 'error'), { code, severity: 'ERROR' });
+
+/** A processor that always throws a Postgres error (as a transient or permanent failure would). */
 const throwing = (code: string): EventProcessor => async () => {
-  throw Object.assign(new Error('planted failure message that must never be logged'), { code });
+  throw pgError(code);
 };
+
+/** Polls `predicate` every 50 ms until it holds or `ms` pass. */
+async function waitFor(predicate: () => Promise<boolean>, ms: number): Promise<boolean> {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (await predicate()) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+}
 
 let orgA: string;
 let orgB: string;
@@ -417,7 +434,7 @@ describe('retry outcomes on committed rows', () => {
   it.each([
     ['node-pg: Connection terminated unexpectedly', () => new Error('Connection terminated unexpectedly')],
     ['socket: ECONNRESET', () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })],
-    ['Postgres class 08: 08006', () => Object.assign(new Error('connection failure'), { code: '08006' })],
+    ['Postgres class 08: 08006', () => pgError('08006', 'connection failure')],
   ])('Addendum 2 ruling 2: a dropped connection before commit (%s) is transient; after its backoff the retry records it, once', async (_label, dropped) => {
     const c = await connected(orgA);
     const id = await store(fx.admin, orgA, c, { age: '20 minutes' });
@@ -592,6 +609,266 @@ describe('the row lock and re-check (ruling 4)', () => {
       await letGo;
     }
     expect(await rowOf(id)).toMatchObject({ status: 'failed', reason: 'db_40p01', attempts: 1, deployment_id: null });
+  });
+});
+
+type PreGuardPoint = 'connect' | 'tenant tag' | 'BEGIN';
+
+/**
+ * fx.app, except that the retry's first processing transaction (its 2nd
+ * connect: the 1st is the selection) fails once at `point`, before its
+ * guard runs. Every other connect is fx.app's own.
+ */
+function failingBeforeGuard(point: PreGuardPoint, error: () => Error): ConnectionSource {
+  let connects = 0;
+  return {
+    connect: async () => {
+      connects += 1;
+      if (connects !== 2) return fx.app.connect();
+      if (point === 'connect') throw error();
+      const real = await fx.app.connect();
+      const fails = (text: unknown) => typeof text === 'string'
+        && (point === 'tenant tag' ? text.includes("set_config('app.current_organization_id'") : text === 'BEGIN');
+      return {
+        query: async (...args: unknown[]) => {
+          if (fails(args[0])) throw error();
+          return (real.query as (...a: unknown[]) => unknown)(...args);
+        },
+        release: (e?: Error | boolean) => real.release(e),
+      } as unknown as PoolClient;
+    },
+  };
+}
+
+describe('fix round 2, S-1: a failure before the guard has passed skips the event and writes nothing', () => {
+  let logSpy: jest.SpyInstance;
+  beforeEach(() => { logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined); });
+  afterEach(() => logSpy.mockRestore());
+
+  it.each<[PreGuardPoint, () => Error]>([
+    ['connect', () => new Error('timeout exceeded when trying to connect')],
+    ['tenant tag', () => new Error('Connection terminated unexpectedly')],
+    ['BEGIN', () => new Error('planted permanent failure')],
+  ])('P1, %s fails once: a transient row stays byte-identical and retryable; the next run records it', async (point, error) => {
+    const org = await fx.org();
+    const c = await connected(org);
+    const id = await store(fx.admin, org, c, { status: 'failed', reason: 'db_40p01', attempts: 1, age: '2 hours', processedAge: '61 minutes' });
+    const before = await wholeRow(id);
+    const lines: string[] = [];
+    expect(await retryOrganization(failingBeforeGuard(point, error), org, { limit: 50, log: (l) => lines.push(l) }))
+      .toEqual({ considered: 1, recorded: 0, settled: 0, failed: 0, gaveUp: 0, skipped: 1, cutShort: false });
+    expect(await wholeRow(id)).toBe(before);
+    expect(lines).toEqual([]);
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(await retry(org)).toMatchObject({ considered: 1, recorded: 1 });
+    expect(await rowOf(id)).toMatchObject({ status: 'processed', reason: null, attempts: 2, deployment_id: expect.any(String) });
+    expect(await deploymentCount(org, c.serviceId)).toBe(1);
+  });
+
+  it('P2, the pool times out once: a reconnected claim hold stays byte-identical; the next run records it', async () => {
+    const org = await fx.org();
+    const c = await connected(org, { claimed: false });
+    const id = await store(fx.admin, org, c, { reason: NOT_CLAIMED_REASON, attempts: 1, age: '2 hours' });
+    await fx.claim(org, c.inst);
+    const before = await wholeRow(id);
+    expect(await retryOrganization(failingBeforeGuard('connect', () => new Error('timeout exceeded when trying to connect')), org, { limit: 50, log: quiet }))
+      .toEqual({ considered: 1, recorded: 0, settled: 0, failed: 0, gaveUp: 0, skipped: 1, cutShort: false });
+    expect(await wholeRow(id)).toBe(before);
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(await retry(org)).toMatchObject({ considered: 1, recorded: 1 });
+    expect(await rowOf(id)).toMatchObject({ status: 'processed', reason: null, deployment_id: expect.any(String) });
+    expect(await deploymentCount(org, c.serviceId)).toBe(1);
+  });
+
+  it('S-2, live path (unguarded): a pool checkout timeout marks the event failed / pool_checkout_timeout; after its backoff the retry records it', async () => {
+    const org = await fx.org();
+    const c = await connected(org);
+    const id = await store(fx.admin, org, c, { age: '20 minutes' });
+    let first = true;
+    const source: ConnectionSource = {
+      connect: async () => {
+        if (first) { first = false; throw new Error('timeout exceeded when trying to connect'); }
+        return fx.app.connect();
+      },
+    };
+    const [event] = await withOrgClient(fx.app, org, (client) => findUnprocessedEvents(client, org, c.inst));
+    expect(await processStoredEvent(source, org, event)).toEqual({ status: 'failed', reason: 'pool_checkout_timeout' });
+    expect(await rowOf(id)).toMatchObject({ status: 'failed', reason: 'pool_checkout_timeout', attempts: 1, deployment_id: null });
+    expect(logSpy).not.toHaveBeenCalled();
+    expect((await retry(org)).considered).toBe(0);
+    await fx.admin.query("UPDATE pipeline_events SET processed_at = NOW() - interval '61 minutes' WHERE id = $1", [id]);
+    expect(await retry(org)).toMatchObject({ considered: 1, recorded: 1 });
+    expect(await deploymentCount(org, c.serviceId)).toBe(1);
+  });
+});
+
+describe('fix round 2, item 13: real connection failures from the installed driver are transient', () => {
+  // Its own pool: a connection broken here never goes back to fx.app.
+  let own: Pool;
+  beforeAll(() => { own = installTenantTagReset(new Pool({ ...dbConfig(), max: 2, options: '-c role=devcontrol' })); });
+  afterAll(() => own.end());
+
+  type Breaker = (client: PoolClient, pid: number) => Promise<void>;
+  /** A processor that starts a long query on the processing connection, then breaks that connection under it. */
+  const breaking = (breakIt: Breaker): EventProcessor => async (client) => {
+    // pg-pool listens for no 'error' on a checked-out client, and node-pg emits one when its socket dies:
+    // without a listener that is an uncaught exception (fix round 2 report, "Observed").
+    client.on('error', () => undefined);
+    const pid = Number((await client.query('SELECT pg_backend_pid() AS p')).rows[0].p);
+    const running = client.query('SELECT pg_sleep(10)');
+    await waitFor(async () => (await fx.admin.query(
+      "SELECT 1 FROM pg_stat_activity WHERE pid = $1 AND state = 'active' AND query LIKE 'SELECT pg_sleep%'", [pid])).rowCount === 1, 5_000);
+    await breakIt(client, pid);
+    await running;
+    throw new Error('unreachable: the running query should have failed');
+  };
+
+  it.each<[string, string, Breaker]>([
+    ['the socket is destroyed under a running query', 'connection_lost',
+      async (client) => { (client as unknown as { connection: { stream: { destroy(): void } } }).connection.stream.destroy(); }],
+    ['the server terminates the backend under a running query', 'db_57p01',
+      async (_client, pid) => { await fx.admin.query('SELECT pg_terminate_backend($1)', [pid]); }],
+  ])('%s: the event is failed / %s (transient); after its backoff the retry records it, once', async (_label, reason, breakIt) => {
+    const org = await fx.org();
+    const c = await connected(org);
+    const id = await store(fx.admin, org, c, { age: '20 minutes' });
+    const [event] = await withOrgClient(fx.app, org, (client) => findUnprocessedEvents(client, org, c.inst));
+    expect(await processStoredEvent(own, org, event, breaking(breakIt))).toEqual({ status: 'failed', reason });
+    expect(TRANSIENT_FAILURE_REASONS).toContain(reason);
+    expect(await rowOf(id)).toMatchObject({ status: 'failed', reason, attempts: 1, deployment_id: null });
+    await fx.admin.query("UPDATE pipeline_events SET processed_at = NOW() - interval '61 minutes' WHERE id = $1", [id]);
+    expect(await retry(org)).toMatchObject({ considered: 1, recorded: 1 });
+    expect(await deploymentCount(org, c.serviceId)).toBe(1);
+  });
+
+  it('a real pool checkout timeout and a real connect timeout are pool_checkout_timeout and connect_timeout (transient)', async () => {
+    const small = new Pool({ ...dbConfig(), max: 1, connectionTimeoutMillis: 200 });
+    const held = await small.connect();
+    const checkout = await small.connect().then(() => null, (e: unknown) => e);
+    held.release();
+    await small.end();
+    expect(failureReason(checkout)).toBe('pool_checkout_timeout');
+
+    // A local listener that accepts and never answers: the connection is never established.
+    const sockets: net.Socket[] = [];
+    const server = net.createServer((s) => { sockets.push(s); });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as net.AddressInfo).port;
+    const hole = new Pool({ host: '127.0.0.1', port, database: 'none', user: 'none', password: 'none', max: 1, connectionTimeoutMillis: 200 });
+    try {
+      const timeout = await hole.connect().then(() => null, (e: unknown) => e);
+      expect(failureReason(timeout)).toBe('connect_timeout');
+    } finally {
+      for (const s of sockets) s.destroy();
+      await new Promise<void>((r) => server.close(() => r()));
+      await hole.end();
+    }
+    for (const reason of ['pool_checkout_timeout', 'connect_timeout']) expect(isTransientFailure(reason)).toBe(true);
+  });
+});
+
+describe('fix round 2, N-5: the guard takes the quota lock before the row lock', () => {
+  /** Sessions waiting for this organization's quota lock (record.ts QUOTA_LOCK_SQL). */
+  const quotaWaiters = async (org: string) => (await fx.admin.query(
+    `SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+        AND objid = (hashtextextended('deployments_quota:' || $1::text, 0) & 4294967295)::bigint::oid
+        AND classid = ((hashtextextended('deployments_quota:' || $1::text, 0) >> 32) & 4294967295)::bigint::oid`, [org])).rows[0].n;
+  /** True when no session holds a lock on the event row (a NOWAIT probe, rolled back at once). */
+  const rowLockFree = async (id: string) => {
+    const probe = await fx.admin.connect();
+    try {
+      await probe.query('BEGIN');
+      await probe.query('SELECT 1 FROM pipeline_events WHERE id = $1 FOR UPDATE NOWAIT', [id]);
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code === '55P03') return false;
+      throw error;
+    } finally {
+      await probe.query('ROLLBACK').catch(() => undefined);
+      probe.release();
+    }
+  };
+
+  it('a live processing of the same event holds the quota lock: the retry waits for it, then skips; no deadlock, one outcome, one row', async () => {
+    const org = await fx.org();
+    const c = await connected(org);
+    const id = await store(fx.admin, org, c, { status: 'failed', reason: 'db_40p01', attempts: 1, age: '2 hours', processedAge: '2 hours' });
+    const [event] = await withOrgClient(fx.app, org, (client) => findRetryableEvents(client, org, 50));
+    let holding: () => void = () => undefined;
+    const held = new Promise<void>((r) => { holding = r; });
+    let go: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { go = r; });
+    // The live run lets go on its own timer too, so a wrong lock order shows as a wrong outcome, never a hang.
+    const selfRelease = setTimeout(() => go(), 4_000);
+    const pausing: EventProcessor = async (client, o, ev) => {
+      await client.query(QUOTA_LOCK_SQL, [o]);
+      holding();
+      await gate;
+      return processEvent(client, o, ev);
+    };
+    try {
+      const live = processStoredEvent(fx.app, org, event, pausing);
+      await held;
+      const retried = retryOrganization(fx.app, org, { limit: 50, log: quiet });
+      expect(await waitFor(async () => (await quotaWaiters(org)) > 0, 3_000)).toBe(true);
+      // Quota first: while the retry waits for the quota lock it holds no lock on the event row. (Row first deadlocks
+      // with the live run; the retry, waiting first, is the usual victim and skips, so the outcomes alone can't tell.)
+      expect(await rowLockFree(id)).toBe(true);
+      go();
+      const [liveOutcome, counts] = await Promise.all([live, retried]);
+      expect(liveOutcome).toEqual({ status: 'processed', reason: null });
+      expect(counts).toEqual({ considered: 1, recorded: 0, settled: 0, failed: 0, gaveUp: 0, skipped: 1, cutShort: false });
+    } finally {
+      clearTimeout(selfRelease);
+      go();
+    }
+    expect(await rowOf(id)).toMatchObject({ status: 'processed', reason: null, attempts: 2, deployment_id: expect.any(String) });
+    expect(await deploymentCount(org, c.serviceId)).toBe(1);
+  });
+});
+
+describe('fix round 2, N-2: the retry=no log line', () => {
+  let lines: string[];
+  let logSpy: jest.SpyInstance;
+  beforeEach(() => {
+    lines = [];
+    logSpy = jest.spyOn(console, 'log').mockImplementation((l: string) => { lines.push(l); });
+  });
+  afterEach(() => logSpy.mockRestore());
+
+  it('a permanent failure after the COMMIT landed logs retry=committed (the retry tries it again); one before any commit logs retry=no', async () => {
+    const committed = await connected(orgA);
+    const committedId = await store(fx.admin, orgA, committed, { age: '20 minutes' });
+    // The COMMIT reaches the server, then the client sees an error with no known class (processing_error, permanent).
+    const commitThenFail: ConnectionSource = {
+      connect: async () => {
+        const real = await fx.app.connect();
+        return {
+          query: async (...args: unknown[]) => {
+            if (args[0] === 'COMMIT') {
+              await real.query('COMMIT');
+              throw new Error('planted failure message that must never be logged');
+            }
+            return (real.query as (...a: unknown[]) => unknown)(...args);
+          },
+          release: (e?: Error | boolean) => real.release(e),
+        } as unknown as PoolClient;
+      },
+    };
+    const [one] = await withOrgClient(fx.app, orgA, (client) => findUnprocessedEvents(client, orgA, committed.inst));
+    expect(await processStoredEvent(commitThenFail, orgA, one)).toEqual({ status: 'failed', reason: 'processing_error' });
+    expect(await rowOf(committedId)).toMatchObject({ status: 'failed', reason: 'processing_error', deployment_id: expect.any(String) });
+
+    const plain = await connected(orgA);
+    const plainId = await store(fx.admin, orgA, plain, { age: '20 minutes' });
+    const [two] = await withOrgClient(fx.app, orgA, (client) => findUnprocessedEvents(client, orgA, plain.inst));
+    expect(await processStoredEvent(fx.app, orgA, two, throwing('23514'))).toEqual({ status: 'failed', reason: 'db_23514' });
+
+    expect(lines.filter((l) => l.startsWith('[github-app] processing failed'))).toEqual([
+      `[github-app] processing failed event=${committedId} reason=processing_error retry=committed`,
+      `[github-app] processing failed event=${plainId} reason=db_23514 retry=no`,
+    ]);
+    expect(lines.join('\n')).not.toMatch(/planted failure message/);
   });
 });
 

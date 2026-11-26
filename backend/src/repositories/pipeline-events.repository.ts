@@ -63,21 +63,24 @@ export async function insertPipelineEvent(
   return { id: existing.rows[0]?.id ?? '', inserted: false };
 }
 
+/** Records an outcome. Returns whether the row is linked to a deployment (an attempt committed; deployment_id is never cleared). */
 export async function setProcessingOutcome(
   client: PoolClient,
   organizationId: string,
   eventId: string,
   status: ProcessingStatus,
   reason: string | null
-): Promise<void> {
+): Promise<boolean> {
   if (reason !== null && !REASON.test(reason)) throw new Error('processing reason must be a code');
-  await client.query(
+  const { rows } = await client.query(
     `UPDATE pipeline_events
         SET processing_status = $3, processing_reason = $4, processed_at = NOW(),
             processing_attempts = LEAST(processing_attempts + 1, 32767)
-      WHERE organization_id = $1 AND id = $2`,
+      WHERE organization_id = $1 AND id = $2
+      RETURNING deployment_id IS NOT NULL AS linked`,
     [organizationId, eventId, status, reason]
   );
+  return rows[0]?.linked === true;
 }
 
 /**

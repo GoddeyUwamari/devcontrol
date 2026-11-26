@@ -6,7 +6,7 @@
  * events survive processing failures, database failures never answer
  * "received", cross-tenant reads see nothing, and no secret reaches a log.
  */
-import { Pool, PoolClient } from 'pg';
+import { DatabaseError, Pool, PoolClient } from 'pg';
 import { ingestDelivery, WebhookDeps } from '../ingest';
 import { processEvent } from '../process';
 import { PipelineEventsReader } from '../../../repositories/pipeline-events.repository';
@@ -246,7 +246,7 @@ describe('failures', () => {
 
   it('processing fails -> 200, the event is kept and marked failed with a code', async () => {
     const d = signedDelivery('pull_request', pullRequestClosed(instA, uniqueId()), WEBHOOK_SECRET);
-    const boom = async (_c: PoolClient) => { throw Object.assign(new Error('secret-looking detail'), { code: '23514' }); };
+    const boom = async (_c: PoolClient) => { throw Object.assign(new DatabaseError('secret-looking detail', 0, 'error'), { code: '23514' }); };
     expect(await send(d, { processor: boom })).toEqual({ status: 200, body: { received: true, stored: true, duplicate: false } });
     expect((await rowsFor(d.deliveryId)).events).toEqual([{ org: orgA, processing_status: 'failed', processing_reason: 'db_23514' }]);
   });
