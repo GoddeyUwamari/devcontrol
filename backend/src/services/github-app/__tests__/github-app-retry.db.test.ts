@@ -444,6 +444,18 @@ describe('retry outcomes on committed rows', () => {
     expect(await wholeRow(id)).toBe(before);
   });
 
+  it('with row level security bypassed, a hold still matches only its own organization\'s claim (the explicit predicate)', async () => {
+    const c = await connected(orgA, { claimed: false });
+    await fx.claim(orgB, c.inst);
+    const id = await store(fx.admin, orgA, c, { reason: NOT_CLAIMED_REASON, attempts: 1, age: '2 hours' });
+    const superuser = await fx.admin.connect();
+    try {
+      expect((await findRetryableEvents(superuser, orgA, 50)).map((e) => e.id)).not.toContain(id);
+    } finally {
+      superuser.release();
+    }
+  });
+
   it('reconnect backlog past 500: the claim pick-up processes 500, the retry records the rest in bounded batches', async () => {
     const org = await fx.org();
     await fx.admin.query('UPDATE organizations SET max_deployments_per_month = -1 WHERE id = $1', [org]);
@@ -524,15 +536,19 @@ describe('the row lock and re-check (ruling 4)', () => {
     const c = await connected(orgA);
     const id = await store(fx.admin, orgA, c, { status: 'failed', reason: 'db_40p01', attempts: 1, age: '2 hours', processedAge: '2 hours' });
     const holder = await fx.admin.connect();
+    // The holder lets go on its own timer (after the guard's 5 s lock_timeout), never waiting for the retry,
+    // so a retry that skips its guard can't hang on this lock: it shows as a wrong outcome instead.
+    await holder.query('BEGIN');
+    await holder.query('SELECT 1 FROM pipeline_events WHERE id = $1 FOR UPDATE', [id]);
+    const letGo = new Promise<void>((resolve) => setTimeout(() => {
+      holder.query('ROLLBACK').catch(() => undefined).finally(() => { holder.release(); resolve(); });
+    }, 8_000));
     try {
-      await holder.query('BEGIN');
-      await holder.query('SELECT 1 FROM pipeline_events WHERE id = $1 FOR UPDATE', [id]);
-      expect(await retry(orgA)).toMatchObject({ considered: 1, skipped: 1, failed: 0 });
+      expect(await retry(orgA)).toMatchObject({ considered: 1, skipped: 1, failed: 0, recorded: 0 });
     } finally {
-      await holder.query('ROLLBACK');
-      holder.release();
+      await letGo;
     }
-    expect(await rowOf(id)).toMatchObject({ status: 'failed', reason: 'db_40p01', attempts: 1 });
+    expect(await rowOf(id)).toMatchObject({ status: 'failed', reason: 'db_40p01', attempts: 1, deployment_id: null });
   });
 });
 
