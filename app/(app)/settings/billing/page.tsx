@@ -15,6 +15,7 @@ import {
   openCustomerPortal,
   resumeSubscription,
 } from '@/lib/services/stripe.service';
+import { SERVICE_LIMIT_COPY } from '@/lib/service-limit/copy';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
@@ -304,6 +305,23 @@ export default function BillingPage() {
                       </p>
                     )}
                   </div>
+
+                  {/* Registered services (C10): counted and limited exactly as POST /api/services enforces them; no upgrade nudge */}
+                  {subscription?.usage?.services !== undefined && (
+                    <div className="space-y-2" data-testid="billing-registered-services">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{SERVICE_LIMIT_COPY.billingLabel}</span>
+                        <span className="font-medium">
+                          {subscription.usage.services === null
+                            ? 'Usage unavailable right now.'
+                            : SERVICE_LIMIT_COPY.billingValue(subscription.usage.services.used, subscription.usage.services.limit)}
+                        </span>
+                      </div>
+                      {subscription.usage.services !== null && subscription.usage.services.limit !== null && (
+                        <Progress value={Math.min(100, (subscription.usage.services.used / subscription.usage.services.limit) * 100)} className="h-2" />
+                      )}
+                    </div>
+                  )}
 
                   {/* API Usage */}
                   <div className="space-y-2">

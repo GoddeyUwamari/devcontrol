@@ -25,6 +25,14 @@ function verifySignature(rawBody: Buffer, signatureHeader: string | undefined, s
 
 // The repository name is only ever matched against, or created in, the
 // webhook's own organization.
+//
+// SERVICES LIMIT EXEMPTION (service-limits stage-a FQ3, founder ruling):
+// this auto-create does NOT take SERVICES_QUOTA_LOCK_SQL or check the plan's
+// services limit. It runs only for GITHUB_WEBHOOK_ORG_ID (DevControl's own
+// organization, set by environment, never a customer's), and is the one
+// exempt creation path; POST /api/services enforces the limit for everyone
+// else. Pinned by services-limit.test.ts. The exemption is removed when D8c
+// retires the legacy GitHub Actions integration.
 async function resolveServiceId(repoName: string, organizationId: string): Promise<string> {
   const { rows: existing } = await pool.query(
     `SELECT id FROM services

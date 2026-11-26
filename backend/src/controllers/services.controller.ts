@@ -3,8 +3,39 @@ import { ServicesRepository } from '../repositories/services.repository';
 import { CreateServiceRequest, UpdateServiceRequest, ServiceFilters, ApiResponse } from '../types';
 import { NotFoundError, DatabaseError } from '../utils/errors';
 import { emitOnboardingEvent } from '../services/onboardingEvents';
+import { defaultSource, withOrgTransaction, type ConnectionSource } from '../services/github-app/db';
+import {
+  SERVICES_QUOTA_LOCK_SQL,
+  ServiceLimitReachedError,
+  assertServiceCapacity,
+  serviceLimitResponse,
+} from '../middleware/subscription.middleware';
 
 const repository = new ServicesRepository();
+
+/**
+ * Creates a service inside the services limit, all or nothing, on one
+ * dedicated tenant-tagged transaction: the per-organization lock FIRST, then
+ * the count, then the insert. Concurrent creations of one organization run
+ * one at a time, so the last free slot goes to exactly one of them; a refusal
+ * or any error rolls back and leaves nothing. Only NEW services are limited:
+ * reads, updates, deletes and GitHub mappings never come here.
+ *
+ * A dedicated connection, not the request's: the request connection also
+ * carries the fire-and-forget api_usage upsert (authenticate), which must not
+ * join this transaction.
+ */
+export async function createServiceWithinLimit(
+  serviceData: CreateServiceRequest,
+  organizationId: string,
+  source: ConnectionSource = defaultSource
+) {
+  return withOrgTransaction(source, organizationId, async (client) => {
+    await client.query(SERVICES_QUOTA_LOCK_SQL, [organizationId]);
+    await assertServiceCapacity(client, organizationId);
+    return repository.create(serviceData, organizationId, client);
+  });
+}
 
 export class ServicesController {
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -70,7 +101,16 @@ export class ServicesController {
         res.status(401).json({ success: false, error: 'Unauthorized' });
         return;
       }
-      const service = await repository.create(serviceData, organizationId);
+      let service;
+      try {
+        service = await createServiceWithinLimit(serviceData, organizationId);
+      } catch (error) {
+        if (error instanceof ServiceLimitReachedError) {
+          res.status(402).json(serviceLimitResponse(error.capacity));
+          return;
+        }
+        throw error;
+      }
 
       if (!service) {
         // Same answer whether the team doesn't exist or belongs to another

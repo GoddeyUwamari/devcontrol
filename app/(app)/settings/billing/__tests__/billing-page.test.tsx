@@ -171,3 +171,31 @@ describe('Billing page', () => {
     expect(screen.getByText('Only organization owners and admins can cancel, resume, or manage billing.')).toBeInTheDocument()
   })
 })
+
+describe('C10: Registered services, counted and limited as POST /api/services enforces them', () => {
+  const row = () => screen.getByTestId('billing-registered-services')
+
+  it('"{used} / {max}" with a progress bar, and never an upgrade nudge, even at the limit', async () => {
+    await renderPage(summary({ usage: { awsResources: { used: 7, limit: 20 }, services: { used: 5, limit: 5 } } }))
+    expect(row()).toHaveTextContent('Registered services')
+    expect(row()).toHaveTextContent('5 / 5')
+    expect(row().querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(row().textContent).not.toMatch(/approaching|upgrad|plan/i)
+  })
+
+  it('"{used} · Unlimited" without a bar', async () => {
+    await renderPage(summary({ usage: { awsResources: { used: 0, limit: null }, services: { used: 12, limit: null } } }))
+    expect(row()).toHaveTextContent('12 · Unlimited')
+    expect(row().querySelector('[role="progressbar"]')).toBeNull()
+  })
+
+  it('unreadable usage says so, never a made-up number', async () => {
+    await renderPage(summary({ usage: { awsResources: { used: 7, limit: 20 }, services: null } }))
+    expect(row()).toHaveTextContent('Usage unavailable right now.')
+  })
+
+  it('a summary without the field (an older server) shows no row', async () => {
+    await renderPage(summary())
+    expect(screen.queryByTestId('billing-registered-services')).toBeNull()
+  })
+})

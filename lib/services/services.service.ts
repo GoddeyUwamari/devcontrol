@@ -2,6 +2,7 @@ import api, { handleApiResponse } from '../api';
 import type {
   Service,
   RegisteredService,
+  ServiceLimit,
   CreateServicePayload,
   UpdateServicePayload,
   ServiceFilters,
@@ -28,6 +29,24 @@ export const servicesService = {
       githubUrl: s.github_url ?? null,
       createdAt: s.created_at,
     }));
+  },
+
+  /** The organization's services limit and usage: GET /api/services/limit. */
+  getLimit: async (): Promise<ServiceLimit> => {
+    const response = await api.get<{ success: boolean; limit?: any; error?: string }>('/api/services/limit');
+    const l = response.data.limit;
+    if (!response.data.success || !l || typeof l.used !== 'number') {
+      throw new Error(response.data.error || 'Failed to load the services limit');
+    }
+    return {
+      used: l.used,
+      max: typeof l.max === 'number' ? l.max : null,
+      plan: typeof l.plan === 'string' ? l.plan : null,
+      freePlan: String(l.freePlan),
+      reached: l.reached === true,
+      upgradeAvailable: l.upgradeAvailable === true,
+      reason: l.reason === 'BILLING_RESTRICTED' || l.reason === 'SUBSCRIPTION_INACTIVE' ? l.reason : null,
+    };
   },
 
   // Get all services with optional filters

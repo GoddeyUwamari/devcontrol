@@ -39,6 +39,8 @@ const registered = vi.hoisted(() => ({ data: [] as unknown[] }))
 vi.mock('@/lib/hooks/use-registered-services', () => ({
   useRegisteredServices: () => ({ isPending: false, isError: false, isSuccess: true, data: registered.data, refetch: () => {} }),
 }))
+// RegisteredServices also reads the services limit (C12); unknown here, so the header reads "{n} registered".
+vi.mock('@/lib/hooks/use-service-limit', () => ({ useServiceLimit: () => ({ data: undefined }) }))
 
 const mockGetCoverage = vi.fn()
 const mockGetStats = vi.fn()

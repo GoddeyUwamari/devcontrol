@@ -69,6 +69,13 @@ export interface RepositoriesProps {
   chooseOnGitHubHref: string | null
   /** Read the list again after a save (the server decides each row's status). */
   onChanged: () => Promise<unknown>
+  /**
+   * The workspace's services limit (GET /api/services/limit). At the limit,
+   * "Create a service →" becomes the limit line (stage-a C8); mapping a
+   * repository to an existing service is unchanged. Unknown (undefined) shows
+   * the link: the server refuses on its own.
+   */
+  serviceLimit?: { reached: boolean; upgradeAvailable: boolean }
 }
 
 const STATUS_LABEL: Record<Exclude<RowStatus, 'removed'>, string> = {
@@ -225,7 +232,15 @@ export function Repositories(props: RepositoriesProps) {
   const count = repositoryCount(repositories)
   const days = heldEventDays ?? HELD_EVENT_DAYS_FALLBACK
 
-  const createService = editable
+  const createService = editable && props.serviceLimit?.reached
+    ? (
+      <span data-testid="github-service-limit" className="text-meta text-ink-muted">
+        {REPO_COPY.serviceLimitReached} · {props.serviceLimit.upgradeAvailable
+          ? <Link href={SEE_PLANS_HREF} className="font-semibold text-ink-accent underline">{REPO_COPY.seePlans}</Link>
+          : <span className="font-semibold">{REPO_COPY.seePlans}</span>}
+      </span>
+    )
+    : editable
     ? <Link href={CREATE_SERVICE_HREF} data-testid="github-create-service" className={TEXT_LINK}>{REPO_COPY.createService}</Link>
     : demo ? <span data-testid="github-create-service" aria-disabled="true" className={cn(TEXT_LINK, 'cursor-not-allowed text-ink-muted hover:text-ink-muted')}>{REPO_COPY.createService}</span> : null
 

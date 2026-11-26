@@ -6,7 +6,9 @@ import { createServiceSchema, updateServiceSchema, uuidParamSchema } from '../va
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireMember } from '../middleware/rbac.middleware';
 import { discoveryRateLimiter } from '../middleware/rateLimiter';
-import { checkDiscoveryLimit } from '../middleware/subscription.middleware';
+import { checkDiscoveryLimit, serviceCapacityOf, serviceLimitMessage } from '../middleware/subscription.middleware';
+import { PLAN_NAME } from '../config/plan-names';
+import { isDemoOrganization } from '../demo/demo-workspace';
 import { AWSResourceDiscoveryService } from '../services/awsResourceDiscovery';
 import { SCAN_BUSY_MESSAGE, isScanBusy } from '../services/scan-session';
 import { isPlatformAwsCredentialsUnavailable, PLATFORM_AWS_UNAVAILABLE_MESSAGE } from '../services/platform-sts';
@@ -45,6 +47,23 @@ async function requireCurrentAdminOrOwner(req: Request, res: Response, next: Nex
     }
     console.error('[Services] role check error:', err);
     res.status(500).json({ success: false, error: 'Failed to verify permissions' });
+  }
+}
+
+/**
+ * The demo workspace creates no services (stage-a FQ6), with the same answer
+ * as the GitHub routes' refuseDemo. A demo status that cannot be read fails
+ * closed (isDemoOrganization throws; the error handler answers 500).
+ */
+async function refuseDemoWorkspace(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (await isDemoOrganization(pool, req.organizationId as string)) {
+      res.status(403).json({ success: false, error: 'not_available_in_demo' });
+      return;
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -1021,6 +1040,43 @@ router.get('/registered', authenticateToken, async (req: Request, res: Response)
   }
 });
 
+// ─── GET /api/services/limit — the services limit, for the UI ───────────────
+
+/**
+ * The organization's services limit and usage, from the same resolver that
+ * POST /api/services enforces (serviceCapacityOf), so the UI says what the
+ * server will decide. `max` null = unlimited. Explanatory only: the 402 from
+ * POST is the guarantee. Declared before /:id.
+ */
+router.get('/limit', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.organizationId;
+  if (!orgId) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
+
+  try {
+    const capacity = await serviceCapacityOf(pool, orgId);
+    const unlimited = capacity.limit === -1;
+    const plan = Object.prototype.hasOwnProperty.call(PLAN_NAME, capacity.effectiveTier)
+      ? PLAN_NAME[capacity.effectiveTier]
+      : null;
+    res.json({
+      success: true,
+      limit: {
+        used: capacity.used,
+        max: unlimited ? null : capacity.limit,
+        plan,
+        freePlan: PLAN_NAME.free,
+        reached: !unlimited && capacity.used >= capacity.limit,
+        upgradeAvailable: capacity.upgradeAvailable,
+        reason: capacity.reason,
+        message: unlimited ? null : serviceLimitMessage(capacity),
+      },
+    });
+  } catch (err: unknown) {
+    console.error('[Services/limit]', err instanceof Error ? err.name : 'error');
+    res.status(500).json({ success: false, error: 'Failed to load the services limit' });
+  }
+});
+
 // ─── GET /api/services/:id — aws_resources-backed detail ─────────────────────
 
 router.get('/:id', authenticateToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -1044,7 +1100,8 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response, next: 
 
 // ─── Legacy controller routes (services table — create/update/delete) ─────────
 
-router.post(   '/',    authenticateToken, requireCurrentAdminOrOwner, validateBody(createServiceSchema), (req, res, next) => controller.create(req, res, next));
+// POST is limited by the plan's services limit inside its own transaction (ServicesController.create).
+router.post(   '/',    authenticateToken, requireCurrentAdminOrOwner, refuseDemoWorkspace, validateBody(createServiceSchema), (req, res, next) => controller.create(req, res, next));
 router.put(    '/:id', authenticateToken, requireCurrentAdminOrOwner, validateParams(uuidParamSchema), validateBody(updateServiceSchema), (req, res, next) => controller.update(req, res, next));
 router.delete( '/:id', authenticateToken, requireCurrentAdminOrOwner, validateParams(uuidParamSchema), (req, res, next) => controller.delete(req, res, next));
 

@@ -408,6 +408,27 @@ export interface RegisteredService {
   createdAt: string;
 }
 
+/**
+ * The services limit as GET /api/services/limit reports it, from the same
+ * resolver POST /api/services enforces. Explanatory only: the 402 is the
+ * guarantee.
+ */
+export interface ServiceLimit {
+  used: number;
+  /** null = unlimited. */
+  max: number | null;
+  /** The effective plan's customer-facing name (null for a plan the catalog does not know). */
+  plan: string | null;
+  /** The Free plan's name, for the billing-hold notice. */
+  freePlan: string;
+  /** used >= max: no new service can be created. */
+  reached: boolean;
+  /** Whether "See plans" is offered (never for a managed plan or the top plan). */
+  upgradeAvailable: boolean;
+  /** Set when a billing hold is why the Free limit applies. */
+  reason: 'BILLING_RESTRICTED' | 'SUBSCRIPTION_INACTIVE' | null;
+}
+
 export interface CreateServicePayload {
   name: string;
   template: ServiceTemplate;

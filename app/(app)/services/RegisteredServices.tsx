@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
+import { useServiceLimit } from '@/lib/hooks/use-service-limit'
+import { SERVICE_LIMIT_COPY } from '@/lib/service-limit/copy'
 import { isAutomationOwner, NO_OWNER_SET } from './ownership'
 
 /**
@@ -14,6 +16,9 @@ import { isAutomationOwner, NO_OWNER_SET } from './ownership'
  */
 export function RegisteredServices() {
   const query = useRegisteredServices()
+  const hasServices = query.isSuccess && query.data.length > 0
+  // C12: "{n} of {max} registered"; "{n} registered" when unlimited or while the limit is unknown.
+  const limit = useServiceLimit({ enabled: hasServices })
 
   let body: React.ReactNode
   if (query.isError) {
@@ -88,8 +93,8 @@ export function RegisteredServices() {
           <h2 id="registered-services-heading" className="text-base font-bold text-slate-900 m-0">Registered services</h2>
           <p className="text-xs text-slate-500 m-0">Services added with Add Service. Discovered AWS resources are listed below.</p>
         </div>
-        {query.isSuccess && query.data.length > 0 && (
-          <span className="text-xs font-semibold text-slate-500">{query.data.length} registered</span>
+        {hasServices && (
+          <span className="text-xs font-semibold text-slate-500">{SERVICE_LIMIT_COPY.registeredCount(query.data?.length ?? 0, limit.data?.max ?? null)}</span>
         )}
       </div>
       {body}

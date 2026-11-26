@@ -56,6 +56,8 @@ function row(id: string, name: string, extra: Partial<{ owner: string; team_id: 
 
 /** What the fake server answers per organization (by the token's claim). */
 let byOrg: Record<string, () => unknown[] | Promise<unknown[]>>
+/** GET /api/services/limit's answer (C12); undefined = not answered (an error, so the header falls back to "{n} registered"). */
+let limitAnswer: unknown
 
 function currentTokenOrg(): string {
   const token = localStorage.getItem('accessToken') ?? ''
@@ -87,7 +89,9 @@ beforeEach(() => {
   vi.spyOn(authService, 'getCurrentUser').mockResolvedValue({ ...USER, organizations: [ORG.a, ORG.b] } as never)
   vi.spyOn(organizationsService, 'getAll').mockResolvedValue([ORG.a, ORG.b] as never)
   byOrg = { [ORG.a.id]: () => [], [ORG.b.id]: () => [] }
+  limitAnswer = undefined
   vi.spyOn(api, 'get').mockImplementation((async (url: string) => {
+    if (url === '/api/services/limit' && limitAnswer !== undefined) return { data: limitAnswer }
     if (url !== '/api/services/registered') throw new Error(`unexpected GET ${url}`)
     const services = await byOrg[currentTokenOrg()]()
     return { data: { success: true, services, total: services.length } }
@@ -204,5 +208,41 @@ describe('Registered services section', () => {
     expect(screen.queryByText('org-a-service')).not.toBeInTheDocument()
     await waitFor(() => expect(client.getQueryData(['registered-services', ORG.a.id])).toBeUndefined())
     expect(registeredCalls()).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('C12: the header counts against the services limit', () => {
+  const limitCalls = () => vi.mocked(api.get).mock.calls.filter(([u]) => u === '/api/services/limit').length
+  const answer = (max: number | null) => ({
+    success: true,
+    limit: { used: 2, max, plan: 'Visibility', freePlan: 'Visibility', reached: false, upgradeAvailable: true, reason: null, message: null },
+  })
+
+  it('"{n} of {max} registered" from GET /api/services/limit', async () => {
+    signInAs(ORG.a)
+    byOrg[ORG.a.id] = () => [row('s1', 'payments-api'), row('s2', 'worker')]
+    limitAnswer = answer(5)
+    mount()
+    const section = await screen.findByRole('region', { name: 'Registered services' })
+    expect(await within(section).findByText('2 of 5 registered')).toBeInTheDocument()
+  })
+
+  it('"{n} registered" when unlimited', async () => {
+    signInAs(ORG.a)
+    byOrg[ORG.a.id] = () => [row('s1', 'payments-api'), row('s2', 'worker')]
+    limitAnswer = answer(null)
+    mount()
+    const section = await screen.findByRole('region', { name: 'Registered services' })
+    await within(section).findByText('payments-api')
+    await waitFor(() => expect(limitCalls()).toBe(1))
+    expect(within(section).getByText('2 registered')).toBeInTheDocument()
+  })
+
+  it('with no services the limit is not asked for (no header count)', async () => {
+    signInAs(ORG.a)
+    limitAnswer = answer(5)
+    mount()
+    await screen.findByText('No services registered yet.')
+    expect(limitCalls()).toBe(0)
   })
 })
