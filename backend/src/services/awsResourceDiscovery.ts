@@ -91,10 +91,18 @@ import {
   recordRegionScanStatus,
 } from '../repositories/multi-region-foundation.repository';
 import { errorNameOf, inRegionLogContext, regionSafe, sourceDiagnostic } from './region-log-context';
-import { HOME_REGION_SOURCES, HomeRegionScanResult, RESOURCE_EXPLORER_SOURCE, homeRegionScanStatus } from './region-scan-status';
+import {
+  HOME_REGION_SOURCES,
+  HomeRegionScanResult,
+  RESOURCE_EXPLORER_SOURCE,
+  homeRegionScanStatus,
+  optionalResourceExplorerFailure,
+  resourceExplorerFailureCode,
+} from './region-scan-status';
 import {
   NON_HOME_REGION_SOURCES,
   REGION_CODE_DEADLINE,
+  REGION_CODE_THROTTLED,
   RegionRun,
   RegionSourceOutcome,
   SCAN_BUDGET_RESULT,
@@ -107,6 +115,7 @@ import {
   isScanDeadline,
   classifyRegionFailure,
   isRegionDeadline,
+  NO_COST_PASS_CALLS,
   notStartedLogLine,
   regionFailed,
   regionScanResult,
@@ -297,6 +306,9 @@ const REGIONAL_TYPES: RegionalType[] = ['ec2', 'ebs', 'rds', 'lambda', 'load-bal
  * (observability-readiness.service.ts TYPE_ERROR_PREFIX).
  */
 const HOME_READINESS_PREFIXES = ['EC2: ', 'RDS: '];
+
+/** The job error segment of a failed Resource Explorer call (inventoryResourceExplorer); non-fatal since region-access PR (b). */
+const RESOURCE_EXPLORER_CALL_ERROR_PREFIX = 'Resource Explorer: ';
 
 /**
  * PR 1b, review L-4: the readiness text for a home region whose EC2 and RDS listings
@@ -640,9 +652,18 @@ export class AWSResourceDiscoveryService {
     if (!searchResult.success) {
       // Region-access PR 1 (c): which call failed, by source, operation and AWS error name only.
       outcome.diagnostic = sourceDiagnostic(RESOURCE_EXPLORER_SOURCE, failedCall?.operation ?? 'Search', searchResult.cause);
+      // Region-access PR (b): the failed AWS call itself (GetIndex, GetDefaultView or
+      // Search), which makes this failure optional for the region's status
+      // (region-scan-status.ts) and names the refused call in the scan's saved sources.
+      if (searchResult.cause !== undefined) outcome.operation = failedCall?.operation ?? 'Search';
+      const failure = classifyRegionFailure(searchResult.cause);
       if (ctx.run) {
-        const failure = classifyRegionFailure(searchResult.cause);
         outcome.status = failure.status;
+        outcome.reason = failure.reason;
+      } else {
+        // Without the flag the source's status stays as it always was (failedSourceStatus,
+        // what the scan's saved sources record); only the reason code is added, so the
+        // home region's Resource Explorer code tells a throttle from another failure.
         outcome.reason = failure.reason;
       }
     }
@@ -728,9 +749,30 @@ export class AWSResourceDiscoveryService {
         `❌ [Discovery] Resource Explorer search failed, skipping generic inventory + reconciliation:`,
         ctx.run ? `${region} (${outcome.reason}, ${outcome.diagnostic})` : searchResult.error
       );
+      if (outcome.operation && outcome.reason === REGION_CODE_THROTTLED) {
+        // Region-access PR (b), B5: a throttle is never a refusal; said once, by call name only.
+        console.warn(
+          `⚠️  [Discovery] resource_explorer_throttled: ${region} (${outcome.operation}): AWS throttled Resource Explorer after the call policy's retries; ` +
+            `the generic types were not listed or reconciled in this region this scan; not an access refusal`
+        );
+      }
+      // Without the flag this is the job's error text (internal: the jobs API returns only
+      // a fixed sentence for it, discovery-job-messages.ts). Region-access PR (b): it no
+      // longer fails the job (runDiscovery's discoveryFailed); the job's warning says it.
       ctx.errors.push(`Resource Explorer: ${searchResult.error}`);
     }
     return { outcome, terminated };
+  }
+
+  /**
+   * Region-access PR (b): the job warning of a region's optional Resource Explorer
+   * failure (region-scan-status.ts optionalResourceExplorerFailure), its code by cause;
+   * nothing when Resource Explorer did not fail or a core listing failed too (the core
+   * failure is the region's, as before).
+   */
+  private recordResourceExplorerWarning(warnings: DiscoveryWarning[], outcomes: readonly RegionSourceOutcome[], sources: readonly string[]): void {
+    const optional = optionalResourceExplorerFailure(outcomes, sources);
+    if (optional) warnings.push(resourceExplorerFailureCode(optional.outcome));
   }
 
   /**
@@ -913,6 +955,9 @@ export class AWSResourceDiscoveryService {
           args.warnings.push(DISCOVERY_WARNING_LISTING_TRUNCATED);
         }
         result = regionScanResult(outcomes, run.deadlineHit, home ? HOME_REGION_SOURCES : NON_HOME_REGION_SOURCES);
+        // Region-access PR (b): an optional Resource Explorer failure is the job's warning
+        // (its code), whatever code the region keeps (a cut-off core listing's wins, Q2).
+        if (!run.deadlineHit) this.recordResourceExplorerWarning(args.warnings, outcomes, home ? HOME_REGION_SOURCES : NON_HOME_REGION_SOURCES);
         // RR-M2 (PR 2): the Resource Explorer warning is this region's. A region whose own
         // result is ok records it as its code, so the coverage API names the region it came
         // from. Any other result keeps its own code (the one column holds one code); the
@@ -928,7 +973,7 @@ export class AWSResourceDiscoveryService {
       } finally {
         run.stop();
       }
-      await this.recordRegionStatus((fn) => onStepConnection(region, fn), scan, jobId, region, organizationId, result);
+      run.statusRecorded = await this.recordRegionStatus((fn) => onStepConnection(region, fn), scan, jobId, region, organizationId, result);
       // The home region's line waits for the cost pass (PR 1b): its counts are the home region's too.
       if (region === scanContext.region) homeLogLine = (costPass) => run.logLine(organizationId, result, costPass);
       else console.log(run.logLine(organizationId, result));
@@ -945,9 +990,9 @@ export class AWSResourceDiscoveryService {
 
     // A2: the regions the scan budget left unstarted, each with its own status.
     for (const region of notStarted) {
-      await this.recordRegionStatus((fn) => fn(args.client), scan, jobId, region, organizationId, SCAN_BUDGET_RESULT);
-      if (region === scanContext.region) homeLogLine = (costPass) => notStartedLogLine(organizationId, region, costPass);
-      else console.log(notStartedLogLine(organizationId, region));
+      const recorded = await this.recordRegionStatus((fn) => fn(args.client), scan, jobId, region, organizationId, SCAN_BUDGET_RESULT);
+      if (region === scanContext.region) homeLogLine = (costPass) => notStartedLogLine(organizationId, region, costPass, recorded);
+      else console.log(notStartedLogLine(organizationId, region, NO_COST_PASS_CALLS, recorded));
     }
     if (notStarted.length > 0) {
       console.warn(`⚠️  [Discovery] scan_budget: org ${organizationId}: ${notStarted.length} region(s) not started; their earlier results are kept`);
@@ -1039,8 +1084,12 @@ export class AWSResourceDiscoveryService {
    * connection `onConnection` hands over (a region's step connection, PR 1b M-1, or
    * the scan's own for a region never started). Fail-soft as the home region's
    * (recordHomeRegionStatus): a failed write, or a connection that could not be
-   * checked out for it, is logged (organization id, region and error type only) and
-   * the scan goes on; a lost lease or an ambiguous account still stops it.
+   * checked out for it, is logged (organization id, job id, region and error type only)
+   * and the scan goes on; a lost lease or an ambiguous account still stops it.
+   *
+   * Region-access PR (b), B3: returns whether the status was stored (true), not stored
+   * (false: the write failed, or wrote no row), or null when there was nothing to write,
+   * for the region's log line (status_recorded). Never reports a failed write as stored.
    */
   private async recordRegionStatus(
     onConnection: <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>,
@@ -1049,8 +1098,8 @@ export class AWSResourceDiscoveryService {
     region: string,
     organizationId: string,
     result: HomeRegionScanResult | null
-  ): Promise<void> {
-    if (!result) return;
+  ): Promise<boolean | null> {
+    if (!result) return null;
     let written: number;
     try {
       scan.checkpoint();
@@ -1058,13 +1107,15 @@ export class AWSResourceDiscoveryService {
     } catch (error: unknown) {
       abortIfLeaseLost(error);
       console.warn(
-        `⚠️  [Discovery] region_status_write_failed: org ${organizationId} region ${region} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
+        `⚠️  [Discovery] region_status_write_failed: org ${organizationId} job ${jobId} region ${region} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
       );
-      return;
+      return false;
     }
     if (written === 0) {
-      console.warn(`⚠️  [Discovery] region_status_not_recorded: org ${organizationId} region ${region} (no row, or a newer scan's status); the scan continues`);
+      console.warn(`⚠️  [Discovery] region_status_not_recorded: org ${organizationId} job ${jobId} region ${region} (no row, or a newer scan's status); the scan continues`);
+      return false;
     }
+    return true;
   }
 
   /**
@@ -1808,6 +1859,9 @@ export class AWSResourceDiscoveryService {
         const explored = await this.inventoryResourceExplorer(home, allowedGenericTypes);
         resourceExplorerOutcome = explored.outcome;
         resourcesTerminated += explored.terminated;
+        // Region-access PR (b), B2: an optional Resource Explorer failure is a warning of
+        // the job (which completes), not a failure of it.
+        if (explored.outcome) this.recordResourceExplorerWarning(warnings, [...ownOutcomes, explored.outcome], HOME_REGION_SOURCES);
       } else {
         const regions = await this.regionsToScan(client, scanContext);
         scanContext.allowRegions(regions);
@@ -2317,7 +2371,13 @@ export class AWSResourceDiscoveryService {
       // A cost failure says the cost step failed, never that discovery did: it stays in
       // the job's error text, but does not set the job's status, which other pages read
       // as discovery's own. cost_analysis_completed and the run record carry it.
-      const discoveryFailed = errors.some((message) => !message.startsWith('Cost analysis: '));
+      // Region-access PR (b), B2: a failed Resource Explorer call ("Resource Explorer: ...",
+      // without the flag) is an optional source's failure: kept in the job's internal error
+      // text, said by the job's warning, and it no longer fails the job. Every other
+      // failure (the own listings, storing, reconciling) still does.
+      const discoveryFailed = errors.some(
+        (message) => !message.startsWith('Cost analysis: ') && !message.startsWith(RESOURCE_EXPLORER_CALL_ERROR_PREFIX)
+      );
       // The job's error text (R1, founder decision Nov 14): with the multi-region flag on,
       // the home region's EC2 and RDS listing errors are added, in the format the
       // Operational Health readiness gate reads ("EC2: ...", "RDS: ..."), so a home-region
@@ -2524,7 +2584,8 @@ export class AWSResourceDiscoveryService {
    * §13) from the home region's listings, in one fenced write (F18). Nothing is
    * written when no listing counts or the home region has no row (its list was
    * never stored). Fail-soft: any other failed write is logged once (organization
-   * id and error type only) and the scan goes on unchanged. A lost lease or an
+   * id, job id, home region and error type only; region-access PR (b), B3) and the
+   * scan goes on unchanged. A lost lease or an
    * ambiguous account still stops the scan, as at every other step.
    */
   private async recordHomeRegionStatus(
@@ -2544,12 +2605,14 @@ export class AWSResourceDiscoveryService {
     } catch (error: unknown) {
       abortIfLeaseLost(error);
       console.warn(
-        `⚠️  [Discovery] region_status_write_failed: org ${organizationId} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
+        `⚠️  [Discovery] region_status_write_failed: org ${organizationId} job ${jobId} region ${homeRegion} (${error instanceof Error ? error.name : 'unknown error'}); the scan continues`
       );
       return;
     }
     if (written === 0) {
-      console.warn(`⚠️  [Discovery] region_status_not_recorded: org ${organizationId} (no home-region row, or a newer scan's status); the scan continues`);
+      console.warn(
+        `⚠️  [Discovery] region_status_not_recorded: org ${organizationId} job ${jobId} region ${homeRegion} (no home-region row, or a newer scan's status); the scan continues`
+      );
       return;
     }
     console.log(`🗺️  [Discovery] Home region scan status recorded (${result.status}${result.errorCode ? `, ${result.errorCode}` : ''})`);
@@ -2570,7 +2633,8 @@ export class AWSResourceDiscoveryService {
     scanContext: ScanContext,
     awsClients: AWSClients,
     organizationId: string,
-    outcomes: readonly SourceOutcome[]
+    // Region-access PR (b): a Resource Explorer outcome carries its refused call (operation).
+    outcomes: readonly RegionSourceOutcome[]
   ): Promise<void> {
     try {
       scan.checkpoint();

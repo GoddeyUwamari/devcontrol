@@ -1024,12 +1024,21 @@ describe('M5c: each enabled region\'s last scan status', () => {
   });
 
   it('the allow-list holds exactly the codes M5b records, so none of them is dropped', () => {
+    // Region-access PR (b): M5b also records the three Resource Explorer failure codes (a
+    // failed Resource Explorer call, every own listing complete).
+    const explorerFailed = (status: 'denied' | 'timed_out' | 'failed', reason: string) =>
+      homeRegionScanStatus([{ source: 'ec2', status: 'complete' }, { source: RESOURCE_EXPLORER_SOURCE, status, reason, operation: 'Search' }])!.errorCode;
     const produced = new Set<string | null>([
       homeRegionScanStatus([{ source: RESOURCE_EXPLORER_SOURCE, status: 'truncated' }])!.errorCode,
       homeRegionScanStatus([{ source: 'ec2', status: 'truncated' }])!.errorCode,
+      explorerFailed('denied', 'access_denied'),
+      explorerFailed('timed_out', 'throttled'),
+      explorerFailed('failed', 'error'),
     ]);
     expect([...produced].sort()).toEqual([...REGION_ERROR_CODES].sort());
-    expect([...REGION_ERROR_CODES].sort()).toEqual([DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX].sort());
+    expect([...REGION_ERROR_CODES].sort()).toEqual(
+      [DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_TRUNCATED_INDEX, 'resource_explorer_denied', 'resource_explorer_throttled', 'resource_explorer_failed'].sort()
+    );
   });
 
   it('home is the account\'s region: eu-west-1 is home, us-east-1 is not', async () => {

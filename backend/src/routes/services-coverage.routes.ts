@@ -16,6 +16,7 @@ import {
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
   DISCOVERY_WARNING_TRUNCATED_INDEX,
+  RESOURCE_EXPLORER_FAILURE_CODES,
   splitDiscoveryMessage,
 } from '../services/discovery-warnings';
 import {
@@ -232,6 +233,10 @@ export interface MultiRegionCoverage {
 export const RESOURCE_EXPLORER_WARNING_CODES: readonly string[] = [
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+  // Region-access PR (b): an optional Resource Explorer failure. A region whose cut-off
+  // core listing kept its own code (Q2) does not carry it, so it is unattributed and the
+  // page shows its approved "Resource Explorer wasn't available…" note.
+  ...RESOURCE_EXPLORER_FAILURE_CODES,
 ];
 
 /**
@@ -378,10 +383,13 @@ export interface RegionCoverage {
   /** A code on REGION_ERROR_CODES, or null; never the stored message. */
   last_error_code: string | null;
   /**
-   * Scans in a row that REACHED the status write with a failed home-region
-   * source (m5-plan.md §14, §14.1). A scan that stopped before the write
-   * (credentials, lost lease, fatal error) is not counted: this is not
-   * "failed attempts in a row".
+   * Scans in a row that REACHED the status write with a failed or denied
+   * status (m5-plan.md §14, §14.1): 0 after `ok`, +1 after a failure, kept
+   * after a `partial`, except 0 after a `partial` whose code is a Resource
+   * Explorer failure code (region-access PR (b): only the optional source
+   * failed, so the scan was not a failed scan). A scan that stopped before
+   * the write (credentials, lost lease, fatal error) is not counted: this is
+   * not "failed attempts in a row". Writer: multi-region-foundation.repository.ts.
    */
   consecutive_failures: number;
   /** A status was written and last_scan_finished_at is older than STALE_AFTER_SECONDS (database clock). */
@@ -400,10 +408,15 @@ export const STALE_AFTER_SECONDS = 2 * DISCOVERY_INTERVAL_SECONDS + MAX_LEASE_AG
 
 /**
  * The only region error codes passed on: the codes multi-region M5b records
- * for a partial scan (region-scan-status.ts). Any other stored value is
- * returned as null.
+ * for a partial scan (region-scan-status.ts): the two truncation codes and
+ * (region-access PR (b)) the three Resource Explorer failure codes. Any other
+ * stored value is returned as null.
  */
-export const REGION_ERROR_CODES: readonly string[] = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED];
+export const REGION_ERROR_CODES: readonly string[] = [
+  DISCOVERY_WARNING_TRUNCATED_INDEX,
+  DISCOVERY_WARNING_LISTING_TRUNCATED,
+  ...RESOURCE_EXPLORER_FAILURE_CODES,
+];
 
 function regionErrorCode(code: unknown): string | null {
   return typeof code === 'string' && REGION_ERROR_CODES.includes(code) ? code : null;
@@ -437,6 +450,8 @@ export const REGION_WARNING_CODES: readonly string[] = [
   // warning on a check; it is its state (not_checked_budget) and its error_code.
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
+  // Region-access PR (b): a region partial only because Resource Explorer failed.
+  ...RESOURCE_EXPLORER_FAILURE_CODES,
 ];
 
 function multiRegionErrorCode(code: unknown): string | null {

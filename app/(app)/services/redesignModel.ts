@@ -22,7 +22,7 @@ import { lastCompletedScanIso } from '@/lib/scan-time'
 import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
 import {
   DISCOVERY_WARNING_LISTING_TRUNCATED, DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX, DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
-  resourceExplorerNoViewText, resourceExplorerOffText, resourcesScopeCaption, shownWarnings,
+  resourceExplorerFailureText, resourceExplorerNoViewText, resourceExplorerOffText, resourcesScopeCaption, shownWarnings,
 } from './coverage'
 import { formatWhen, latestAttempt, type Rich } from './regionCoverage'
 import { notCheckedLines, type NotCheckedLine } from './notChecked'
@@ -140,6 +140,9 @@ export function regionNoteText(code: FailureCode, region: string, earlier: numbe
 
 /** A partial region's Details (RE-1, RE-2, S15), {r} = the region that raised it (RR-M2). */
 export function partialText(code: string | null, region: string): string {
+  // Region-access PR (b): a Resource Explorer call failed and everything else was checked.
+  const explorerFailure = resourceExplorerFailureText(code, region)
+  if (explorerFailure) return explorerFailure
   switch (code) {
     case DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX: return resourceExplorerOffText(region)
     case DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW: return resourceExplorerNoViewText(region)

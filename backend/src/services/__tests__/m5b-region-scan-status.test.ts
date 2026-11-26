@@ -319,6 +319,25 @@ describe('recordHomeRegionScanStatus (F18): what is written per status', () => {
     });
   });
 
+  // Region-access PR (b) (founder ruling): a completed scan whose only gap was the optional
+  // Resource Explorer source is not a failed scan, so the counter resets; the last full
+  // scan (last_success_at) still does not move, because the region was not fully listed.
+  it.each(['resource_explorer_denied', 'resource_explorer_throttled', 'resource_explorer_failed'])(
+    'partial with %s: consecutive_failures reset to 0 (from 2), last_success_at kept, the diagnostic stored',
+    async (errorCode) => {
+      await withSchema(async (env) => {
+        const { org, db, held, jobId } = await scanned(env);
+        await seedPriorScan(env, org);
+        expect(await write(db, held, jobId, { status: 'partial', errorCode, diagnostic: 'resource-explorer:GetDefaultView:AccessDeniedException' })).toBe(1);
+        const row = (await rowsOf(env, org))[HOME];
+        expect(row).toMatchObject({
+          last_scan_status: 'partial', last_error_code: errorCode, last_error_message: 'resource-explorer:GetDefaultView:AccessDeniedException', consecutive_failures: 0,
+        });
+        expect(row.last_success_at).toEqual(PRIOR_SUCCESS);
+      });
+    }
+  );
+
   it.each(['partial', 'failed', 'denied', 'timed_out'] as const)('%s: a NULL prior last_success_at stays NULL', async (status) => {
     await withSchema(async (env) => {
       const { org, db, held, jobId } = await scanned(env);

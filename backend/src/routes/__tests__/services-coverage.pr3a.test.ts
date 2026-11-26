@@ -305,6 +305,41 @@ describe('G11 region_warnings_unattributed edges', () => {
   });
 });
 
+describe('region-access PR (b): the three Resource Explorer failure codes read as Partial', () => {
+  const CODES = ['resource_explorer_denied', 'resource_explorer_throttled', 'resource_explorer_failed'];
+  const completedJob = (orgId: string, warnings: string[], regions: string[]) =>
+    pool.query(
+      `INSERT INTO resource_discovery_jobs (organization_id, status, started_at, completed_at, created_at, resource_types, regions, warnings)
+       VALUES ($1, 'completed', $2, $3, $2, '{}', $4, $5::jsonb)`,
+      [orgId, STARTED, FINISHED, regions, JSON.stringify(warnings)]
+    );
+
+  it.each(CODES)('flag on: a region partial with %s is checked_with_warnings with its code, counted partial (never failed or denied); attributed', async (code) => {
+    const org = await orgWith('us-east-1', [{ name: 'us-east-1', status: 'ok' }, { name: 'eu-west-1', status: 'partial', code }], { flag: true });
+    await completedJob(org.orgId, [code], ['us-east-1', 'eu-west-1']);
+    const mr = (await coverageOf(org)).multi_region;
+    expect(mr.regions.find((r: { region: string }) => r.region === 'eu-west-1')).toMatchObject({ status: 'partial', error_code: code, state: 'checked_with_warnings' });
+    expect(mr.regions_checked).toMatchObject({ partial: 1, not_checked: 0 });
+    expect(mr.regions_checked.by_state).toMatchObject({ checked_with_warnings: 1, denied: 0, failed: 0 });
+    expect(mr.region_warnings).toEqual(expect.arrayContaining([expect.objectContaining({ region: 'eu-west-1', code })]));
+    expect(mr.region_warnings_unattributed).toEqual([]);
+  });
+
+  it('Q2 flag on: a region that kept its cut-off core listing\'s code leaves the job\'s Resource Explorer code unattributed (the existing approved note)', async () => {
+    const org = await orgWith('us-east-1', [{ name: 'us-east-1', status: 'ok' }, { name: 'eu-west-1', status: 'partial', code: 'discovery_listing_truncated' }], { flag: true });
+    await completedJob(org.orgId, ['discovery_listing_truncated', 'resource_explorer_denied'], ['us-east-1', 'eu-west-1']);
+    expect((await coverageOf(org)).multi_region.region_warnings_unattributed).toEqual(['resource_explorer_denied']);
+  });
+
+  it.each(CODES)('flag off: the home region\'s region_status passes %s on (it was null before PR (b))', async (code) => {
+    const org = await orgWith('us-east-1', [{ name: 'us-east-1', status: 'partial', code }]);
+    await completedJob(org.orgId, [code], ['us-east-1']);
+    const coverage = await coverageOf(org);
+    expect(coverage.region_status.find((r: { region: string }) => r.region === 'us-east-1')).toMatchObject({ status: 'partial', last_error_code: code });
+    expect(coverage.last_scan.warnings).toContain(code);
+  });
+});
+
 describe('RR-L1: the home region is never excluded', () => {
   it('a completed scan: home with scan_enabled = false reads checked; 2 of 2, all_checked', async () => {
     const org = await orgWith('us-east-1', [{ name: 'us-east-1', status: 'ok', scanEnabled: false }, { name: 'eu-west-1', status: 'ok' }], { flag: true });

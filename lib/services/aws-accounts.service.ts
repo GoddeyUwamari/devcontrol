@@ -281,6 +281,48 @@ function permissionEntry({ action, status, refusedAction }: PermissionCheckEntry
     ? { action, status, refusedAction }
     : { action, status }
 }
+
+/** The permission entries the page renders: each with a string action and a known status, through permissionEntry. */
+function permissionEntries(checks: readonly unknown[]): PermissionCheckEntry[] {
+  return checks
+    .filter((c): c is PermissionCheckEntry =>
+      !!c && typeof (c as PermissionCheckEntry).action === 'string' && PERMISSION_STATUSES.includes((c as PermissionCheckEntry).status))
+    .map(permissionEntry)
+}
+
+/**
+ * The connect response's permission check (region-access PR 1 review RC-N1): parsed with the
+ * same allowlist as the saved checks (permissionEntries), so the page right after a connect
+ * never shows an entry or a refusedAction the saved-checks view would drop. Null when absent
+ * or not a `{ checks: [...] }` object.
+ */
+export function parsePermissionCheckReport(value: unknown): PermissionCheckReport | null {
+  const checks = (value as { checks?: unknown } | null | undefined)?.checks
+  if (!value || typeof value !== 'object' || !Array.isArray(checks)) return null
+  return { checks: permissionEntries(checks) }
+}
+
+/**
+ * The only action each refused listing may name (backend aws-connection-checks.repository.ts
+ * SAVED_SCAN_SOURCES; region-access PR (b), B4: Resource Explorer also its GetIndex and
+ * GetDefaultView calls). An entry naming anything else is dropped, never shown as another call.
+ */
+const REFUSED_SOURCE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
+  ec2: ['ec2:DescribeInstances'],
+  ebs: ['ec2:DescribeVolumes'],
+  rds: ['rds:DescribeDBInstances'],
+  s3: ['s3:ListAllMyBuckets'],
+  lambda: ['lambda:ListFunctions'],
+  'load-balancer': ['elasticloadbalancing:DescribeLoadBalancers'],
+  cloudfront: ['cloudfront:ListDistributions'],
+  'resource-explorer': ['resource-explorer-2:Search', 'resource-explorer-2:GetIndex', 'resource-explorer-2:GetDefaultView'],
+}
+
+function isKnownRefusedSource(s: unknown): s is RefusedSource {
+  const { source, action } = (s ?? {}) as { source?: unknown; action?: unknown }
+  return typeof source === 'string' && typeof action === 'string'
+    && Object.prototype.hasOwnProperty.call(REFUSED_SOURCE_ACTIONS, source) && REFUSED_SOURCE_ACTIONS[source].includes(action)
+}
 const ATTACHED: readonly string[] = ['attached', 'missing']
 const READ_EXTRAS: readonly string[] = ['matches', 'differs', 'missing', 'unreadable']
 
@@ -315,10 +357,7 @@ export function parseConnectionChecks(body: unknown): ConnectionChecks | null {
   const permissionCheck =
     permission && Array.isArray(permission.checks) && typeof permission.checkedAt === 'string' && isDateOrNull(permission.checkedAt)
       ? {
-          checks: permission.checks
-            .filter((c): c is PermissionCheckEntry =>
-              !!c && typeof (c as PermissionCheckEntry).action === 'string' && PERMISSION_STATUSES.includes((c as PermissionCheckEntry).status))
-            .map(permissionEntry),
+          checks: permissionEntries(permission.checks),
           checkedAt: permission.checkedAt,
         }
       : null
@@ -352,7 +391,7 @@ export function parseConnectionChecks(body: unknown): ConnectionChecks | null {
       ? {
           scannedAt: refused.scannedAt,
           sources: refused.sources
-            .filter((s): s is RefusedSource => !!s && typeof (s as RefusedSource).source === 'string' && typeof (s as RefusedSource).action === 'string')
+            .filter(isKnownRefusedSource)
             .map(({ source, action }) => ({ source, action })),
         }
       : null
@@ -406,7 +445,8 @@ const awsAccountsService = {
       payload
     )
     const account = handleApiResponse(response)
-    return { account, permissionCheck: response.data.permissionCheck ?? null }
+    // RC-N1: the same allowlist as the saved checks (parsePermissionCheckReport).
+    return { account, permissionCheck: parsePermissionCheckReport(response.data.permissionCheck) }
   },
 
   /** The organization's account rows and the server's connection state (parseAwsConnection). */

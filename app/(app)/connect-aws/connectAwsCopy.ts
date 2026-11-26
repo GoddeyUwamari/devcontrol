@@ -160,8 +160,15 @@ export const REFUSED_SOURCE_LABELS: Readonly<Record<string, string>> = {
   cloudfront: 'CloudFront distributions',
   'resource-explorer': 'Resource Explorer search',
 }
+/**
+ * One refused saved source. Region-access PR (b), B4 (founder-approved Nov 25): a refused
+ * GetIndex or GetDefaultView (calls the Resource Explorer search makes first, not listings)
+ * says "AWS refused this call"; every listing, Search included, keeps its wording.
+ */
 export const refusedLine = (label: string, action: string) =>
-  `${label} (${action}): AWS refused this listing, so DevControl couldn't read these resources.`
+  VIEW_ONLY_ACCESS_ACTIONS.includes(action)
+    ? `${label} (${action}): AWS refused this call, so DevControl couldn't read these resources.`
+    : `${label} (${action}): AWS refused this listing, so DevControl couldn't read these resources.`
 export const FOUND_TITLE = 'What DevControl found'
 export const TABLE_SCOPE = 'Scope'
 export const TABLE_RESOURCES = 'Resources'

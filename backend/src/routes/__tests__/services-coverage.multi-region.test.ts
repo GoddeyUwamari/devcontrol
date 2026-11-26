@@ -754,6 +754,8 @@ describe('codes', () => {
       REGION_CODE_ACCESS_DENIED, REGION_CODE_ACCESS_DENIED_SCP, REGION_CODE_NOT_READY, REGION_CODE_DEADLINE,
       REGION_CODE_THROTTLED, REGION_CODE_CALL_TIMEOUT, REGION_CODE_SCAN_BUDGET, REGION_CODE_ERROR,
       'deletion_detection_paused_truncated_index', 'discovery_listing_truncated', 'resource_explorer_no_index', 'resource_explorer_no_view',
+      // Region-access PR (b).
+      'resource_explorer_denied', 'resource_explorer_throttled', 'resource_explorer_failed',
     ]) {
       expect(MULTI_REGION_ERROR_CODES).toContain(code);
     }

@@ -149,4 +149,20 @@ describe('GET /discovery/jobs (repository, real Postgres)', () => {
     expect(a.map((job: any) => job.error_message)).toEqual([DISCOVERY_FAILED_MESSAGE]);
     expect(b.map((job: any) => job.organization_id)).toEqual([orgB, orgB]);
   });
+
+  it('region-access PR (b), B2: a completed job carrying the internal Resource Explorer segment returns only the fixed sentence; the stored text is unchanged', async () => {
+    const orgId = await insertOrg();
+    const RAW_EXPLORER =
+      'Resource Explorer: User: arn:aws:sts::123456789012:assumed-role/placeholder-role/session is not authorized to perform: resource-explorer-2:Search on resource: *';
+    await insertJob(orgId, 2, RAW_EXPLORER, 'completed');
+
+    const [job] = await listed(orgId);
+    expect(job.status).toBe('completed');
+    expect(job.error_message).toBe(DISCOVERY_STEPS_INCOMPLETE_MESSAGE);
+    for (const fragment of ['Resource Explorer', 'arn:aws', '123456789012', 'not authorized', 'resource-explorer-2']) {
+      expect(JSON.stringify(job.error_message)).not.toContain(fragment);
+    }
+    const stored = await pool.query('SELECT error_message FROM resource_discovery_jobs WHERE organization_id = $1', [orgId]);
+    expect(stored.rows[0].error_message).toBe(RAW_EXPLORER);
+  });
 });

@@ -33,13 +33,14 @@ import { AWSClientFactory } from '../aws-client-factory.service';
 import costOptimizationService from '../cost-optimization.service';
 import { DISCOVERY_INTERRUPTED_MESSAGE, LeaseTiming } from '../scan-session';
 import { isLeaseLost } from '../scan-lease';
-import { DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
+import { AwsCallTimeoutError, DEFAULT_AWS_CALL_POLICY } from '../../utils/awsCallPolicy';
 import { OrphanedResourceDetectorService } from '../orphanedResourceDetector';
 import { ComplianceScannerService } from '../complianceScanner';
 import { DISCOVERY_FAILED_MESSAGE } from '../discovery-job-messages';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { ObservabilityReadinessService, evaluateDiscoveryGate } from '../observability-readiness.service';
 import * as foundation from '../../repositories/multi-region-foundation.repository';
+import { AWSResourcesRepository } from '../../repositories/awsResources.repository';
 import { ACTIVE_INDEX, DEFAULT_VIEW, PLACEHOLDER_ACCOUNT_ROW, connectPlaceholderAccount, isGetIndex, removePlaceholderAccounts, stubScanSource } from './helpers/scan-source';
 
 const dbConfig = () => ({
@@ -359,7 +360,7 @@ describe('flag on: every enabled region, once each', () => {
         [
           'calls', 'cost_pass_get_metric_data_metrics', 'cost_pass_get_metric_statistics_requests', 'diagnostic', 'duration_ms', 'event',
           'get_metric_data_metrics', 'get_metric_statistics_requests', 'listings', 'organization_id', 'outcome', 'reason', 'region',
-          'resource_pool', 'throttles',
+          'resource_pool', 'status_recorded', 'throttles',
         ].sort()
       );
       // Five own listings, the Resource Explorer search and (PR 1b, M-4) the security groups.
@@ -682,14 +683,17 @@ describe('Resource Explorer (A4, A5)', () => {
     expect(await resource(orgId, queueArn(HOME))).toMatchObject({ status: 'active', missing_scan_count: 0 });
   }, 30_000);
 
-  it('M-3: only a 401 is "no view"; an AccessDenied Search is still the source\'s failure (flag off: the job fails as before)', async () => {
+  it('M-3: only a 401 is "no view"; an AccessDenied Search is still the source\'s refusal (flag off: the job completes with resource_explorer_denied, not no_view)', async () => {
     const orgId = await insertOrg({ flag: false });
     mockAws({ [HOME]: { explorer: { SearchCommand: () => { throw accessDenied(); } } } });
     await service().discoverAllResources(orgId);
     const latest = await job(orgId);
-    expect(latest.status).toBe('failed');
+    // Region-access PR (b), B2: an optional Resource Explorer failure no longer fails the job.
+    expect(latest.status).toBe('completed');
     expect(latest.error_message).toMatch(/^Resource Explorer: /);
-    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'denied' });
+    expect(latest.warnings).toContain('resource_explorer_denied');
+    expect(latest.warnings).not.toContain('resource_explorer_no_view');
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'partial', last_error_code: 'resource_explorer_denied' });
   }, 30_000);
 
   /** GetIndex itself refused with 401 (not the Search): the "no view" rule (M-3) must not apply. */
@@ -699,29 +703,32 @@ describe('Resource Explorer (A4, A5)', () => {
     },
   };
 
-  it('RR-L1 flag off: a GetIndex refused with 401 still fails the source and the job as before (never read as "no view")', async () => {
+  it('RR-L1 flag off: a GetIndex refused with 401 fails the source (resource_explorer_failed), never "no view"; the job completes', async () => {
     const orgId = await insertOrg({ flag: false });
     await seedResource(orgId, queueArn(HOME), 'sqs', HOME);
     const { log } = mockAws({ [HOME]: { explorer: getIndex401 } });
     const result = await service().discoverAllResources(orgId);
     const latest = await job(orgId);
-    expect(latest.status).toBe('failed');
+    expect(latest.status).toBe('completed');
     expect(latest.error_message).toBe('Resource Explorer: placeholder unauthorized');
-    expect(latest.warnings).toBeNull();
+    expect(latest.warnings).toEqual(['resource_explorer_failed']);
     expect(result.warnings).not.toContain('resource_explorer_no_view');
     // No Search after a failed GetIndex, nothing reconciled.
     expect(log.filter((call) => call.command === 'SearchCommand')).toEqual([]);
     expect(await resource(orgId, queueArn(HOME))).toMatchObject({ status: 'active', missing_scan_count: 0 });
-    expect((await regionRows(orgId))[HOME].last_scan_status).toBe('failed');
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'partial', last_error_code: 'resource_explorer_failed' });
   }, 30_000);
 
-  it('RR-L1 flag on: a GetIndex refused with 401 in eu-west-1 is that region\'s failure (failed, error), not "no view"; the job completes', async () => {
+  it('RR-L1 flag on: a GetIndex refused with 401 in eu-west-1 is partial (resource_explorer_failed), not "no view"; the job completes', async () => {
     const orgId = await insertOrg();
     await seedResource(orgId, queueArn(EU), 'sqs', EU);
     mockAws({ [EU]: { explorer: getIndex401 } });
     const result = await service().discoverAllResources(orgId);
-    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'failed', last_error_code: 'error' });
-    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['region_incomplete'], regions: SCAN_ORDER });
+    expect((await regionRows(orgId))[EU]).toMatchObject({
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_failed', last_error_message: 'resource-explorer:GetIndex:UnauthorizedException',
+    });
+    // Q3: an optional Resource Explorer failure is no region_incomplete (like no default view).
+    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['resource_explorer_failed'], regions: SCAN_ORDER });
     expect(result.warnings).not.toContain('resource_explorer_no_view');
     expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
   }, 60_000);
@@ -2042,7 +2049,7 @@ describe('region-access PR 1: an explicit default view before every Search, and 
     expect(await resource(orgId, queueArn(HOME))).toMatchObject({ status: 'active', missing_scan_count: 0 });
   }, 30_000);
 
-  it('flag on: index + default view + Search 403: still denied/access_denied (a real refusal); message = the diagnostic only; nothing reconciled', async () => {
+  it('flag on: index + default view + Search 403: a real refusal of the optional source → partial/resource_explorer_denied; message = the diagnostic only; nothing reconciled', async () => {
     const orgId = await insertOrg();
     await seedResource(orgId, queueArn(EU), 'sqs', EU);
     const inputs: unknown[] = [];
@@ -2050,9 +2057,11 @@ describe('region-access PR 1: an explicit default view before every Search, and 
     await service().discoverAllResources(orgId);
     expect(inputs).toEqual([{ ViewArn: VIEW, QueryString: '' }]);
     const row = (await regionRows(orgId))[EU];
-    expect(row).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied', last_error_message: 'resource-explorer:Search:AccessDeniedException' });
+    expect(row).toMatchObject({ last_scan_status: 'partial', last_error_code: 'resource_explorer_denied', last_error_message: 'resource-explorer:Search:AccessDeniedException' });
     expect(row.last_error_message).not.toMatch(/[0-9]{12}|arn:|not authorized/);
-    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ outcome: 'denied', reason: 'access_denied', diagnostic: 'resource-explorer:Search:AccessDeniedException' });
+    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({
+      outcome: 'partial', reason: 'resource_explorer_denied', diagnostic: 'resource-explorer:Search:AccessDeniedException',
+    });
     expect(reLines()).toContain(
       '❌ [Discovery] Resource Explorer search failed, skipping generic inventory + reconciliation: eu-west-1 (access_denied, resource-explorer:Search:AccessDeniedException)'
     );
@@ -2061,42 +2070,46 @@ describe('region-access PR 1: an explicit default view before every Search, and 
     expect(await resource(orgId, queueArn(EU))).toMatchObject({ status: 'active', missing_scan_count: 0 });
   }, 60_000);
 
-  it('flag off: home Search 403 with the view: the source is denied and the job fails, as before; no code, so no message', async () => {
+  it('flag off: home Search 403 with the view: the source is denied, the job completes; home partial with its code and diagnostic', async () => {
     const orgId = await insertOrg({ flag: false });
     mockAws({ [HOME]: { explorer: { SearchCommand: () => { throw searchRefused(); } } } });
     await service().discoverAllResources(orgId);
-    expect((await job(orgId)).status).toBe('failed');
-    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'denied', last_error_code: null, last_error_message: null });
+    expect((await job(orgId)).status).toBe('completed');
+    expect((await regionRows(orgId))[HOME]).toMatchObject({
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_denied', last_error_message: 'resource-explorer:Search:AccessDeniedException',
+    });
   }, 30_000);
 
-  it('flag on: GetDefaultView refused (403) is classified by the existing rule (denied), never "no view"; no Search; message names GetDefaultView', async () => {
+  it('flag on: GetDefaultView refused (403) is resource_explorer_denied, never "no view"; no Search; message names GetDefaultView', async () => {
     const orgId = await insertOrg();
     const { log } = mockAws({ [EU]: { explorer: viewRefused } });
     const result = await service().discoverAllResources(orgId);
     expect(log.filter((call) => call.region === EU && call.command === 'SearchCommand')).toEqual([]);
     expect((await regionRows(orgId))[EU]).toMatchObject({
-      last_scan_status: 'denied', last_error_code: 'access_denied', last_error_message: 'resource-explorer:GetDefaultView:AccessDeniedException',
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_denied', last_error_message: 'resource-explorer:GetDefaultView:AccessDeniedException',
     });
     expect(result.warnings).not.toContain('resource_explorer_no_view');
   }, 60_000);
 
-  it('flag on: GetDefaultView throttled is that region\'s timed_out/throttled, not "no view"', async () => {
+  it('flag on: GetDefaultView throttled is partial/resource_explorer_throttled, not "no view" and not denied', async () => {
     const orgId = await insertOrg();
     mockAws({ [EU]: { explorer: { GetDefaultViewCommand: () => { throw awsError('ThrottlingException', 'Rate exceeded'); } } } });
     const result = await service().discoverAllResources(orgId);
     expect((await regionRows(orgId))[EU]).toMatchObject({
-      last_scan_status: 'timed_out', last_error_code: 'throttled', last_error_message: 'resource-explorer:GetDefaultView:ThrottlingException',
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_throttled', last_error_message: 'resource-explorer:GetDefaultView:ThrottlingException',
     });
+    expect((await regionRows(orgId))[EU].last_scan_status).not.toBe('denied');
     expect(result.warnings).not.toContain('resource_explorer_no_view');
   }, 60_000);
 
-  it('flag off: home GetDefaultView refused fails the source and the job as a failed Search does (never "no view")', async () => {
+  it('flag off: home GetDefaultView refused is resource_explorer_denied (never "no view"); the job completes', async () => {
     const orgId = await insertOrg({ flag: false });
     const { log } = mockAws({ [HOME]: { explorer: viewRefused } });
     const result = await service().discoverAllResources(orgId);
     expect(log.filter((call) => call.command === 'SearchCommand')).toEqual([]);
-    expect((await job(orgId)).status).toBe('failed');
-    expect((await regionRows(orgId))[HOME].last_scan_status).toBe('denied');
+    expect((await job(orgId)).status).toBe('completed');
+    expect(result.warnings).toContain('resource_explorer_denied');
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'partial', last_error_code: 'resource_explorer_denied' });
     expect(result.warnings).not.toContain('resource_explorer_no_view');
   }, 30_000);
 
@@ -2106,7 +2119,7 @@ describe('region-access PR 1: an explicit default view before every Search, and 
     await service().discoverAllResources(orgId);
     expect(log.filter((call) => call.region === EU && call.client === 'resource-explorer-2').map((call) => call.command)).toEqual(['GetIndexCommand']);
     expect((await regionRows(orgId))[EU]).toMatchObject({
-      last_scan_status: 'denied', last_error_code: 'access_denied', last_error_message: 'resource-explorer:GetIndex:AccessDeniedException',
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_denied', last_error_message: 'resource-explorer:GetIndex:AccessDeniedException',
     });
   }, 60_000);
 
@@ -2154,4 +2167,127 @@ describe('region-access PR 1: an explicit default view before every Search, and 
     expect((await regionRows(orgId))['me-central-1']).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied', last_error_message: null });
     expect(loggedText()).not.toContain('resource-explorer:Search:User');
   }, 90_000);
+});
+
+// ---------------------------------------------------------------------------
+describe('region-access PR (b): Resource Explorer is an optional source of a region\'s status', () => {
+  const refused = () =>
+    Object.assign(new Error(`User: arn:aws:sts::${ACCOUNT}:assumed-role/devcontrol-readonly/s is not authorized to perform: resource-explorer-2:Search`), {
+      name: 'AccessDeniedException',
+      $metadata: { httpStatusCode: 403 },
+    });
+  const searchRefused = { SearchCommand: () => { throw refused(); } };
+
+  it('flag on: a Search 500 in eu-west-1 -> partial / resource_explorer_failed; no region_incomplete; the job completes', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { explorer: { SearchCommand: () => { throw awsError('InternalServerException', 'boom'); } } } });
+    const result = await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_failed', last_error_message: 'resource-explorer:Search:InternalServerException',
+      consecutive_failures: 0, last_success_at: null,
+    });
+    expect(await job(orgId)).toEqual({ status: 'completed', error_message: null, warnings: ['resource_explorer_failed'], regions: SCAN_ORDER });
+    expect(result.errors).toEqual([]);
+  }, 60_000);
+
+  it('flag on: a GetDefaultView call timeout -> partial / resource_explorer_failed (a timeout is a failure)', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { explorer: { GetDefaultViewCommand: () => { throw new AwsCallTimeoutError(15_000); } } } });
+    await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_failed', last_error_message: 'resource-explorer:GetDefaultView:AwsCallTimeoutError',
+    });
+  }, 60_000);
+
+  it('flag on: a throttled GetDefaultView is logged as a throttle, never a refusal', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { explorer: { GetDefaultViewCommand: () => { throw awsError('ThrottlingException', 'Rate exceeded'); } } } });
+    await service().discoverAllResources(orgId);
+    const warned = (console.warn as jest.Mock).mock.calls.map((args) => args.map(String).join(' '));
+    expect(warned).toContain(
+      '⚠️  [Discovery] resource_explorer_throttled: eu-west-1 (GetDefaultView): AWS throttled Resource Explorer after the call policy\'s retries; ' +
+        'the generic types were not listed or reconciled in this region this scan; not an access refusal'
+    );
+  }, 60_000);
+
+  it('Q2 flag on: an own listing cut off AND Search refused -> partial with the CORE code, no Resource Explorer message; the job warns of both', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { explorer: searchRefused, ec2: { DescribeInstancesCommand: () => ({ Reservations: [], NextToken: 'more' }) } } });
+    const result = await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'partial', last_error_code: 'discovery_listing_truncated', last_error_message: null });
+    expect(result.warnings).toEqual(expect.arrayContaining(['discovery_listing_truncated', 'resource_explorer_denied']));
+    expect(result.warnings).not.toContain('region_incomplete');
+  }, 60_000);
+
+  it('a core refusal still wins: RDS refused AND Search refused in eu-west-1 -> denied / access_denied; region_incomplete; no Resource Explorer warning', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { explorer: searchRefused, rds: { DescribeDBInstancesCommand: () => { throw accessDenied(); } } } });
+    const result = await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'denied', last_error_code: 'access_denied' });
+    expect(result.warnings).toEqual(['region_incomplete']);
+  }, 60_000);
+
+  it('consecutive_failures: a core refusal counts 1; the next scan, whose only gap is Resource Explorer, resets it to 0; last_success_at never moves', async () => {
+    const orgId = await insertOrg();
+    mockAws({ [EU]: { rds: { DescribeDBInstancesCommand: () => { throw accessDenied(); } } } });
+    await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({ last_scan_status: 'denied', consecutive_failures: 1, last_success_at: null });
+    jest.restoreAllMocks();
+    quietConsole();
+    mockAws({ [EU]: { explorer: searchRefused } });
+    await service().discoverAllResources(orgId);
+    expect((await regionRows(orgId))[EU]).toMatchObject({
+      last_scan_status: 'partial', last_error_code: 'resource_explorer_denied', consecutive_failures: 0, last_success_at: null,
+    });
+  }, 120_000);
+
+  it('flag off: a core refusal still fails the job, whatever Resource Explorer did (EC2 refused AND Search refused)', async () => {
+    const orgId = await insertOrg({ flag: false });
+    mockAws({ [HOME]: { explorer: searchRefused, ec2: { DescribeInstancesCommand: () => { throw accessDenied(); } } } });
+    const result = await service().discoverAllResources(orgId);
+    expect((await job(orgId)).status).toBe('failed');
+    expect((await regionRows(orgId))[HOME]).toMatchObject({ last_scan_status: 'denied', last_error_code: null });
+    expect(result.warnings).not.toContain('resource_explorer_denied');
+  }, 30_000);
+
+  it('B2 flag off: the jobs API returns only the fixed sentence for the job, never the Resource Explorer AWS text; the job warns with its code', async () => {
+    const orgId = await insertOrg({ flag: false });
+    mockAws({ [HOME]: { explorer: searchRefused } });
+    await service().discoverAllResources(orgId);
+    expect((await job(orgId)).error_message).toMatch(/^Resource Explorer: User: arn:aws:sts::/);
+    const [listed] = await new AWSResourcesRepository(pool).getDiscoveryJobs(orgId, 5);
+    expect(listed).toMatchObject({ status: 'completed', error_message: "Some discovery steps didn't complete.", warnings: ['resource_explorer_denied'] });
+    for (const fragment of ['arn:aws', ACCOUNT, 'not authorized', 'Resource Explorer:']) expect(JSON.stringify(listed.error_message)).not.toContain(fragment);
+  }, 30_000);
+
+  it('B3: a non-home region\'s failed status write is logged with org, job, region and error name; its line says status_recorded false; the others true', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    const realWrite = foundation.recordRegionScanStatus;
+    jest.spyOn(foundation, 'recordRegionScanStatus').mockImplementation((client, lease, scan) => {
+      if (scan.region === EU) return Promise.reject(Object.assign(new Error(`placeholder arn:aws:iam::${ACCOUNT}:root`), { name: 'DatabaseError' }));
+      return realWrite(client, lease, scan);
+    });
+    const result = await service().discoverAllResources(orgId);
+    const warned = (console.warn as jest.Mock).mock.calls.map((args) => args.map(String).join(' ')).filter((line) => line.includes('region_status_'));
+    expect(warned).toEqual([`⚠️  [Discovery] region_status_write_failed: org ${orgId} job ${result.job_id} region ${EU} (DatabaseError); the scan continues`]);
+    const lines = regionLogLines();
+    expect(lines.find((line) => line.region === EU)).toMatchObject({ outcome: 'ok', status_recorded: false });
+    for (const line of lines.filter((l) => l.region !== EU)) expect(line.status_recorded).toBe(true);
+    expect((await regionRows(orgId))[EU].last_scan_status).toBe('never_scanned');
+    expect((await job(orgId)).status).toBe('completed');
+  }, 60_000);
+
+  it('B3: a non-home region whose status write wrote no row: region_status_not_recorded with the job, status_recorded false', async () => {
+    const orgId = await insertOrg();
+    mockAws();
+    const realWrite = foundation.recordRegionScanStatus;
+    jest.spyOn(foundation, 'recordRegionScanStatus').mockImplementation((client, lease, scan) => (scan.region === EU ? Promise.resolve(0) : realWrite(client, lease, scan)));
+    const result = await service().discoverAllResources(orgId);
+    const warned = (console.warn as jest.Mock).mock.calls.map((args) => args.map(String).join(' ')).filter((line) => line.includes('region_status_'));
+    expect(warned).toEqual([
+      `⚠️  [Discovery] region_status_not_recorded: org ${orgId} job ${result.job_id} region ${EU} (no row, or a newer scan's status); the scan continues`,
+    ]);
+    expect(regionLogLines().find((line) => line.region === EU)).toMatchObject({ status_recorded: false });
+  }, 60_000);
 });
