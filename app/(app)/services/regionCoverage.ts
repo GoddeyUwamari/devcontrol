@@ -24,7 +24,7 @@
  */
 import type { RegionCoverage, ServicesCoverage } from '@/lib/services/aws-services.service'
 import { DISCOVERY_WARNING_TRUNCATED_INDEX } from '@/components/aws/discovery-warning-notice'
-import { DISCOVERY_WARNING_LISTING_TRUNCATED, scopeIsCompleted, shownWarnings, warningNotes } from './coverage'
+import { DISCOVERY_WARNING_LISTING_TRUNCATED, resourceExplorerFailureText, scopeIsCompleted, shownWarnings, warningNotes } from './coverage'
 
 // ── Counts ──
 
@@ -331,8 +331,12 @@ function partialText(code: string | null): string {
 function statusSentence(row: RegionCoverage, region: string | null): string | null {
   const subject = region ?? 'this region'
   switch (row.status) {
-    case 'partial':
+    case 'partial': {
+      // Region-access PR (b): a failed Resource Explorer call, everything else checked: its approved sentence.
+      const explorerFailure = resourceExplorerFailureText(row.last_error_code, row.region)
+      if (explorerFailure) return explorerFailure
       return region ? `${region} was only partly scanned: ${partialText(row.last_error_code)}` : `Only partly scanned: ${partialText(row.last_error_code).replace('there', 'here')}`
+    }
     case 'denied': return `Some resource types in ${subject} couldn't be checked ${REGION_COPY.denied} ${REGION_COPY.otherResults}`
     case 'timed_out': return `Some resource types in ${subject} couldn't be checked ${REGION_COPY.timedOut} ${REGION_COPY.otherResults}`
     case 'failed': return `Some resource types in ${subject} couldn't be checked ${REGION_COPY.failed} ${REGION_COPY.otherResults}`

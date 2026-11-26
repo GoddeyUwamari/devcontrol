@@ -91,6 +91,34 @@ export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW = 'resource_explorer_no
  */
 export const DISCOVERY_WARNING_SCAN_DEADLINE = 'scan_deadline';
 
+/**
+ * Region-access PR (b): a Resource Explorer call (GetIndex, GetDefaultView or Search)
+ * failed in a region whose own listings (EC2, EBS, RDS, Lambda, load balancers and, for a
+ * non-home region, security groups) all completed or were only cut off. Resource Explorer
+ * is an optional source there: the region is `partial` (never denied, failed or timed
+ * out because of it), the generic types (VPC, SQS, SNS, ...) were not listed or
+ * reconciled in it, and without the multi-region flag the job still completes. One code
+ * per cause, from the failed call's reason code (region-run.ts classifyRegionFailure):
+ *
+ *   resource_explorer_denied     AWS refused the call (access_denied, access_denied_scp)
+ *   resource_explorer_throttled  AWS throttled it past the call policy's retries
+ *   resource_explorer_failed     anything else, a call timeout included
+ *
+ * Also a region's code (aws_account_regions.last_error_code) when the Resource Explorer
+ * failure is the region's only gap; a cut-off core listing's code wins over it (founder
+ * ruling Q2).
+ */
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED = 'resource_explorer_denied';
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED = 'resource_explorer_throttled';
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED = 'resource_explorer_failed';
+
+/** The three codes of an optional Resource Explorer failure (region-access PR (b)). */
+export const RESOURCE_EXPLORER_FAILURE_CODES = [
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED,
+] as const;
+
 export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_TRUNCATED_INDEX,
   DISCOVERY_WARNING_LISTING_TRUNCATED,
@@ -101,6 +129,9 @@ export const DISCOVERY_WARNINGS = [
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX,
   DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW,
   DISCOVERY_WARNING_SCAN_DEADLINE,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED,
 ] as const;
 
 export type DiscoveryWarning = (typeof DISCOVERY_WARNINGS)[number];

@@ -282,7 +282,7 @@ describe('ScanContext records the scan AssumeRole as health', () => {
 });
 
 /** recordScanSources with a pass-through lease session (the lease fence itself is covered by the discovery suites). */
-async function recordScanSources(a: Account, outcomes: Array<{ source: string; status: any }>, iam: { send: jest.Mock }) {
+async function recordScanSources(a: Account, outcomes: Array<{ source: string; status: any; operation?: string }>, iam: { send: jest.Mock }) {
   const service = new AWSResourceDiscoveryService(pool);
   const client = await pool.connect();
   try {
@@ -351,6 +351,67 @@ describe('refused sources (CP-D11, D1-D9)', () => {
       .toMatchObject({ success: false, status: 'denied' });
     expect(await service.search(failing(Object.assign(new Error('no index'), { name: 'UnauthorizedException', $metadata: { httpStatusCode: 401 } })), 'us-east-1', VIEW_ARN))
       .toMatchObject({ success: false, status: 'failed' });
+  });
+});
+
+describe('region-access PR (b), B4: the refused Resource Explorer call is saved and named (scan_sources.refused_operations)', () => {
+  const withExplorer = (explorer: Parameters<typeof recordScanSources>[1][number]) => [...ALL_COMPLETE.filter((o) => o.source !== 'resource-explorer'), explorer];
+  /** A saved scan (so the row and its scan time exist), then its sources replaced by `sources` as stored JSON. */
+  const setSources = async (a: Account, sources: unknown) => {
+    await recordScanSources(a, ALL_COMPLETE, fakeIam());
+    await pool.query(`UPDATE aws_connection_checks SET scan_sources = $3::jsonb WHERE organization_id = $1 AND aws_account_id = $2`, [a.org_id, a.id, JSON.stringify(sources)]);
+  };
+
+  it.each(['GetIndex', 'GetDefaultView', 'Search'])('a refused %s: saved, and the refused source names exactly that call', async (operation) => {
+    const a = await orgWithConnection();
+    await recordScanSources(a, withExplorer({ source: 'resource-explorer', status: 'denied', operation }), fakeIam());
+    const saved = (await row(a))!;
+    expect(saved.scan_sources).toMatchObject({ 'resource-explorer': 'denied', refused_operations: { 'resource-explorer': operation } });
+    expect(connectionChecksView(saved, new Date()).refusedSources?.sources).toEqual([{ source: 'resource-explorer', action: `resource-explorer-2:${operation}` }]);
+  });
+
+  it('a throttled or failed call is not a refusal: nothing saved under refused_operations, nothing listed', async () => {
+    for (const status of ['failed', 'timed_out']) {
+      const a = await orgWithConnection();
+      await recordScanSources(a, withExplorer({ source: 'resource-explorer', status, operation: 'GetDefaultView' }), fakeIam());
+      const saved = (await row(a))!;
+      expect(saved.scan_sources).not.toHaveProperty('refused_operations');
+      expect(connectionChecksView(saved, new Date()).refusedSources?.sources).toEqual([]);
+    }
+  });
+
+  it('Q9: ListResources (never called) is never saved as a refused call, and a saved one is dropped, never shown', async () => {
+    const a = await orgWithConnection();
+    await recordScanSources(a, withExplorer({ source: 'resource-explorer', status: 'denied', operation: 'ListResources' }), fakeIam());
+    expect((await row(a))!.scan_sources).not.toHaveProperty('refused_operations');
+    await setSources(a, { 'resource-explorer': 'denied', refused_operations: { 'resource-explorer': 'ListResources' } });
+    expect(connectionChecksView(await row(a), new Date()).refusedSources?.sources).toEqual([]);
+  });
+
+  it.each([
+    ['AWS text', 'User: arn:aws:sts::123456789012:assumed-role/x/s is not authorized'],
+    ['an action string, not an operation', 'resource-explorer-2:GetIndex'],
+    ['another call', 'CreateView'],
+    ['a number', 7],
+    ['null', null],
+  ])('a saved operation that is %s: the Resource Explorer entry is dropped (never named as another call); EC2 still listed', async (_label, value) => {
+    const a = await orgWithConnection();
+    await setSources(a, { ec2: 'denied', 'resource-explorer': 'denied', refused_operations: { 'resource-explorer': value } });
+    expect(connectionChecksView(await row(a), new Date()).refusedSources?.sources).toEqual([{ source: 'ec2', action: 'ec2:DescribeInstances' }]);
+  });
+
+  it('a malformed refused_operations (a string, an array, the operation under another source) drops the Resource Explorer entry', async () => {
+    for (const malformed of ['GetIndex', ['GetIndex'], { ec2: 'GetIndex' }]) {
+      const a = await orgWithConnection();
+      await setSources(a, { 'resource-explorer': 'denied', refused_operations: malformed });
+      expect(connectionChecksView(await row(a), new Date()).refusedSources?.sources).toEqual([]);
+    }
+  });
+
+  it('a row saved before PR (b) (no refused_operations) keeps what it always showed: the Search listing', async () => {
+    const a = await orgWithConnection();
+    await setSources(a, { 'resource-explorer': 'denied' });
+    expect(connectionChecksView(await row(a), new Date()).refusedSources?.sources).toEqual([{ source: 'resource-explorer', action: 'resource-explorer-2:Search' }]);
   });
 });
 

@@ -237,9 +237,10 @@ describe('a scan records its home region\'s status from its listings', () => {
     ['EC2 denied', { ec2: { DescribeInstancesCommand: throwing(denied()) } }, 'denied', null],
     ['RDS timed out', { rds: { DescribeDBInstancesCommand: throwing(new AwsCallTimeoutError(15_000)) } }, 'timed_out', null],
     ['RDS failed', { rds: { DescribeDBInstancesCommand: throwing(Object.assign(new Error('boom'), { name: 'InternalError' })) } }, 'failed', null],
-    ['the Resource Explorer search failed', { resourceExplorer: () => { throw Object.assign(new Error('no index'), { name: 'ResourceNotFoundException' }); } }, 'failed', null],
+    // Region-access PR (b): a failed Resource Explorer call is optional: the region is partial with its code.
+    ['the Resource Explorer search failed', { resourceExplorer: () => { throw Object.assign(new Error('no index'), { name: 'ResourceNotFoundException' }); } }, 'partial', 'resource_explorer_failed'],
     // Q-F recorded every unsuccessful search as failed; since AWS connect PR D1a an AccessDenied is denied, as for EC2.
-    ['the Resource Explorer search denied (denied since D1a)', { resourceExplorer: () => { throw denied(); } }, 'denied', null],
+    ['the Resource Explorer search denied (source denied since D1a; region partial since region-access PR (b))', { resourceExplorer: () => { throw denied(); } }, 'partial', 'resource_explorer_denied'],
     ['the Resource Explorer search cut off', { resourceExplorer: () => ({ Resources: [], Count: { TotalResources: 1000, Complete: false } }) }, 'partial', DISCOVERY_WARNING_TRUNCATED_INDEX],
     ['the EBS listing at its page limit', { ec2: { DescribeVolumesCommand: () => ({ Volumes: [], NextToken: 'more' }) } }, 'partial', DISCOVERY_WARNING_LISTING_TRUNCATED],
     [
@@ -495,6 +496,8 @@ describe('fail-soft: the status write never changes the scan', () => {
     const lines = statusLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('region_status_not_recorded');
+    // Region-access PR (b), B3: the job and the home region are named.
+    expect(lines[0]).toContain(`job ${result.job_id} region ${HOME}`);
     expect(lines[0]).not.toContain('arn:');
     expect(lines[0]).not.toContain(ACCOUNT);
   });
@@ -520,6 +523,8 @@ describe('fail-soft: the status write never changes the scan', () => {
     const lines = statusLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('region_status_write_failed');
+    // Region-access PR (b), B3: the job and the home region are named.
+    expect(lines[0]).toContain(`job ${result.job_id} region ${HOME}`);
     for (const text of ['arn:', ACCOUNT, 'violates', 'check constraint', 'aws_account_regions']) expect(lines[0]).not.toContain(text);
   });
 });

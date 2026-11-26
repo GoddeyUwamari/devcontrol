@@ -21,6 +21,11 @@
  * command held in a variable) is refused in any file that imports Resource Explorer,
  * because its input cannot be checked.
  *
+ * Region-access PR (b), B6: ListResources is view-scoped like Search (with no ViewArn AWS
+ * uses the region's default view), so `new ListResourcesCommand(input)` and
+ * `paginateListResources(config, input)` must name a ViewArn under the same rule. Nothing
+ * calls ListResources today; this keeps a future call from being viewless.
+ *
  * Backend source is parsed (helpers/aws-sdk-scan.ts, the same scan the IAM coverage
  * test uses). The frontend and lib/ are checked as text: neither may use the Resource
  * Explorer SDK at all.
@@ -33,8 +38,17 @@ import { BACKEND_SRC, scanBackendNodes, scanSourceNodes } from './helpers/aws-sd
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SEARCH_KEY = 'client-resource-explorer-2:SearchCommand';
 const PAGINATE_SEARCH_KEY = 'client-resource-explorer-2:paginateSearch';
+const LIST_RESOURCES_KEY = 'client-resource-explorer-2:ListResourcesCommand';
+const PAGINATE_LIST_RESOURCES_KEY = 'client-resource-explorer-2:paginateListResources';
 /** Every way of making a Resource Explorer Search the scan records. */
 const SEARCH_KEYS: ReadonlySet<string> = new Set([SEARCH_KEY, PAGINATE_SEARCH_KEY]);
+/** Every view-scoped Resource Explorer call (region-access PR (b), B6): Search and ListResources, each as a command or a paginator. */
+const VIEW_SCOPED_KEYS: ReadonlySet<string> = new Set([...SEARCH_KEYS, LIST_RESOURCES_KEY, PAGINATE_LIST_RESOURCES_KEY]);
+/** The paginators among them: their input is the second argument. */
+const PAGINATOR_KEYS: ReadonlySet<string> = new Set([PAGINATE_SEARCH_KEY, PAGINATE_LIST_RESOURCES_KEY]);
+
+/** `paginateSearch` / `ListResourcesCommand`: the export's own name, for a reason text. */
+const exportName = (key: string) => key.slice(key.indexOf(':') + 1);
 /** Every Resource Explorer command that is not a read (writes, tags, index/view changes). */
 const RE_WRITE = /^client-resource-explorer-2:(Create|Delete|Update|Associate|Disassociate|Tag|Untag|Put|Batch)\w*Command$/;
 
@@ -57,18 +71,22 @@ function unwrapTypeOnly(expression: ts.Expression): ts.Expression {
   return current;
 }
 
-/** The Search input: the argument of `new SearchCommand(input)`, the second of `paginateSearch(config, input)`. */
+/**
+ * The input of a view-scoped call: the argument of `new SearchCommand(input)` /
+ * `new ListResourcesCommand(input)`, the second of `paginateSearch(config, input)` /
+ * `paginateListResources(config, input)`.
+ */
 function searchInput(key: string, node: ts.Node): { input: ts.Expression | undefined } | { reason: string } {
   const parent = node.parent;
-  if (key === PAGINATE_SEARCH_KEY) {
-    if (!ts.isCallExpression(parent) || parent.expression !== node) return { reason: 'not a `paginateSearch(...)` call' };
+  if (PAGINATOR_KEYS.has(key)) {
+    if (!ts.isCallExpression(parent) || parent.expression !== node) return { reason: `not a \`${exportName(key)}(...)\` call` };
     return { input: parent.arguments[1] };
   }
-  if (!ts.isNewExpression(parent)) return { reason: 'not a `new SearchCommand(...)`' };
+  if (!ts.isNewExpression(parent)) return { reason: `not a \`new ${exportName(key)}(...)\`` };
   return { input: (parent.arguments ?? [])[0] };
 }
 
-/** Why a Search (SearchCommand or paginateSearch) does not name a view, or null when it does. */
+/** Why a view-scoped call (Search or ListResources, command or paginator) does not name a view, or null when it does. */
 function viewlessReason(key: string, node: ts.Node): string | null {
   const found = searchInput(key, node);
   if ('reason' in found) return found.reason;
@@ -93,7 +111,7 @@ function viewlessReason(key: string, node: ts.Node): string | null {
 
 function viewlessSearches(uses: ReturnType<typeof scanBackendNodes>['uses']): string[] {
   return uses
-    .filter((use) => SEARCH_KEYS.has(use.key))
+    .filter((use) => VIEW_SCOPED_KEYS.has(use.key))
     .map((use) => ({ site: use.site, reason: viewlessReason(use.key, use.node) }))
     .filter((r) => r.reason !== null)
     .map((r) => `${r.site}: ${r.reason}`);
@@ -123,7 +141,7 @@ describe('Resource Explorer: no Search without a ViewArn (region-access PR 1)', 
     expect([...files].sort()).toEqual([path.join('services', 'connect-permission-check.ts'), path.join('services', 'resourceExplorer.service.ts')]);
   });
 
-  it('every Search in backend source (SearchCommand or paginateSearch) names a ViewArn', () => {
+  it('every Search and ListResources in backend source (command or paginator) names a ViewArn', () => {
     expect(viewlessSearches(scan.uses)).toEqual([]);
   });
 
@@ -148,7 +166,8 @@ describe('Resource Explorer: no Search without a ViewArn (region-access PR 1)', 
   });
 
   describe('the guard itself catches what it must (fixtures, not repository code)', () => {
-    const header = "import { SearchCommand, CreateViewCommand, CreateIndexCommand, paginateSearch } from '@aws-sdk/client-resource-explorer-2';\n";
+    const header =
+      "import { SearchCommand, CreateViewCommand, CreateIndexCommand, paginateSearch, ListResourcesCommand, paginateListResources } from '@aws-sdk/client-resource-explorer-2';\n";
     const reasons = (body: string) => viewlessSearches(scanSourceNodes('fixture.ts', header + body).uses);
 
     it.each([
@@ -171,6 +190,15 @@ describe('Resource Explorer: no Search without a ViewArn (region-access PR 1)', 
       ['paginateSearch with no input', 'paginateSearch({ client });', 'no input'],
       ['paginateSearch with ViewArn undefined behind a cast', "paginateSearch({ client }, { ViewArn: undefined as unknown as string, QueryString: '' });", 'ViewArn: undefined'],
       ['paginateSearch with an input object', 'const input = {}; paginateSearch({ client }, input);', 'input is not an object literal (its ViewArn cannot be checked)'],
+      // Region-access PR (b), B6: ListResources is view-scoped too.
+      ['ListResources with no ViewArn', 'new ListResourcesCommand({});', 'no ViewArn'],
+      ['ListResources with no input', 'new ListResourcesCommand();', 'no input'],
+      ['ListResources with ViewArn undefined behind a cast', 'new ListResourcesCommand({ ViewArn: undefined as any });', 'ViewArn: undefined'],
+      ['ListResources with ViewArn null', 'new ListResourcesCommand({ ViewArn: null, MaxResults: 1 });', 'ViewArn: null'],
+      ['ListResources with an input object', 'const input = {}; new ListResourcesCommand(input);', 'input is not an object literal (its ViewArn cannot be checked)'],
+      ['paginateListResources with no ViewArn', 'paginateListResources({ client }, {});', 'no ViewArn'],
+      ['paginateListResources with no input', 'paginateListResources({ client });', 'no input'],
+      ['paginateListResources with ViewArn empty', "paginateListResources({ client }, { ViewArn: '' });", "ViewArn: ''"],
     ])('%s is refused', (_label, body, reason) => {
       expect(reasons(body)).toEqual([`fixture.ts:2: ${reason}`]);
     });
@@ -186,10 +214,15 @@ describe('Resource Explorer: no Search without a ViewArn (region-access PR 1)', 
       )).toEqual([]);
     });
 
+    it('a ListResources naming its view passes, as a command and as a paginator', () => {
+      expect(reasons("const viewArn = 'x'; new ListResourcesCommand({ ViewArn: viewArn }); paginateListResources({ client }, { ViewArn: viewArn as string });")).toEqual([]);
+    });
+
     it.each([
       ['a cast callee', '(paginateSearch as any)({ client });'],
       ['a non-null callee', 'paginateSearch!({ client }, {});'],
       ['a command held in a variable', "const S = SearchCommand; new S({ QueryString: '' });"],
+      ['a ListResources paginator behind a cast callee', '(paginateListResources as any)({ client }, {});'],
     ])('%s cannot be checked, so it is refused', (_label, body) => {
       const unmodeled = scanSourceNodes('fixture.ts', header + body).unmodeled;
       expect(unmodeledResourceExplorerUses(unmodeled, new Set(['fixture.ts']))).toHaveLength(1);

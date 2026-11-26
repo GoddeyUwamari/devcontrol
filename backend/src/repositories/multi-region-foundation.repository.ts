@@ -23,6 +23,7 @@ import { HeldLease, withFencedTransaction } from '../services/scan-lease';
 import type { ListedRegion } from '../services/region-list';
 import type { HomeRegionScanResult } from '../services/region-scan-status';
 import { safeDiagnostic } from '../services/region-log-context';
+import { RESOURCE_EXPLORER_FAILURE_CODES } from '../services/discovery-warnings';
 
 /** A connection the caller has already tagged with the organization. */
 type Executor = Pick<PoolClient, 'query'>;
@@ -251,7 +252,10 @@ export async function recordRegionList(client: ClientBase, lease: HeldLease, reg
  * last_scan_started_at (the job's own started_at), last_scan_finished_at,
  * last_success_at (now() for `ok`; every other status keeps the previous
  * value), consecutive_failures (0 for `ok`, +1 for a failure, kept for
- * `partial`), updated_at, and last_error_message (region-access PR 1: the result's
+ * `partial`, except 0 for a `partial` whose code is a Resource Explorer failure code:
+ * region-access PR (b), a scan whose only gap was the optional Resource Explorer source
+ * completed, so it is not a failed scan; last_success_at still does not move, because
+ * the region was not fully listed), updated_at, and last_error_message (region-access PR 1: the result's
  * diagnostic, `<source>:<operation>:<AWS error name>`, only when it has exactly that
  * shape and the result has a code; otherwise NULL, so every scan replaces it as it
  * replaces last_error_code, and an `ok` scan clears it). The list columns are never
@@ -328,6 +332,7 @@ async function writeRegionScanStatus(
               last_success_at = CASE WHEN $5::text = 'ok' THEN now() ELSE r.last_success_at END,
               consecutive_failures = CASE
                 WHEN $5::text = 'ok' THEN 0
+                WHEN $5::text = 'partial' AND $6::varchar = ANY($8::varchar[]) THEN 0
                 WHEN $5::text = 'partial' THEN r.consecutive_failures
                 ELSE r.consecutive_failures + 1
               END,
@@ -345,6 +350,8 @@ async function writeRegionScanStatus(
         scan.result.errorCode,
         // Never AWS text: only a value of the diagnostic shape is written (region-log-context.ts).
         scan.result.errorCode === null ? null : safeDiagnostic(scan.result.diagnostic),
+        // Region-access PR (b): the codes whose `partial` resets consecutive_failures.
+        [...RESOURCE_EXPLORER_FAILURE_CODES],
       ]
     );
     return result.rowCount ?? 0;

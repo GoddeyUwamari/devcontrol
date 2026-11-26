@@ -253,6 +253,8 @@ describe('the structured log line (A7)', () => {
       reason: 'access_denied',
       // Region-access PR 1: the failing call by source, operation and AWS error name only.
       diagnostic: 'resource-explorer:Search:AccessDeniedException',
+      // Region-access PR (b), B3: nothing written yet for this run.
+      status_recorded: null,
       get_metric_data_metrics: 3,
       get_metric_statistics_requests: 1,
       // PR 1b item 7: another region than the home one: the cost pass makes no call there.
@@ -260,6 +262,13 @@ describe('the structured log line (A7)', () => {
       cost_pass_get_metric_statistics_requests: 0,
     });
     expect(JSON.parse(notStartedLogLine('00000000-0000-4000-8000-0000000000c1', 'us-west-2'))).toMatchObject({ outcome: 'timed_out', reason: 'scan_budget', diagnostic: null, calls: 0 });
+    // Region-access PR (b), B3: the line says whether the region's status was stored.
+    run.statusRecorded = false;
+    expect(JSON.parse(run.logLine('00000000-0000-4000-8000-0000000000c1', { status: 'ok', errorCode: null })).status_recorded).toBe(false);
+    run.statusRecorded = true;
+    expect(JSON.parse(run.logLine('00000000-0000-4000-8000-0000000000c1', { status: 'ok', errorCode: null })).status_recorded).toBe(true);
+    expect(JSON.parse(notStartedLogLine('00000000-0000-4000-8000-0000000000c1', 'us-west-2', null, false)).status_recorded).toBe(false);
+    expect(JSON.parse(notStartedLogLine('00000000-0000-4000-8000-0000000000c1', 'us-west-2')).status_recorded).toBeNull();
   });
 
   it('PR 1b item 7: the home line carries the cost pass\'s counts, or null when it did not run', () => {

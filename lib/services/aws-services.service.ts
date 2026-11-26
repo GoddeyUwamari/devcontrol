@@ -231,7 +231,7 @@ export interface RegionCoverage {
   status: RegionScanStatus
   last_scan_finished_at: string | null
   last_success_at: string | null
-  /** A known code (today only partial's two truncation codes), never text; null otherwise. */
+  /** A known code (partial's two truncation codes, or region-access PR (b)'s three Resource Explorer codes), never text; null otherwise. */
   last_error_code: string | null
   /**
    * Scans in a row that reached the status write with a failed home-region

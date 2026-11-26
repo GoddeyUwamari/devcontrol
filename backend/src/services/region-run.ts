@@ -28,6 +28,11 @@
  *   timed_out  scan_budget         the region never started: the scan budget ran out
  *   failed     error               any other failure
  *   partial    discovery_listing_truncated / deletion_detection_paused_truncated_index
+ *   partial    resource_explorer_denied / resource_explorer_throttled /
+ *              resource_explorer_failed (region-access PR (b)): only a Resource
+ *              Explorer call failed and every own listing completed; see
+ *              region-scan-status.ts. A Resource Explorer failure keeps its own reason
+ *              code on its source outcome; the region's code is the one above.
  *
  * AWS's error text is read to tell a service control policy apart and nothing
  * else; it is never stored or logged.
@@ -37,6 +42,7 @@ import { AwsCallPolicy, AwsCallTimeoutError, isAccessDeniedError, isThrottlingEr
 import { THROTTLE_BREAKER_FLOOR, THROTTLE_BREAKER_STEP } from '../config/discovery-concurrency';
 import { SourceOutcome, SourceStatus } from './source-outcome';
 import { HOME_REGION_SOURCES, HomeRegionScanResult, homeRegionScanStatus } from './region-scan-status';
+import type { ResourceExplorerOperation } from './resourceExplorer.service';
 
 export const REGION_CODE_ACCESS_DENIED = 'access_denied';
 export const REGION_CODE_ACCESS_DENIED_SCP = 'access_denied_scp';
@@ -86,6 +92,13 @@ export interface RegionSourceOutcome extends SourceOutcome {
    * exactly (today: the Resource Explorer source's GetIndex, GetDefaultView and Search).
    */
   diagnostic?: string;
+  /**
+   * Region-access PR (b): the Resource Explorer call that failed (GetIndex, GetDefaultView
+   * or Search). Set only on the Resource Explorer source when one of its AWS calls failed,
+   * never when its results could not be stored. It makes the failure optional
+   * (region-scan-status.ts) and names the refused call in the scan's saved sources.
+   */
+  operation?: ResourceExplorerOperation;
 }
 
 /** Enabled in the account's list, but AWS does not accept the session there yet. */
@@ -215,6 +228,11 @@ export class RegionRun {
   getMetricDataMetrics = 0;
   /** CloudWatch GetMetricStatistics requests, attempts included. */
   getMetricStatisticsRequests = 0;
+  /**
+   * Region-access PR (b), B3: whether the region's status was stored (true), its write
+   * failed or wrote no row (false), or nothing was written (null: no result, or not yet).
+   */
+  statusRecorded: boolean | null = null;
 
   private pool: number;
   private readonly controller = new AbortController();
@@ -291,6 +309,8 @@ export class RegionRun {
       reason: result?.errorCode ?? null,
       // Region-access PR 1: the failing call, `<source>:<operation>:<AWS error name>` (null: none known).
       diagnostic: result?.diagnostic ?? null,
+      // Region-access PR (b), B3: whether that status was stored (null: nothing was written).
+      status_recorded: this.statusRecorded,
       get_metric_data_metrics: this.getMetricDataMetrics,
       get_metric_statistics_requests: this.getMetricStatisticsRequests,
       // PR 1b: the cost pass's own CloudWatch counts (home region; 0 elsewhere; null: it did not run).
@@ -301,7 +321,12 @@ export class RegionRun {
 }
 
 /** The structured line for a region the scan never started (scan budget). */
-export function notStartedLogLine(organizationId: string, region: string, costPass: CostPassCounts = NO_COST_PASS_CALLS): string {
+export function notStartedLogLine(
+  organizationId: string,
+  region: string,
+  costPass: CostPassCounts = NO_COST_PASS_CALLS,
+  statusRecorded: boolean | null = null
+): string {
   return JSON.stringify({
     event: 'discovery_region_scan',
     organization_id: organizationId,
@@ -314,6 +339,7 @@ export function notStartedLogLine(organizationId: string, region: string, costPa
     outcome: SCAN_BUDGET_RESULT.status,
     reason: SCAN_BUDGET_RESULT.errorCode,
     diagnostic: null,
+    status_recorded: statusRecorded,
     get_metric_data_metrics: 0,
     get_metric_statistics_requests: 0,
     cost_pass_get_metric_data_metrics: costPass?.getMetricDataMetrics ?? null,

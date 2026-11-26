@@ -61,6 +61,40 @@ export const SAVED_SCAN_SOURCES: Readonly<Record<string, string>> = {
   'resource-explorer': 'resource-explorer-2:Search',
 };
 
+/**
+ * Region-access PR (b), B4: the Resource Explorer calls a scan may name as refused, saved
+ * with the scan's sources under REFUSED_OPERATIONS_KEY (no migration: scan_sources is a
+ * JSONB object). Only these three: ListResources is never called, so it is never one.
+ */
+export const REFUSED_RESOURCE_EXPLORER_OPERATIONS = ['GetIndex', 'GetDefaultView', 'Search'] as const;
+export type RefusedResourceExplorerOperation = (typeof REFUSED_RESOURCE_EXPLORER_OPERATIONS)[number];
+
+/** The reserved scan_sources key: `{ "resource-explorer": <operation> }`, written only when that source was refused. */
+export const REFUSED_OPERATIONS_KEY = 'refused_operations';
+
+/** `value` when it is one of REFUSED_RESOURCE_EXPLORER_OPERATIONS, otherwise undefined. */
+export function knownRefusedOperation(value: unknown): RefusedResourceExplorerOperation | undefined {
+  return typeof value === 'string' && (REFUSED_RESOURCE_EXPLORER_OPERATIONS as readonly string[]).includes(value)
+    ? (value as RefusedResourceExplorerOperation)
+    : undefined;
+}
+
+/**
+ * The action a refused saved source names (connectionChecksView). Every source but Resource
+ * Explorer: its listing's action. Resource Explorer: the refused call saved by the scan
+ * (`resource-explorer-2:<operation>`); a row saved before region-access PR (b) has no
+ * REFUSED_OPERATIONS_KEY and keeps the action it always showed (Search). A saved value that
+ * is not a known operation, or a malformed key, gives null: the entry is dropped, never
+ * shown as another call.
+ */
+function refusedSourceAction(scanSources: Record<string, unknown>, source: string): string | null {
+  if (source !== 'resource-explorer' || !(REFUSED_OPERATIONS_KEY in scanSources)) return SAVED_SCAN_SOURCES[source];
+  const saved = scanSources[REFUSED_OPERATIONS_KEY];
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null;
+  const operation = knownRefusedOperation((saved as Record<string, unknown>)['resource-explorer']);
+  return operation ? `resource-explorer-2:${operation}` : null;
+}
+
 export interface ConnectionChecksRow extends HealthRow {
   aws_account_id: string;
   organization_id: string;
@@ -75,7 +109,8 @@ export interface ConnectionChecksRow extends HealthRow {
   policy_checked_at: Date | null;
   policy_trigger: PolicyTrigger | null;
   policy_contract_version: number | null;
-  scan_sources: Record<string, SourceStatus> | null;
+  /** Each saved source's status, plus (region-access PR (b)) REFUSED_OPERATIONS_KEY. */
+  scan_sources: Record<string, unknown> | null;
   scan_sources_job_id: string | null;
   scan_sources_at: Date | null;
   check_again_started_at: Date | null;
@@ -303,16 +338,21 @@ export async function savePolicyResult(
 /**
  * Saves a scan's per-source outcomes, inside the scan's own fenced transaction
  * (the caller runs it through LeaseSession.fenced). Only the saved sources are
- * kept; an older scan never replaces a newer one's.
+ * kept; an older scan never replaces a newer one's. Region-access PR (b), B4: when the
+ * Resource Explorer source was refused, the refused call (a known operation only) is saved
+ * under REFUSED_OPERATIONS_KEY.
  */
 export async function saveScanSources(
   client: Db,
   organizationId: string,
   awsAccountRowId: string,
-  scan: { outcomes: readonly { source: string; status: SourceStatus }[]; jobId: string; at: Date }
+  scan: { outcomes: readonly { source: string; status: SourceStatus; operation?: string }[]; jobId: string; at: Date }
 ): Promise<boolean> {
-  const sources: Record<string, SourceStatus> = {};
+  const sources: Record<string, unknown> = {};
   for (const outcome of scan.outcomes) if (outcome.source in SAVED_SCAN_SOURCES) sources[outcome.source] = outcome.status;
+  const refusedExplorer = scan.outcomes.find((outcome) => outcome.source === 'resource-explorer' && outcome.status === 'denied');
+  const refusedOperation = knownRefusedOperation(refusedExplorer?.operation);
+  if (refusedOperation) sources[REFUSED_OPERATIONS_KEY] = { 'resource-explorer': refusedOperation };
   await ensureRow(client, organizationId, awsAccountRowId);
   const result = await client.query(
     `UPDATE aws_connection_checks
@@ -429,7 +469,10 @@ export function connectionChecksView(row: ConnectionChecksRow | null, now: Date)
           scannedAt: iso(row.scan_sources_at)!,
           sources: Object.keys(SAVED_SCAN_SOURCES)
             .filter((source) => row.scan_sources?.[source] === 'denied')
-            .map((source) => ({ source, action: SAVED_SCAN_SOURCES[source] })),
+            .flatMap((source) => {
+              const action = refusedSourceAction(row.scan_sources!, source);
+              return action ? [{ source, action }] : [];
+            }),
         }
       : null;
   return { health, roleReplacedAt: iso(row?.role_replaced_at ?? null), permissionCheck, policyCheck, refusedSources };

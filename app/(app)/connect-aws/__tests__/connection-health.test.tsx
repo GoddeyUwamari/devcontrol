@@ -435,7 +435,12 @@ describe('refused sources (R1-R3)', () => {
       ['lambda', 'Lambda functions'], ['load-balancer', 'Load balancers'], ['cloudfront', 'CloudFront distributions'],
       ['resource-explorer', 'Resource Explorer search'],
     ]
-    serveChecks({ ...checks({ refusedSources: { scannedAt: ago(HOUR), sources: all.map(([source]) => ({ source, action: 'a:B' })) } }), ...OWNER })
+    // Region-access PR (b), B7: each listing's own action (the parser drops any other, Q8).
+    const action: Record<string, string> = {
+      ec2: 'ec2:DescribeInstances', ebs: 'ec2:DescribeVolumes', rds: 'rds:DescribeDBInstances', s3: 's3:ListAllMyBuckets', lambda: 'lambda:ListFunctions',
+      'load-balancer': 'elasticloadbalancing:DescribeLoadBalancers', cloudfront: 'cloudfront:ListDistributions', 'resource-explorer': 'resource-explorer-2:Search',
+    }
+    serveChecks({ ...checks({ refusedSources: { scannedAt: ago(HOUR), sources: all.map(([source]) => ({ source, action: action[source] })) } }), ...OWNER })
     renderPage()
     const list = await screen.findByTestId('refused-sources')
     expect([...list.querySelectorAll('li')].map((li) => li.textContent!.split(' (')[0])).toEqual(all.map(([, label]) => label))

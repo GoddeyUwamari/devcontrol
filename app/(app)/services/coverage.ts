@@ -32,7 +32,20 @@ export const LISTING_TRUNCATED_TEXT = 'Some resource listings were cut off, so r
  */
 export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX = 'resource_explorer_no_index'
 export const DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW = 'resource_explorer_no_view'
-const RESOURCE_EXPLORER_OFF_WARNINGS = [DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX, DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW]
+/**
+ * Region-access PR (b): a Resource Explorer call failed in a region whose own listings all
+ * completed (backend discovery-warnings.ts): the region is Partial, never "couldn't check".
+ */
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED = 'resource_explorer_denied'
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED = 'resource_explorer_throttled'
+export const DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED = 'resource_explorer_failed'
+const RESOURCE_EXPLORER_FAILURE_WARNINGS = [
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED,
+  DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED,
+]
+/** Every region-scoped Resource Explorer code: no index, no default view, and (PR (b)) a failed call. */
+const RESOURCE_EXPLORER_OFF_WARNINGS = [DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_INDEX, DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW, ...RESOURCE_EXPLORER_FAILURE_WARNINGS]
 
 /** Founder-approved copy (Nov 14) for resource_explorer_no_index; `region` is the home region. */
 export function resourceExplorerOffText(region: string): string {
@@ -42,6 +55,31 @@ export function resourceExplorerOffText(region: string): string {
 /** Founder-approved copy (Nov 14) for resource_explorer_no_view; `region` is the home region. */
 export function resourceExplorerNoViewText(region: string): string {
   return `Resource Explorer has no default view in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed. Everything else was checked.`
+}
+
+/** Founder-approved copy (Nov 25, region-access PR (b)) for resource_explorer_denied; `region` is the region it came from. */
+export function resourceExplorerDeniedText(region: string): string {
+  return `AWS refused DevControl's access to Resource Explorer in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed. Everything else was checked.`
+}
+
+/** Founder-approved copy (Nov 25, region-access PR (b)) for resource_explorer_failed (a call timeout included). */
+export function resourceExplorerFailedText(region: string): string {
+  return `Resource Explorer ran into an error in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed this time. Everything else was checked. The next scan tries again.`
+}
+
+/** Founder-approved copy (Nov 25, region-access PR (b), B5 throttling hint) for resource_explorer_throttled. */
+export function resourceExplorerThrottledText(region: string): string {
+  return `AWS was busy and limited our Resource Explorer requests in ${region}, so some resource types (such as ECS, VPC and DynamoDB) weren't listed this time. Everything else was checked. The next scan tries again.`
+}
+
+/** The approved sentence of a failed Resource Explorer call's code, or null for any other code. */
+export function resourceExplorerFailureText(code: string | null, region: string): string | null {
+  switch (code) {
+    case DISCOVERY_WARNING_RESOURCE_EXPLORER_DENIED: return resourceExplorerDeniedText(region)
+    case DISCOVERY_WARNING_RESOURCE_EXPLORER_THROTTLED: return resourceExplorerThrottledText(region)
+    case DISCOVERY_WARNING_RESOURCE_EXPLORER_FAILED: return resourceExplorerFailedText(region)
+    default: return null
+  }
 }
 
 const KNOWN_WARNINGS = [DISCOVERY_WARNING_TRUNCATED_INDEX, DISCOVERY_WARNING_LISTING_TRUNCATED]
@@ -166,6 +204,10 @@ export function warningNotes(persisted: readonly string[], inTab: readonly strin
   }
   if (homeRegion && codes.has(DISCOVERY_WARNING_RESOURCE_EXPLORER_NO_VIEW)) {
     notes.push({ key: 'resource-explorer-no-view', tone: 'warn', body: resourceExplorerNoViewText(homeRegion) })
+  }
+  // Region-access PR (b): a failed Resource Explorer call in the home region, its own sentence.
+  for (const code of RESOURCE_EXPLORER_FAILURE_WARNINGS) {
+    if (homeRegion && codes.has(code)) notes.push({ key: code.replace(/_/g, '-'), tone: 'warn', body: resourceExplorerFailureText(code, homeRegion)! })
   }
   if ([...codes].some((code) => !known.includes(code))) {
     notes.push({ key: 'unknown-warning', tone: 'warn', body: UNKNOWN_WARNING_TEXT })
