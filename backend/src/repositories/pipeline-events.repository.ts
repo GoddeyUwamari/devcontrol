@@ -5,8 +5,9 @@
  * organization AND names organization_id explicitly (a static test holds
  * every statement here to that).
  *
- * Events are never deleted by processing: a failure only changes
- * processing_status. Deletion is the retention purge's job (D8a-3).
+ * Events are never deleted: a failure only changes processing_status, and
+ * expiry is a status too (D8a-3, founder ruling 1). Retention is a later
+ * decision.
  */
 import { PoolClient } from 'pg';
 import {
@@ -18,6 +19,7 @@ import {
   WorkflowJobFacts,
 } from '../services/github-app/contract';
 import { ConnectionSource, defaultSource, withOrgClient } from '../services/github-app/db';
+import { TRANSIENT_FAILURE_REASONS } from '../services/github-app/failure-class';
 
 export type ProcessingStatus = 'pending' | 'processed' | 'ignored' | 'unmapped' | 'over_limit' | 'failed';
 
@@ -89,27 +91,38 @@ export const NOT_CLAIMED_REASON = 'installation_not_claimed';
 /**
  * The same 7 days as github_held_deliveries (github_purge_held_deliveries).
  * Also the window a mapping or rule replay picks events from, and the window
- * of the held counts the GitHub screen shows (D8b-2 ruling R1).
+ * of the held counts the GitHub screen shows (D8b-2 ruling R1). The screen
+ * reads it as days (held_event_days).
  */
 export const HELD_EVENT_DAYS = 7;
+/**
+ * D8a-3 ruling 7: the window as an explicit number of hours (168), so it is
+ * the same length whatever the database session's TimeZone: subtracting a
+ * days interval from a timestamptz follows that zone's daylight-saving
+ * changes, an hours interval does not. Exactly 168 hours old is still
+ * inside; anything older is outside (expired).
+ */
+export const HELD_EVENT_HOURS = HELD_EVENT_DAYS * 24;
 
 /** The events the 7-day held window applies to: the deployment candidates (ruling R1). */
 const DEPLOY_CANDIDATE_EVENTS_SQL = `event IN ('workflow_job', 'deployment_status')`;
 
 /**
  * D8b-2 fix round 2 (S-2): the held window as SQL, received in the last
- * `days` days. `days` is the placeholder that carries HELD_EVENT_DAYS. The
- * one window for a replay, the held counts, and the pick-up at a re-claim.
+ * `hours` hours. `hours` is the placeholder that carries HELD_EVENT_HOURS
+ * (D8a-3 ruling 7). The one window for a replay, the held counts, the
+ * pick-up at a re-claim, claim-hold expiry, the scheduled retry and the
+ * scheduled expiry.
  */
-function heldWindowSql(days: string): string {
-  return `received_at >= NOW() - make_interval(days => ${days})`;
+function heldWindowSql(hours: string): string {
+  return `received_at >= NOW() - make_interval(hours => ${hours})`;
 }
 
-/** Placeholders that carry a ReplaySelection and HELD_EVENT_DAYS into replayEligibleSql. */
+/** Placeholders that carry a ReplaySelection and HELD_EVENT_HOURS into replayEligibleSql. */
 export interface ReplayEligibleParams {
   statuses: string;
   reasons: string;
-  days: string;
+  hours: string;
 }
 
 /**
@@ -122,7 +135,7 @@ export interface ReplayEligibleParams {
 export function replayEligibleSql(p: ReplayEligibleParams): string {
   return `${DEPLOY_CANDIDATE_EVENTS_SQL}
         AND (processing_status = ANY(${p.statuses}::text[]) OR (processing_status = 'ignored' AND processing_reason = ANY(${p.reasons}::text[])))
-        AND ${heldWindowSql(p.days)}`;
+        AND ${heldWindowSql(p.hours)}`;
 }
 
 export async function holdUntilClaimed(client: PoolClient, organizationId: string, eventId: string): Promise<void> {
@@ -135,18 +148,83 @@ export async function holdUntilClaimed(client: PoolClient, organizationId: strin
   );
 }
 
+/** The expired mark (D8a-3 ruling 1: an existing status and reason; nothing is deleted). */
+export const EXPIRED_STATUS = 'ignored';
+export const EXPIRED_REASON = 'hold_expired';
+const MARK_EXPIRED_SQL = `processing_status = '${EXPIRED_STATUS}', processing_reason = '${EXPIRED_REASON}', processed_at = NOW()`;
+
+/**
+ * A claim hold past the window: held for lack of a claim (NOT_CLAIMED_REASON,
+ * never processed) and received more than HELD_EVENT_HOURS ago. `reason` and
+ * `hours` are placeholders. The one test for both the claim's expiry and the
+ * scheduled expiry (D8a-3 S2), so the two can never disagree.
+ */
+function expiredClaimHoldSql(p: { reason: string; hours: string }): string {
+  return `processed_at IS NULL AND processing_reason = ${p.reason} AND NOT (${heldWindowSql(p.hours)})`;
+}
+
 /**
  * On a claim, before its unprocessed events are processed: events held for
- * lack of a claim longer than HELD_EVENT_DAYS end 'ignored' / hold_expired,
+ * lack of a claim longer than HELD_EVENT_HOURS end 'ignored' / hold_expired,
  * as a held delivery that old is purged. Returns how many.
  */
 export async function expireClaimHolds(client: PoolClient, organizationId: string, installationId: number): Promise<number> {
   const { rowCount } = await client.query(
     `UPDATE pipeline_events
-        SET processing_status = 'ignored', processing_reason = 'hold_expired', processed_at = NOW()
-      WHERE organization_id = $1 AND installation_id = $2 AND processed_at IS NULL AND processing_reason = $3
-        AND NOT (${heldWindowSql('$4')})`,
-    [organizationId, installationId, NOT_CLAIMED_REASON, HELD_EVENT_DAYS]
+        SET ${MARK_EXPIRED_SQL}
+      WHERE organization_id = $1 AND installation_id = $2 AND ${expiredClaimHoldSql({ reason: '$3', hours: '$4' })}`,
+    [organizationId, installationId, NOT_CLAIMED_REASON, HELD_EVENT_HOURS]
+  );
+  return rowCount ?? 0;
+}
+
+/** Rows one expiry statement marks at most (the scheduled cleanup repeats it a bounded number of times). */
+export const EXPIRE_BATCH = 5000;
+
+/**
+ * D8a-3 S2 (cleanup, founder ruling 1): claim holds of the organization past
+ * the window, whatever the installation and whether or not the organization
+ * ever claims it again, marked 'ignored' / hold_expired, oldest first, at
+ * most `limit`. The same test as expireClaimHolds. Rows another transaction
+ * is processing right now are skipped (the next run sees them). Nothing is
+ * deleted. Returns how many were marked.
+ */
+export async function expireStaleClaimHolds(client: PoolClient, organizationId: string, limit = EXPIRE_BATCH): Promise<number> {
+  const { rowCount } = await client.query(
+    `UPDATE pipeline_events
+        SET ${MARK_EXPIRED_SQL}
+      WHERE organization_id = $1 AND id IN (
+              SELECT id FROM pipeline_events
+               WHERE organization_id = $1 AND ${expiredClaimHoldSql({ reason: '$2', hours: '$3' })}
+               ORDER BY received_at, id
+               LIMIT $4
+                 FOR UPDATE SKIP LOCKED)`,
+    [organizationId, NOT_CLAIMED_REASON, HELD_EVENT_HOURS, limit]
+  );
+  return rowCount ?? 0;
+}
+
+/**
+ * D8a-3 ruling 6 (cleanup): deployment candidates a claim released from
+ * github_held_deliveries (held_at set) that were never processed and are
+ * past the window, marked 'ignored' / hold_expired. They are exactly the
+ * rows the reconnect pick-up leaves stored as released (D8b-2 S-2, RN-4).
+ * Only 'pending' rows with no reason and no processed_at: recorded events
+ * and every other final status are untouched. Oldest first, at most `limit`.
+ */
+export async function expireStaleReleasedEvents(client: PoolClient, organizationId: string, limit = EXPIRE_BATCH): Promise<number> {
+  const { rowCount } = await client.query(
+    `UPDATE pipeline_events
+        SET ${MARK_EXPIRED_SQL}
+      WHERE organization_id = $1 AND id IN (
+              SELECT id FROM pipeline_events
+               WHERE organization_id = $1 AND ${DEPLOY_CANDIDATE_EVENTS_SQL}
+                 AND processing_status = 'pending' AND processing_reason IS NULL AND processed_at IS NULL AND held_at IS NOT NULL
+                 AND NOT (${heldWindowSql('$2')})
+               ORDER BY received_at, id
+               LIMIT $3
+                 FOR UPDATE SKIP LOCKED)`,
+    [organizationId, HELD_EVENT_HOURS, limit]
   );
   return rowCount ?? 0;
 }
@@ -201,10 +279,10 @@ export interface ReplayPage {
  * strictly after `after`. pipeline_events has no created_at column:
  * received_at (DEFAULT NOW()) is the row's creation time.
  *
- * D8b-2 ruling R1: only events received in the last HELD_EVENT_DAYS are
+ * D8b-2 ruling R1: only events received in the last HELD_EVENT_HOURS are
  * picked up ("held for 7 days … after 7 days, they're dropped"). Older events
- * are neither changed nor deleted here: they stay stored until the retention
- * purge (D8a-3) exists, and are simply no longer recorded.
+ * are neither changed nor deleted here: they stay stored and are simply no
+ * longer recorded (D8a-3 deletes nothing, founder ruling 1).
  */
 export async function findReplayableEvents(
   client: PoolClient,
@@ -218,12 +296,12 @@ export async function findReplayableEvents(
     `SELECT id, installation_id, event, action, occurred_at, received_at, received_at::text AS cursor_at, facts
        FROM pipeline_events
       WHERE organization_id = $1 AND github_repo_id = $2
-        AND ${replayEligibleSql({ statuses: '$3', reasons: '$4', days: '$8' })}
+        AND ${replayEligibleSql({ statuses: '$3', reasons: '$4', hours: '$8' })}
         AND ($6::timestamptz IS NULL OR (received_at, id) > ($6::timestamptz, $7::uuid))
       ORDER BY received_at, id
       LIMIT $5`,
     [organizationId, githubRepoId, [...selection.statuses], [...selection.ignoredReasons], limit, after?.at ?? null, after?.id ?? null,
-      HELD_EVENT_DAYS]
+      HELD_EVENT_HOURS]
   );
   const events = rows.map((r) => ({
     id: r.id,
@@ -242,10 +320,11 @@ export async function findReplayableEvents(
  * Events not processed yet (e.g. just released from hold by a claim), oldest first.
  *
  * D8b-2 fix round 2 (S-2): a deployment candidate is picked up only inside
- * the held window (HELD_EVENT_DAYS), as a replay is (ruling R1). A delivery
+ * the held window (HELD_EVENT_HOURS), as a replay is (ruling R1). A delivery
  * held during a disconnect keeps its original received_at when the claim
  * releases it, so one older than 7 days is left stored as it is: not
- * recorded, not changed, not deleted. Other events (installation,
+ * recorded, not changed, not deleted (the scheduled cleanup marks it expired,
+ * D8a-3 ruling 6). Other events (installation,
  * installation_repositories, ...) are still processed whatever their age:
  * the held installation.created is kept past 7 days on purpose.
  */
@@ -262,7 +341,7 @@ export async function findUnprocessedEvents(
         AND (NOT (${DEPLOY_CANDIDATE_EVENTS_SQL}) OR ${heldWindowSql('$4')})
       ORDER BY received_at, id
       LIMIT $3`,
-    [organizationId, installationId, limit, HELD_EVENT_DAYS]
+    [organizationId, installationId, limit, HELD_EVENT_HOURS]
   );
   return rows.map((r) => ({
     id: r.id,
@@ -273,6 +352,143 @@ export async function findUnprocessedEvents(
     receivedAt: r.received_at,
     facts: r.facts,
   }));
+}
+
+/**
+ * D8a-3 S1: the scheduled retry's selection. It narrows replayEligibleSql
+ * (deployment candidates, these statuses, the HELD_EVENT_HOURS window) and
+ * never widens it: 'over_limit', 'unmapped' and 'ignored' are never retried
+ * (founder ruling 3; the customer's mapping and rule replays own the last two).
+ */
+export const RETRY_SELECTION: ReplaySelection = { statuses: ['failed', 'pending'], ignoredReasons: [] };
+/** Founder ruling 4: five processing attempts in all (the first one included). */
+export const MAX_PROCESSING_ATTEMPTS = 5;
+/** Ruling 5b: an event stored but never processed is picked up once it is this old (the live path has had its chance). */
+export const STALE_PENDING_MINUTES = 15;
+
+/** Placeholders for retryEligibleSql. */
+interface RetryEligibleParams {
+  organization: string;
+  statuses: string;
+  reasons: string;
+  hours: string;
+  maxAttempts: string;
+  transient: string;
+  staleMinutes: string;
+  notClaimed: string;
+}
+
+/**
+ * D8a-3: "the scheduled retry may process this event now". replayEligibleSql
+ * narrowed by one of:
+ *
+ *  failed   backoff elapsed since the last attempt (processed_at): 1, 2, 4,
+ *           then 8 hours after attempts 1, 2, 3, 4 (ruling 4), and
+ *            - a transient failure code (failure-class.ts) with fewer than
+ *              MAX_PROCESSING_ATTEMPTS attempts; any other code, an unknown
+ *              one included, is permanent and never retried; or
+ *            - deployment_id set: the attempt's transaction did commit (the
+ *              link is written only inside it) and only its acknowledgement
+ *              was lost, so it is no failure. One more pass finds the row and
+ *              ends 'processed' / already_recorded, never a second row. The
+ *              window and the backoff bound it, not the attempt count.
+ *  pending  never processed (processed_at NULL), received more than
+ *           STALE_PENDING_MINUTES ago, and either
+ *            - no reason: stored but never processed (a crash between storing
+ *              and processing; a redelivery is a duplicate and is not
+ *              processed, ruling 5b), or released by a claim beyond the 500
+ *              the claim itself processes (ruling 5); or
+ *            - held for lack of a claim (NOT_CLAIMED_REASON) while this
+ *              organization holds the installation's claim again. While it
+ *              does not, the hold is left alone (D8b-1 RC-N2): only a claim,
+ *              or the 7-day expiry, ends it.
+ *
+ * `organization` is the placeholder of the organization id; the claim test
+ * names it, so a hold is matched only to its own organization's claim.
+ */
+function retryEligibleSql(p: RetryEligibleParams): string {
+  return `${replayEligibleSql({ statuses: p.statuses, reasons: p.reasons, hours: p.hours })}
+        AND (
+              (processing_status = 'failed'
+                AND processed_at < NOW() - make_interval(hours => 1 << LEAST(GREATEST(processing_attempts, 1) - 1, 3))
+                AND (deployment_id IS NOT NULL
+                     OR (processing_attempts < ${p.maxAttempts} AND processing_reason = ANY(${p.transient}::text[]))))
+           OR (processing_status = 'pending' AND processed_at IS NULL
+                AND received_at < NOW() - make_interval(mins => ${p.staleMinutes})
+                AND (processing_reason IS NULL
+                     OR (processing_reason = ${p.notClaimed}
+                         AND EXISTS (SELECT 1 FROM github_installations gi
+                                      WHERE gi.organization_id = ${p.organization}
+                                        AND gi.installation_id = pipeline_events.installation_id))))
+            )`;
+}
+
+/** The retry's parameters $2..$8, after the organization id ($1). */
+function retryEligibleArgs(): unknown[] {
+  return [[...RETRY_SELECTION.statuses], [...RETRY_SELECTION.ignoredReasons], HELD_EVENT_HOURS, MAX_PROCESSING_ATTEMPTS,
+    [...TRANSIENT_FAILURE_REASONS], STALE_PENDING_MINUTES, NOT_CLAIMED_REASON];
+}
+
+const RETRY_ELIGIBLE = retryEligibleSql({
+  organization: '$1', statuses: '$2', reasons: '$3', hours: '$4', maxAttempts: '$5', transient: '$6', staleMinutes: '$7', notClaimed: '$8',
+});
+
+/** A stored event the scheduled retry picked, with the state it was picked in. */
+export interface RetryCandidate extends EventToProcess {
+  processingStatus: ProcessingStatus;
+  processingReason: string | null;
+  processingAttempts: number;
+  /** deployment_id was set: an earlier attempt committed (see retryEligibleSql). */
+  committed: boolean;
+}
+
+/**
+ * Up to `limit` of the organization's events the retry may process now,
+ * oldest first (received_at, id). Bounded: the job calls it once per
+ * organization per run, so one organization's backlog waits for the next
+ * run instead of starving the others.
+ */
+export async function findRetryableEvents(client: PoolClient, organizationId: string, limit: number): Promise<RetryCandidate[]> {
+  const { rows } = await client.query(
+    `SELECT id, installation_id, event, action, occurred_at, received_at, facts, processing_status, processing_reason, processing_attempts,
+            deployment_id IS NOT NULL AS committed
+       FROM pipeline_events
+      WHERE organization_id = $1 AND ${RETRY_ELIGIBLE}
+      ORDER BY received_at, id
+      LIMIT $9`,
+    [organizationId, ...retryEligibleArgs(), limit]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    installationId: String(r.installation_id),
+    event: r.event,
+    action: r.action,
+    occurredAt: r.occurred_at,
+    receivedAt: r.received_at,
+    facts: r.facts,
+    processingStatus: r.processing_status,
+    processingReason: r.processing_reason,
+    processingAttempts: Number(r.processing_attempts),
+    committed: r.committed === true,
+  }));
+}
+
+/**
+ * Ruling 4: inside the retry's own processing transaction, before anything
+ * else runs, lock the event row (FOR UPDATE) and re-check that it is still
+ * in the state it was picked in AND still eligible (the same retryEligibleSql).
+ * False: another transaction processed, held or expired it meanwhile, or
+ * its backoff or window changed; the caller skips it and writes nothing.
+ */
+export async function lockRetryCandidate(client: PoolClient, organizationId: string, candidate: RetryCandidate): Promise<boolean> {
+  const { rowCount } = await client.query(
+    `SELECT 1 FROM pipeline_events
+      WHERE organization_id = $1 AND ${RETRY_ELIGIBLE}
+        AND id = $9 AND processing_status = $10 AND processing_reason IS NOT DISTINCT FROM $11 AND processing_attempts = $12
+        FOR UPDATE`,
+    [organizationId, ...retryEligibleArgs(), candidate.id, candidate.processingStatus, candidate.processingReason, candidate.processingAttempts]
+  );
+  return rowCount === 1;
 }
 
 /** Most recent receipt time for the organization (connection status), or null. */

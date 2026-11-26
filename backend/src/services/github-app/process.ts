@@ -14,6 +14,7 @@ import { ConnectionSource, withOrgClient, withOrgTransaction } from './db';
 import { permissionsStateOf } from './permissions';
 import { detectDeployment } from './detect';
 import { recordDeployment } from './record';
+import { isTransientFailure } from './failure-class';
 
 interface ProcessingOutcome {
   status: ProcessingStatus;
@@ -101,7 +102,7 @@ export function isLegacyWebhookOrganization(organizationId: string): boolean {
 }
 
 /** Postgres SQLSTATE as a reason code, or a generic code. Never an error message. */
-function failureReason(error: unknown): string {
+export function failureReason(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? `db_${code.toLowerCase()}` : 'processing_error';
 }
@@ -123,8 +124,61 @@ export async function processStoredEvent(
   event: EventToProcess,
   processor: EventProcessor = processEvent
 ): Promise<ProcessingOutcome> {
+  return (await runProcessing(source, organizationId, event, processor, null)) as ProcessingOutcome;
+}
+
+/**
+ * The scheduled retry's guard (D8a-3 ruling 4): runs first inside the
+ * processing transaction. True: process. False: the event is no longer what
+ * the retry picked; nothing is written. It takes its locks before the claim
+ * lock, so it must take them in an order the other paths can't reverse
+ * (retry.ts).
+ */
+export type ProcessingGuard = (client: PoolClient) => Promise<boolean>;
+
+/** The guard said no, or the guard itself failed: nothing was written. */
+export const SKIPPED = 'skipped' as const;
+
+/**
+ * processStoredEvent for the scheduled retry: the same processing, after the
+ * guard. A guard that fails (a lock or statement timeout, say) skips the
+ * event without marking it 'failed': another transaction may be finishing
+ * it, and a 'failed' stamped over that would be wrong.
+ */
+export async function processRetryCandidate(
+  source: ConnectionSource,
+  organizationId: string,
+  event: EventToProcess,
+  guard: ProcessingGuard,
+  processor: EventProcessor = processEvent
+): Promise<ProcessingOutcome | typeof SKIPPED> {
+  return runProcessing(source, organizationId, event, processor, guard);
+}
+
+class GuardFailure extends Error {
+  constructor() {
+    super('processing guard failed');
+  }
+}
+
+async function runProcessing(
+  source: ConnectionSource,
+  organizationId: string,
+  event: EventToProcess,
+  processor: EventProcessor,
+  guard: ProcessingGuard | null
+): Promise<ProcessingOutcome | typeof SKIPPED> {
   try {
     return await withOrgTransaction(source, organizationId, async (client) => {
+      if (guard) {
+        let eligible: boolean;
+        try {
+          eligible = await guard(client);
+        } catch {
+          throw new GuardFailure();
+        }
+        if (!eligible) return SKIPPED;
+      }
       if (!(await lockOwnClaim(client, organizationId, Number(event.installationId)))) {
         await holdUntilClaimed(client, organizationId, event.id);
         return { status: 'pending', reason: NOT_CLAIMED_REASON };
@@ -134,10 +188,15 @@ export async function processStoredEvent(
       return outcome;
     });
   } catch (error) {
+    if (error instanceof GuardFailure) return SKIPPED;
     const outcome: ProcessingOutcome = { status: 'failed', reason: failureReason(error) };
     await withOrgClient(source, organizationId, (client) =>
       setProcessingOutcome(client, organizationId, event.id, outcome.status, outcome.reason)
     ).catch(() => undefined);
+    // Ruling 8: a failure the scheduled retry will never try again is logged (codes only, never a message).
+    if (!isTransientFailure(outcome.reason)) {
+      console.log(`[github-app] processing failed event=${event.id} reason=${outcome.reason} retry=no`);
+    }
     return outcome;
   }
 }

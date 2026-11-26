@@ -11,6 +11,7 @@ import { GitHubAppClient, GitHubClientError, GitHubInstallationDetails } from '.
 import { ingestDelivery } from '../ingest';
 import { processEvent } from '../process';
 import { disconnectInstallation, holdDelivery, releaseHeldDeliveries } from '../../../repositories/github-installations.repository';
+import { NOT_CLAIMED_REASON } from '../../../repositories/pipeline-events.repository';
 import { ConnectionSource, withOrgClient, withOrgTransaction } from '../db';
 import { normalizeDelivery } from '../normalize';
 import { createFixtures, enabledConfig, CLIENT_SECRET, WEBHOOK_SECRET } from './fixtures/db';
@@ -503,6 +504,29 @@ describe('D8b-1 fix S-1: an event in flight while its installation is disconnect
 
     expect((await reclaim(c)).body.data).toMatchObject({ status: 'connected' });
     expect(await jobEvents(c.inst)).toEqual([{ org: orgA, status: 'processed', reason: null, unprocessed: false, recorded: true }]);
+    expect(await deploymentsFor(c.serviceId)).toBe(1);
+  });
+
+  it('D8a-3 RN-a: claim holds one minute either side of 168 hours: connecting again records the younger and expires the older', async () => {
+    const c = await connected('hold-boundary');
+    expect(await withOrgTransaction(fx.app, orgA, (cl) => disconnectInstallation(cl, orgA, c.inst))).toEqual({ repositories: 1 });
+    const jobs = { inside: uniqueId(), outside: uniqueId() };
+    for (const [k, age] of [['inside', '167 hours 59 minutes'], ['outside', '168 hours 1 minute']] as const) {
+      const n = normalizeDelivery('workflow_job', newerJob(c.inst, c.repoId));
+      if (n.kind !== 'record') throw new Error('fixture');
+      const facts = { ...n.record.facts, job_id: jobs[k] };
+      await fx.admin.query(
+        `INSERT INTO pipeline_events (delivery_id, organization_id, installation_id, github_repo_id, event, action, event_key, received_at,
+           normalizer_version, facts, processing_status, processing_reason, processing_attempts)
+         VALUES (gen_random_uuid(), $1, $2, $3, 'workflow_job', 'completed', $4, NOW() - $5::interval, 1, $6::jsonb, 'pending', $7, 1)`,
+        [orgA, c.inst, c.repoId, `workflow_job:${jobs[k]}:completed`, age, JSON.stringify(facts), NOT_CLAIMED_REASON]);
+    }
+    expect((await reclaim(c)).body.data).toMatchObject({ status: 'connected' });
+    const byJob = async (jobId: number) => (await fx.admin.query(
+      `SELECT processing_status AS status, processing_reason AS reason, deployment_id IS NOT NULL AS recorded
+         FROM pipeline_events WHERE organization_id = $1 AND facts ->> 'job_id' = $2`, [orgA, String(jobId)])).rows[0];
+    expect(await byJob(jobs.inside)).toEqual({ status: 'processed', reason: null, recorded: true });
+    expect(await byJob(jobs.outside)).toEqual({ status: 'ignored', reason: 'hold_expired', recorded: false });
     expect(await deploymentsFor(c.serviceId)).toBe(1);
   });
 

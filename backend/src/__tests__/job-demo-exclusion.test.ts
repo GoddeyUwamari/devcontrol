@@ -42,6 +42,7 @@ import { listAnomalyDetectionOrganizations } from '../jobs/anomaly-detection.job
 import { listScanRecoveryOrganizations } from '../services/custom-compliance.service';
 import { listActivationFunnelOrganizations } from '../services/activationFunnel.service';
 import { GracePeriodEnforcementJob } from '../jobs/grace-period-enforcement.job';
+import { listOrganizationIds } from '../jobs/github-app-events.job';
 import { ScheduledReportsRepository } from '../repositories/scheduled-reports.repository';
 import { WeeklySummaryRepository } from '../repositories/weekly-summary.repository';
 import { onboardingService } from '../services/onboarding.service';
@@ -134,6 +135,15 @@ describe('org-selecting jobs leave the demo out and keep the real organization',
   ])('%s', async (_label, select) => {
     await withOrgs(async ({ client, demo, real }) => {
       const ids = (await select(client)).map((r: { id: string }) => r.id);
+      expect(ids).toContain(real);
+      expect(ids).not.toContain(demo);
+    });
+  });
+
+  it('GitHubAppEventsJob (listOrganizationIds)', async () => {
+    await withOrgs(async ({ client, demo, real }) => {
+      const source = { connect: async () => ({ query: client.query.bind(client), release: () => undefined }) };
+      const ids = await listOrganizationIds(source as never);
       expect(ids).toContain(real);
       expect(ids).not.toContain(demo);
     });

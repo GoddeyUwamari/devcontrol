@@ -9,7 +9,7 @@
  */
 import { PoolClient } from 'pg';
 import type { RepositoryForEvent } from '../services/github-app/detect';
-import { HELD_EVENT_DAYS, replayEligibleSql, ReplaySelection } from './pipeline-events.repository';
+import { HELD_EVENT_HOURS, replayEligibleSql, ReplaySelection } from './pipeline-events.repository';
 
 interface RepositoryUpsert {
   githubRepoId: number;
@@ -206,7 +206,7 @@ export async function listJobsSeen(client: PoolClient, organizationId: string, g
  *
  *   held          the events each replay would pick up, counted with the
  *                 replay's own eligibility test (replayEligibleSql: deployment
- *                 candidates, the selection, the HELD_EVENT_DAYS window; D8b-2
+ *                 candidates, the selection, the HELD_EVENT_HOURS window; D8b-2
  *                 fix round 2, N-1), so a count is exactly what that replay
  *                 picks up:
  *                   forMapping  MAPPING_REPLAY's selection (a service is chosen)
@@ -248,13 +248,13 @@ export async function listRepositoryActivity(
 
   const heldCounts = await client.query<{ repo: string; for_mapping: number; for_rule: number }>(
     `SELECT github_repo_id::text AS repo,
-            count(*) FILTER (WHERE ${replayEligibleSql({ statuses: '$2', reasons: '$3', days: '$6' })})::int AS for_mapping,
-            count(*) FILTER (WHERE ${replayEligibleSql({ statuses: '$4', reasons: '$5', days: '$6' })})::int AS for_rule
+            count(*) FILTER (WHERE ${replayEligibleSql({ statuses: '$2', reasons: '$3', hours: '$6' })})::int AS for_mapping,
+            count(*) FILTER (WHERE ${replayEligibleSql({ statuses: '$4', reasons: '$5', hours: '$6' })})::int AS for_rule
        FROM pipeline_events
       WHERE organization_id = $1 AND github_repo_id IS NOT NULL
       GROUP BY 1`,
     [organizationId, [...held.mapping.statuses], [...held.mapping.ignoredReasons], [...held.rule.statuses], [...held.rule.ignoredReasons],
-      HELD_EVENT_DAYS]
+      HELD_EVENT_HOURS]
   );
   for (const r of heldCounts.rows) Object.assign(entry(r.repo), { heldForMapping: r.for_mapping, heldForRule: r.for_rule });
 

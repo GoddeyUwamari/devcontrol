@@ -31,6 +31,7 @@ import { ScheduledReportsJob } from './jobs/scheduled-reports.job';
 import { WeeklyAISummaryJob } from './jobs/weekly-ai-summary.job';
 import { AnomalyDetectionJob } from './jobs/anomaly-detection.job';
 import { GracePeriodEnforcementJob } from './jobs/grace-period-enforcement.job';
+import { GitHubAppEventsJob } from './jobs/github-app-events.job';
 import { CustomComplianceService } from './services/custom-compliance.service';
 import { WebSocketServer } from './websocket/server';
 import { validateEnv } from './config/validateEnv';
@@ -362,6 +363,12 @@ const startServer = async () => {
       // isOrgRestricted for the lazy, primary enforcement path this backs up)
       const gracePeriodEnforcementJob = new GracePeriodEnforcementJob(pool);
       gracePeriodEnforcementJob.start();
+
+      // GitHub App events (D8a-3): hourly retry (does nothing while the GitHub
+      // App is not configured) and daily 03:30 UTC expiry marking (runs either
+      // way; marks only, deletes nothing). See jobs/github-app-events.job.ts.
+      const gitHubAppEventsJob = new GitHubAppEventsJob();
+      gitHubAppEventsJob.start();
     }
   } catch (error) {
     console.error('❌ Failed to start server:', error);
