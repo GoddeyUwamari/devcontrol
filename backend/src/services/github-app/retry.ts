@@ -22,7 +22,8 @@
  * (deployments_github_job_uidx / deployments_github_deployment_uidx and
  * ON CONFLICT DO NOTHING, record.ts), not this file's.
  *
- * Expiry (S2, rulings 1 and 6): claim holds past the window, and released,
+ * Expiry (S2, rulings 1 and 6, Addendum 2 ruling 3): claim holds past the
+ * window, and never-processed (released or live),
  * never-processed deployment candidates past the window, are marked
  * 'ignored' / hold_expired. Nothing is deleted.
  *
@@ -32,7 +33,7 @@ import { PoolClient } from 'pg';
 import {
   EXPIRE_BATCH,
   expireStaleClaimHolds,
-  expireStaleReleasedEvents,
+  expireStaleUnprocessedEvents,
   findRetryableEvents,
   lockRetryCandidate,
   MAX_PROCESSING_ATTEMPTS,
@@ -122,7 +123,8 @@ export async function retryOrganization(source: ConnectionSource, organizationId
 
 export interface ExpiryCounts {
   claimHolds: number;
-  released: number;
+  /** Never-processed deployment candidates (released by a claim, or stored live). */
+  unprocessed: number;
 }
 
 /** Expiry statements per kind per organization per run (each marks at most EXPIRE_BATCH rows). */
@@ -131,15 +133,15 @@ export const EXPIRE_ROUNDS = 4;
 /** Marks this organization's expired holds, at most EXPIRE_ROUNDS x EXPIRE_BATCH rows of each kind. */
 export async function expireOrganization(source: ConnectionSource, organizationId: string, batch = EXPIRE_BATCH): Promise<ExpiryCounts> {
   return withOrgClient(source, organizationId, async (client) => {
-    const counts: ExpiryCounts = { claimHolds: 0, released: 0 };
+    const counts: ExpiryCounts = { claimHolds: 0, unprocessed: 0 };
     for (let round = 0; round < EXPIRE_ROUNDS; round += 1) {
       const n = await expireStaleClaimHolds(client, organizationId, batch);
       counts.claimHolds += n;
       if (n < batch) break;
     }
     for (let round = 0; round < EXPIRE_ROUNDS; round += 1) {
-      const n = await expireStaleReleasedEvents(client, organizationId, batch);
-      counts.released += n;
+      const n = await expireStaleUnprocessedEvents(client, organizationId, batch);
+      counts.unprocessed += n;
       if (n < batch) break;
     }
     return counts;

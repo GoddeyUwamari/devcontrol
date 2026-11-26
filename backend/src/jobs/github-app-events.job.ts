@@ -16,8 +16,9 @@ import { emptyRetryCounts, expireOrganization, ExpiryCounts, retryOrganization, 
  *           reconnected installation that its claim did not reach. Never
  *           'over_limit', never a hold whose installation is still not
  *           claimed, never anything outside the 168-hour window.
- *  cleanup  daily at 03:30 UTC. Marks claim holds and released,
- *           never-processed events past the window 'ignored' / hold_expired.
+ *  cleanup  daily at 03:30 UTC. Marks claim holds, and never-processed
+ *           deployment events (released by a claim or stored live), past the
+ *           window 'ignored' / hold_expired.
  *
  * Feature flag (rulings 1-2, and Q13 for the cleanup): **the retry does
  * nothing while the GitHub App is not configured (GITHUB_APP_ENABLED off,
@@ -195,7 +196,7 @@ export class GitHubAppEventsJob {
   async runCleanup(): Promise<RunResult<CleanupRunSummary>> {
     return this.exclusive('cleanup', CLEANUP_LOCK_KEY, async () => {
       const started = this.deps.now();
-      const summary: CleanupRunSummary = { claimHolds: 0, released: 0, organizations: 0, errors: 0, stoppedEarly: false };
+      const summary: CleanupRunSummary = { claimHolds: 0, unprocessed: 0, organizations: 0, errors: 0, stoppedEarly: false };
       for (const organizationId of await this.deps.listOrganizations(this.deps.source)) {
         if (this.deps.now() - started >= this.deps.budgetMs) {
           summary.stoppedEarly = true;
@@ -204,9 +205,9 @@ export class GitHubAppEventsJob {
         try {
           const counts = await expireOrganization(this.deps.source, organizationId);
           summary.claimHolds += counts.claimHolds;
-          summary.released += counts.released;
-          if (counts.claimHolds + counts.released > 0) {
-            this.deps.log(`${PREFIX} cleanup org=${organizationId} expired_claim_holds=${counts.claimHolds} expired_released=${counts.released}`);
+          summary.unprocessed += counts.unprocessed;
+          if (counts.claimHolds + counts.unprocessed > 0) {
+            this.deps.log(`${PREFIX} cleanup org=${organizationId} expired_claim_holds=${counts.claimHolds} expired_unprocessed=${counts.unprocessed}`);
           }
         } catch (error) {
           summary.errors += 1;
@@ -215,7 +216,7 @@ export class GitHubAppEventsJob {
         summary.organizations += 1;
       }
       this.deps.log(`${PREFIX} cleanup done organizations=${summary.organizations} expired_claim_holds=${summary.claimHolds}`
-        + ` expired_released=${summary.released} errors=${summary.errors} stopped_early=${summary.stoppedEarly} ms=${this.deps.now() - started}`);
+        + ` expired_unprocessed=${summary.unprocessed} errors=${summary.errors} stopped_early=${summary.stoppedEarly} ms=${this.deps.now() - started}`);
       return summary;
     });
   }

@@ -205,21 +205,28 @@ export async function expireStaleClaimHolds(client: PoolClient, organizationId: 
 }
 
 /**
- * D8a-3 ruling 6 (cleanup): deployment candidates a claim released from
- * github_held_deliveries (held_at set) that were never processed and are
- * past the window, marked 'ignored' / hold_expired. They are exactly the
- * rows the reconnect pick-up leaves stored as released (D8b-2 S-2, RN-4).
+ * D8a-3 cleanup: deployment candidates that were never processed and are
+ * past the window, marked 'ignored' / hold_expired (EXPIRED_STATUS /
+ * EXPIRED_REASON, the claim's own expiry mark):
+ *  - released by a claim from github_held_deliveries (held_at set): the rows
+ *    the reconnect pick-up leaves stored as released (ruling 6; D8b-2 S-2,
+ *    RN-4);
+ *  - stored live (held_at NULL) and never processed, e.g. a crash between
+ *    storing and processing that the retry did not reach in time
+ *    (Addendum 2 ruling 3).
  * Only 'pending' rows with no reason and no processed_at: recorded events
- * and every other final status are untouched. Oldest first, at most `limit`.
+ * and every other final status are untouched, and nothing is recorded,
+ * counted or deleted (held counts already leave out anything past the
+ * window). Oldest first, at most `limit`.
  */
-export async function expireStaleReleasedEvents(client: PoolClient, organizationId: string, limit = EXPIRE_BATCH): Promise<number> {
+export async function expireStaleUnprocessedEvents(client: PoolClient, organizationId: string, limit = EXPIRE_BATCH): Promise<number> {
   const { rowCount } = await client.query(
     `UPDATE pipeline_events
         SET ${MARK_EXPIRED_SQL}
       WHERE organization_id = $1 AND id IN (
               SELECT id FROM pipeline_events
                WHERE organization_id = $1 AND ${DEPLOY_CANDIDATE_EVENTS_SQL}
-                 AND processing_status = 'pending' AND processing_reason IS NULL AND processed_at IS NULL AND held_at IS NOT NULL
+                 AND processing_status = 'pending' AND processing_reason IS NULL AND processed_at IS NULL
                  AND NOT (${heldWindowSql('$2')})
                ORDER BY received_at, id
                LIMIT $3

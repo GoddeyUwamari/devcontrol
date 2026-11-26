@@ -11,6 +11,8 @@ jest.mock('node-cron', () => ({ __esModule: true, default: { schedule: mockSched
 import fs from 'fs';
 import path from 'path';
 import { CLEANUP_CRON, EVENTS_JOB_TIMEZONE, GitHubAppEventsJob, RETRY_CRON, rotateAfter } from '../github-app-events.job';
+import { failureReason } from '../../services/github-app/process';
+import { CONNECTION_LOSS_MESSAGES, CONNECTION_LOST_REASON, isTransientFailure, TRANSIENT_FAILURE_REASONS } from '../../services/github-app/failure-class';
 
 const actualCron = jest.requireActual('node-cron');
 const realCron = actualCron.default ?? actualCron;
@@ -48,6 +50,59 @@ describe('GitHubAppEventsJob schedule (ruling 9)', () => {
     expect(rotateAfter(['a', 'b', 'c'], 'a')).toEqual(['b', 'c', 'a']);
     expect(rotateAfter(['a', 'b', 'c'], 'c')).toEqual(['a', 'b', 'c']);
     expect(rotateAfter(['a', 'c'], 'b')).toEqual(['c', 'a']);
+  });
+});
+
+describe('failure classification (ruling 4; Addendum 2 ruling 2: connection loss is transient)', () => {
+  const coded = (code: string, message = 'x') => Object.assign(new Error(message), { code });
+
+  type Row = [label: string, error: Error, reason: string];
+  const transientRows: Row[] = [
+    ['socket reset', coded('ECONNRESET', 'read ECONNRESET'), CONNECTION_LOST_REASON],
+    ['connection refused', coded('ECONNREFUSED', 'connect ECONNREFUSED 127.0.0.1:5432'), CONNECTION_LOST_REASON],
+    ['node-pg: terminated unexpectedly', new Error('Connection terminated unexpectedly'), CONNECTION_LOST_REASON],
+    ['node-pg: terminated during end', new Error('Connection terminated'), CONNECTION_LOST_REASON],
+    ['node-pg: not queryable after a connection error', new Error('Client has encountered a connection error and is not queryable'), CONNECTION_LOST_REASON],
+    ...['08000', '08003', '08006', '08001', '08004', '08007', '08P01'].map((c): Row => [`class 08 ${c}`, coded(c), `db_${c.toLowerCase()}`]),
+    ...['57P01', '57P02', '57P03'].map((c): Row => [`shutdown ${c}`, coded(c), `db_${c.toLowerCase()}`]),
+    ...['40001', '40P01', '55P03', '57014', '53300'].map((c): Row => [`ruling 4 ${c}`, coded(c), `db_${c.toLowerCase()}`]),
+  ];
+
+  it.each(transientRows)('transient: %s', (_label, error, reason) => {
+    expect(failureReason(error)).toBe(reason);
+    expect(isTransientFailure(failureReason(error))).toBe(true);
+  });
+
+  const permanentRows: Array<[label: string, error: unknown]> = [
+    ['pool connect timeout', new Error('timeout exceeded when trying to connect')],
+    ['pool connection timeout', new Error('Connection terminated due to connection timeout')],
+    ['our own end', new Error('Client was closed and is not queryable')],
+    ['query read timeout', new Error('Query read timeout')],
+    ['EPIPE', coded('EPIPE')],
+    ['ETIMEDOUT', coded('ETIMEDOUT')],
+    ['a coded error with a connection-loss message', coded('ENOTFOUND', 'Connection terminated unexpectedly')],
+    ['a programming error', new TypeError('Cannot read properties of undefined')],
+    ['a thrown string', 'Connection terminated unexpectedly'],
+    ['a plain object', { message: 'Connection terminated unexpectedly' }],
+    ['unique violation', coded('23505')],
+    ['foreign key', coded('23503')],
+    ['internal', coded('XX000')],
+  ];
+
+  it.each(permanentRows)('permanent: %s', (_label, error) => {
+    expect(isTransientFailure(failureReason(error))).toBe(false);
+  });
+
+  it('the transient list is exactly the rulings\' codes', () => {
+    expect([...TRANSIENT_FAILURE_REASONS].sort()).toEqual([
+      'connection_lost', 'db_08000', 'db_08001', 'db_08003', 'db_08004', 'db_08006', 'db_08007', 'db_08p01',
+      'db_40001', 'db_40p01', 'db_53300', 'db_55p03', 'db_57014', 'db_57p01', 'db_57p02', 'db_57p03',
+    ]);
+  });
+
+  it('the connection-loss messages are the installed node-pg\'s own (an upgrade that rewords them fails here)', () => {
+    const client = fs.readFileSync(require.resolve('pg/lib/client.js'), 'utf8');
+    for (const message of CONNECTION_LOSS_MESSAGES) expect(client).toContain(`'${message}'`);
   });
 });
 

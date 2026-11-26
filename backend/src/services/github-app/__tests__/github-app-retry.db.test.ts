@@ -29,7 +29,7 @@ import { TRANSIENT_FAILURE_REASONS } from '../failure-class';
 import {
   expireClaimHolds,
   expireStaleClaimHolds,
-  expireStaleReleasedEvents,
+  expireStaleUnprocessedEvents,
   findReplayableEvents,
   findRetryableEvents,
   findUnprocessedEvents,
@@ -221,13 +221,21 @@ describe('the shared 168-hour window: before, at and after the boundary on every
     }
   });
 
-  it('the scheduled expiry of released events: the same boundary', async () => {
-    const c = await connected(orgA);
-    await frozen(orgA, async (client) => {
-      for (const age of Object.values(AGE)) await store(client, orgA, c, { age, released: true });
-      expect(await expireStaleReleasedEvents(client, orgA)).toBe(1);
+  it.each([['released by a claim', true], ['stored live (Addendum 2 ruling 3)', false]])(
+    'the scheduled expiry of never-processed events %s: the same boundary', async (_label, released) => {
+      const c = await connected(orgA);
+      await frozen(orgA, async (client) => {
+        const ids = Object.fromEntries(await Promise.all(Object.entries(AGE).map(async ([k, age]) =>
+          [k, await store(client, orgA, c, { age, released })])));
+        expect(await expireStaleUnprocessedEvents(client, orgA)).toBe(1);
+        const status = async (id: string) => (await client.query(
+          'SELECT processing_status AS s, processing_reason AS r, processed_at IS NULL AS unprocessed FROM pipeline_events WHERE organization_id = $1 AND id = $2',
+          [orgA, id])).rows[0];
+        expect(await status(ids.outside)).toEqual({ s: 'ignored', r: 'hold_expired', unprocessed: false });
+        expect(await status(ids.exactly)).toEqual({ s: 'pending', r: null, unprocessed: true });
+        expect(await status(ids.inside)).toEqual({ s: 'pending', r: null, unprocessed: true });
+      });
     });
-  });
 
   it('measures received_at, not occurred_at, held_at or processed_at', async () => {
     const c = await connected(orgA);
@@ -392,17 +400,52 @@ describe('retry outcomes on committed rows', () => {
       },
     };
     const [event] = await withOrgClient(fx.app, orgA, (client) => findUnprocessedEvents(client, orgA, c.inst));
-    expect(await processStoredEvent(losingCommit, orgA, event)).toEqual({ status: 'failed', reason: 'processing_error' });
-    expect(await rowOf(id)).toMatchObject({ status: 'failed', reason: 'processing_error', deployment_id: expect.any(String) });
+    expect(await processStoredEvent(losingCommit, orgA, event)).toEqual({ status: 'failed', reason: 'connection_lost' });
+    expect(await rowOf(id)).toMatchObject({ status: 'failed', reason: 'connection_lost', deployment_id: expect.any(String) });
     expect(await deploymentCount(orgA, c.serviceId)).toBe(1);
 
-    // processing_error is permanent, but the link proves the commit: picked after its backoff, whatever its attempt count.
+    // The link proves the commit: picked after its backoff whatever its code (a permanent one too) and attempt count.
+    await fx.admin.query("UPDATE pipeline_events SET processing_reason = 'processing_error' WHERE id = $1", [id]);
     await fx.admin.query("UPDATE pipeline_events SET processed_at = NOW() - interval '8 hours 1 minute', processing_attempts = 9 WHERE id = $1", [id]);
     expect(await retry(orgA)).toMatchObject({ considered: 1, settled: 1, recorded: 0 });
     expect(await rowOf(id)).toMatchObject({ status: 'processed', reason: 'already_recorded' });
     expect(await deploymentCount(orgA, c.serviceId)).toBe(1);
     expect((await fx.admin.query(`SELECT count(*)::int AS n FROM deployments WHERE organization_id = $1 AND metadata ->> 'github_job_id' = $2`,
       [orgA, String(jobId)])).rows[0].n).toBe(1);
+  });
+
+  it.each([
+    ['node-pg: Connection terminated unexpectedly', () => new Error('Connection terminated unexpectedly')],
+    ['socket: ECONNRESET', () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })],
+    ['Postgres class 08: 08006', () => Object.assign(new Error('connection failure'), { code: '08006' })],
+  ])('Addendum 2 ruling 2: a dropped connection before commit (%s) is transient; after its backoff the retry records it, once', async (_label, dropped) => {
+    const c = await connected(orgA);
+    const id = await store(fx.admin, orgA, c, { age: '20 minutes' });
+    // The connection drops on the deployment insert: nothing of the transaction commits.
+    const dropping: ConnectionSource = {
+      connect: async () => {
+        const real = await fx.app.connect();
+        return {
+          query: async (...args: unknown[]) => {
+            if (typeof args[0] === 'string' && args[0].includes('INSERT INTO deployments')) throw dropped();
+            return (real.query as (...a: unknown[]) => unknown)(...args);
+          },
+          release: (e?: Error | boolean) => real.release(e),
+        } as unknown as PoolClient;
+      },
+    };
+    const [event] = await withOrgClient(fx.app, orgA, (client) => findUnprocessedEvents(client, orgA, c.inst));
+    const outcome = await processStoredEvent(dropping, orgA, event);
+    expect(outcome.status).toBe('failed');
+    expect(TRANSIENT_FAILURE_REASONS).toContain(outcome.reason);
+    expect(await rowOf(id)).toMatchObject({ status: 'failed', attempts: 1, deployment_id: null });
+    expect(await deploymentCount(orgA, c.serviceId)).toBe(0);
+    // Not before its 1-hour backoff; then recorded on a working connection.
+    expect((await retry(orgA)).considered).toBe(0);
+    await fx.admin.query("UPDATE pipeline_events SET processed_at = NOW() - interval '61 minutes' WHERE id = $1", [id]);
+    expect(await retry(orgA)).toMatchObject({ considered: 1, recorded: 1 });
+    expect(await rowOf(id)).toMatchObject({ status: 'processed', reason: null, attempts: 2, deployment_id: expect.any(String) });
+    expect(await deploymentCount(orgA, c.serviceId)).toBe(1);
   });
 
   it('stored but never processed (a crash), then redelivered by GitHub: the redelivery is a duplicate; the retry records it once', async () => {
@@ -553,7 +596,7 @@ describe('the row lock and re-check (ruling 4)', () => {
 });
 
 describe('the scheduled expiry (S2, rulings 1 and 6): marks, never deletes', () => {
-  it('a workspace that never reconnects: holds past the window expire; younger holds, recorded and other final statuses are untouched', async () => {
+  it('a workspace that never reconnects: holds and never-processed events (released or live) past the window expire; younger ones, non-candidates and final statuses are untouched', async () => {
     const org = await fx.org();
     const c = await connected(org, { claimed: false });
     const ids = {
@@ -563,24 +606,26 @@ describe('the scheduled expiry (S2, rulings 1 and 6): marks, never deletes', () 
       oldReleased: await store(fx.admin, org, c, { age: '8 days', released: true }),
       oldReleasedPr: await store(fx.admin, org, c, { kind: 'pull_request', age: '8 days', released: true }),
       oldLive: await store(fx.admin, org, c, { age: '8 days' }),
+      youngLive: await store(fx.admin, org, c, { age: '6 days' }),
+      oldLivePr: await store(fx.admin, org, c, { kind: 'pull_request', age: '8 days' }),
       oldProcessed: await store(fx.admin, org, c, { status: 'processed', age: '8 days', processedAge: '8 days', released: true }),
       oldUnmapped: await store(fx.admin, org, c, { status: 'unmapped', reason: 'repository_not_mapped', age: '8 days', processedAge: '8 days' }),
       oldFailed: await store(fx.admin, org, c, { status: 'failed', reason: 'db_40p01', attempts: 5, age: '8 days', processedAge: '7 days' }),
       oldOverLimit: await store(fx.admin, org, c, { status: 'over_limit', reason: 'monthly_deployment_limit', age: '8 days', processedAge: '8 days' }),
     };
-    const untouched = ['youngHold', 'oldReleasedPr', 'oldLive', 'oldProcessed', 'oldUnmapped', 'oldFailed', 'oldOverLimit'] as const;
+    const untouched = ['youngHold', 'oldReleasedPr', 'youngLive', 'oldLivePr', 'oldProcessed', 'oldUnmapped', 'oldFailed', 'oldOverLimit'] as const;
     const before = Object.fromEntries(await Promise.all(untouched.map(async (k) => [k, await wholeRow(ids[k])])));
     const rows = await eventCount(org);
 
-    expect(await expireOrganization(fx.app, org)).toEqual({ claimHolds: 2, released: 1 });
-    for (const k of ['oldHold', 'oldHoldPr', 'oldReleased'] as const) {
+    expect(await expireOrganization(fx.app, org)).toEqual({ claimHolds: 2, unprocessed: 2 });
+    for (const k of ['oldHold', 'oldHoldPr', 'oldReleased', 'oldLive'] as const) {
       expect(await rowOf(ids[k])).toMatchObject({ status: 'ignored', reason: 'hold_expired', unprocessed: false, deployment_id: null });
     }
     for (const k of untouched) expect(await wholeRow(ids[k])).toBe(before[k]);
     expect(await eventCount(org)).toBe(rows);
     expect(await deploymentCount(org)).toBe(0);
     // A second run finds nothing more.
-    expect(await expireOrganization(fx.app, org)).toEqual({ claimHolds: 0, released: 0 });
+    expect(await expireOrganization(fx.app, org)).toEqual({ claimHolds: 0, unprocessed: 0 });
 
     // Reconnecting after expiry records nothing expired: neither the claim pick-up nor the retry takes it.
     await fx.claim(org, c.inst);
@@ -589,13 +634,14 @@ describe('the scheduled expiry (S2, rulings 1 and 6): marks, never deletes', () 
     const retried = (await withOrgClient(fx.app, org, (client) => findRetryableEvents(client, org, 50))).map((e) => e.id);
     expect(retried).not.toContain(ids.oldHold);
     expect(retried).not.toContain(ids.oldReleased);
+    expect(retried).not.toContain(ids.oldLive);
   });
 
   it('works in bounded batches: with a batch of 2, 3 holds are all marked (two statements)', async () => {
     const org = await fx.org();
     const c = await connected(org, { claimed: false });
     for (let i = 0; i < 3; i += 1) await store(fx.admin, org, c, { reason: NOT_CLAIMED_REASON, attempts: 1, age: '9 days' });
-    expect(await expireOrganization(fx.app, org, 2)).toEqual({ claimHolds: 3, released: 0 });
+    expect(await expireOrganization(fx.app, org, 2)).toEqual({ claimHolds: 3, unprocessed: 0 });
   });
 });
 
@@ -633,7 +679,7 @@ describe('the job (ruling 2: flag; ruling 9: concurrency and interruption)', () 
     const id = await store(fx.admin, org, c, { reason: NOT_CLAIMED_REASON, attempts: 1, age: '8 days' });
     const job = new GitHubAppEventsJob({ source: fx.app, readConfig: disabled, listOrganizations: async () => [org], log: quiet });
     const result = await job.runCleanup();
-    expect(result).toMatchObject({ ran: true, summary: { claimHolds: 1, released: 0, organizations: 1, errors: 0 } });
+    expect(result).toMatchObject({ ran: true, summary: { claimHolds: 1, unprocessed: 0, organizations: 1, errors: 0 } });
     expect(await rowOf(id)).toMatchObject({ status: 'ignored', reason: 'hold_expired' });
     expect(await deploymentCount(org)).toBe(0);
   });

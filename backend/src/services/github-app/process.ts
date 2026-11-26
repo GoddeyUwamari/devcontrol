@@ -14,7 +14,7 @@ import { ConnectionSource, withOrgClient, withOrgTransaction } from './db';
 import { permissionsStateOf } from './permissions';
 import { detectDeployment } from './detect';
 import { recordDeployment } from './record';
-import { isTransientFailure } from './failure-class';
+import { CONNECTION_LOST_REASON, isConnectionLoss, isTransientFailure } from './failure-class';
 
 interface ProcessingOutcome {
   status: ProcessingStatus;
@@ -101,10 +101,16 @@ export function isLegacyWebhookOrganization(organizationId: string): boolean {
   return legacy !== '' && legacy === organizationId.toLowerCase();
 }
 
-/** Postgres SQLSTATE as a reason code, or a generic code. Never an error message. */
+/**
+ * Postgres SQLSTATE as a reason code, connection_lost for a connection the
+ * driver lost (failure-class.ts isConnectionLoss), or a generic code. Never
+ * an error message.
+ */
 export function failureReason(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? `db_${code.toLowerCase()}` : 'processing_error';
+  if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return `db_${code.toLowerCase()}`;
+  if (isConnectionLoss(error)) return CONNECTION_LOST_REASON;
+  return 'processing_error';
 }
 
 /**
