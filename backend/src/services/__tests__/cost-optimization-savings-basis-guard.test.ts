@@ -116,6 +116,24 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
     });
     return (await service.detectIdleNatGateways({ ec2, cloudWatch: cw }, 'us-east-1')).issues;
   },
+  rds_idle: async () => {
+    // C1b: an available PostgreSQL db.t3.medium (Single-AZ, us-east-1a, not on an Outpost) created long before
+    // the window, with no connections and low CPU/IOPS in every hour of the 30-day window.
+    const DAY = 24 * 60 * 60 * 1000;
+    const rds = fakeClient(() => ({ DBInstances: [{
+      DBInstanceIdentifier: 'placeholder-db-guard', DBInstanceStatus: 'available', Engine: 'postgres', LicenseModel: 'postgresql-license',
+      DBInstanceClass: 'db.t3.medium', MultiAZ: false, AvailabilityZone: 'us-east-1a', InstanceCreateTime: new Date(Date.now() - 90 * DAY),
+      DBSubnetGroup: { DBSubnetGroupName: 'placeholder', Subnets: [{ SubnetIdentifier: 'subnet-placeholder', SubnetOutpost: {} }] },
+    }] }));
+    const cw = fakeClient((command: any) => {
+      const start = (command.input.StartTime as Date).getTime();
+      const end = (command.input.EndTime as Date).getTime();
+      const Timestamps: Date[] = [];
+      for (let t = start; t < end; t += 60 * 60 * 1000) Timestamps.push(new Date(t));
+      return { MetricDataResults: (command.input.MetricDataQueries as any[]).map((q) => ({ Id: q.Id, Timestamps, Values: Timestamps.map(() => (q.MetricStat.Metric.MetricName === 'DatabaseConnections' ? 0 : 1)), StatusCode: 'Complete' })) };
+    });
+    return (await service.detectIdleRDSInstances({ rds, cloudWatch: cw }, 'us-east-1')).issues;
+  },
 };
 
 // Implemented rules not driven above. Each names the test file (in this
@@ -123,12 +141,6 @@ const DRIVEN: Record<string, () => Promise<Issue[]>> = {
 // basis -- the coverage test below fails if the file is missing, does not call
 // the detector, or no longer contains the assertion.
 const COVERED_ELSEWHERE: Record<string, { file: string; detector: string; assertion: RegExp; why: string }> = {
-  rds_idle: {
-    file: 'cost-optimization-rds-idle.test.ts',
-    detector: 'detectIdleRDSInstances',
-    assertion: /potentialSavings: 0,[^]*expect\(m\.savings_basis\)\.toBeUndefined\(\)/,
-    why: 'carries no dollar figure at all (no RDS price source)',
-  },
   ec2_reserved_instances: {
     file: 'estimated-savings.test.ts',
     detector: 'detectReservedInstanceOpportunities',
@@ -175,6 +187,12 @@ describe('savings basis guard: behavioural', () => {
     const [issue] = await DRIVEN.nat_gateway_idle();
     expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('estimate');
     expect(issue.potentialSavings).toBe(32.85);
+  });
+
+  it('rds_idle states its figure as an estimate (regional instance-hour list price), never a ceiling', async () => {
+    const [issue] = await DRIVEN.rds_idle();
+    expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('estimate');
+    expect(issue.potentialSavings).toBe(52.56);
   });
 
   it('s3_lifecycle states its figure as a ceiling, never an estimate', async () => {

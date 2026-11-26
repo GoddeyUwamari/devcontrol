@@ -19,6 +19,7 @@
  */
 import type { DBInstance } from '@aws-sdk/client-rds';
 import { RDS_IDLE_RULE } from '../config/rds-idle-rule';
+import { RDS_INSTANCE_HOURLY_PRICE_SOURCE, rdsInstanceHourlyPrice, rdsPricedEngineLicence, rdsPricedRegion } from '../config/aws-pricing';
 import type { BatchSeriesResult, QueryOutcome } from './cloudwatch-metric-batch.util';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -112,12 +113,25 @@ export interface RdsWorstDays {
 
 export type RdsNotIdleReason = 'connections' | 'cpu_peak' | 'read_iops' | 'write_iops';
 export type RdsCouldntCheckReason = 'not_available' | 'too_new' | 'cloudwatch_failed' | 'cloudwatch_incomplete';
+/** Why a flagged instance has no dollar figure (rdsIdleSavings); also its finding's metadata.savings_note. */
+export type RdsNoPriceReason =
+  | 'missing_engine_or_class'
+  | 'missing_license_model'
+  | 'missing_deployment'
+  | 'unknown_placement'
+  | 'outposts'
+  | 'local_zone'
+  | 'unsupported_engine_or_license'
+  | 'no_price_for_region'
+  | 'no_price_for_configuration';
 
 /**
  * What one run of the rule decided, by reason (Stage A §6), stored on the run's
  * check as `rds_idle`. Counts only, never instance identifiers. Every listed DB
  * instance is counted exactly once: evaluated = flagged + not_flagged +
- * couldnt_check + excluded (each summed over its reasons).
+ * couldnt_check + excluded (each summed over its reasons). Every flagged
+ * instance is counted once more by its figure (C1b): flagged = priced +
+ * no_price (summed over its reasons).
  */
 export interface RdsIdleCheckCounts {
   evaluated: number;
@@ -125,6 +139,10 @@ export interface RdsIdleCheckCounts {
   not_flagged: Record<RdsNotIdleReason, number>;
   couldnt_check: Record<RdsCouldntCheckReason, number>;
   excluded: Record<RdsExclusionReason, number>;
+  /** Flagged instances with an exact instance-hour price. */
+  priced: number;
+  /** Flagged instances with no dollar figure, by reason. */
+  no_price: Record<RdsNoPriceReason, number>;
 }
 
 export function emptyRdsIdleCounts(): RdsIdleCheckCounts {
@@ -134,6 +152,18 @@ export function emptyRdsIdleCounts(): RdsIdleCheckCounts {
     not_flagged: { connections: 0, cpu_peak: 0, read_iops: 0, write_iops: 0 },
     couldnt_check: { not_available: 0, too_new: 0, cloudwatch_failed: 0, cloudwatch_incomplete: 0 },
     excluded: { aurora: 0, db_cluster_member: 0, read_replica: 0, read_replica_source: 0, rds_custom: 0, stopped: 0 },
+    priced: 0,
+    no_price: {
+      missing_engine_or_class: 0,
+      missing_license_model: 0,
+      missing_deployment: 0,
+      unknown_placement: 0,
+      outposts: 0,
+      local_zone: 0,
+      unsupported_engine_or_license: 0,
+      no_price_for_region: 0,
+      no_price_for_configuration: 0,
+    },
   };
 }
 
@@ -244,6 +274,128 @@ export function judgeRdsIdleMetrics(readings: RdsMetricReadings, createTime: Dat
   };
 }
 
+// ─── Savings (C1b) ───────────────────────────────────────────────────────────
+
+/**
+ * Where the instance runs, from DescribeDBInstances alone: on an Outpost (any
+ * subnet of its DB subnet group on an Outpost), and its Availability Zones.
+ * `on_outposts` is null when the response carries no subnets to tell.
+ */
+export interface RdsPlacement {
+  on_outposts: boolean | null;
+  availability_zone: string | null;
+  secondary_availability_zone: string | null;
+}
+
+export function rdsPlacement(db: DBInstance): RdsPlacement {
+  const subnets = db.DBSubnetGroup?.Subnets;
+  return {
+    on_outposts: Array.isArray(subnets) && subnets.length > 0 ? subnets.some((subnet) => !!subnet.SubnetOutpost?.Arn) : null,
+    availability_zone: typeof db.AvailabilityZone === 'string' && db.AvailabilityZone ? db.AvailabilityZone : null,
+    secondary_availability_zone: typeof db.SecondaryAvailabilityZone === 'string' && db.SecondaryAvailabilityZone ? db.SecondaryAvailabilityZone : null,
+  };
+}
+
+/** A zone of the region itself ("us-east-1a"), not a Local Zone ("us-west-2-lax-1a") or a Wavelength Zone. */
+function isRegionalZone(zone: string, region: string): boolean {
+  return zone.length === region.length + 1 && zone.startsWith(region) && /^[a-z]$/.test(zone.slice(region.length));
+}
+
+/** How the engine and licence model read in the finding's explanation (the approved C1b labels). */
+const ENGINE_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  'mysql|general-public-license': 'MySQL',
+  'mariadb|general-public-license': 'MariaDB',
+  'postgres|postgresql-license': 'PostgreSQL',
+  'oracle-ee|bring-your-own-license': 'Oracle EE, BYOL',
+  'oracle-se2|bring-your-own-license': 'Oracle SE2, BYOL',
+  'oracle-se2|license-included': 'Oracle SE2, licence included',
+  'sqlserver-ee|license-included': 'SQL Server EE, licence included',
+  'sqlserver-se|license-included': 'SQL Server SE, licence included',
+  'sqlserver-web|license-included': 'SQL Server Web, licence included',
+  'sqlserver-ex|license-included': 'SQL Server Express, licence included',
+  'db2-se|bring-your-own-license': 'Db2 SE, BYOL',
+  'db2-ae|bring-your-own-license': 'Db2 AE, BYOL',
+});
+
+export type RdsDeployment = 'Single-AZ' | 'Multi-AZ';
+
+export type RdsIdleSavings =
+  | {
+      kind: 'estimate';
+      monthly: number;
+      pricePerHour: number;
+      engine: string;
+      licenseModel: string;
+      instanceClass: string;
+      deployment: RdsDeployment;
+      engineLabel: string;
+    }
+  | { kind: 'none'; note: RdsNoPriceReason };
+
+/**
+ * The instance's monthly instance-hour estimate: the exact on-demand price for
+ * its region, engine, licence model, class and deployment x 730 hours, rounded
+ * to cents -- or no figure, with the reason. Nothing is inferred: a missing
+ * licence model or deployment, an Outposts or Local Zone placement (or one the
+ * response can't show), an engine/licence pair the table doesn't price, or a key
+ * the table doesn't have gives no figure. Never another key's price.
+ */
+export function rdsIdleSavings(db: DBInstance, region: string): RdsIdleSavings {
+  const engine = typeof db.Engine === 'string' ? db.Engine : '';
+  const instanceClass = typeof db.DBInstanceClass === 'string' ? db.DBInstanceClass : '';
+  const licenseModel = typeof db.LicenseModel === 'string' ? db.LicenseModel : '';
+  if (!engine || !instanceClass) return { kind: 'none', note: 'missing_engine_or_class' };
+  if (!licenseModel) return { kind: 'none', note: 'missing_license_model' };
+  if (typeof db.MultiAZ !== 'boolean') return { kind: 'none', note: 'missing_deployment' };
+
+  const placement = rdsPlacement(db);
+  if (placement.on_outposts === true) return { kind: 'none', note: 'outposts' };
+  if (placement.on_outposts === null || placement.availability_zone === null) return { kind: 'none', note: 'unknown_placement' };
+  if (!isRegionalZone(placement.availability_zone, region)) return { kind: 'none', note: 'local_zone' };
+  if (placement.secondary_availability_zone !== null && !isRegionalZone(placement.secondary_availability_zone, region)) return { kind: 'none', note: 'local_zone' };
+
+  if (!rdsPricedEngineLicence(engine, licenseModel)) return { kind: 'none', note: 'unsupported_engine_or_license' };
+  if (!rdsPricedRegion(region)) return { kind: 'none', note: 'no_price_for_region' };
+  const pricePerHour = rdsInstanceHourlyPrice({ region, engine, licenseModel, instanceClass, multiAz: db.MultiAZ });
+  if (pricePerHour === null) return { kind: 'none', note: 'no_price_for_configuration' };
+  const engineLabel = ENGINE_LABELS[`${engine}|${licenseModel}`];
+  if (!engineLabel) return { kind: 'none', note: 'unsupported_engine_or_license' };
+  return {
+    kind: 'estimate',
+    monthly: Math.round(pricePerHour * RDS_IDLE_RULE.savings.hours_per_month * 100) / 100,
+    pricePerHour,
+    engine,
+    licenseModel,
+    instanceClass,
+    deployment: db.MultiAZ ? 'Multi-AZ' : 'Single-AZ',
+    engineLabel,
+  };
+}
+
+/** metadata.savings_basis of an estimate: what the figure is, and what it leaves out. */
+export function rdsIdleSavingsBasis(region: string, savings: Extract<RdsIdleSavings, { kind: 'estimate' }>): string {
+  const hours = RDS_IDLE_RULE.savings.hours_per_month;
+  return `estimated: the ${region} on-demand list price for ${savings.instanceClass} ${savings.engineLabel} ${savings.deployment} instance hours ($${savings.pricePerHour}/hour, ${hours} hours); storage, Provisioned IOPS, backups and snapshots are not included and are still billed while the instance is stopped; no reservation or discount applied; not billed cost`;
+}
+
+/** The rest of an estimate's savings metadata (the basis is set by the detector): the exact price key and where the price came from. */
+export function rdsIdleSavingsMetadata(region: string, resourceId: string, savings: Extract<RdsIdleSavings, { kind: 'estimate' }>): Record<string, unknown> {
+  return {
+    savings_claim: { kind: 'full_resource_cost', resource_ids: [resourceId] },
+    price_per_hour: savings.pricePerHour,
+    hours_per_month: RDS_IDLE_RULE.savings.hours_per_month,
+    price_region: region,
+    price_engine: savings.engine,
+    price_license_model: savings.licenseModel,
+    price_instance_class: savings.instanceClass,
+    price_deployment: savings.deployment,
+    price_engine_label: savings.engineLabel,
+    price_source: RDS_INSTANCE_HOURLY_PRICE_SOURCE.url,
+    price_version: RDS_INSTANCE_HOURLY_PRICE_SOURCE.version,
+    price_published: RDS_INSTANCE_HOURLY_PRICE_SOURCE.published,
+  };
+}
+
 // ─── Evidence, description ──────────────────────────────────────────────────
 
 function ruleSnapshot(): Record<string, unknown> {
@@ -281,6 +433,9 @@ export function rdsIdleFindingMetadata(input: {
     multi_az: typeof db.MultiAZ === 'boolean' ? db.MultiAZ : null,
     allocated_storage_gb: typeof db.AllocatedStorage === 'number' ? db.AllocatedStorage : null,
     storage_type: db.StorageType ?? null,
+    // C1b: what the price key and placement checks read, as DescribeDBInstances returned them.
+    license_model: db.LicenseModel ?? null,
+    ...rdsPlacement(db),
   };
 }
 

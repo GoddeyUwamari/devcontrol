@@ -199,7 +199,7 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
     id: 'rds_idle',
     service: 'RDS',
     name: 'Idle RDS instances',
-    detail: 'No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; no dollar estimate',
+    detail: "No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; savings are instance hours at the region's list price, not storage or backups",
     status: 'implemented',
     issue: ISSUE_RDS_IDLE_INSTANCE,
   },

@@ -56,6 +56,9 @@ import {
   judgeRdsIdleScope,
   rdsIdleDescription,
   rdsIdleFindingMetadata,
+  rdsIdleSavings,
+  rdsIdleSavingsBasis,
+  rdsIdleSavingsMetadata,
   rdsIdleWindow,
   type RdsMetric,
   type RdsMetricReading,
@@ -699,9 +702,13 @@ class CostOptimizationService {
    * low-activity EC2 rule, an earlier finding for them is removed
    * (endActiveForUnknown) so no finding outlives its evidence.
    *
-   * No dollar figure: DevControl has no defensible RDS price source, so the
-   * finding is stored at 0 with no savings_basis ("No dollar estimate") and a
-   * fixed Low severity (the Reserved Instance precedent).
+   * Savings (C1b): an estimate of instance hours only (savings_basis
+   * 'estimated:'), the exact on-demand price for the instance's region, engine,
+   * licence model, class and deployment x 730 hours (rdsIdleSavings). Severity
+   * from the estimate, by calculateSeverity -- the idle NAT gateway rule's
+   * policy. No exact price: stored at 0 with no savings_basis ("No dollar
+   * estimate"), the reason in savings_note, and a fixed Low severity. The run's
+   * counts say how many flagged instances were priced, and why the rest weren't.
    */
   private async detectIdleRDSInstances(
     clients: Pick<AWSClients, 'rds' | 'cloudWatch'>,
@@ -781,6 +788,9 @@ class CostOptimizationService {
         return;
       }
       counts.flagged += 1;
+      const savings = rdsIdleSavings(db, region);
+      if (savings.kind === 'estimate') counts.priced += 1;
+      else counts.no_price[savings.note] += 1;
       const nameTag = db.TagList?.find((tag) => tag.Key === 'Name');
       issues.push({
         resourceId: db.DBInstanceIdentifier,
@@ -788,14 +798,16 @@ class CostOptimizationService {
         resourceType: 'RDS',
         issue: ISSUE_RDS_IDLE_INSTANCE,
         description: rdsIdleDescription(verdict.worst),
-        // No price source: no dollar figure (no savings_basis), fixed Low.
-        potentialSavings: 0,
-        severity: 'LOW',
+        // No exact price: no dollar figure (no savings_basis), fixed Low -- never $0 as a figure.
+        potentialSavings: savings.kind === 'estimate' ? savings.monthly : 0,
+        // The idle NAT gateway rule's severity policy (detectIdleNatGateways).
+        severity: savings.kind === 'estimate' ? this.calculateSeverity(savings.monthly) : 'LOW',
         awsRegion: region,
         metadata: {
           ...rdsIdleFindingMetadata({ db, window, evaluatedAt: now, createTime: db.InstanceCreateTime as Date, days: verdict.days, worst: verdict.worst }),
-          savings_note: 'no_price_source',
-          severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE,
+          ...(savings.kind === 'estimate'
+            ? { savings_basis: rdsIdleSavingsBasis(region, savings), ...rdsIdleSavingsMetadata(region, db.DBInstanceIdentifier, savings) }
+            : { savings_note: savings.note, severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE }),
         },
       });
     });

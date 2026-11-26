@@ -126,6 +126,18 @@ describe('/infrastructure Top Actions -- savings basis', () => {
     expect(ranked[1].compareDocumentPosition(ranked[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('C1b: a priced idle RDS action is a compact "save $X/mo" and counts toward Est. savings; no Cost Optimization explanation here', async () => {
+    mockServicesStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0 })
+    vi.mocked(costRecommendationsService.getAll).mockResolvedValue([
+      { ...rec('placeholder-db-1', 'Idle RDS Instance', 52.56, { rule_version: 2, savings_basis: 'estimated: the us-east-1 on-demand list price for db.t3.medium PostgreSQL Single-AZ instance hours ($0.072/hour, 730 hours); storage, Provisioned IOPS, backups and snapshots are not included and are still billed while the instance is stopped; no reservation or discount applied; not billed cost', price_region: 'us-east-1', price_instance_class: 'db.t3.medium', price_engine_label: 'PostgreSQL', price_deployment: 'Single-AZ' }), resourceType: 'RDS', severity: 'MEDIUM' },
+    ] as never)
+    renderPage()
+    const action = (await screen.findByText('Idle RDS Instance', { selector: 'p' })) as HTMLElement
+    expect(action).toHaveTextContent('Idle RDS Instance — save $53/mo')
+    await waitFor(() => expect(screen.getByText(/recoverable today/)).toHaveTextContent('$53/mo recoverable today'))
+    expect(document.body.textContent).not.toMatch(/Estimated from the|instance hours only|restarts a stopped database/)
+  })
+
   it('PR 4 S2: a default-price action reads "(price unknown)" and still counts as an estimate; a genuine $50 list price does not', async () => {
     mockServicesStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0 })
     vi.mocked(costRecommendationsService.getAll).mockResolvedValue([

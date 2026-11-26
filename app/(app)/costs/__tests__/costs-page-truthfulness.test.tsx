@@ -359,6 +359,18 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     expect(titles[1].compareDocumentPosition(titles[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('C1b: a priced idle RDS row is a compact "$X/mo" like any estimate -- the Cost Optimization explanation is not repeated here', async () => {
+    mockGetStats.mockResolvedValue(recStats(52.56, 1))
+    mockGetAll.mockResolvedValue([
+      { id: 'rds-1', resourceId: 'placeholder-db-1', resourceType: 'RDS', issue: 'Idle RDS Instance', potentialSavings: 52.56, severity: 'MEDIUM', status: 'ACTIVE', createdAt: '', updatedAt: '',
+        metadata: { rule_version: 2, savings_basis: 'estimated: the us-east-1 on-demand list price for db.t3.medium PostgreSQL Single-AZ instance hours ($0.072/hour, 730 hours); storage, Provisioned IOPS, backups and snapshots are not included and are still billed while the instance is stopped; no reservation or discount applied; not billed cost', price_region: 'us-east-1', price_instance_class: 'db.t3.medium', price_engine_label: 'PostgreSQL', price_deployment: 'Single-AZ' } },
+    ])
+    renderPage()
+    const row = (await screen.findByText('Idle RDS Instance')).parentElement as HTMLElement
+    expect(row).toHaveTextContent('$53/mo')
+    expect(document.body.textContent).not.toMatch(/Estimated from the|instance hours only|restarts a stopped database/)
+  })
+
   it('PR 4 S2: a default-price figure reads "(price unknown)"; a genuine $50 list price and a legacy row do not', async () => {
     const recommendation = (id: string, issue: string, metadata: Record<string, unknown>) => ({
       id, resourceId: id, resourceType: 'EC2', issue, potentialSavings: 50, severity: 'LOW', status: 'ACTIVE', metadata, createdAt: '', updatedAt: '',

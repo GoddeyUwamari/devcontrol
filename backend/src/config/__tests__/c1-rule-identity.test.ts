@@ -37,7 +37,48 @@ const PINNED_RDS: Record<number, unknown> = {
     },
     savings: { estimate: 'none', reason: 'no_price_source', severity: 'LOW' },
   },
+  // C1b: detection unchanged; savings = the exact regional on-demand instance-hour price x 730.
+  2: {
+    id: 'rds_idle',
+    version: 2,
+    window: { days: 30, basis: 'complete_utc_days', settle_lag_hours: 2 },
+    metrics: { namespace: 'AWS/RDS', dimension: 'DBInstanceIdentifier', stat: 'Maximum', period_seconds: 3600 },
+    connections: { metric: 'DatabaseConnections', hourly_max_equals: 0 },
+    cpu: { metric: 'CPUUtilization', daily_peak_below_percent: 10 },
+    read_iops: { metric: 'ReadIOPS', daily_peak_below_per_second: 20 },
+    write_iops: { metric: 'WriteIOPS', daily_peak_below_per_second: 20 },
+    completeness: {
+      hours_per_day_required: 24,
+      metrics_required: ['DatabaseConnections', 'CPUUtilization', 'ReadIOPS', 'WriteIOPS'],
+      created_before_window: true,
+    },
+    activity_wins: true,
+    scope: {
+      evaluated_status: 'available',
+      excluded: ['aurora', 'db_cluster_member', 'read_replica', 'read_replica_source', 'rds_custom', 'stopped'],
+    },
+    savings: {
+      basis: 'estimate',
+      price: 'regional_on_demand_instance_hour',
+      key: ['region', 'engine', 'license_model', 'instance_class', 'deployment'],
+      hours_per_month: 730,
+      includes: ['instance_hours'],
+      excludes: ['storage', 'provisioned_iops', 'storage_throughput', 'backup_storage', 'snapshots', 'extended_support', 'public_ipv4', 'reservations_and_discounts'],
+      not_priced: ['outposts', 'local_zone', 'oracle_cdb', 'sqlserver_developer', 'db2_marketplace', 'unknown_license_model', 'unknown_deployment'],
+      missing_price: 'no_estimate',
+      severity: 'from_estimate',
+      severity_without_price: 'LOW',
+    },
+  },
 };
+
+describe('RDS_IDLE_RULE v1 -> v2 (C1b)', () => {
+  it('changes only the savings contract: detection (window, metrics, thresholds, completeness, scope) is identical', () => {
+    const { version: _v1, savings: _s1, ...detection1 } = PINNED_RDS[1] as Record<string, unknown>;
+    const { version: _v2, savings: _s2, ...detection2 } = PINNED_RDS[2] as Record<string, unknown>;
+    expect(detection2).toEqual(detection1);
+  });
+});
 
 const PINNED_SNAPSHOT: Record<number, unknown> = {
   1: {
