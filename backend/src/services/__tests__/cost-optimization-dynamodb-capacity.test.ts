@@ -19,7 +19,7 @@ import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { ApplicationAutoScalingClient } from '@aws-sdk/client-application-auto-scaling';
 import costOptimizationService from '../cost-optimization.service';
 import { ISSUE_DYNAMODB_CAPACITY } from '../../config/optimization-rules';
-import { classifySavingsBasis } from '../estimated-savings';
+import { classifySavingsBasis, countSavingsFindings } from '../estimated-savings';
 import { estimateDynamoDBProvisionedMonthlyCost } from '../../config/aws-pricing';
 import * as dynamoTableUtil from '../dynamodb-table.util';
 import * as dynamoAutoscalingUtil from '../dynamodb-autoscaling.util';
@@ -504,6 +504,118 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
       const result = await (costOptimizationService as any).detectDynamoDBCapacityOptimization('org-1', makeAwsClients());
 
       expect(result.issues[0].issue).toBe(ISSUE_DYNAMODB_CAPACITY);
+    });
+  });
+
+  // F-1 (never-zero/f1-build.md): a modeled saving of exactly 0 prints no dollar figure in the
+  // description; the finding, its figure (0), basis, severity and counts are unchanged. Any other
+  // saving keeps the original text byte for byte.
+  describe('F-1: description when the modeled saving is exactly 0', () => {
+    /** `count` intervals: the first `busy` at `busyPerSecond`, the rest at `quietPerSecond`, all against `provisioned`. */
+    function mixedSeries(count: number, busy: number, busyPerSecond: number, quietPerSecond: number, provisioned: number) {
+      const series = uniformSeries(count, quietPerSecond, provisioned);
+      for (let i = 0; i < busy; i++) series.values[i] = busyPerSecond;
+      return series;
+    }
+
+    async function detectZeroSavingTable() {
+      mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
+      mockLiveDescribeTable({
+        billing_mode: 'PROVISIONED',
+        creation_date_time: isoDaysAgo(400),
+        provisioned_read_capacity: 500,
+        provisioned_write_capacity: 200,
+        table_class: 'STANDARD',
+      });
+      mockLiveAutoscaling('AUTOSCALING_DISABLED');
+      // Read: 90% of intervals at 2% utilization (qualifies), plus 100 busy intervals at 100%, so the
+      // highest hourly average equals the current 500 RCU and the scenario lowers nothing.
+      // Write: 90% utilization (does not qualify, keeps its current 200 WCU).
+      mockMetrics(mixedSeries(1000, 100, 500, 10, 500), uniformSeries(1000, 180, 200));
+      return (costOptimizationService as any).detectDynamoDBCapacityOptimization('org-1', makeAwsClients());
+    }
+
+    it('(a) saving 0: no dollar figure for the saving, and no "0.00" anywhere in the description', async () => {
+      const result = await detectZeroSavingTable();
+      expect(result.issues).toHaveLength(1);
+      const description: string = result.issues[0].description;
+      const savingsLine = description.split('\n').find((l) => l.startsWith('- Modeled monthly savings'));
+      expect(savingsLine).toBe(
+        '- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: ' +
+          'none, because matching that demand would not lower the modeled monthly cost'
+      );
+      expect(savingsLine).not.toContain('$');
+      expect(savingsLine).not.toContain('0.00');
+      expect(description).not.toContain('0.00');
+      expect(description).not.toMatch(/up to \$/);
+      // The one dollar amount left is the genuine current modeled cost, not a saving.
+      expect(description.match(/\$/g)).toHaveLength(1);
+      expect(description).toContain('- Current modeled monthly cost: $142.35/month');
+    });
+
+    it('(c) saving 0: the finding is still created, with the same figure, basis, severity and count', async () => {
+      const result = await detectZeroSavingTable();
+      expect(result.issues).toHaveLength(1);
+      const issue = result.issues[0];
+      expect(issue.issue).toBe(ISSUE_DYNAMODB_CAPACITY);
+      expect(issue.resourceType).toBe('DynamoDB');
+      expect(issue.potentialSavings).toBe(0);
+      expect(issue.severity).toBe('LOW');
+      expect(issue.metadata.read.qualifies).toBe(true);
+      expect(issue.metadata.write.qualifies).toBe(false);
+      expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('ceiling');
+      // Stored as NUMERIC(10,2) "0.00": counted exactly as before this fix (as a ceiling finding).
+      const counts = countSavingsFindings([
+        { resource_type: 'DynamoDB', potential_savings: '0.00', metadata: { savings_basis: issue.metadata.savings_basis } } as any,
+      ]);
+      expect(counts).toEqual({ estimatedFindings: 0, ceilingFindings: 1, unestimatedFindings: 0 });
+    });
+
+    describe('(b) any other saving keeps the original description byte for byte', () => {
+      const analysis = {
+        validUtilizationIntervals: 700,
+        totalIntervals: 720,
+        lowUtilizationPercentage: 97.4,
+        highestHourlyAverageUtilizationPercent: 31.2,
+        throttleValidIntervals: 700,
+        throttleConfirmedIntervals: 0,
+      };
+      const input = {
+        currentReadCapacity: 500,
+        currentWriteCapacity: 200,
+        readAnalysis: analysis,
+        writeAnalysis: { ...analysis, lowUtilizationPercentage: 12, highestHourlyAverageUtilizationPercent: 90 },
+        readQualifies: true,
+        writeQualifies: false,
+        billingMode: 'PROVISIONED',
+        autoscalingState: 'AUTOSCALING_DISABLED',
+        tableAgeDays: 400,
+        currentMonthlyCost: 142.35,
+      };
+      const build = (modeledMonthlySavings: number): string =>
+        (costOptimizationService as any).buildDynamoDBCapacityDescription({ ...input, modeledMonthlySavings });
+      const ZERO_PHRASE = 'none, because matching that demand would not lower the modeled monthly cost';
+
+      it('a positive saving: identical to the text before F-1 (captured at a8e46336)', () => {
+        expect(build(12.345)).toBe(
+          "DynamoDB capacity review identified\n\nRead capacity\n- Provisioned: 500 RCU\n- Valid intervals: 700/720\n- Intervals below 20% hourly-average utilization: 97%\n- Highest hourly-average utilization observed: 31%\n- Table-level provisioned-throughput read throttling: none observed\n- Qualifies for review: YES\n\nWrite capacity\n- Provisioned: 200 WCU\n- Valid intervals: 700/720\n- Intervals below 20% hourly-average utilization: 12%\n- Highest hourly-average utilization observed: 90%\n- Table-level provisioned-throughput write throttling: none observed\n- Qualifies for review: NO\n\nTable context\n- Billing mode: PROVISIONED\n- Autoscaling: AUTOSCALING_DISABLED\n- Global Secondary Indexes: none\n- Global Table replicas: none\n- Table age: 400 days\n- Capacity changes inside analysis window: none\n\nAnalysis\n- Window: 30 days\n- Period: 1 hour\n- Reference threshold: 20% hourly-average utilization -- AWS's own documented reference point for investigating possible over-provisioning, adopted by DevControl as its v1 investigation threshold. Not independently validated against DevControl's own customer base, and not an AWS-mandated rule.\n- DevControl qualification policy: >=85% of valid intervals below threshold, >=576/720 valid utilization sample required\n\nPotential cost scenario\n- Current modeled monthly cost: $142.35/month\n- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: up to $12.35/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)\n\nThis is an illustrative cost scenario, not a recommended capacity setting. Short-lived spikes narrower than one hour, workload growth, burst capacity, and other DynamoDB capacity considerations are not fully modeled. Table-level throttle metrics confirm no provisioned-throughput throttling at the table level; they do not by themselves rule out partition-level or account-level throttling."
+        );
+      });
+
+      it.each([
+        [0.0949, '0.09'],
+        [0.005, '0.01'],
+        [1234.5, '1234.50'],
+        // OPEN (f1-build.md, step 4): a positive sub-cent saving, e.g. float noise 2.22e-16 from
+        // max(0, current - scenario), still prints "$0.00". Pinned so it cannot change silently.
+        [2.220446049250313e-16, '0.00'],
+      ])('saving %p keeps "up to $%s/month (an upper bound ...)"', (saving, figure) => {
+        const oldPhrase = `up to $${figure}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)`;
+        const text = build(saving);
+        expect(text).toContain(`analysis window: ${oldPhrase}\n\n`);
+        // Outside the savings phrase, the text is the same as the zero case.
+        expect(text.split(oldPhrase)).toEqual(build(0).split(ZERO_PHRASE));
+      });
     });
   });
 

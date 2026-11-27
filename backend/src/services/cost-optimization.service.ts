@@ -2238,6 +2238,11 @@ class CostOptimizationService {
         analysis.throttleValidIntervals > 0 ? (analysis.throttleConfirmedIntervals > 0 ? 'observed' : 'none observed') : 'insufficient evidence'
       }\n` +
       `- Qualifies for review: ${qualifies ? 'YES' : 'NO'}`;
+    // F-1 (never-zero): a modeled saving of exactly 0 gets no dollar figure. Any other value keeps the original text.
+    const modeledSavingsText =
+      input.modeledMonthlySavings === 0
+        ? `none, because matching that demand would not lower the modeled monthly cost`
+        : `up to $${input.modeledMonthlySavings.toFixed(2)}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)`;
 
     return (
       `DynamoDB capacity review identified\n\n` +
@@ -2261,7 +2266,7 @@ class CostOptimizationService {
       `Potential cost scenario\n` +
       `- Current modeled monthly cost: $${input.currentMonthlyCost.toFixed(2)}/month\n` +
       `- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: ` +
-      `up to $${input.modeledMonthlySavings.toFixed(2)}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)\n\n` +
+      `${modeledSavingsText}\n\n` +
       `This is an illustrative cost scenario, not a recommended capacity setting. Short-lived spikes narrower than one hour, workload ` +
       `growth, burst capacity, and other DynamoDB capacity considerations are not fully modeled. Table-level throttle metrics confirm no ` +
       `provisioned-throughput throttling at the table level; they do not by themselves rule out partition-level or account-level throttling.`

@@ -90,7 +90,7 @@ export const ALLOWLIST: Record<string, Entry[]> = {
     ['money(recsWithItems.totalEstimatedMonthlySavings)', 'Reached only when recsPriced (total above $0, a sum of cent-rounded figures): BE-5 guard.', { count: 4, within: 'recsPriced' }],
   ],
   'backend/src/services/cost-optimization.service.ts': [
-    ['input.modeledMonthlySavings.toFixed(2)', 'OPEN, founder question F-1 (never-zero/build.md, fix round 1): the DynamoDB provisioned-capacity description can read "up to $0.00/month" when no qualifying dimension lowers capacity (modeledMonthlySavings = max(0, ...)). Detector text is frozen in this PR; the card itself reads "No dollar estimate".'],
+    ['input.modeledMonthlySavings.toFixed(2)', 'F-1 (never-zero/f1-build.md): the DynamoDB provisioned-capacity description prints a figure only when modeledMonthlySavings is not exactly 0; at 0 it reads "none, ..." with no dollar amount. A positive sub-cent value (float noise from max(0, current - scenario)) still prints "$0.00": OPEN, founder question in f1-build.md.', { within: 'input.modeledMonthlySavings === 0' }],
   ],
 };
 
