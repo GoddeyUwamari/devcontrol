@@ -26,6 +26,8 @@
  * read-only API surface the frontend's rule catalog consumes.
  */
 
+import { CLOUDWATCH_LOGS_UNUSED_FLOOR_GB } from './cloudwatch-logs-size';
+
 export type OptimizationRuleStatus = 'implemented' | 'planned';
 
 export interface OptimizationRule {
@@ -66,6 +68,8 @@ export const ISSUE_RDS_IDLE_INSTANCE = 'Idle RDS Instance';
 export const ISSUE_EBS_OLD_SNAPSHOT = 'Old EBS Snapshot';
 // C2. Its own identity: nat_gateway_data_processing (planned) is a different check.
 export const ISSUE_NAT_GATEWAY_IDLE = 'Idle NAT Gateway';
+// C3a (Rule B). The planned cloudwatch_unused_logs id is promoted (founder ruling D2).
+export const ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED = 'Unused Log Group';
 
 /** Display/grouping order used by the UI's service coverage list. */
 export const OPTIMIZATION_RULE_SERVICES = [
@@ -348,9 +352,11 @@ export const OPTIMIZATION_RULES: OptimizationRule[] = [
   {
     id: 'cloudwatch_unused_logs',
     service: 'CloudWatch',
-    name: 'Unused/expensive log groups',
-    detail: 'Log groups with high ingestion/storage cost and negligible query activity',
-    status: 'planned',
+    name: 'Unused log groups',
+    // Approved copy (c3-stage-a.md §A1.5); the floor is the shared conversion's display (ruling D9). No dollar amount.
+    detail: `No new log events for 90 days, confirmed by the newest log stream, in a log group at least 90 days old that stores about ${CLOUDWATCH_LOGS_UNUSED_FLOOR_GB} GB or more; no dollar estimate`,
+    status: 'implemented',
+    issue: ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED,
   },
   {
     id: 'cloudwatch_log_retention',

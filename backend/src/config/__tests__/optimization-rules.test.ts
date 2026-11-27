@@ -82,6 +82,8 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     'ebs_old_snapshots',
     // C2
     'nat_gateway_idle',
+    // C3a (the planned id promoted, founder ruling D2)
+    'cloudwatch_unused_logs',
   ].sort();
 
   it('marks exactly the currently-wired detectors as implemented', () => {
@@ -125,10 +127,25 @@ describe('OPTIMIZATION_RULES: implemented vs planned truthfulness', () => {
     });
     expect(byId['nat_gateway_data_processing']).toMatchObject({ service: 'NAT Gateway', status: 'planned' });
     expect(byId['nat_gateway_data_processing'].issue).toBeUndefined();
-    expect(getImplementedOptimizationRules()).toHaveLength(12);
+    // C3a (promoted planned id, no padding: founder ruling D2): 13 of 34, 21 planned, 8 services.
+    expect(getImplementedOptimizationRules()).toHaveLength(13);
     expect(OPTIMIZATION_RULES).toHaveLength(34);
-    expect(OPTIMIZATION_RULES.filter((r) => r.status === 'planned')).toHaveLength(22);
-    expect(new Set(getImplementedOptimizationRules().map((r) => r.service)).size).toBe(7);
+    expect(OPTIMIZATION_RULES.filter((r) => r.status === 'planned')).toHaveLength(21);
+    expect(new Set(getImplementedOptimizationRules().map((r) => r.service)).size).toBe(8);
+  });
+
+  it('C3a: unused log groups is the promoted planned id, active with its own issue; log retention stays planned until C3b', () => {
+    const byId = Object.fromEntries(OPTIMIZATION_RULES.map((r) => [r.id, r]));
+    expect(byId['cloudwatch_unused_logs']).toEqual({
+      id: 'cloudwatch_unused_logs',
+      service: 'CloudWatch',
+      name: 'Unused log groups',
+      detail: 'No new log events for 90 days, confirmed by the newest log stream, in a log group at least 90 days old that stores about 35.7 GB or more; no dollar estimate',
+      status: 'implemented',
+      issue: 'Unused Log Group',
+    });
+    expect(byId['cloudwatch_log_retention']).toMatchObject({ service: 'CloudWatch', status: 'planned' });
+    expect(byId['cloudwatch_log_retention'].issue).toBeUndefined();
   });
 
   it('rds_rightsizing is retired to planned: no issue identity, and the detail says what evidence is missing', () => {
@@ -229,10 +246,10 @@ describe('service display names', () => {
     );
   });
 
-  it('the active services today are EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway (12 active checks, C2)', () => {
+  it('the active services today are EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch (13 active checks, C3a)', () => {
     const summary = getOptimizationRuleSummary();
-    expect(summary.implementedCount).toBe(12);
-    expect(summary.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway']);
+    expect(summary.implementedCount).toBe(13);
+    expect(summary.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway', 'CloudWatch']);
   });
 
   it('adding a rule increments the active count and adds its service (computed, not stored)', () => {
@@ -241,7 +258,7 @@ describe('service display names', () => {
     try {
       const after = getOptimizationRuleSummary();
       expect(after.implementedCount).toBe(before.implementedCount + 1);
-      expect(after.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway', 'ECS']);
+      expect(after.services.filter((s) => s.implementedCount > 0).map((s) => s.displayName)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway', 'ECS', 'CloudWatch']);
     } finally {
       OPTIMIZATION_RULES.pop();
     }

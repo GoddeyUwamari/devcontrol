@@ -15,6 +15,7 @@ import type { RdsIdleCheckCounts } from './rds-idle-evaluation';
 import type { OldSnapshotCheckCounts } from './ebs-old-snapshot-evaluation';
 import { AwsCallTimeoutError, isAccessDeniedError, isThrottlingError } from '../utils/awsCallPolicy';
 import type { NatIdleCheckCounts } from './nat-gateway-idle-evaluation';
+import type { CloudWatchLogsUnusedCheckCounts } from './cloudwatch-logs-unused-evaluation';
 
 export type CheckOutcome = 'complete' | 'failed';
 
@@ -67,6 +68,8 @@ export interface CostAnalysisCheck {
   old_snapshots?: OldSnapshotCheckCounts;
   /** The idle NAT gateway check only (C2, Stage A §5.2), in the same shape. Counts only. */
   nat_idle?: NatIdleCheckCounts;
+  /** The unused CloudWatch log group check only (C3a), in the same shape plus the below-floor summary and skipped names. Counts only. */
+  cloudwatch_logs_unused?: CloudWatchLogsUnusedCheckCounts;
 }
 
 /** How one reconciliation's findings ended. Reserved Instances use new, refreshed and duplicate only. */
@@ -138,6 +141,7 @@ export function summarizeDetectors(
       ...(observation.success && observation.rdsIdle ? { rds_idle: observation.rdsIdle } : {}),
       ...(observation.success && observation.oldSnapshots ? { old_snapshots: observation.oldSnapshots } : {}),
       ...(observation.success && observation.natIdle ? { nat_idle: observation.natIdle } : {}),
+      ...(observation.success && observation.cloudwatchLogsUnused ? { cloudwatch_logs_unused: observation.cloudwatchLogsUnused } : {}),
     }));
   checks.push({
     rule_id: ruleIdForIssue(ISSUE_EC2_RESERVED_INSTANCE_OPPORTUNITY),

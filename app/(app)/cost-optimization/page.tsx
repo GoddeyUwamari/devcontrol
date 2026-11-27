@@ -37,6 +37,7 @@ import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notic
 import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected';
 import { analyzeFailureMessage } from './costOptimizationStatus';
 import { RUNNING_REFETCH_MS, deriveCostScanState, runsRefetchInterval } from './costScanState';
+import { logGroupSummaryLines } from './logGroupSummary';
 import {
   RUNNING_ANALYSIS,
   RUN_COST_ANALYSIS,
@@ -619,6 +620,8 @@ export default function CostOptimizationPage() {
     else summaryLines.push(SUMMARY_NO_ESTIMATE);
   }
   if (scan.counts) summaryLines.push(summaryNew(scan.counts.new));
+  // C3a: the latest run's log groups below the stored-size floor, and any skipped for their name length (its own record).
+  if (scan.counts) summaryLines.push(...logGroupSummaryLines(analysisRuns?.[0]?.checks));
 
   // "See what's checked": open the How DevControl checks section and bring it into view.
   const openChecks = (event: MouseEvent<HTMLAnchorElement>) => {

@@ -3,9 +3,9 @@
  * exactly as GET /api/cost-recommendations/optimization-rules builds it from
  * backend/src/config/optimization-rules.ts (getOptimizationRules +
  * getOptimizationRuleSummary), so the coverage numbers come from the registry
- * itself, never a copy: 12 active checks across EC2 · EBS · RDS · S3 · Lambda ·
- * DynamoDB · NAT Gateway since C2 (the catalog's total is never shown: scan result banner PR, ruling
- * 6), both new checks listed and explained, 22 planned.
+ * itself, never a copy: 13 active checks (C3a) across EC2 · EBS · RDS · S3 · Lambda ·
+ * DynamoDB · NAT Gateway · CloudWatch since C3a (the catalog's total is never shown: scan result banner PR, ruling
+ * 6), both new checks listed and explained, 21 planned.
  *
  * And the new rows: an idle RDS finding reads "No dollar estimate" under the
  * RDS chip; an old-snapshot finding ("EBS Snapshot" resource type) reads
@@ -99,31 +99,31 @@ beforeEach(() => {
 })
 
 describe('C1: coverage comes from the registry', () => {
-  it('12 active checks (C2) across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway; the 34 total never shown; both C1 checks listed and explained; 22 planned; all 12 ran', async () => {
+  it('13 active checks (C3a) across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch; the 34 total never shown; both C1 checks listed and explained; 21 planned; all 13 ran', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
-    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway$/)
+    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 13 active checks$/))
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch$/)
     // The How DevControl checks header keeps its title and expand control only.
     expect(screen.queryByTestId('checks-summary-line')).not.toBeInTheDocument()
     expect(within(screen.getByTestId('checks-section')).getByText('How DevControl checks').closest('summary')).toHaveTextContent(/^How DevControl checks$/)
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway\.$/)
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^13 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch\.$/)
     expect(container.textContent).not.toMatch(/\b34\b|of 34/)
-    expect(screen.getByTestId('checks-count-note')).toHaveTextContent('12 active checks today — not every possible AWS cost optimization.')
-    expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway'])
+    expect(screen.getByTestId('checks-count-note')).toHaveTextContent('13 active checks today — not every possible AWS cost optimization.')
+    expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway', 'CloudWatch'])
 
     const names = within(screen.getByTestId('check-names')).getAllByRole('listitem').map((li) => li.textContent)
-    expect(names).toHaveLength(12)
+    expect(names).toHaveLength(13)
     expect(names).toEqual(expect.arrayContaining(['Idle RDS instances', 'Old EBS snapshots']))
     const how = within(screen.getByTestId('how-checks-work'))
     expect(how.getByText("No client connections, CPU under 10% and read/write IOPS under 20 every hour for 30 days; Aurora, Multi-AZ DB cluster members, read replicas, RDS Custom and stopped databases are not checked; savings are instance hours at the region's list price, not storage or backups")).toBeInTheDocument()
     expect(how.getByText('Your own snapshots older than 180 days that no registered AMI, AWS Backup plan or Data Lifecycle Manager policy uses; locked snapshots are excluded; savings shown as an upper bound')).toBeInTheDocument()
 
     const planned = within(screen.getByTestId('planned-checks'))
-    expect(planned.getByText('Planned / Coming soon (22)')).toBeInTheDocument()
+    expect(planned.getByText('Planned / Coming soon (21)')).toBeInTheDocument()
     expect(planned.queryByText('RDS — Idle databases')).not.toBeInTheDocument()
     expect(planned.queryByText(/Idle RDS instances/)).not.toBeInTheDocument()
 
-    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent('passed all 12 active checks')
+    expect(await screen.findByTestId('empty-all-checks')).toHaveTextContent('passed all 13 active checks')
   })
 
   it('computed, not stored: a new active rule adds a check and its service everywhere the page names them', async () => {
@@ -131,9 +131,9 @@ describe('C1: coverage comes from the registry', () => {
     try {
       svc.getOptimizationRules.mockResolvedValue({ rules: getOptimizationRules().map((rule) => ({ ...rule, parameters: [] })), summary: getOptimizationRuleSummary() })
       renderPage()
-      await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 13 active checks$/))
-      expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · ECS$/)
-      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^13 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · ECS\.$/)
+      await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 14 active checks$/))
+      expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · ECS · CloudWatch$/)
+      expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^14 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · ECS · CloudWatch\.$/)
     } finally {
       OPTIMIZATION_RULES.pop()
     }

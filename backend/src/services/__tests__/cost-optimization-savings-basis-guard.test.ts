@@ -159,6 +159,12 @@ const COVERED_ELSEWHERE: Record<string, { file: string; detector: string; assert
     assertion: /expect\(classifySavingsBasis\(result\.issues\[0\]\.metadata\.savings_basis\)\)\.toBe\('estimate'\)/,
     why: 'needs aws_resources + regional clients',
   },
+  cloudwatch_unused_logs: {
+    file: 'cost-optimization-cloudwatch-logs-unused.test.ts',
+    detector: 'detectUnusedLogGroups',
+    assertion: /potentialSavings: 0,[^]*expect\(issue\.metadata\.savings_basis\)\.toBeUndefined\(\)/,
+    why: 'carries no dollar figure at all (C3a, founder ruling D3)',
+  },
 };
 
 beforeEach(() => {

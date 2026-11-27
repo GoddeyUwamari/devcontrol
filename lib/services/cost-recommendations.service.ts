@@ -48,6 +48,15 @@ export interface CostAnalysisCheck {
   unknown: number;
   /** A failed check only: why it couldn't run. Absent on older runs. */
   failure_reason?: CheckFailureReason;
+  /**
+   * The unused CloudWatch log group check only (C3a): its counts, including the log groups below the stored-size
+   * floor (one summary line, never cards) and the ones skipped for a name over 255 characters. Counts and the
+   * floor as the backend displays it (`floor_gb`, one shared conversion); never names. Absent on other checks.
+   */
+  cloudwatch_logs_unused?: {
+    below_floor?: { count?: unknown; floor_gb?: unknown };
+    skipped?: { name_too_long?: unknown };
+  };
 }
 
 // The scan result banner's types live in lib/types.ts (the marketing pages import lib/types, never this service).
