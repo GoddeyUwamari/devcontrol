@@ -24,18 +24,23 @@ export const OPPORTUNITIES_ERROR = 'Recommendations could not be retrieved.'
 export const OPPORTUNITIES_EMPTY = 'No optimization recommendations yet. Run cost analysis to identify savings opportunities.'
 
 /**
- * Opportunities (spec item 11): the top open findings by savings basis
- * (rankBySavings), each with its "Why:" line from allowlisted evidence
- * (why-evidence.ts). `total` is /stats' open count, null when unknown.
+ * Opportunities (spec item 11): the top open findings by the savings figure
+ * each card shows (rankByDisplayedSavings, fix round 1 N-7), each with its
+ * "Why:" line from allowlisted evidence (why-evidence.ts). `total` is /stats'
+ * open count, null when unknown. While loading: "—", never the empty text
+ * (N-1). `emptyText`: what an analysis that left nothing open says, so the
+ * card agrees with the savings tile (N-1); otherwise OPPORTUNITIES_EMPTY.
  */
-export function OpportunitiesCard({ rows, total, isError }: { rows: OpportunityRow[]; total: number | null; isError: boolean }) {
+export function OpportunitiesCard({ rows, total, isError, isLoading = false, emptyText }: {
+  rows: OpportunityRow[]; total: number | null; isError: boolean; isLoading?: boolean; emptyText?: string
+}) {
   return (
     <section aria-labelledby="opportunities-heading" className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100 mb-5">
       <div className="flex items-center justify-between gap-3 mb-5">
         <div className="min-w-0">
           <h2 id="opportunities-heading" className="text-ui font-semibold text-slate-900 m-0 tracking-tight">Opportunities</h2>
           {!isError && rows.length > 0 && total !== null && total > rows.length && (
-            <p className="text-meta text-ink-muted m-0 mt-0.5">Top {rows.length} of {total}, ranked by estimated savings</p>
+            <p className="text-meta text-ink-muted m-0 mt-0.5">Top {rows.length} of {total}, largest savings first</p>
           )}
         </div>
         <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1 shrink-0">
@@ -44,8 +49,10 @@ export function OpportunitiesCard({ rows, total, isError }: { rows: OpportunityR
       </div>
       {isError ? (
         <p className="text-meta text-ink-muted m-0 p-6 text-center">{OPPORTUNITIES_ERROR}</p>
+      ) : isLoading ? (
+        <p className="text-meta text-ink-muted m-0 p-6 text-center" data-testid="opportunities-loading" aria-busy="true">—</p>
       ) : rows.length === 0 ? (
-        <p className="text-meta text-ink-muted m-0 p-6 text-center">{OPPORTUNITIES_EMPTY}</p>
+        <p className="text-meta text-ink-muted m-0 p-6 text-center" data-testid="opportunities-empty">{emptyText ?? OPPORTUNITIES_EMPTY}</p>
       ) : (
         <ul className="m-0 p-0 list-none flex flex-col gap-3">
           {rows.map((rec) => (

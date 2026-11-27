@@ -127,7 +127,7 @@ beforeEach(() => {
   mockGetRules.mockResolvedValue(CATALOG_A)
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, data: TREND }) }))
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('safeguard 1: the chart, the donut and its total label use one set of days', () => {
   it('30D: 30 days, Oct 28 – Nov 26; the day before the window is in neither the chart nor the donut', async () => {
@@ -184,12 +184,103 @@ describe('ruling Q2: savings wording', () => {
     expect(within(tile('savings')).getByText('Plus up to $41/mo if S3 data qualifies for Standard-IA (upper bound, not included above)')).toBeInTheDocument()
   })
 
-  it('a firm figure under $1/mo is grey, not styled as a saving', async () => {
+  // SF-1: the actual grey (text-ink-muted = slate-600) at the smaller secondary size, not near-black or full KPI size.
+  it('a firm figure under $1/mo is grey (slate-600) and at the smaller size, not styled as a saving', async () => {
     mockGetStats.mockResolvedValue(recStats({ totalPotentialSavings: 0.96, estimatedFindings: 1, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {} }))
     renderPage()
     const value = await within(await screen.findByTestId('kpi-savings')).findByText('$0.96/mo')
-    expect(value.className).not.toContain('text-ink-success')
+    const classes = value.className.split(/\s+/)
+    expect(classes).toEqual(expect.arrayContaining(['text-ink-muted', 'text-ui', 'sm:text-section']))
+    for (const c of ['text-ink-success', 'text-slate-900', 'sm:text-kpi', 'text-section']) expect(classes).not.toContain(c)
     expect(tile('savings').className).not.toContain('border-t-green-500')
+  })
+
+  it('a firm figure of $1/mo or more is green at the full KPI size', async () => {
+    mockGetStats.mockResolvedValue(recStats({ totalPotentialSavings: 1, estimatedFindings: 1, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {} }))
+    renderPage()
+    const value = await within(await screen.findByTestId('kpi-savings')).findByText('$1/mo')
+    expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-ink-success', 'text-section', 'sm:text-kpi']))
+  })
+
+  // N-3: styling follows the displayed figure. JS shows 0.995 as "$0.99" and 0.996 as "$1.00".
+  it.each([
+    [0.994, '$0.99/mo', false],
+    [0.995, '$0.99/mo', false],
+    [0.996, '$1.00/mo', true],
+    [1.0, '$1/mo', true],
+  ])('N-3: %s displays %s and is green: %s', async (amount, shown, green) => {
+    mockGetStats.mockResolvedValue(recStats({ totalPotentialSavings: amount, estimatedFindings: 1, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {} }))
+    renderPage()
+    const value = await within(await screen.findByTestId('kpi-savings')).findByText(shown)
+    expect(value.className.includes('text-ink-success')).toBe(green)
+    expect(value.className.includes('text-ink-muted')).toBe(!green)
+  })
+
+  it('N-4: a partial run with no open findings reads "None found in the checks that ran", agreeing with Last analysis', async () => {
+    mockGetStats.mockResolvedValue(recStats({ totalRecommendations: 0, activeRecommendations: 0, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }))
+    // The API's status for a partial run is 'failed' (legacy status); run_state says 'partial'.
+    mockGetAnalysisRuns.mockResolvedValue([{ ...completedRun, status: 'failed', new_count: 0, refreshed_count: 0 }])
+    renderPage()
+    expect(await within(await screen.findByTestId('kpi-savings')).findByText('None found in the checks that ran')).toBeInTheDocument()
+    expect(tile('savings').textContent).not.toMatch(/did not complete|\$0/)
+    await waitFor(() => expect(screen.getByTestId('last-analysis')).toHaveTextContent(/2 of 3 checks ran · 0 found$/))
+    expect(screen.getByTestId('opportunities-empty')).toHaveTextContent("None found in the checks that ran. Some checks couldn't run in the latest analysis.")
+  })
+})
+
+describe('N-1: Opportunities agrees with the savings tile, and shows no empty text while loading', () => {
+  it('after a clean completed analysis: "None found", no "Run cost analysis" prompt', async () => {
+    mockGetStats.mockResolvedValue(recStats({ totalRecommendations: 0, activeRecommendations: 0, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }))
+    mockGetAnalysisRuns.mockResolvedValue([{ ...completedRun, run_state: 'completed', new_count: 0, refreshed_count: 0, checks: completedRun.checks.map((c) => ({ ...c, outcome: 'complete', failure_reason: undefined })) }])
+    renderPage()
+    expect(await within(await screen.findByTestId('kpi-savings')).findByText('None found')).toBeInTheDocument()
+    expect(await screen.findByTestId('opportunities-empty')).toHaveTextContent('None found. No open opportunities after the latest analysis.')
+    expect(document.body.textContent).not.toMatch(/Run cost analysis/)
+  })
+
+  it('while the findings are loading: "—", never the empty-state text', async () => {
+    mockGetAll.mockReturnValue(pending())
+    renderPage()
+    expect(await screen.findByTestId('opportunities-loading')).toHaveTextContent(/^—$/)
+    expect(screen.queryByTestId('opportunities-empty')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/No optimization recommendations yet/)
+  })
+})
+
+describe('N-2: Export CSV is exactly the window the page shows', () => {
+  it.each([['30D', 'Oct 28', '2026-10-28'], ['7D', 'Nov 20', '2026-11-20']])('%s: the file\'s first and last dates are the displayed range', async (range, firstLabel, firstDate) => {
+    let blob: Blob | null = null
+    const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL }
+    URL.createObjectURL = (b: Blob) => { blob = b; return 'blob:test' }
+    URL.revokeObjectURL = () => {}
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      renderPage()
+      await screen.findByTestId('drivers-total')
+      fireEvent.click(screen.getByRole('button', { name: range }))
+      await waitFor(() => expect(screen.getByTestId('trend-window')).toHaveTextContent(`· ${firstLabel} – Nov 26 (UTC)`))
+      fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+      const text = await (blob as unknown as Blob).text()
+      const dates = [...new Set(text.split('\n').slice(2).map((line) => line.slice(1, 11)))]
+      expect([dates[0], dates[dates.length - 1]]).toEqual([firstDate, '2026-11-26'])
+      expect(dates).toHaveLength(range === '30D' ? 30 : 7)
+      expect(text).not.toContain('2026-10-27')
+    } finally {
+      click.mockRestore()
+      URL.createObjectURL = original.create
+      URL.revokeObjectURL = original.revoke
+    }
+  })
+})
+
+describe('N-6: the tiles\' decorative arrows are hidden from screen readers', () => {
+  it('every tile\'s › is aria-hidden', async () => {
+    renderPage()
+    await screen.findByTestId('kpi-checks')
+    for (const key of ['mtd', 'momchange', 'savings', 'activerecs', 'checks']) {
+      const arrow = [...tile(key).querySelectorAll('span')].find((el) => el.textContent === '›')!
+      expect(arrow).toHaveAttribute('aria-hidden', 'true')
+    }
   })
 })
 
@@ -252,7 +343,7 @@ describe('spec item 11: Opportunities with "Why:" (safeguard 4)', () => {
     renderPage()
     const cards = await screen.findAllByTestId('opportunity-card')
     expect(cards).toHaveLength(5)
-    expect(screen.getByText('Top 5 of 7, ranked by estimated savings')).toBeInTheDocument()
+    expect(screen.getByText('Top 5 of 7, largest savings first')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /View all/ })).toHaveAttribute('href', '/cost-optimization')
     const why = within(cards[0]).getByTestId('opportunity-why')
     expect(why.textContent).toBe('Why: fixture-db · no client connections in any hourly sample over 30 days; CPU peaked at 1.2%')
@@ -309,9 +400,9 @@ describe('layout order (spec items 8–12) and what is kept', () => {
     for (const gone of [/Spend up over 20%|No spend spike/, 'Spend Up Sharply vs Last Month', 'Top drivers', 'Cost by Service', 'Full breakdown', 'Top Savings', 'Review savings', /annualized/, 'Compute (EC2, Lambda, ECS)']) {
       expect(screen.queryByText(gone)).toBeNull()
     }
-    // The KPI row is shown once: each label appears once on the page.
+    // The KPI row is shown once: each label reaches assistive tech once (visual-only copies are aria-hidden).
     for (const label of ['Month-to-Date Spend', 'Month-over-Month Change', 'Estimated Savings Opportunity', 'Active Recommendations']) {
-      expect(screen.getAllByText(label)).toHaveLength(1)
+      expect(screen.getAllByText(label).filter((el) => !el.closest('[aria-hidden="true"]'))).toHaveLength(1)
     }
   })
 })
@@ -337,18 +428,57 @@ describe('founder D7: no mid-word wrapping in the KPI tile labels', () => {
     }
   })
 
-  it('"Active Recommendations" shows "Findings" where it would not fit; the full label stays for screen readers', async () => {
+  // Fix round 1: exactly one of the two visible forms is displayed at every width (display-only toggles, which cascade
+  // by breakpoint), and screen readers get the full label once, from a permanent sr-only copy.
+  it('"Active Recommendations" shows "Findings" where it would not fit, the full label elsewhere, and once for screen readers', async () => {
     renderPage()
     const label = await screen.findByTestId('kpi-activerecs-label')
-    const short = within(label).getByText('Findings')
+    const [short, full, spoken] = [...label.children] as HTMLElement[]
+    expect([short.textContent, full.textContent, spoken.textContent]).toEqual(['Findings', 'Active Recommendations', 'Active Recommendations'])
     expect(short).toHaveAttribute('aria-hidden', 'true')
+    expect(full).toHaveAttribute('aria-hidden', 'true')
+    expect(spoken).not.toHaveAttribute('aria-hidden')
+    expect(spoken.className).toBe('sr-only')
     expect(short.className).toBe('sm:hidden lg:inline xl:hidden')
-    expect(within(label).getByText('Active Recommendations').className).toBe('sr-only sm:not-sr-only lg:sr-only xl:not-sr-only')
+    expect(full.className).toBe('hidden sm:inline lg:hidden xl:inline')
+    // Which form is displayed at each Tailwind breakpoint (base, sm 640, lg 1024, xl 1280): always exactly one.
+    const displayedAt = (classes: string, tier: number) => {
+      let shown = true
+      for (const [i, prefix] of ['', 'sm:', 'lg:', 'xl:'].entries()) {
+        if (i > tier) break
+        if (classes.split(' ').includes(`${prefix}hidden`)) shown = false
+        if (classes.split(' ').includes(`${prefix}inline`)) shown = true
+      }
+      return shown
+    }
+    for (const tier of [0, 1, 2, 3]) expect([displayedAt(short.className, tier), displayedAt(full.className, tier)].filter(Boolean)).toHaveLength(1)
+    // Never a per-breakpoint sr-only toggle anywhere on the page (it doesn't cascade in this Tailwind build).
+    expect(document.body.innerHTML).not.toMatch(/\b(?:sm|md|lg|xl|2xl):(?:not-)?sr-only\b/)
   })
 })
 
-describe('ruling Q14: demo mode fills the new layout; demo-only extras dropped', () => {
-  it('demo KPIs, chart window, drivers, opportunities and coverage; no value tiles, AI forecast, confidence or "systems clear"', async () => {
+describe('N-7: Opportunities rank by the savings figure each card shows', () => {
+  it('"Up to $41/mo" ranks before "$0.02/mo"; a firm figure wins a tie; no-figure findings come last in their order', async () => {
+    mockGetStats.mockResolvedValue(recStats({ totalPotentialSavings: 41.22, estimatedFindings: 2, activeRecommendations: 5 }))
+    mockGetAll.mockResolvedValue([
+      rec('fn', 'Low-Usage Lambda Function', 0.02, { savings_basis: 'estimated: x', invocations_30d: 0 }, 'fn-name', 'Lambda'),
+      rec('nb1', 'Reserved Instance Opportunity', 0, {}, 'ri-a'),
+      rec('s3', 'S3 Lifecycle Optimization', 41.4, { savings_basis: 'ceiling: x', lifecycle_state: 'no_lifecycle_configuration', standard_storage_gb: 100 }, 'bucket-name', 'S3'),
+      rec('nb2', 'Idle RDS Instance', 0, {}, 'db-b', 'RDS'),
+      rec('vol', 'Unattached EBS Volume', 41.2, { savings_basis: 'estimated: x', size_gb: 10, volume_type: 'gp3' }, 'vol-name', 'EBS'),
+    ])
+    renderPage()
+    const cards = await screen.findAllByTestId('opportunity-card')
+    expect(cards.map((c) => within(c).getByTestId('opportunity-savings').textContent)).toEqual(['$41/mo', 'Up to $41/mo', '$0.02/mo', 'No dollar estimate', 'No dollar estimate'])
+    expect(within(cards[3]).getByText('Reserved Instance Opportunity')).toBeInTheDocument()
+    expect(within(cards[4]).getByText('Idle RDS Instance')).toBeInTheDocument()
+  })
+})
+
+describe('ruling Q14 + D4: demo mode fills the new layout with dates relative to today; demo-only extras dropped', () => {
+  it('frozen at 2026-04-25: demo KPIs, chart window, drivers, opportunities and coverage; no value tiles, AI forecast, confidence or "systems clear"', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-04-25T12:00:00.000Z'))
     m.demo = true
     renderPage()
     expect(await screen.findByText('Demo Mode')).toBeInTheDocument()
@@ -362,5 +492,20 @@ describe('ruling Q14: demo mode fills the new layout; demo-only extras dropped',
     // Demo reads no account data.
     expect(mockGetCostSummary).not.toHaveBeenCalled()
     expect(mockGetStats).not.toHaveBeenCalled()
+  })
+
+  it('D4: the demo window follows today (frozen at 2026-12-03 and 2027-03-01): no fixed calendar date', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    m.demo = true
+    vi.setSystemTime(new Date('2026-12-03T09:00:00.000Z'))
+    const { unmount } = renderPage()
+    expect(await screen.findByTestId('trend-window')).toHaveTextContent('30 days · Nov 4 – Dec 3 (UTC)')
+    expect(screen.getByTestId('drivers-total')).toHaveTextContent('30-day total · Nov 4 – Dec 3 (UTC)')
+    expect(screen.getByTestId('last-analysis')).toHaveTextContent(/^Last analysis: 2 hours ago \(scheduled\)/)
+    unmount()
+    vi.setSystemTime(new Date('2027-03-01T23:30:00.000Z'))
+    renderPage()
+    expect(await screen.findByTestId('trend-window')).toHaveTextContent('30 days · Jan 31 – Mar 1 (UTC)')
+    expect(document.body.textContent).not.toMatch(/Apr 25|Mar 27/)
   })
 })

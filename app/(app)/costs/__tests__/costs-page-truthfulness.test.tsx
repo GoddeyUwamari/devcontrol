@@ -357,8 +357,8 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     expect(await row('Unattached EBS Volume')).toHaveTextContent('$12/mo')
     expect(await row('Reserved Instance Opportunity')).toHaveTextContent('No dollar estimate')
     expect((await row('Reserved Instance Opportunity')).textContent).not.toMatch(/\$0/)
-    // Ranked by the counted estimate: the $12 estimate before the larger $41 ceiling, basis-less last.
-    const titles = ['Unattached EBS Volume', 'S3 Lifecycle Optimization', 'Reserved Instance Opportunity'].map((t) => screen.getByText(t))
+    // Ranked by the figure shown (fix round 1, N-7): the $41 upper bound before the $12 estimate, basis-less last.
+    const titles = ['S3 Lifecycle Optimization', 'Unattached EBS Volume', 'Reserved Instance Opportunity'].map((t) => screen.getByText(t))
     expect(titles[0].compareDocumentPosition(titles[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(titles[1].compareDocumentPosition(titles[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })

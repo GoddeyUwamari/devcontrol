@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import type { CostAnalysisRun, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service'
 import type { CostScanState } from '../../cost-optimization/costScanState'
 import {
-  activeChecks, costDrivers, coverageRows, describeSavingsTile, formatDriverAmount, lastAnalysisParts, runFoundCount,
+  activeChecks, costDrivers, coverageRows, describeSavingsTile, displayedAmount, formatDriverAmount, lastAnalysisParts, rankByDisplayedSavings, runFoundCount,
   trendWindow, windowDatesLabel, type CostTrendPointView, type CoverageInput,
 } from '../cost-intelligence'
 import { costsTrendChartData } from '../trend-chart-data'
@@ -96,6 +96,21 @@ describe('savings tile (ruling Q2): never "$0/mo"', () => {
     expect(describeSavingsTile(stats({ totalPotentialSavings: 1, estimatedFindings: 1, activeRecommendations: 1 }))).toMatchObject({ strong: true })
   })
 
+  it('N-3: green is decided on the displayed figure ($0.994 / $0.995 show "$0.99", $0.996 shows "$1.00", $1.00 shows "$1")', () => {
+    const tile = (amount: number) => describeSavingsTile(stats({ totalPotentialSavings: amount, estimatedFindings: 1, activeRecommendations: 1 }))
+    expect(tile(0.994)).toMatchObject({ value: '$0.99/mo', strong: false })
+    expect(tile(0.995)).toMatchObject({ value: '$0.99/mo', strong: false })
+    expect(tile(0.996)).toMatchObject({ value: '$1.00/mo', strong: true })
+    expect(tile(1.0)).toMatchObject({ value: '$1/mo', strong: true })
+    expect([displayedAmount('<$0.01'), displayedAmount('$1,204'), displayedAmount('$0.99')]).toEqual([0, 1204, 0.99])
+  })
+
+  it('N-4: a partial run with nothing open: "None found in the checks that ran"', () => {
+    expect(describeSavingsTile(stats({}), { partialRun: true })).toEqual({ kind: 'none_found', value: 'None found in the checks that ran', lines: ["Some checks couldn't run in the latest analysis"] })
+    // Only "none found" changes: figures and "No dollar estimate" are the same after a partial run.
+    expect(describeSavingsTile(stats({ activeRecommendations: 2 }), { partialRun: true }).value).toBe('No dollar estimate')
+  })
+
   it('positive estimates that round to $0: "<$0.01/mo", never "$0/mo"', () => {
     expect(describeSavingsTile(stats({ totalPotentialSavings: 0, estimatedFindings: 2, activeRecommendations: 2 })).value).toBe('<$0.01/mo')
   })
@@ -125,6 +140,16 @@ function catalog(services: { service: string; displayName: string; implemented: 
     },
   }
 }
+
+describe('N-7: opportunities rank by the displayed figure', () => {
+  const r = (id: string, potentialSavings: number, basis?: string) => ({ id, potentialSavings, metadata: basis ? { savings_basis: basis } : {} })
+  it('"Up to $41/mo" before "$0.02/mo"; firm wins a displayed tie; no-figure findings last, in their order', () => {
+    const ranked = rankByDisplayedSavings([
+      r('lambda', 0.02, 'estimated: x'), r('none-a', 0), r('s3', 41.4, 'ceiling: x'), r('none-b', 5), r('ebs', 41.2, 'estimated: x'), r('big-ceiling', 120, 'ceiling: x'),
+    ])
+    expect(ranked.map((x) => x.id)).toEqual(['big-ceiling', 'ebs', 's3', 'lambda', 'none-a', 'none-b'])
+  })
+})
 
 describe('checks tile: from the active catalog, planned excluded, never constants', () => {
   it('counts and names follow the catalog it is given', () => {
@@ -212,6 +237,14 @@ describe('What this page covers (spec item 12): real signals, never the whole ac
     const rows = coverageRows(input({ scan: scanOf('completed_other', 2), runs: [run({ checks: complete, unknown_resource_count: 2 })] }))
     expect(row(rows, 'checks').status).toBe('partly_checked')
     expect(row(rows, 'checks').detail).toContain("2 resources couldn't be fully checked")
+  })
+
+  it('D6: while a new run is in progress, the previous finished run with the ruled prefix', () => {
+    const finished = run({ checks: run().checks!.map((c) => ({ ...c, outcome: 'complete' as const, failure_reason: undefined })) })
+    const rows = coverageRows(input({ scan: scanOf('running'), runs: [run({ id: 'run-2', status: 'running', run_state: 'running' }), finished] }))
+    expect(row(rows, 'checks')).toMatchObject({ status: 'checked', detail: 'From the previous analysis (a new one is running): 3 of 3 checks ran across EC2 · NAT Gateway.' })
+    // No previous finished run: "Not checked" with its detail line, unchanged.
+    expect(row(coverageRows(input({ scan: scanOf('running'), runs: [run({ status: 'running', run_state: 'running' })] })), 'checks')).toMatchObject({ status: 'not_checked', detail: 'The first cost analysis is running.' })
   })
 
   it('failed, never analyzed, status error, running first analysis', () => {

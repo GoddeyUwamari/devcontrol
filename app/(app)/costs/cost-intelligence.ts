@@ -7,7 +7,7 @@
 import type { ContextSection, CostSpendEvidence, RecommendationStats } from '@/lib/types'
 import type { CheckFailureReason, CostAnalysisRun, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service'
 import { formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils'
-import { describeCeilings, NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
+import { describeCeilings, NO_DOLLAR_ESTIMATE, savingsBasisKind } from '@/lib/savings-basis'
 import { isNotReportedYet, isStillUpdating, type CostReportState } from '@/lib/cost-trend-basis'
 import { couldntRunSentence, resourcesNotFullyChecked } from '../cost-optimization/costScanBanner'
 import { costChecksRegionLine, NO_FIRM_ESTIMATE, upperBoundOnly } from '../cost-optimization/costOptimizationCopy'
@@ -130,6 +130,9 @@ export const SMALL_SAVINGS_USD = 1
 
 export const NONE_FOUND = 'None found'
 export const NONE_FOUND_SUB = 'No open opportunities after the latest analysis'
+/** Fix round 1, N-4: a partial run (some checks couldn't run) that left no open findings. */
+export const NONE_FOUND_PARTIAL = 'None found in the checks that ran'
+export const NONE_FOUND_PARTIAL_SUB = "Some checks couldn't run in the latest analysis"
 export const NO_ESTIMATE_SUB = 'No dollar estimate yet for the open opportunities.'
 
 export type SavingsTile =
@@ -143,19 +146,34 @@ export type SavingsTile =
   | { kind: 'none_found'; value: string; lines: string[] }
 
 /**
+ * The dollar amount a formatted savings figure shows ("$1.00" -> 1, "$53" -> 53,
+ * "<$0.01" -> 0), so styling follows what the user reads (fix round 1, N-3).
+ */
+export function displayedAmount(formatted: string): number {
+  if (formatted.startsWith('<')) return 0
+  const n = Number(formatted.replace(/[$,]/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
  * The savings tile from /stats, with Cost Optimization's wording: the firm
  * total (formatSavingsTotal: "<$0.01" when positive estimates round to 0) and
  * each upper bound on its own line, never added together; never "$0/mo".
- * Callers handle loading, errors and "not analyzed yet" first (shown as "—").
+ * `strong` (green) is decided on the figure as displayed (N-3). `partialRun`:
+ * the latest analysis was partial, so "none found" covers only the checks that
+ * ran (N-4). Callers handle loading, errors and "not analyzed yet" first ("—").
  */
-export function describeSavingsTile(stats: Pick<RecommendationStats, 'totalPotentialSavings' | 'estimatedFindings' | 'potentialSavingsCeiling' | 'potentialSavingsCeilingByResourceType' | 'activeRecommendations'>): SavingsTile {
+export function describeSavingsTile(
+  stats: Pick<RecommendationStats, 'totalPotentialSavings' | 'estimatedFindings' | 'potentialSavingsCeiling' | 'potentialSavingsCeilingByResourceType' | 'activeRecommendations'>,
+  { partialRun = false }: { partialRun?: boolean } = {},
+): SavingsTile {
   const firm = formatSavingsTotal(stats.totalPotentialSavings, stats.estimatedFindings)
   const ceilingByType = stats.potentialSavingsCeilingByResourceType ?? {}
   if (firm !== '$0' && firm !== '—') {
     return {
       kind: 'firm',
       value: `${firm}/mo`,
-      strong: stats.totalPotentialSavings >= SMALL_SAVINGS_USD,
+      strong: displayedAmount(firm) >= SMALL_SAVINGS_USD,
       lines: describeCeilings(ceilingByType, formatSavingsCurrency),
     }
   }
@@ -163,7 +181,31 @@ export function describeSavingsTile(stats: Pick<RecommendationStats, 'totalPoten
     return { kind: 'upper_bound_only', value: upperBoundOnly(formatSavingsCurrency(stats.potentialSavingsCeiling)), lines: [NO_FIRM_ESTIMATE] }
   }
   if (stats.activeRecommendations > 0) return { kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: [NO_ESTIMATE_SUB] }
-  return { kind: 'none_found', value: NONE_FOUND, lines: [NONE_FOUND_SUB] }
+  return partialRun
+    ? { kind: 'none_found', value: NONE_FOUND_PARTIAL, lines: [NONE_FOUND_PARTIAL_SUB] }
+    : { kind: 'none_found', value: NONE_FOUND, lines: [NONE_FOUND_SUB] }
+}
+
+/**
+ * Opportunities order (fix round 1, N-7): by the savings figure each card
+ * shows ("$X/mo" or "Up to $X/mo"), largest first; on an equal displayed
+ * figure a firm estimate before an upper bound; findings with no dollar
+ * figure after every priced one, in their incoming order.
+ */
+export function rankByDisplayedSavings<T extends { potentialSavings: number; metadata?: Record<string, unknown> | null }>(recs: readonly T[]): T[] {
+  const shown = (rec: T) => displayedAmount(formatSavingsCurrency(rec.potentialSavings))
+  const isCeiling = (rec: T) => Number(savingsBasisKind(rec) === 'ceiling')
+  return recs
+    .map((rec, index) => ({ rec, index, priced: savingsBasisKind(rec) !== null }))
+    .sort((a, b) => {
+      if (a.priced !== b.priced) return a.priced ? -1 : 1
+      if (!a.priced) return a.index - b.index
+      return shown(b.rec) - shown(a.rec)
+        || isCeiling(a.rec) - isCeiling(b.rec)
+        || b.rec.potentialSavings - a.rec.potentialSavings
+        || a.index - b.index
+    })
+    .map(({ rec }) => rec)
 }
 
 // ─── Checks tile (spec item 6: from the active catalog) ─────────────────────
@@ -329,7 +371,7 @@ function checksRow({ scan, runs, catalog }: CoverageInput): CoverageRow {
   const checks = runChecks(run)
   if (!run || !checks) return row('partly_checked', "The latest analysis didn't record which checks ran.")
   const unknown = typeof run.unknown_resource_count === 'number' ? run.unknown_resource_count : 0
-  const prefix = scan.key === 'running' ? 'From the analysis before the one running now: ' : ''
+  const prefix = scan.key === 'running' ? 'From the previous analysis (a new one is running): ' : ''
   if (checks.ran === checks.total && unknown === 0) {
     const names = servicesThatRan(run, catalog.data)
     return row('checked', `${prefix}${checksRanPart(checks)}${names.length > 0 ? ` across ${servicesLine(names)}` : ''}.`)

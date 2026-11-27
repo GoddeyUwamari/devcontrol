@@ -30,19 +30,19 @@ import type { ContextSection, CostRecommendation, CostSpendEvidence } from '@/li
 import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
-import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings } from '@/lib/savings-basis'
+import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate } from '@/lib/savings-basis'
 import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, noFinalDayThisMonth, previousMonthLine, roundCents } from './cost-display'
 import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
 import {
-  acrossCategories, activeChecks, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, lastAnalysisParts, PAGE_SUBTITLE,
+  acrossCategories, activeChecks, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, lastAnalysisParts, PAGE_SUBTITLE, rankByDisplayedSavings,
   servicesLine, TREND_RANGES, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
 } from './cost-intelligence'
 import { whyLine } from './why-evidence'
 import { CostDriversCard } from './CostDriversCard'
 import { OPPORTUNITY_LIMIT, OpportunitiesCard, type OpportunityRow } from './OpportunitiesCard'
 import { PageCoverageCard } from './PageCoverageCard'
-import { DEMO_GROWTH_PERCENT, DEMO_HOME_REGION, DEMO_MTD_SPEND, DEMO_RECOMMENDATIONS, DEMO_STATS, DEMO_TREND_POINTS } from './demo-data'
+import { DEMO_FINDING_COUNT, DEMO_GROWTH_PERCENT, DEMO_HOME_REGION, DEMO_STATS, demoAnalysisAt, demoMtdSpend, demoRecommendations, demoTrendPoints } from './demo-data'
 
 /** The Spend Trend series (founder spec item 8): pink fill and line. */
 const TREND_LINE = '#BE185D'
@@ -75,9 +75,11 @@ const NL_OUTCOME_LABEL: Record<NLQueryOutcome, (rows: number) => string> = {
 }
 
 /** Demo-only month-to-date section, so the demo spend tile reads like a real one (Q14). */
-const DEMO_SPEND_SECTION: ContextSection<CostSpendEvidence> = {
-  state: 'available', source: 'Demo data', provenance: 'actual', asOf: null, coverage: null, reason: null,
-  data: { amount: DEMO_MTD_SPEND, basis: 'billed_month_to_date', lastDayInProgress: false },
+function demoSpendSection(amount: number): ContextSection<CostSpendEvidence> {
+  return {
+    state: 'available', source: 'Demo data', provenance: 'actual', asOf: null, coverage: null, reason: null,
+    data: { amount, basis: 'billed_month_to_date', lastDayInProgress: false },
+  }
 }
 
 export default function CostsPage() {
@@ -169,7 +171,7 @@ export default function CostsPage() {
   const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
   const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError
 
-  const { data: activeRecs = [], isError: activeRecsError } = useQuery<CostRecommendation[]>({
+  const { data: activeRecs = [], isLoading: activeRecsLoading, isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 5 * 60 * 1000,
@@ -213,7 +215,14 @@ export default function CostsPage() {
   }
 
   // ── Safeguard 1: ONE set of days for the chart, the cost drivers donut and its total label ──
-  const trendPoints: CostTrendPointView[] = isDemoActive ? DEMO_TREND_POINTS : costTrend
+  // Demo mode (ruling D4): the demo series, findings and last analysis are relative to today (UTC), never fixed dates.
+  const demo = useMemo(() => {
+    if (!isDemoActive) return null
+    const points = demoTrendPoints(utcDay)
+    const analysisAt = demoAnalysisAt(Date.now())
+    return { points, spendSection: demoSpendSection(demoMtdSpend(points, utcDay)), analysisAt, recommendations: demoRecommendations(analysisAt) }
+  }, [isDemoActive, utcDay])
+  const trendPoints: CostTrendPointView[] = demo ? demo.points : costTrend
   const windowPoints = useMemo(() => trendWindow(trendPoints, range.days), [trendPoints, range.days])
   // UTC calendar-date labels; a day Cost Explorer has not reported yet is a gap, never $0 (DAY1-D14, DAY1-D15).
   const chartData = useMemo(() => costsTrendChartData(windowPoints), [windowPoints])
@@ -225,7 +234,7 @@ export default function CostsPage() {
   const hasTrendData = isDemoActive || (!costTrendLoading && !costTrendError && costTrend.length > 0)
 
   const spend = isDemoActive
-    ? { ...describeSpend(DEMO_SPEND_SECTION, { isLoading: false, isError: false }), sub: 'Demo data' }
+    ? { ...describeSpend(demo?.spendSection, { isLoading: false, isError: false }), sub: 'Demo data' }
     : describeSpend(costSummary?.spend, { isLoading: costSummaryLoading, isError: costSummaryError })
   // Month-over-month is FIXED to this month's finished days vs the same days last month (the
   // backend's comparison over a 90-day trend, costSummary.monthOverMonth), independent of the
@@ -240,13 +249,18 @@ export default function CostsPage() {
   // Zero recommendations is only a measured result once the latest analysis
   // (scheduled or manual) has completed.
   const latestAnalysis = pickLatestAnalysis({ latestDiscoveryJob: discoveryJobs?.[0], latestAnalysisRun: analysisRuns?.[0] })
+  // Fix round 1, N-4: a partial run (the API's status says 'failed', run_state says 'partial') finished the checks
+  // that ran, so zero open findings is a result for those checks: "None found in the checks that ran", like the
+  // Last analysis line ("N of M checks ran · 0 found"). The run is the latest analysis only when it was picked
+  // over the discovery job ('manual' is pickLatestAnalysis's label for a run row, manual or scheduled).
+  const latestRunPartial = latestAnalysis?.source === 'manual' && analysisRuns?.[0]?.run_state === 'partial'
   const zeroRecsState: null | 'loading' | 'unknown' | 'in_progress' | 'failed' | 'not_evaluated' =
     isDemoActive || savingsMissing || activeRecsCount > 0 ? null
       : analysisRunsLoading || discoveryJobsLoading ? 'loading'
       : analysisRunsError || discoveryJobsError ? 'unknown'
       : !latestAnalysis ? 'not_evaluated'
       : latestAnalysis.status === 'running' ? 'in_progress'
-      : latestAnalysis.status === 'failed' ? 'failed'
+      : latestAnalysis.status === 'failed' && !latestRunPartial ? 'failed'
       : null
   const recsUnavailable = savingsMissing || zeroRecsState !== null
   const recsUnavailableSub = !isDemoActive && recStatsLoading ? 'Loading…'
@@ -257,7 +271,7 @@ export default function CostsPage() {
     : zeroRecsState === 'failed' ? 'Latest cost analysis did not complete'
     : 'No cost analysis has run yet'
   // Founder ruling Q2: Cost Optimization's wording, firm and upper-bound figures apart, grey under $1/mo, never "$0/mo".
-  const savingsTile = recsUnavailable || !stats ? null : describeSavingsTile(stats)
+  const savingsTile = recsUnavailable || !stats ? null : describeSavingsTile(stats, { partialRun: !isDemoActive && latestRunPartial })
   const savingsStrong = savingsTile?.kind === 'firm' && savingsTile.strong
 
   const checks = activeChecks(ruleCatalog)
@@ -271,9 +285,10 @@ export default function CostsPage() {
   })
   const latestRun: CostAnalysisRun | undefined = analysisRuns?.[0]
 
-  // Opportunities (spec item 11): the top OPPORTUNITY_LIMIT by savings basis, each with its "Why:" line.
-  // Each figure is labelled by its savings_basis: "$X/mo", "Up to $X/mo" (a ceiling), or "No dollar estimate".
-  const opportunityRows: OpportunityRow[] = rankBySavings(isDemoActive ? DEMO_RECOMMENDATIONS : activeRecs)
+  // Opportunities (spec item 11): the top OPPORTUNITY_LIMIT by the savings figure each card shows (N-7), each with
+  // its "Why:" line. Each figure is labelled by its savings_basis: "$X/mo", "Up to $X/mo" (a ceiling), or
+  // "No dollar estimate".
+  const opportunityRows: OpportunityRow[] = rankByDisplayedSavings(demo ? demo.recommendations : activeRecs)
     .slice(0, OPPORTUNITY_LIMIT)
     .map(r => ({
       id: r.id,
@@ -286,10 +301,10 @@ export default function CostsPage() {
   // What this page covers (spec item 12). The demo feeds the same rules with demo signals.
   const pageCoverage = isDemoActive
     ? coverageRows({
-        spend: { section: DEMO_SPEND_SECTION, isLoading: false, isError: false },
+        spend: { section: demo?.spendSection, isLoading: false, isError: false },
         trend: { isLoading: false, isError: false },
         scan: { key: 'completed_open', source: 'scheduled', completedAt: null, errorMessage: null, counts: null, failedChecks: 0, uncheckedResources: 0 },
-        runs: ruleCatalog ? [demoRun(ruleCatalog.rules.filter((rule) => rule.status === 'implemented').map((rule) => rule.id))] : undefined,
+        runs: ruleCatalog && demo ? [demoRun(ruleCatalog.rules.filter((rule) => rule.status === 'implemented').map((rule) => rule.id), demo.analysisAt)] : undefined,
         catalog: { data: ruleCatalog, isError: rulesError },
         coverage: { homeRegion: DEMO_HOME_REGION, multiRegion: null, isLoading: false, isError: false },
       })
@@ -303,14 +318,14 @@ export default function CostsPage() {
       })
 
   const handleExportCSV = () => {
-    // The export uses the trend already fetched for the Spend Trend chart (source A):
-    // real per-day/per-category numbers, or the demo's own points in demo mode.
+    // The export is exactly the days the page shows (fix round 1, N-2): the same window as the chart, the
+    // cost drivers and their dates (safeguard 1). Real per-day/per-category numbers, or the demo's own points.
     const rows: (string | number)[][] = []
     // The real rows are trend totals: say so in the file, which travels without the page.
     if (!isDemoActive) rows.push([`AWS Cost Explorer daily totals · ${TREND_TOTALS_NOTE}`])
     rows.push(['Date', 'Service', 'Cost'])
     // Cents, not whole dollars: a sub-dollar day must not export as 0.
-    for (const p of trendPoints) {
+    for (const p of windowPoints) {
       // A day Cost Explorer has not reported yet has no amounts, never $0.
       if (isNotReportedYet(p)) {
         rows.push([p.date, 'Total', NOT_REPORTED_TOOLTIP])
@@ -336,6 +351,8 @@ export default function CostsPage() {
 
   // ── KPI row (spec item 6): shown once. Every tile keeps its link; missing or loading is "—" (safeguard 5). ──
   const neutral = 'text-ink-muted'
+  /** The tile value size for anything that isn't a headline figure (ruling Q2, SF-1). */
+  const SECONDARY_VALUE_SIZE = 'text-ui sm:text-section'
   const kpiTiles: {
     key: string; label: string; value: string; lines: string[]; valueClass: string; href: string; accent: string
     TrendIcon?: typeof Minus; previous?: string | null; basis?: string; names?: string; wide?: boolean; valueSize?: string
@@ -359,9 +376,11 @@ export default function CostsPage() {
       key: 'savings', label: 'Estimated Savings Opportunity',
       value: savingsTile?.value ?? '—',
       lines: savingsTile?.lines ?? [recsUnavailableSub],
-      valueClass: savingsStrong ? 'text-ink-success' : savingsTile?.kind === 'firm' ? 'text-slate-900' : neutral,
-      // Words ("Up to … · upper bound only", "No dollar estimate", "None found") are not a KPI figure: smaller (ruling Q2).
-      valueSize: savingsTile && savingsTile.kind !== 'firm' ? 'text-ui sm:text-section' : undefined,
+      // Ruling Q2 / SF-1: green and full KPI size only for a firm figure of $1/mo or more (as displayed, N-3). A
+      // smaller firm figure and the words ("Up to … · upper bound only", "No dollar estimate", "None found") are grey
+      // (slate-600, text-ink-muted) at the smaller secondary size.
+      valueClass: savingsStrong ? 'text-ink-success' : neutral,
+      valueSize: savingsTile && !savingsStrong ? SECONDARY_VALUE_SIZE : undefined,
       // No AWS account, or a figure under $1/mo or only an upper bound: no green savings accent (PR2, ruling Q2).
       href: '/cost-optimization', accent: !notConnected && savingsStrong ? 'border-t-[3px] border-t-green-500' : '',
     },
@@ -383,7 +402,7 @@ export default function CostsPage() {
   // Last analysis (spec item 7, ruling Q6): the latest run's own N of M and K found.
   const lastAnalysis = (() => {
     if (isDemoActive) {
-      const parts = [...(checks ? [`${checks.count} of ${checks.count} checks ran`] : []), `${DEMO_RECOMMENDATIONS.length} found`]
+      const parts = [...(checks ? [`${checks.count} of ${checks.count} checks ran`] : []), `${DEMO_FINDING_COUNT} found`]
       return `2 hours ago (${LAST_ANALYSIS_SOURCE.scheduled}) · ${parts.join(' · ')}`
     }
     if (scan.key === 'loading') return 'Loading…'
@@ -441,14 +460,17 @@ export default function CostsPage() {
           <Link key={key} href={href} className={`no-underline block h-full ${wide ? 'col-span-2 lg:col-span-1' : ''}`}>
             <div className={`h-full bg-white rounded-xl p-4 sm:p-5 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${accent}`} data-testid={`kpi-${key}`}>
               <div className="flex items-center justify-between mb-3 gap-2">
-                {/* Words never break mid-word (founder D7): a label whose longest word can't fit uses its short form there. */}
+                {/* Words never break mid-word (founder D7): a label whose longest word can't fit uses its short form there.
+                    Only `display` changes per breakpoint (fix round 1: toggling sr-only per breakpoint left the label 1px
+                    wide at 640–1023px and from 1280px); screen readers always get the full label once, from the sr-only copy. */}
                 <span className="text-label font-semibold text-ink-muted uppercase tracking-widest min-w-0 break-normal" data-testid={`kpi-${key}-label`}>
                   {shortLabel ? (<>
                     <span className="sm:hidden lg:inline xl:hidden" aria-hidden="true">{shortLabel}</span>
-                    <span className="sr-only sm:not-sr-only lg:sr-only xl:not-sr-only">{label}</span>
+                    <span className="hidden sm:inline lg:hidden xl:inline" aria-hidden="true">{label}</span>
+                    <span className="sr-only">{label}</span>
                   </>) : label}
                 </span>
-                {!notConnected && <span className="text-ink-muted text-ui shrink-0">›</span>}
+                {!notConnected && <span className="text-ink-muted text-ui shrink-0" aria-hidden="true">›</span>}
               </div>
               {/* No AWS account: label and "—" only, nothing under it (PR2). */}
               {notConnected ? <UnmeasuredValue className="text-section sm:text-kpi" /> : (<>
@@ -688,6 +710,10 @@ export default function CostsPage() {
           rows={!isDemoActive && activeRecsError ? [] : opportunityRows}
           total={stats ? stats.activeRecommendations : null}
           isError={!isDemoActive && activeRecsError}
+          // N-1: no empty-state text while the list or the tile's inputs are still loading.
+          isLoading={!isDemoActive && (activeRecsLoading || (recsUnavailable && recsUnavailableSub === 'Loading…'))}
+          // N-1: after an analysis that left nothing open, the card agrees with the savings tile ("None found").
+          emptyText={savingsTile?.kind === 'none_found' ? `${savingsTile.value}. ${savingsTile.lines[0]}.` : undefined}
         />
       )}
 
@@ -698,11 +724,11 @@ export default function CostsPage() {
   )
 }
 
-/** The demo's coverage input: a run with every active check complete (demo only). */
-function demoRun(ruleIds: string[]): CostAnalysisRun {
+/** The demo's coverage input: a run with every active check complete, finished at `at` (demo only, ruling D4). */
+function demoRun(ruleIds: string[], at: string): CostAnalysisRun {
   return {
     id: 'demo-run', status: 'completed', run_state: 'completed', source: 'discovery', recommendations_found: null, total_potential_savings: null,
-    started_at: '2026-04-25T06:00:00.000Z', completed_at: '2026-04-25T06:10:00.000Z', created_at: '2026-04-25T06:00:00.000Z', error_message: null,
+    started_at: at, completed_at: at, created_at: at, error_message: null,
     unknown_resource_count: 0,
     checks: ruleIds.map((rule_id) => ({ rule_id, issue: rule_id, outcome: 'complete' as const, detected: 0, unknown: 0 })),
   }
