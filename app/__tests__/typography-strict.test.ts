@@ -19,6 +19,10 @@ const COSTS = [
   'app/(app)/costs/by-team/page.tsx',
   'app/(app)/costs/efficiency/page.tsx',
   'app/(app)/costs/page.tsx',
+  // Cost Intelligence redesign PR A: the page's sections.
+  'app/(app)/costs/CostDriversCard.tsx',
+  'app/(app)/costs/OpportunitiesCard.tsx',
+  'app/(app)/costs/PageCoverageCard.tsx',
   'app/(app)/forecast/page.tsx',
 ]
 
@@ -394,19 +398,7 @@ const ALLOWED: { file: string; match: string; variant?: string; rule: string; co
   { file: 'components/dashboard/cost-trend-chart.tsx', match: 'opacity-60', variant: 'hover:', rule: 'opacity on content', count: 1, reason: "The same toggled-off legend entry on hover; kept, no visible change (D6)." },
   // G2: the Costs pages (reviewed exceptions). Decorative icons, chart series colours, class names held in a
   // `color` key, disabled-state dimming and the narrow chart axes kept at their size (founder decision, Oct 26).
-  { file: 'app/(app)/costs/page.tsx', match: 'opacity: 0', rule: 'inline text style', count: 1, reason: "The end frame of the ping keyframes in the page's <style> tag (the anomaly dot's ring animation), not a style on content." },
-  { file: 'app/(app)/costs/page.tsx', match: 'opacity-40', rule: 'opacity on content', count: 1, reason: "The anomaly dot's animated ping ring: an empty decorative div with no text; kept, no visible change." },
-  { file: 'app/(app)/costs/page.tsx', match: "color: 'text-slate-900'", rule: 'inline text style', count: 1, reason: "Not a style: the chart summary's `color` key holds a class name (slate-900, the spend figure)." },
-  { file: 'app/(app)/costs/page.tsx', match: 'color: growthRate', rule: 'inline text style', count: 1, reason: "Not a style: the Month-over-Month `color` key holds class names (text-ink-muted/-danger/-success) chosen at runtime." },
-  { file: 'app/(app)/costs/page.tsx', match: "color: 'text-ink-muted'", rule: 'inline text style', count: 1, reason: "Not a style: the Active Recommendations `color` key holds the text-ink-muted class name." },
-  { file: 'app/(app)/costs/page.tsx', match: "color: 'text-ink-success'", rule: 'inline text style', count: 1, reason: "Not a style: the savings `color` key holds the text-ink-success class name." },
-  { file: 'app/(app)/costs/page.tsx', match: "color: '#3B82F6'", rule: 'inline text style', count: 1, reason: 'Chart series colour (Compute): the top-drivers swatch, not text.' },
-  { file: 'app/(app)/costs/page.tsx', match: "color: '#8B5CF6'", rule: 'inline text style', count: 1, reason: 'Chart series colour (Database): the top-drivers swatch, not text.' },
-  { file: 'app/(app)/costs/page.tsx', match: "color: '#06B6D4'", rule: 'inline text style', count: 1, reason: 'Chart series colour (Storage): the top-drivers swatch, not text.' },
-  { file: 'app/(app)/costs/page.tsx', match: "color: '#0F172A'", rule: 'inline text style', count: 2, reason: 'Chart series colour (Actual spend): the legend line stroke, not text (demo and real legends).' },
-  { file: 'app/(app)/costs/page.tsx', match: "color: '#7C3AED'", rule: 'inline text style', count: 1, reason: 'Chart series colour (AI forecast, demo only): the legend line stroke, not text.' },
-  { file: 'app/(app)/costs/page.tsx', match: 'fontSize: 10', rule: 'inline text style', count: 2, reason: 'Spend trend Y axis ticks ($x.xk) on a fixed width={48} axis: 12 px would crowd it, so the size stays 10 and the colour is CHART_TICK (founder decision, Oct 26). Demo and real charts.' },
-  { file: 'app/(app)/costs/page.tsx', match: 'fontSize: 9', rule: 'inline text style', count: 3, reason: 'Demo-only spend chart: three event labels (Apr 8, 14, 18) placed a few days apart inside the plot; at 12 px they would overlap, so they stay 9 px. Demo mode is permanently off.' },
+  { file: 'app/(app)/costs/page.tsx', match: 'fontSize: 10', rule: 'inline text style', count: 1, reason: 'Spend trend Y axis ticks ($x.xk) on a fixed width={48} axis: 12 px would crowd it, so the size stays 10 and the colour is CHART_TICK (founder decision, Oct 26). One chart since the Cost Intelligence redesign (demo and real share it).' },
   { file: 'app/(app)/costs/page.tsx', match: 'text-slate-400', rule: 'text colour below AA on light surfaces', count: 2, reason: 'Decorative icons (svg, not text): the query box search icon and the chart loading spinner; kept, no visible change.' },
   { file: 'app/(app)/costs/by-team/page.tsx', match: "color: '#7C3AED'", rule: 'inline text style', count: 2, reason: "Decorative KPI icons (svg, not text): the demo Total Monthly Spend icon's colour key and the spend card's dollar icon." },
   { file: 'app/(app)/costs/by-team/page.tsx', match: "color: '#4f8ef7'", rule: 'inline text style', count: 1, reason: "Demo-only KPI icon and its tile tint (svg and background, not text). Demo mode is permanently off." },

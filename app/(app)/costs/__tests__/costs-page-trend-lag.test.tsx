@@ -37,8 +37,9 @@ vi.mock('@/lib/demo/sales-demo-data', () => ({ useSalesDemo: (selector: (s: { en
 const mockGetCostSummary = vi.fn()
 vi.mock('@/lib/services/platform-stats.service', () => ({ platformStatsService: { getCostSummary: () => mockGetCostSummary() } }))
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
-  costRecommendationsService: { getStats: async () => ({ totalRecommendations: 0, activeRecommendations: 0, totalPotentialSavings: 0, potentialSavingsByResourceType: {}, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }), getAll: async () => [], getAnalysisRuns: async () => [] },
+  costRecommendationsService: { getStats: async () => ({ totalRecommendations: 0, activeRecommendations: 0, totalPotentialSavings: 0, potentialSavingsByResourceType: {}, potentialSavingsCeiling: 0, potentialSavingsCeilingByResourceType: {}, bySeverity: { high: 0, medium: 0, low: 0 } }), getAll: async () => [], getAnalysisRuns: async () => [], getOptimizationRules: async () => ({ rules: [], summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] } }) },
 }))
+vi.mock('@/lib/services/aws-services.service', () => ({ default: { getCoverage: async () => ({ account: { connected: true, status: 'active', home_region: null } }) } }))
 vi.mock('@/lib/services/aws-resources.service', () => ({ awsResourcesService: { getDiscoveryJobs: async () => [] } }))
 // PR2: the page asks whether an AWS account is connected; these suites are the connected page.
 vi.mock('@/lib/services/aws-accounts.service', () => ({ default: { getAccountsAndConnection: async () => ({ accounts: [{ id: 'a', status: 'active' }], connection: 'connected' }) } }))
