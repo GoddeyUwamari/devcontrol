@@ -221,7 +221,7 @@ describe('Costs page -- savings wording', () => {
   it('no annualized line (removed in PR A), and there is no "% of current spend"', async () => {
     renderPage()
 
-    expect(await within(await card('Estimated Savings Opportunity')).findByText('$0.96/mo')).toBeInTheDocument()
+    expect(await within(await card('Savings Opportunity')).findByText('$0.96/mo')).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/annualized|\/yr/)
     expect(document.body.textContent).not.toMatch(/% of current spend/)
   })
@@ -231,7 +231,7 @@ describe('Costs page -- savings wording', () => {
     mockGetAll.mockRejectedValue(new Error('500'))
     renderPage()
 
-    const savingsCard = await card('Estimated Savings Opportunity')
+    const savingsCard = await card('Savings Opportunity')
     expect(await within(savingsCard).findByText('Could not be retrieved')).toBeInTheDocument()
     expect(savingsCard.textContent).not.toMatch(/\$0/)
     expect(await screen.findByText('Recommendations could not be retrieved.')).toBeInTheDocument()
@@ -253,8 +253,8 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
   })
 
   async function expectNotMeasured(sub: string | RegExp) {
-    const savingsCard = await card('Estimated Savings Opportunity')
-    const recsCard = await card('Active Recommendations')
+    const savingsCard = await card('Savings Opportunity')
+    const recsCard = await card('Active Findings')
     expect(await within(savingsCard).findByText(sub)).toBeInTheDocument()
     expect(within(recsCard).getByText(sub)).toBeInTheDocument()
     for (const c of [savingsCard, recsCard]) {
@@ -293,10 +293,10 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     mockGetAnalysisRuns.mockResolvedValue([analysisRun('completed')])
     renderPage()
 
-    const recsCard = await card('Active Recommendations')
+    const recsCard = await card('Active Findings')
     expect(await within(recsCard).findByText('No open recommendations')).toBeInTheDocument()
     expect(within(recsCard).getByText('0')).toBeInTheDocument()
-    const savingsCard = await card('Estimated Savings Opportunity')
+    const savingsCard = await card('Savings Opportunity')
     expect(within(savingsCard).getByText('None found')).toBeInTheDocument()
     expect(savingsCard.textContent).not.toMatch(/\$0/)
   })
@@ -306,10 +306,10 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     mockGetDiscoveryJobs.mockResolvedValue([discoveryJob('completed', true)])
     renderPage()
 
-    const recsCard = await card('Active Recommendations')
+    const recsCard = await card('Active Findings')
     expect(await within(recsCard).findByText('No open recommendations')).toBeInTheDocument()
     expect(within(recsCard).getByText('0')).toBeInTheDocument()
-    expect((await card('Estimated Savings Opportunity')).textContent).toContain('None found')
+    expect((await card('Savings Opportunity')).textContent).toContain('None found')
   })
 
   it('a scheduled job whose cost analysis did not finish is not a measured $0', async () => {
@@ -334,7 +334,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
 
   it('the page subtitle is the spec\'s (item 5): no real-time or "AI-powered" claim', async () => {
     renderPage()
-    await card('Estimated Savings Opportunity')
+    await card('Savings Opportunity')
     const subtitle = screen.getByText('AWS spend visibility, cost drivers, and evidence-backed optimization opportunities.')
     expect(subtitle.textContent).not.toMatch(/real[- ]?time|AI-powered/i)
     expect(document.body.textContent).not.toMatch(/AI-powered/)
@@ -352,7 +352,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     ])
     renderPage()
 
-    const row = async (title: string) => (await screen.findByText(title)).parentElement as HTMLElement
+    const row = async (title: string) => (await screen.findByText(title)).closest('[data-testid="opportunity-card"]') as HTMLElement
     expect(await row('S3 Lifecycle Optimization')).toHaveTextContent('Up to $41/mo')
     expect(await row('Unattached EBS Volume')).toHaveTextContent('$12/mo')
     expect(await row('Reserved Instance Opportunity')).toHaveTextContent('No dollar estimate')
@@ -370,7 +370,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
         metadata: { rule_version: 2, savings_basis: 'estimated: the us-east-1 on-demand list price for db.t3.medium PostgreSQL Single-AZ instance hours ($0.072/hour, 730 hours); storage, Provisioned IOPS, backups and snapshots are not included and are still billed while the instance is stopped; no reservation or discount applied; not billed cost', price_region: 'us-east-1', price_instance_class: 'db.t3.medium', price_engine_label: 'PostgreSQL', price_deployment: 'Single-AZ' } },
     ])
     renderPage()
-    const row = (await screen.findByText('Idle RDS Instance')).parentElement as HTMLElement
+    const row = (await screen.findByText('Idle RDS Instance')).closest('[data-testid="opportunity-card"]') as HTMLElement
     expect(row).toHaveTextContent('$53/mo')
     expect(document.body.textContent).not.toMatch(/Estimated from the|instance hours only|restarts a stopped database/)
   })
@@ -387,10 +387,10 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     ])
     renderPage()
 
-    const row = async (title: string) => (await screen.findByText(title)).parentElement as HTMLElement
+    const row = async (title: string) => (await screen.findByText(title)).closest('[data-testid="opportunity-card"]') as HTMLElement
     expect(await row('Idle Instance (default)')).toHaveTextContent('$50/mo (price unknown)')
-    expect((await row('Idle Instance (listed)')).textContent).toMatch(/\$50\/mo$/)
-    expect((await row('Idle Instance (legacy)')).textContent).toMatch(/\$50\/mo$/)
+    expect(within(await row('Idle Instance (listed)')).getByTestId('opportunity-savings').textContent).toBe('$50/mo')
+    expect(within(await row('Idle Instance (legacy)')).getByTestId('opportunity-savings').textContent).toBe('$50/mo')
     expect(screen.getAllByText(/\(price unknown\)/)).toHaveLength(1)
   })
 
@@ -399,7 +399,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     mockGetAnalysisRuns.mockResolvedValue([])
     renderPage()
 
-    const recsCard = await card('Active Recommendations')
+    const recsCard = await card('Active Findings')
     expect(await within(recsCard).findByText('3')).toBeInTheDocument()
     expect(within(recsCard).getByText('Ready to review')).toBeInTheDocument()
   })

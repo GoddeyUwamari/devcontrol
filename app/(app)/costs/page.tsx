@@ -9,6 +9,7 @@ import {
 import {
   Search, Download, TrendingUp, TrendingDown, Minus,
   Sparkles, Loader2, X, Zap, Lock,
+  CreditCard, ChartLine, Leaf, Shield, SquareCheck,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { usePlan } from '@/lib/hooks/use-plan'
@@ -35,8 +36,8 @@ import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, noFinalDayThisM
 import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
 import {
-  acrossCategories, activeChecks, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, lastAnalysisParts, PAGE_SUBTITLE, rankByDisplayedSavings,
-  servicesLine, TREND_RANGES, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
+  acrossCategories, activeChecks, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, formatDriverAmount, lastAnalysisParts, opportunityFigure, PAGE_SUBTITLE,
+  rankByDisplayedSavings, servicesLine, topDrivers, TREND_RANGES, trendSummary, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
 } from './cost-intelligence'
 import { whyLine } from './why-evidence'
 import { CostDriversCard } from './CostDriversCard'
@@ -64,6 +65,12 @@ function SpendTrendTooltip({ active, payload, label, rows }: { active?: boolean;
     </div>
   )
 }
+
+/**
+ * The Ask card's title (mock-match item 6). Not the mock's "this account's spend": ruling Q12 words spend as what
+ * the connected account can see, and Ask AI also answers about resources and deployments.
+ */
+const ASK_TITLE = 'Ask about the connected AWS account'
 
 /** Ask AI result header: says whether the question was answered, found nothing, or could not be answered. */
 const NL_OUTCOME_LABEL: Record<NLQueryOutcome, (rows: number) => string> = {
@@ -230,6 +237,10 @@ export default function CostsPage() {
   const windowDates = windowDatesLabel(windowPoints)
   const trendNotReportedNote = isDemoActive ? null : unreportedTrendNote(windowPoints, 'day')
   const trendHasUpdating = windowPoints.some(isStillUpdating)
+  // Mock-match item 5: the summary line is computed from the chart's window (the days it draws), so it can never
+  // cover other days than the chart or the cost drivers; Top drivers from the cost drivers of the same window.
+  const summaryLine = useMemo(() => trendSummary(windowPoints), [windowPoints])
+  const summaryTopDrivers = topDrivers(drivers)
   // Whether the trend has real Cost Explorer points to show; an empty or failed series is never drawn as $0.
   const hasTrendData = isDemoActive || (!costTrendLoading && !costTrendError && costTrend.length > 0)
 
@@ -290,13 +301,19 @@ export default function CostsPage() {
   // "No dollar estimate".
   const opportunityRows: OpportunityRow[] = rankByDisplayedSavings(demo ? demo.recommendations : activeRecs)
     .slice(0, OPPORTUNITY_LIMIT)
-    .map(r => ({
-      id: r.id,
-      title: r.issue || r.resourceName || 'Cost optimization available',
-      savingsLabel: `${formatRecommendationSavings(r, formatSavingsCurrency)}${isDefaultPriceEstimate(r) ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}`,
-      severity: r.severity,
-      why: whyLine(r),
-    }))
+    .map(r => {
+      // Green only for a firm figure of $1/mo or more as displayed; an upper bound or a small figure is grey (ruling Q2).
+      const figure = opportunityFigure(r)
+      return {
+        id: r.id,
+        title: r.issue || r.resourceName || 'Cost optimization available',
+        savingsLabel: `${formatRecommendationSavings(r, formatSavingsCurrency)}${isDefaultPriceEstimate(r) ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}`,
+        strong: figure.strong,
+        basisNote: figure.note,
+        severity: r.severity,
+        why: whyLine(r),
+      }
+    })
 
   // What this page covers (spec item 12). The demo feeds the same rules with demo signals.
   const pageCoverage = isDemoActive
@@ -349,21 +366,35 @@ export default function CostsPage() {
     URL.revokeObjectURL(url)
   }
 
+  // Header status (mock-match item 3): "Account connected" only when the server's connection state says so; the
+  // "Cost data as of" date as today (not in demo, not without an account, not while the connection check loads).
+  const accountConnected = !isDemoActive && awsAccounts?.connection === 'connected'
+  const costDataAsOf = !isDemoActive && costSummary?.spend.asOf && !notConnected && !connectionLoading
+    ? new Date(costSummary.spend.asOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : null
+
   // ── KPI row (spec item 6): shown once. Every tile keeps its link; missing or loading is "—" (safeguard 5). ──
   const neutral = 'text-ink-muted'
   /** The tile value size for anything that isn't a headline figure (ruling Q2, SF-1). */
   const SECONDARY_VALUE_SIZE = 'text-ui sm:text-section'
   const kpiTiles: {
     key: string; label: string; value: string; lines: string[]; valueClass: string; href: string; accent: string
-    TrendIcon?: typeof Minus; previous?: string | null; basis?: string; names?: string; wide?: boolean; valueSize?: string
+    TrendIcon?: typeof Minus; previous?: string | null; basis?: string; names?: string; valueSize?: string
     /** Shown instead of `label` where the tile is too narrow for its longest word (no mid-word wrapping, founder D7). */
     shortLabel?: string
+    /** The mock's icon badge in the tile header (decorative): the icon and its tint (background + icon ink). */
+    Icon: typeof Minus; badge: string
+    /** The visible text link at the foot of the tile, in place of the › (mock-match item 2). The whole tile stays the link. */
+    cta?: string
+    /** Grid span: full width on a phone ('phone'), or across both columns below lg ('both'), as in the mock's phone board. */
+    span?: 'phone' | 'both'
   }[] = [
     {
       key: 'mtd', label: spend.label, value: spend.value, lines: [spend.sub],
       // While no day of this month has finished: last month's total (the Dashboard's line).
       previous: isDemoActive ? null : previousMonthLine(costSummary?.spend),
       valueClass: 'text-slate-900', href: '/invoices', accent: '',
+      Icon: CreditCard, badge: 'bg-indigo-50 text-indigo-600', span: 'phone',
     },
     {
       key: 'momchange', label: 'Month-over-Month Change', value: mom.value, lines: [mom.sub],
@@ -371,9 +402,11 @@ export default function CostsPage() {
       // Safeguard 2: the % compares finished days only, not the month to date, and not the selected range.
       basis: `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}`,
       valueClass: 'text-slate-900', href: '/invoices', accent: '',
+      // Neutral whichever way it moves (ruling Q3): a slate badge, never green, amber or red.
+      Icon: ChartLine, badge: 'bg-slate-100 text-slate-600', span: 'phone',
     },
     {
-      key: 'savings', label: 'Estimated Savings Opportunity',
+      key: 'savings', label: 'Savings Opportunity', shortLabel: 'Savings',
       value: savingsTile?.value ?? '—',
       lines: savingsTile?.lines ?? [recsUnavailableSub],
       // Ruling Q2 / SF-1: green and full KPI size only for a firm figure of $1/mo or more (as displayed, N-3). A
@@ -383,19 +416,22 @@ export default function CostsPage() {
       valueSize: savingsTile && !savingsStrong ? SECONDARY_VALUE_SIZE : undefined,
       // No AWS account, or a figure under $1/mo or only an upper bound: no green savings accent (PR2, ruling Q2).
       href: '/cost-optimization', accent: !notConnected && savingsStrong ? 'border-t-[3px] border-t-green-500' : '',
+      Icon: Leaf, badge: 'bg-green-50 text-green-700', cta: 'Review savings',
     },
     {
-      key: 'activerecs', label: 'Active Recommendations', shortLabel: 'Findings',
+      key: 'activerecs', label: 'Active Findings',
       value: recsUnavailable ? '—' : `${activeRecsCount}`,
       lines: [recsUnavailable ? recsUnavailableSub : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations'],
       valueClass: 'text-slate-900', href: '/cost-optimization', accent: '',
+      Icon: Shield, badge: 'bg-orange-50 text-orange-700', cta: !recsUnavailable && activeRecsCount === 1 ? 'See finding' : 'See findings',
     },
     {
-      key: 'checks', label: 'Active checks',
+      key: 'checks', label: 'Cost checks',
       value: checks ? `${checks.count}` : '—',
       lines: [checks ? acrossCategories(checks.services.length) : rulesLoading ? 'Loading…' : rulesError ? 'Could not be retrieved' : 'Not available'],
       names: checks ? servicesLine(checks.services) : undefined,
-      valueClass: 'text-slate-900', href: '/cost-optimization', accent: '', wide: true,
+      valueClass: 'text-slate-900', href: '/cost-optimization', accent: '',
+      Icon: SquareCheck, badge: 'bg-blue-50 text-blue-700', span: 'both',
     },
   ]
 
@@ -418,34 +454,42 @@ export default function CostsPage() {
 
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <h1 className={PAGE_TITLE_CLASS}>Cost Intelligence</h1>
-            {demoMode && (
-              <span className="text-label font-semibold bg-amber-50 text-ink-warning border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">
-                Demo Mode
-              </span>
-            )}
-            {!isDemoActive && costSummary?.spend.asOf && !notConnected && !connectionLoading ? (
-              <span className="inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted">
-                Cost data as of {new Date(costSummary.spend.asOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              </span>
-            ) : null}
-          </div>
-          <p className={PAGE_SUBTITLE_CLASS}>{PAGE_SUBTITLE}</p>
+        {/* Title, then (from sm) the status chip beside it and the subtitle under both; on a phone the chip sits under
+            the subtitle (the mock's phone board). Only `order` changes per breakpoint. */}
+        <div className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className={`${PAGE_TITLE_CLASS} order-1`}>Cost Intelligence</h1>
+          {demoMode && (
+            <span className="order-2 text-label font-semibold bg-amber-50 text-ink-warning border border-amber-200 px-3 py-0.5 rounded-full uppercase tracking-widest">
+              Demo Mode
+            </span>
+          )}
+          {accountConnected ? (
+            // Mock-match item 3: "Account connected" only when the server says the account is connected, combined with
+            // the "Cost data as of" badge. The phone board shows the date only.
+            <span className={`order-4 sm:order-3 items-center gap-1.5 text-label font-medium bg-green-50 border border-green-200 rounded-full px-2.5 py-1 text-ink-success ${costDataAsOf ? 'inline-flex' : 'hidden sm:inline-flex'}`} data-testid="header-status-chip">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-600 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline" data-testid="account-connected">Account connected</span>
+              {costDataAsOf && <><span className="hidden sm:inline" aria-hidden="true">·</span><span>Cost data as of {costDataAsOf}</span></>}
+            </span>
+          ) : costDataAsOf ? (
+            <span className="order-4 sm:order-3 inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted" data-testid="header-status-chip">
+              Cost data as of {costDataAsOf}
+            </span>
+          ) : null}
+          <p className={`${PAGE_SUBTITLE_CLASS} order-3 sm:order-4 basis-full`}>{PAGE_SUBTITLE}</p>
           {!notConnected && !connectionLoading && (
-            <p className="text-meta text-ink-muted mt-2 mb-0" data-testid="last-analysis">
+            <p className="order-5 basis-full text-meta text-ink-muted m-0" data-testid="last-analysis">
               {LAST_ANALYSIS}: {lastAnalysis}
             </p>
           )}
         </div>
         {connectionLoading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : (
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white text-slate-600 px-4 py-2.5 min-h-11 sm:min-h-0 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
-            <Download size={14} /> Export CSV
+        <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-center sm:gap-2 sm:flex-wrap sm:shrink-0">
+          <button onClick={handleExportCSV} className="flex items-center justify-center gap-2 bg-white text-slate-900 px-4 py-2.5 min-h-11 rounded-lg text-ui font-semibold border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
+            <Download size={16} aria-hidden="true" /> Export CSV
           </button>
-          <a href="/cost-optimization" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 min-h-11 sm:min-h-0 rounded-lg text-ui font-semibold no-underline transition-colors whitespace-nowrap">
-            <Zap size={14} /> Optimize Now
+          <a href="/cost-optimization" className="flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 min-h-11 rounded-lg text-ui font-semibold no-underline transition-colors whitespace-nowrap">
+            <Zap size={14} aria-hidden="true" /> Optimize Now
           </a>
         </div>
         )}
@@ -453,24 +497,36 @@ export default function CostsPage() {
 
       {connectionLoading ? <NotConnectedLoading tiles={5} /> : (<>
 
-      {/* ── KPI ROW: shown once (spec item 6) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
-        {kpiTiles.map(({ key, label, value, lines, valueClass, href, accent, TrendIcon, previous, basis, names, wide, valueSize, shortLabel }) => (
+      {/* ── KPI ROW: shown once (spec item 6); five tiles (founder D1) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-5">
+        {kpiTiles.map(({ key, label, value, lines, valueClass, href, accent, TrendIcon, previous, basis, names, valueSize, shortLabel, Icon, badge, cta, span }) => (
           // Each tile fills its grid row, so a wrapped label never leaves the row's tiles at different heights.
-          <Link key={key} href={href} className={`no-underline block h-full ${wide ? 'col-span-2 lg:col-span-1' : ''}`}>
-            <div className={`h-full bg-white rounded-xl p-4 sm:p-5 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${accent}`} data-testid={`kpi-${key}`}>
+          <Link key={key} href={href} className={`no-underline block h-full ${span === 'phone' ? 'col-span-2 sm:col-span-1' : span === 'both' ? 'col-span-2 lg:col-span-1' : ''}`}>
+            <div className={`h-full flex flex-col bg-white rounded-xl p-4 sm:p-5 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${accent}`} data-testid={`kpi-${key}`}>
               <div className="flex items-center justify-between mb-3 gap-2">
-                {/* Words never break mid-word (founder D7): a label whose longest word can't fit uses its short form there.
-                    Only `display` changes per breakpoint (fix round 1: toggling sr-only per breakpoint left the label 1px
-                    wide at 640–1023px and from 1280px); screen readers always get the full label once, from the sr-only copy. */}
-                <span className="text-label font-semibold text-ink-muted uppercase tracking-widest min-w-0 break-normal" data-testid={`kpi-${key}-label`}>
-                  {shortLabel ? (<>
-                    <span className="sm:hidden lg:inline xl:hidden" aria-hidden="true">{shortLabel}</span>
-                    <span className="hidden sm:inline lg:hidden xl:inline" aria-hidden="true">{label}</span>
-                    <span className="sr-only">{label}</span>
-                  </>) : label}
+                <span className="flex items-center gap-2.5 min-w-0">
+                  {/* The mock's icon badge (decorative), at every width from 640px (founder, mock-match fixes); not on a
+                      phone, as on the phone board. A label that can't fit beside it uses its short form there (D7), never
+                      a hidden badge. No AWS account: none, the tile is label and "—" only (PR2). */}
+                  {!notConnected && (
+                    <span className={`hidden sm:flex w-8 h-8 rounded-lg items-center justify-center shrink-0 ${badge}`} aria-hidden="true" data-testid={`kpi-${key}-badge`}>
+                      <Icon size={18} />
+                    </span>
+                  )}
+                  {/* Words never break mid-word (founder D7): a label whose longest word can't fit uses its short form there.
+                      With the badge, "OPPORTUNITY" only fails to fit in the five-across row at 1024–1279px (measured in
+                      Chromium with Geist), so the short form shows in that tier only. Only `display` changes per breakpoint
+                      (fix round 1: toggling sr-only per breakpoint left a label 1px wide); screen readers always get the
+                      full label once, from the sr-only copy. */}
+                  <span className="text-label font-semibold text-ink-muted uppercase tracking-widest min-w-0 break-normal" data-testid={`kpi-${key}-label`}>
+                    {shortLabel ? (<>
+                      <span className="hidden lg:inline xl:hidden" aria-hidden="true">{shortLabel}</span>
+                      <span className="lg:hidden xl:inline" aria-hidden="true">{label}</span>
+                      <span className="sr-only">{label}</span>
+                    </>) : label}
+                  </span>
                 </span>
-                {!notConnected && <span className="text-ink-muted text-ui shrink-0" aria-hidden="true">›</span>}
+                {!notConnected && !cta && <span className="text-ink-muted text-ui shrink-0" aria-hidden="true">›</span>}
               </div>
               {/* No AWS account: label and "—" only, nothing under it (PR2). */}
               {notConnected ? <UnmeasuredValue className="text-section sm:text-kpi" /> : (<>
@@ -484,6 +540,12 @@ export default function CostsPage() {
               {names && <p className="text-meta text-slate-700 font-medium mt-1.5 m-0 leading-relaxed" data-testid="kpi-checks-services">{names}</p>}
               {basis && <p className="text-meta text-ink-muted mt-1.5 m-0 leading-relaxed" data-testid="mom-basis">{basis}</p>}
               {previous && <p className="text-meta text-ink-muted mt-2 m-0" data-testid="previous-month-line">{previous}</p>}
+              {/* The tile is the link; this is its visible affordance (mock-match item 2). It goes where the tile goes. */}
+              {cta && (
+                <span className="mt-auto pt-3 text-ui font-semibold text-violet-700" data-testid={`kpi-${key}-cta`}>
+                  {cta} <span aria-hidden="true">→</span>
+                </span>
+              )}
               </>)}
             </div>
           </Link>
@@ -493,21 +555,21 @@ export default function CostsPage() {
       {notConnected && <NotConnectedCard className="mb-5" />}
 
       {/* ── SPEND TREND: its own row (spec item 8) ── */}
-      <section aria-labelledby="spend-trend-heading" className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-100 mb-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+      <section aria-labelledby="spend-trend-heading" className="bg-white rounded-xl p-4 sm:p-6 border border-slate-200 mb-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
           <div className="min-w-0">
-            <h2 id="spend-trend-heading" className="text-ui font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
+            <h2 id="spend-trend-heading" className="text-section font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
             <p className="text-meta text-ink-muted leading-relaxed m-0">
               {isDemoActive ? 'Demo data · daily spend' : `Historical AWS spend by day, from Cost Explorer · ${TREND_TOTALS_NOTE}`}
             </p>
           </div>
-          {!notConnected && <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto self-start sm:self-auto">
+          {!notConnected && <div className="flex bg-slate-100 rounded-lg p-1 gap-0.5 overflow-x-auto w-full sm:w-auto sm:shrink-0">
             {TREND_RANGES.map(({ label }) => (
               <button
                 key={label}
                 onClick={() => setSelectedRange(label)}
                 aria-pressed={selectedRange === label}
-                className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-md text-label font-semibold border-none cursor-pointer transition-all whitespace-nowrap ${
+                className={`flex-1 sm:flex-none px-3 py-1.5 min-h-11 sm:min-h-9 sm:min-w-11 rounded-md text-meta font-semibold border-none cursor-pointer transition-all whitespace-nowrap ${
                   selectedRange === label ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted hover:text-slate-700'
                 }`}
               >
@@ -517,9 +579,33 @@ export default function CostsPage() {
           </div>}
         </div>
 
-        {/* The days drawn: the same days the cost drivers below add up (safeguard 1). */}
+        {/* Mock-match item 5: the summary line. The total and the daily average add exactly the amounts the chart draws,
+            the window's days and dates are the same days the cost drivers below add up (safeguard 1), and Top drivers are
+            those cost drivers' largest services. */}
         {hasTrendData && windowDates && (
-          <p className="text-meta text-ink-muted m-0 mb-4" data-testid="trend-window">{windowPoints.length} days · {windowDates}</p>
+          <div className="flex flex-wrap items-baseline gap-x-10 gap-y-2 text-ui text-ink-muted mb-4" data-testid="trend-summary">
+            <span>
+              {summaryLine && <><span className="text-section font-semibold text-slate-900 tabular-nums" data-testid="trend-total">{formatDriverAmount(summaryLine.total)}</span>{' total, '}</>}
+              <span data-testid="trend-window">{windowPoints.length} days · {windowDates}</span>
+            </span>
+            {summaryLine && (
+              <span>
+                <span className="text-section font-semibold text-slate-900 tabular-nums" data-testid="trend-daily-average">{formatDriverAmount(summaryLine.dailyAverage)}</span> daily average
+              </span>
+            )}
+            {summaryTopDrivers.length > 0 && (
+              // Not on a phone: the phone board's summary line has the total and the daily average only.
+              <span className="hidden sm:flex flex-wrap items-center gap-x-3.5 gap-y-1.5" data-testid="trend-top-drivers">
+                Top drivers
+                {summaryTopDrivers.map((slice) => (
+                  <span key={slice.service} className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: slice.fill }} aria-hidden="true" />
+                    {slice.service} <span className="font-semibold text-slate-900 tabular-nums">{formatDriverAmount(slice.amount)}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
         )}
 
         {costTrendLoading && !isDemoActive ? (
@@ -549,10 +635,12 @@ export default function CostsPage() {
                 <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
                 <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
                 <Tooltip filterNull={false} content={<SpendTrendTooltip rows={chartData} />} />
-                <Area type="monotone" dataKey="actual" stroke={TREND_LINE} strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: TREND_LINE, strokeWidth: 0 }} />
+                {/* Straight segments between daily points (mock-match fixes): a smoothed curve can draw bumps or dips
+                    between days that aren't in the data. */}
+                <Area type="linear" dataKey="actual" stroke={TREND_LINE} strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: TREND_LINE, strokeWidth: 0 }} />
                 {/* The day Cost Explorer is still updating: the same line, lighter and dashed, joined to the last final point (ruling Q7b). */}
                 {trendHasUpdating && (
-                  <Area type="monotone" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
+                  <Area type="linear" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
                     dot={(props: any) => props?.payload?.reportState === 'updating'
                       ? <circle key={props.key ?? `u-${props.index}`} cx={props.cx} cy={props.cy} r={3} fill={UPDATING_STROKE} stroke="none" data-testid="spend-trend-updating-dot" />
                       : <g key={props.key ?? `u-${props.index}`} />}
@@ -583,7 +671,9 @@ export default function CostsPage() {
           {trendNotReportedNote && hasTrendData && (
             <span className="text-meta text-ink-muted" data-testid="trend-not-reported">{trendNotReportedNote}</span>
           )}
-          <span className="text-meta text-ink-muted ml-auto hidden sm:block">Values shown as daily spend</span>
+          <span className="text-meta text-ink-muted ml-auto hidden sm:block" data-testid="trend-legend-note">
+            Values shown as daily spend{costDataAsOf ? ` · Data as of ${costDataAsOf}` : ''}
+          </span>
         </div>}
       </section>
 
@@ -612,32 +702,40 @@ export default function CostsPage() {
               </a>
             </div>
           )}
-          <form method="post" onSubmit={handleNlQuery} className="mb-5">
-            <div className="relative">
-              <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input
-                ref={inputRef}
-                value={nlQuery}
-                onChange={e => setNlQuery(e.target.value)}
-                placeholder='Ask about your data — "What is my AWS spend this month?" · "Show running EC2 instances"'
-                className="w-full pl-11 pr-28 py-3.5 rounded-xl border border-slate-200 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
-              />
+          {/* Mock-match item 6: the Ask card. Same behaviour and visibility as before (hidden with no AWS account, D2). */}
+          <form method="post" onSubmit={handleNlQuery} className="mb-5 bg-white rounded-xl border border-slate-200 p-4" aria-labelledby="ask-ai-title" data-testid="ask-ai">
+            <label htmlFor="ask-ai-input" id="ask-ai-title" className="flex items-center gap-2.5 text-ui font-semibold text-slate-900 mb-3">
+              <Sparkles size={18} className="text-violet-600 shrink-0" aria-hidden="true" />
+              {ASK_TITLE}
+            </label>
+            <div className="flex flex-col gap-2.5 sm:flex-row">
+              <div className="relative flex-1 min-w-0">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" aria-hidden="true" />
+                <input
+                  id="ask-ai-input"
+                  ref={inputRef}
+                  value={nlQuery}
+                  onChange={e => setNlQuery(e.target.value)}
+                  placeholder="e.g. What is my AWS spend this month?"
+                  className="w-full min-h-11 pl-10 pr-3.5 rounded-lg border border-slate-300 text-ui text-slate-900 bg-white outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/15 transition-all"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={nlLoading}
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-label font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border-none"
+                className="min-h-11 bg-violet-600 hover:bg-violet-700 text-white px-5 rounded-lg text-ui font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border-none shrink-0"
               >
-                {nlLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                {nlLoading ? 'Analyzing...' : 'Ask AI'}
+                {nlLoading && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+                {nlLoading ? 'Analyzing...' : 'Ask'}
               </button>
             </div>
-            <div className="flex flex-wrap gap-1.5 mt-2.5">
+            <div className="flex flex-wrap gap-2 mt-3">
               {['What is my AWS spend this month?', 'Show running EC2 instances', 'Unencrypted S3 buckets', 'Failed production deployments'].map(chip => (
                 <button
                   key={chip}
                   type="button"
                   onClick={() => { setNlQuery(chip); inputRef.current?.focus() }}
-                  className="text-label text-violet-600 bg-violet-50 rounded-full px-2.5 py-1 cursor-pointer border-none font-medium hover:bg-violet-100 transition-colors"
+                  className="min-h-8 text-meta text-violet-800 bg-violet-50 border border-violet-200 rounded-full px-3 cursor-pointer font-medium hover:bg-violet-100 transition-colors"
                 >
                   {chip}
                 </button>
@@ -692,8 +790,12 @@ export default function CostsPage() {
         </>
       )}
 
+      {/* ── BOTTOM ROW (mock-match item 1): Cost drivers · Opportunities · What this page covers, three columns from
+          1280px (xl), stacked in that order below it. With no AWS account only Cost drivers shows, full width (PR2). ── */}
+      <div className={notConnected ? 'mb-5' : 'grid grid-cols-1 xl:grid-cols-3 gap-5 items-stretch mb-5'} data-testid="costs-bottom-row">
       {/* ── COST DRIVERS: by AWS service, the chart's days (spec item 10) ── */}
       <CostDriversCard
+        className="h-full"
         drivers={hasTrendData ? drivers : null}
         showBasis={!notConnected && !isDemoActive}
         message={
@@ -707,6 +809,7 @@ export default function CostsPage() {
       {/* ── OPPORTUNITIES (spec item 11) ── */}
       {!notConnected && (
         <OpportunitiesCard
+          className="h-full"
           rows={!isDemoActive && activeRecsError ? [] : opportunityRows}
           total={stats ? stats.activeRecommendations : null}
           isError={!isDemoActive && activeRecsError}
@@ -718,7 +821,8 @@ export default function CostsPage() {
       )}
 
       {/* ── WHAT THIS PAGE COVERS (spec item 12) ── */}
-      {!notConnected && <PageCoverageCard rows={pageCoverage} />}
+      {!notConnected && <PageCoverageCard className="h-full" rows={pageCoverage} />}
+      </div>
       </>)}
     </div>
   )

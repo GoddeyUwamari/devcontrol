@@ -1,39 +1,52 @@
 'use client'
 
+import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, CircleX, TriangleAlert } from 'lucide-react'
 import { COVERAGE_INTRO, COVERAGE_STATUS_LABEL, COVERAGE_TITLE, LOADING, type CoverageRow, type CoverageStatus } from './cost-intelligence'
 
-const STATUS_CHIP: Record<CoverageStatus, string> = {
-  checked: 'bg-green-50 text-ink-success border-green-200',
-  partly_checked: 'bg-amber-50 text-ink-warning border-amber-200',
-  unavailable: 'bg-red-50 text-ink-danger border-red-200',
-  not_checked: 'bg-slate-100 text-slate-600 border-slate-200',
+/** Each status's icon and its ink colour (the app's status inks, AA on white). */
+const STATUS_ICON: Record<CoverageStatus, { Icon: typeof CircleCheck; className: string }> = {
+  checked: { Icon: CircleCheck, className: 'text-ink-success' },
+  partly_checked: { Icon: TriangleAlert, className: 'text-ink-warning' },
+  unavailable: { Icon: CircleX, className: 'text-ink-danger' },
+  not_checked: { Icon: CircleAlert, className: 'text-ink-muted' },
 }
+
+/** Cost Optimization's "How DevControl checks" section (its CHECKS_ANCHOR). */
+export const HOW_DEVCONTROL_CHECKS_HREF = '/cost-optimization#how-devcontrol-checks'
 
 /**
  * What this page covers (spec item 12): one row per source or scope, each
  * checked / partly checked / unavailable / not checked from real signals
  * (coverageRows). Never says the whole account was verified.
+ * Layout (mock-match item 7): a status icon, the bold "label · status", and
+ * the muted detail under it; "How DevControl checks →" at the foot.
  */
-export function PageCoverageCard({ rows }: { rows: CoverageRow[] }) {
+export function PageCoverageCard({ rows, className = '' }: { rows: CoverageRow[]; className?: string }) {
   return (
-    <section aria-labelledby="page-coverage-heading" className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100 mb-5" data-testid="page-coverage">
-      <h2 id="page-coverage-heading" className="text-ui font-semibold text-slate-900 m-0 tracking-tight">{COVERAGE_TITLE}</h2>
-      <p className="text-meta text-ink-muted m-0 mt-0.5 mb-5">{COVERAGE_INTRO}</p>
-      <ul className="m-0 p-0 list-none flex flex-col divide-y divide-slate-100">
-        {rows.map((row) => (
-          <li key={row.id} className="py-3 first:pt-0 last:pb-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-4" data-testid={`coverage-${row.id}`} data-status={row.status ?? 'loading'}>
-            <div className="sm:w-48 shrink-0 flex items-center justify-between gap-2 sm:flex-col sm:items-start">
-              <span className="text-label font-semibold text-slate-900">{row.label}</span>
-              {row.status ? (
-                <span className={`text-label font-semibold px-2 py-0.5 rounded-full border ${STATUS_CHIP[row.status]}`}>{COVERAGE_STATUS_LABEL[row.status]}</span>
-              ) : (
-                <span className="text-label text-ink-muted">{LOADING}</span>
-              )}
-            </div>
-            <p className="text-meta text-ink-muted m-0 leading-relaxed min-w-0 break-words">{row.status ? row.detail : null}</p>
-          </li>
-        ))}
+    <section aria-labelledby="page-coverage-heading" className={`bg-white rounded-xl p-5 sm:p-6 border border-slate-200 flex flex-col gap-4 min-w-0 ${className}`} data-testid="page-coverage">
+      <div>
+        <h2 id="page-coverage-heading" className="text-section font-semibold text-slate-900 m-0 tracking-tight">{COVERAGE_TITLE}</h2>
+        <p className="text-meta text-ink-muted m-0 mt-0.5">{COVERAGE_INTRO}</p>
+      </div>
+      <ul className="m-0 p-0 list-none flex flex-col gap-3.5">
+        {rows.map((row) => {
+          const icon = row.status ? STATUS_ICON[row.status] : { Icon: CircleDashed, className: 'text-ink-muted' }
+          return (
+            <li key={row.id} className="flex items-start gap-3 min-w-0" data-testid={`coverage-${row.id}`} data-status={row.status ?? 'loading'}>
+              <icon.Icon size={18} className={`${icon.className} shrink-0 mt-px`} aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-ui font-semibold text-slate-900 m-0">
+                  {row.label} · <span data-testid="coverage-status">{row.status ? COVERAGE_STATUS_LABEL[row.status].toLowerCase() : LOADING}</span>
+                </p>
+                {row.status && <p className="text-ui text-ink-muted m-0 leading-relaxed break-words">{row.detail}</p>}
+              </div>
+            </li>
+          )
+        })}
       </ul>
+      <a href={HOW_DEVCONTROL_CHECKS_HREF} className="mt-auto inline-flex min-h-11 items-center gap-1 self-start text-ui font-semibold text-violet-700 hover:text-violet-800 no-underline">
+        How DevControl checks <ArrowRight size={14} aria-hidden="true" />
+      </a>
     </section>
   )
 }
