@@ -507,10 +507,11 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
     });
   });
 
-  // F-1 (never-zero/f1-build.md): a modeled saving of exactly 0 prints no dollar figure in the
-  // description; the finding, its figure (0), basis, severity and counts are unchanged. Any other
-  // saving keeps the original text byte for byte.
-  describe('F-1: description when the modeled saving is exactly 0', () => {
+  // F-1 (never-zero/f1-build.md): a modeled saving that rounds to $0.00 (exactly 0, or float
+  // residue) prints no dollar figure in the description; the finding, its stored figure, basis,
+  // severity and counts are unchanged. A saving that rounds to $0.01 or more keeps the original
+  // text byte for byte.
+  describe('F-1: description when the modeled saving rounds to $0.00', () => {
     /** `count` intervals: the first `busy` at `busyPerSecond`, the rest at `quietPerSecond`, all against `provisioned`. */
     function mixedSeries(count: number, busy: number, busyPerSecond: number, quietPerSecond: number, provisioned: number) {
       const series = uniformSeries(count, quietPerSecond, provisioned);
@@ -571,7 +572,48 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
       expect(counts).toEqual({ estimatedFindings: 0, ceilingFindings: 1, unestimatedFindings: 0 });
     });
 
-    describe('(b) any other saving keeps the original description byte for byte', () => {
+    it('float residue: a standard table at 1 RCU / 2 WCU modeled at 6 RCU / 1 WCU gets the no-figure line; the stored figure is unchanged', async () => {
+      mockAwsResourcesRows([{ resource_id: 'table-1', region: 'us-east-1', metadata: eligibleMetadata() }]);
+      mockLiveDescribeTable({
+        billing_mode: 'PROVISIONED',
+        creation_date_time: isoDaysAgo(400),
+        provisioned_read_capacity: 1,
+        provisioned_write_capacity: 2,
+        table_class: 'STANDARD',
+      });
+      mockLiveAutoscaling('AUTOSCALING_DISABLED');
+      // Read: 90% of intervals at 10% of 1 RCU (qualifies), highest hourly average 5.5/s -> 6 RCU.
+      // Write: every interval at 5% of 2 WCU (qualifies), highest 0.1/s -> 1 WCU.
+      // On STANDARD one WCU costs exactly five RCUs, so +5 RCU / -1 WCU is no change, but the float
+      // subtraction leaves a positive residue of about 2.2e-16.
+      mockMetrics(mixedSeries(1000, 100, 5.5, 0.1, 1), uniformSeries(1000, 0.1, 2));
+
+      const result = await (costOptimizationService as any).detectDynamoDBCapacityOptimization('org-1', makeAwsClients());
+
+      expect(result.issues).toHaveLength(1);
+      const issue = result.issues[0];
+      expect(issue.metadata.read.qualifies).toBe(true);
+      expect(issue.metadata.write.qualifies).toBe(true);
+      expect(issue.metadata.scenario_monthly_cost).toBe(estimateDynamoDBProvisionedMonthlyCost(6, 1, 'STANDARD'));
+      // Stored figure, severity and basis: exactly what the detector computed before F-1.
+      const residue = estimateDynamoDBProvisionedMonthlyCost(1, 2, 'STANDARD') - estimateDynamoDBProvisionedMonthlyCost(6, 1, 'STANDARD');
+      expect(residue).toBeGreaterThan(0);
+      expect(residue).toBeLessThan(0.005);
+      expect(issue.potentialSavings).toBe(residue);
+      expect(issue.severity).toBe('LOW');
+      expect(classifySavingsBasis(issue.metadata.savings_basis)).toBe('ceiling');
+
+      const description: string = issue.description;
+      expect(description).toContain(
+        'analysis window: none, because matching that demand would not lower the modeled monthly cost\n\n'
+      );
+      expect(description).not.toContain('0.00');
+      expect(description).not.toMatch(/up to \$/);
+      expect(description.match(/\$/g)).toHaveLength(1);
+      expect(description).toContain('- Current modeled monthly cost: $1.04/month');
+    });
+
+    describe('(b) builder text: $0.01 or more keeps the original description byte for byte; $0.00 gets the no-figure text', () => {
       const analysis = {
         validUtilizationIntervals: 700,
         totalIntervals: 720,
@@ -603,12 +645,11 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
       });
 
       it.each([
-        [0.0949, '0.09'],
         [0.005, '0.01'],
+        [0.0051, '0.01'],
+        [0.01, '0.01'],
+        [0.0949, '0.09'],
         [1234.5, '1234.50'],
-        // OPEN (f1-build.md, step 4): a positive sub-cent saving, e.g. float noise 2.22e-16 from
-        // max(0, current - scenario), still prints "$0.00". Pinned so it cannot change silently.
-        [2.220446049250313e-16, '0.00'],
       ])('saving %p keeps "up to $%s/month (an upper bound ...)"', (saving, figure) => {
         const oldPhrase = `up to $${figure}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)`;
         const text = build(saving);
@@ -616,6 +657,16 @@ describe('CostOptimizationService.detectDynamoDBCapacityOptimization', () => {
         // Outside the savings phrase, the text is the same as the zero case.
         expect(text.split(oldPhrase)).toEqual(build(0).split(ZERO_PHRASE));
       });
+
+      it.each([2.220446049250313e-16, 0.0049, 0.004999999999999999])(
+        'saving %p rounds to $0.00: the same no-figure text as exactly 0',
+        (saving) => {
+          const text = build(saving);
+          expect(text).toBe(build(0));
+          expect(text).toContain(`analysis window: ${ZERO_PHRASE}\n\n`);
+          expect(text).not.toContain('0.00');
+        }
+      );
     });
   });
 

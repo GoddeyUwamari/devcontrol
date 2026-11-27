@@ -90,7 +90,8 @@ export const ALLOWLIST: Record<string, Entry[]> = {
     ['money(recsWithItems.totalEstimatedMonthlySavings)', 'Reached only when recsPriced (total above $0, a sum of cent-rounded figures): BE-5 guard.', { count: 4, within: 'recsPriced' }],
   ],
   'backend/src/services/cost-optimization.service.ts': [
-    ['input.modeledMonthlySavings.toFixed(2)', 'F-1 (never-zero/f1-build.md): the DynamoDB provisioned-capacity description prints a figure only when modeledMonthlySavings is not exactly 0; at 0 it reads "none, ..." with no dollar amount. A positive sub-cent value (float noise from max(0, current - scenario)) still prints "$0.00": OPEN, founder question in f1-build.md.', { within: 'input.modeledMonthlySavings === 0' }],
+    ['const modeledSavingsCents = input.modeledMonthlySavings.toFixed(2);', 'F-1 follow-up (never-zero/f1-build.md): the DynamoDB provisioned-capacity saving rounded to cents, the same rounding the description prints. Read only by the "=== \'0.00\'" check and by the figure in its else branch (next entry); never stored.'],
+    ['modeledSavingsCents', 'F-1 follow-up: printed only when the rounded saving is not "0.00"; a saving that rounds to $0.00 (exactly 0, or float residue) reads "none, ..." with no dollar amount.', { within: "modeledSavingsCents === '0.00'" }],
   ],
 };
 

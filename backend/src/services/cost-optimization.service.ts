@@ -2238,11 +2238,14 @@ class CostOptimizationService {
         analysis.throttleValidIntervals > 0 ? (analysis.throttleConfirmedIntervals > 0 ? 'observed' : 'none observed') : 'insufficient evidence'
       }\n` +
       `- Qualifies for review: ${qualifies ? 'YES' : 'NO'}`;
-    // F-1 (never-zero): a modeled saving of exactly 0 gets no dollar figure. Any other value keeps the original text.
+    // F-1 (never-zero): rounded to cents exactly as the line prints it. A saving that prints as 0.00
+    // (exactly 0, or float residue such as 2.2e-16) gets no dollar figure; any other value keeps the
+    // original text. Display only: the stored figure is input.modeledMonthlySavings, unrounded.
+    const modeledSavingsCents = input.modeledMonthlySavings.toFixed(2);
     const modeledSavingsText =
-      input.modeledMonthlySavings === 0
+      modeledSavingsCents === '0.00'
         ? `none, because matching that demand would not lower the modeled monthly cost`
-        : `up to $${input.modeledMonthlySavings.toFixed(2)}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)`;
+        : `up to $${modeledSavingsCents}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)`;
 
     return (
       `DynamoDB capacity review identified\n\n` +
