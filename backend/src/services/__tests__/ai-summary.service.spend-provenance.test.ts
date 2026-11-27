@@ -333,6 +333,15 @@ describe('Dashboard AI summary -- monitoring, security, recommendations', () => 
     expect(prompt).toMatch(/2 active cost optimizations have estimated potential savings of approximately \$120[^\n]*\/month \(a DevControl estimate, not realized savings\)\./);
   });
 
+  it.each([
+    [1, '1 active cost optimization; none has a dollar estimate yet.'],
+    [3, '3 active cost optimizations; none has a dollar estimate yet.'],
+  ])('Never-show-zero (ruling Q6): %i open findings with no estimate total are stated as having no dollar estimate, never "approximately zero"', async (active, sentence) => {
+    const { prompt } = await run({ recommendations: { active, savings: 0 } });
+    expect(prompt).toContain(sentence);
+    expect(prompt).not.toMatch(/approximately \$0|\$0(\.00)?\/month|\$0\/mo/);
+  });
+
   it('one failed source does not blank the others', async () => {
     const { prompt } = await run({ findings: new Error('x'), recommendations: new Error('y') });
     expect(prompt).toContain('Composite System Intelligence score: 80/100');

@@ -46,7 +46,7 @@ import type { PlatformDashboardStats, CostRecommendation } from '@/lib/types'
 import { useWebSocket } from '@/lib/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { annualizeMonthly, formatSavingsCents } from '@/lib/utils'
-import { NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
+import { NO_DOLLAR_ESTIMATE, NONE_FOUND } from '@/lib/savings-basis'
 import { deriveAnalysisStatus, pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { roundCents } from '../costs/cost-display'
 import { isNotReportedYet, type CostReportState } from '@/lib/cost-trend-basis'
@@ -292,8 +292,11 @@ export default function DashboardPage() {
   // shown at cent precision (formatSavingsCents) and the annual figure is this
   // same cent-rounded monthly amount x 12, so the two always visibly agree
   // ($5.17/month -> $62.04/year). A real sub-$1 saving stays > 0.
-  const monthlySavings = isDemoActive ? 1922 : roundCents(costRecStats?.totalPotentialSavings ?? 0)
-  const annualSavings = roundCents(annualizeMonthly(monthlySavings))
+  // null: no stats, or no total sent. Every use below shows a figure only when it is above $0 ("Never show $0").
+  const statsMonthlyTotal = costRecStats?.totalPotentialSavings
+  const monthlySavings: number | null = isDemoActive ? 1922 : typeof statsMonthlyTotal === 'number' ? roundCents(statsMonthlyTotal) : null
+  const savingsShown = monthlySavings !== null && monthlySavings > 0
+  const annualSavings = savingsShown ? roundCents(annualizeMonthly(monthlySavings)) : null
 
   const { data: awsAccounts, isError: awsAccountsError } = useQuery<AwsAccountsAndConnection>({
     queryKey: ['aws-accounts', organization?.id],
@@ -450,7 +453,7 @@ export default function DashboardPage() {
     ? [
         { type: 'EC2', title: 'Review EC2 instances', description: 'Low-activity instances and Reserved Instance coverage gaps', count: 2, savingsLabel: '$0.48/mo', savingsFigures: [{ text: '$0.48/mo', tone: 'success' as const }], priorityBadge: priorityBadgeFor('LOW') },
         { type: 'EBS', title: 'Optimize EBS volumes', description: 'Unattached volumes and gp2-to-gp3 migration opportunities', count: 3, savingsLabel: '$0.32/mo', savingsFigures: [{ text: '$0.32/mo', tone: 'success' as const }], priorityBadge: priorityBadgeFor('LOW') },
-        { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: '$0/mo', priorityBadge: undefined },
+        { type: 'S3', title: 'Optimize S3 storage', description: 'Lifecycle and storage-class opportunities', count: 0, savingsLabel: NONE_FOUND, priorityBadge: undefined },
       ]
     : OPPORTUNITY_CATEGORIES.map((cat) => {
         const matches = costRecsRaw.filter((r) => r.resourceType === cat.type)
@@ -458,20 +461,21 @@ export default function DashboardPage() {
         // recommendations can draw on the same instance's cost (e.g. idle + RI).
         // Estimates and ceilings (S3 lifecycle's upper bound) are separate server
         // totals and are shown apart, never added; a type whose active rows have
-        // no savings basis has no dollar figure at all. Green only for an
-        // estimate above $0; an upper bound says so and is neutral (DB-D13).
+        // no savings basis has no dollar figure at all. An estimate (green) or an
+        // upper bound (neutral, DB-D13) is shown only above $0 ("Never show $0"):
+        // a per-type total of 0 is no dollar figure, never "$0.00/mo".
         const total = costRecStats?.potentialSavingsByResourceType?.[cat.type]
         const ceiling = costRecStats?.potentialSavingsCeilingByResourceType?.[cat.type]
         const figures: SavingsFigure[] = [
-          ...(total != null ? [{ text: `${formatSavingsCents(roundCents(total))}/mo`, tone: roundCents(total) > 0 ? 'success' as const : 'neutral' as const }] : []),
-          ...(ceiling != null ? [{ text: `Up to ${formatSavingsCents(roundCents(ceiling))}/mo · upper bound`, tone: 'neutral' as const }] : []),
+          ...(total != null && roundCents(total) > 0 ? [{ text: `${formatSavingsCents(roundCents(total))}/mo`, tone: 'success' as const }] : []),
+          ...(ceiling != null && roundCents(ceiling) > 0 ? [{ text: `Up to ${formatSavingsCents(roundCents(ceiling))}/mo · upper bound`, tone: 'neutral' as const }] : []),
         ]
         const savingsFigures: SavingsFigure[] | undefined = matches.length === 0 || !costRecStats ? undefined
           : figures.length > 0 ? figures : [{ text: NO_DOLLAR_ESTIMATE, tone: 'neutral' }]
         return {
           ...cat,
           count: matches.length,
-          savingsLabel: matches.length === 0 ? `${formatSavingsCents(0)}/mo` : !costRecStats ? '—' : figures.length > 0 ? figures.map((f) => f.text).join(' + ') : NO_DOLLAR_ESTIMATE,
+          savingsLabel: matches.length === 0 ? NONE_FOUND : !costRecStats ? '—' : figures.length > 0 ? figures.map((f) => f.text).join(' + ') : NO_DOLLAR_ESTIMATE,
           savingsFigures,
           priorityBadge: priorityBadgeFor(matches[0]?.severity),
         }
@@ -646,7 +650,7 @@ export default function DashboardPage() {
           {showRecommendationSections && (
             <RecommendedActionCard
               opportunityCount={activeOpportunityCount ?? 0}
-              savingsLabel={monthlySavings > 0 ? `${formatSavingsCents(monthlySavings)}/month` : null}
+              savingsLabel={savingsShown ? `${formatSavingsCents(monthlySavings)}/month` : null}
               ctaHref="/cost-optimization"
               isDemoActive={isDemoActive}
             />
@@ -828,8 +832,8 @@ export default function DashboardPage() {
                 totalActiveCount={activeOpportunityCount}
                 summary={
                   <EstimatedSavingsSummary
-                    monthlySavingsLabel={monthlySavings > 0 ? formatSavingsCents(monthlySavings) : null}
-                    annualSavingsLabel={monthlySavings > 0 ? formatSavingsCents(annualSavings) : null}
+                    monthlySavingsLabel={savingsShown ? formatSavingsCents(monthlySavings) : null}
+                    annualSavingsLabel={savingsShown ? formatSavingsCents(annualSavings) : null}
                     isDemoActive={isDemoActive}
                     evaluationState={opportunityEvaluationState}
                     activeCount={activeOpportunityCount}

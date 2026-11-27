@@ -706,6 +706,8 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
 
     const recs = s.idleResourceRecommendations;
     const recsWithItems = recs && hasEvidence(recs) && recs.data.items.length > 0 ? recs.data : null;
+    // "Never show $0" (BE-5 guard): a listed total that is not above $0 is no dollar estimate, never "$0.00/month".
+    const recsPriced = recsWithItems !== null && Number.isFinite(recsWithItems.totalEstimatedMonthlySavings) && recsWithItems.totalEstimatedMonthlySavings > 0;
 
     if (s.spend) {
       const spend = this.spendSentence(s.spend);
@@ -715,7 +717,11 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         ? ` Largest Cost Explorer service categories: ${s.spend.data.topServices.map(t => `${t.service} ${money(t.amount)}`).join(', ')}.`
         : '';
       const costRecommendations: string[] = [];
-      if (recsWithItems) {
+      if (recsWithItems && !recsPriced) {
+        costRecommendations.push(idleSubset(recsWithItems)
+          ? `Review ${topOf(recsWithItems)} recommendations for low-activity or unused resources (no dollar estimate yet for ${theseListed(recsWithItems)}).`
+          : `Review ${recsWithItems.items.length} active recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for low-activity or unused resources (no dollar estimate yet).`);
+      } else if (recsWithItems) {
         costRecommendations.push(idleSubset(recsWithItems)
           ? `Review ${topOf(recsWithItems)} recommendations for low-activity or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month for ${theseListed(recsWithItems)}; a DevControl estimate, not realized savings).`
           : `Review ${recsWithItems.items.length} active recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for low-activity or unused resources (estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month; a DevControl estimate, not realized savings).`);
@@ -727,7 +733,11 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
 
     if (recsWithItems) {
       const subset = idleSubset(recsWithItems);
-      highlights.push(subset
+      if (!recsPriced) {
+        highlights.push(subset
+          ? `${capitalize(topOf(recsWithItems))} recommendations for low-activity or unused resources have no dollar estimate yet.`
+          : `${recsWithItems.items.length} recommendation${recsWithItems.items.length !== 1 ? 's' : ''} for low-activity or unused resources ${recsWithItems.items.length !== 1 ? 'have' : 'has'} no dollar estimate yet.`);
+      } else highlights.push(subset
         ? `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from ${topOf(recsWithItems)} recommendations for low-activity or unused resources (a DevControl estimate, not realized savings).`
         : `Estimated potential savings of ${money(recsWithItems.totalEstimatedMonthlySavings)}/month from low-activity or unused resources (a DevControl estimate, not realized savings).`);
       topRecommendations.push({
@@ -736,7 +746,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
         description: subset
           ? `${capitalize(topOf(recsWithItems))} recommendations ${recsWithItems.items.length === 1 ? 'flags' : 'flag'} low-activity or unused resources; the savings figure covers ${theseListed(recsWithItems)}. Savings are DevControl estimates, not realized savings.`
           : `${recsWithItems.items.length} active DevControl recommendation${recsWithItems.items.length !== 1 ? 's flag' : ' flags'} low-activity or unused resources. Savings are DevControl estimates, not realized savings.`,
-        estimatedSavings: recsWithItems.totalEstimatedMonthlySavings,
+        ...(recsPriced ? { estimatedSavings: recsWithItems.totalEstimatedMonthlySavings } : {}),
         effort: 'low',
       });
     }

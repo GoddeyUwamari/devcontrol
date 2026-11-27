@@ -408,6 +408,14 @@ describe('AI Reports evidence -- the EC2 default price (PR 4, S4)', () => {
     });
   });
 
+  it('"Never show $0" (BE-5 guard): idle recommendations whose figures sum to $0 never produce "$0.00/month" in the fallback', async () => {
+    const idle = (id: string) => ({ resource_id: id, resource_type: 'EC2', issue: 'Idle Instance', potential_savings: 0, metadata: { savings_basis: 'estimated: list price', price_source: 'list_table' } });
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(await evidence({ recommendations: [idle('i-zero-a'), idle('i-zero-b')] }));
+    const text = JSON.stringify(report);
+    expect(text).not.toMatch(/(?<![<\d.,])\$0(?:\.0{1,2})?(?![.\d])/);
+    for (const rec of report.topRecommendations) expect(rec.estimatedSavings === undefined || rec.estimatedSavings > 0).toBe(true);
+  });
+
   it('with no default figure the reason is unchanged', async () => {
     const { sections } = await evidence({
       recommendations: [

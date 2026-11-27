@@ -65,7 +65,7 @@
   "zero (no open findings)": {
     "lines": [
       "Possible savingsEstimated from AWS list prices by DevControl's cost checks, not from your bill.",
-      "$0.00/mo est.",
+      "None found",
       "No cost recommendations right now",
       "Review recommendations →"
     ],
@@ -74,7 +74,7 @@
   "zero with a closed history": {
     "lines": [
       "Possible savingsEstimated from AWS list prices by DevControl's cost checks, not from your bill.",
-      "$0.00/mo est.",
+      "None found",
       "No cost recommendations right now",
       "Review recommendations →"
     ],

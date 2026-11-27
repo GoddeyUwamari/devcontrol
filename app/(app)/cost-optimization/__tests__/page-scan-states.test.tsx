@@ -280,12 +280,13 @@ describe('the recommendations list fails to load', () => {
 })
 
 describe('zero values are muted, never green', () => {
-  it('$0/mo and 0 open use slate-500', async () => {
+  it('no open findings: the savings tile is grey words, never "$0/mo" ("Never show $0"), and 0 open uses slate-500', async () => {
     renderPage()
-    await waitFor(() => expect(within(kpiCard('Estimated monthly savings')).getByText('/mo')).toBeInTheDocument())
-    const value = kpiCard('Estimated monthly savings').querySelector('.text-kpi') as HTMLElement
-    expect(value).toHaveClass('text-slate-500')
+    await waitFor(() => expect(screen.getByTestId('savings-no-figure')).toBeInTheDocument())
+    const value = screen.getByTestId('savings-no-figure')
+    expect(value).toHaveClass('text-ink-muted')
     expect(value).not.toHaveClass('text-ink-success')
+    expect(kpiCard('Estimated monthly savings').textContent).not.toMatch(/\$0/)
     const active = kpiCard('Open opportunities').querySelector('.text-kpi') as HTMLElement
     expect(active).toHaveTextContent('0')
     expect(active).toHaveClass('text-slate-500')

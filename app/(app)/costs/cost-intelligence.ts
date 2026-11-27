@@ -6,11 +6,11 @@
  */
 import type { ContextSection, CostSpendEvidence, RecommendationStats } from '@/lib/types'
 import type { CheckFailureReason, CostAnalysisRun, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service'
-import { formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils'
-import { describeCeilings, NO_DOLLAR_ESTIMATE, savingsBasisKind } from '@/lib/savings-basis'
+import { formatSavingsCurrency } from '@/lib/utils'
+import { describeSavingsTotal, displayedAmount, savingsFigure, SMALL_SAVINGS_USD, type SavingsFigureWithAmount, type SavingsTotal } from '@/lib/savings-basis'
 import { isNotReportedYet, isStillUpdating, type CostReportState } from '@/lib/cost-trend-basis'
 import { couldntRunSentence, resourcesNotFullyChecked } from '../cost-optimization/costScanBanner'
-import { costChecksRegionLine, NO_FIRM_ESTIMATE, upperBoundOnly } from '../cost-optimization/costOptimizationCopy'
+import { costChecksRegionLine } from '../cost-optimization/costOptimizationCopy'
 import type { CostScanState } from '../cost-optimization/costScanState'
 import { formatUsd, monthHasUnfinishedDays } from './cost-display'
 import { utcChartLabel } from './trend-chart-data'
@@ -163,85 +163,48 @@ export function topDrivers(drivers: CostDrivers | null, count = TOP_DRIVER_COUNT
 }
 
 // ─── Savings tile (founder ruling Q2) ───────────────────────────────────────
+// The rule, the wording and the tile kinds live in lib/savings-basis.ts
+// (describeSavingsTotal, "Never show $0"); re-exported here for this page.
 
-/** Founder ruling Q2: a figure under this many dollars a month is grey, never styled as a big saving. */
-export const SMALL_SAVINGS_USD = 1
-
-export const NONE_FOUND = 'None found'
-export const NONE_FOUND_SUB = 'No open opportunities after the latest analysis'
-/** Fix round 1, N-4: a partial run (some checks couldn't run) that left no open findings. */
-export const NONE_FOUND_PARTIAL = 'None found in the checks that ran'
-export const NONE_FOUND_PARTIAL_SUB = "Some checks couldn't run in the latest analysis"
-export const NO_ESTIMATE_SUB = 'No dollar estimate yet for the open opportunities.'
-
-export type SavingsTile =
-  /** A firm estimate total: green only at or above SMALL_SAVINGS_USD; upper bounds listed separately. */
-  | { kind: 'firm'; value: string; strong: boolean; lines: string[] }
-  /** Every open figure is an upper bound: grey "Up to $X/mo · upper bound only". */
-  | { kind: 'upper_bound_only'; value: string; lines: string[] }
-  /** Open findings, none with a dollar figure. */
-  | { kind: 'no_estimate'; value: string; lines: string[] }
-  /** A completed analysis left no open findings. */
-  | { kind: 'none_found'; value: string; lines: string[] }
+export {
+  displayedAmount, NO_ESTIMATE_SUB, NONE_FOUND, NONE_FOUND_PARTIAL, NONE_FOUND_PARTIAL_SUB, NONE_FOUND_SUB, SMALL_SAVINGS_USD,
+} from '@/lib/savings-basis'
+export type SavingsTile = SavingsTotal
 
 /**
- * The dollar amount a formatted savings figure shows ("$1.00" -> 1, "$53" -> 53,
- * "<$0.01" -> 0), so styling follows what the user reads (fix round 1, N-3).
- */
-export function displayedAmount(formatted: string): number {
-  if (formatted.startsWith('<')) return 0
-  const n = Number(formatted.replace(/[$,]/g, ''))
-  return Number.isFinite(n) ? n : 0
-}
-
-/**
- * The savings tile from /stats, with Cost Optimization's wording: the firm
- * total (formatSavingsTotal: "<$0.01" when positive estimates round to 0) and
- * each upper bound on its own line, never added together; never "$0/mo".
- * `strong` (green) is decided on the figure as displayed (N-3). `partialRun`:
- * the latest analysis was partial, so "none found" covers only the checks that
- * ran (N-4). Callers handle loading, errors and "not analyzed yet" first ("—").
+ * The savings tile from /stats: describeSavingsTotal (lib/savings-basis.ts)
+ * with this page's formatter. `strong` (green) is decided on the figure as
+ * displayed (N-3). `partialRun`: the latest analysis was partial, so "none
+ * found" covers only the checks that ran (N-4). Callers handle loading,
+ * errors and "not analyzed yet" first ("—"); a stats response with no total
+ * is kind 'unavailable' ("—").
  */
 export function describeSavingsTile(
   stats: Pick<RecommendationStats, 'totalPotentialSavings' | 'estimatedFindings' | 'potentialSavingsCeiling' | 'potentialSavingsCeilingByResourceType' | 'activeRecommendations'>,
   { partialRun = false }: { partialRun?: boolean } = {},
 ): SavingsTile {
-  const firm = formatSavingsTotal(stats.totalPotentialSavings, stats.estimatedFindings)
-  const ceilingByType = stats.potentialSavingsCeilingByResourceType ?? {}
-  if (firm !== '$0' && firm !== '—') {
-    return {
-      kind: 'firm',
-      value: `${firm}/mo`,
-      strong: displayedAmount(firm) >= SMALL_SAVINGS_USD,
-      lines: describeCeilings(ceilingByType, formatSavingsCurrency),
-    }
-  }
-  if (stats.potentialSavingsCeiling > 0) {
-    return { kind: 'upper_bound_only', value: upperBoundOnly(formatSavingsCurrency(stats.potentialSavingsCeiling)), lines: [NO_FIRM_ESTIMATE] }
-  }
-  if (stats.activeRecommendations > 0) return { kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: [NO_ESTIMATE_SUB] }
-  return partialRun
-    ? { kind: 'none_found', value: NONE_FOUND_PARTIAL, lines: [NONE_FOUND_PARTIAL_SUB] }
-    : { kind: 'none_found', value: NONE_FOUND, lines: [NONE_FOUND_SUB] }
+  return describeSavingsTotal(stats, { partialRun })
 }
 
 /**
  * Opportunities order (fix round 1, N-7): by the savings figure each card
  * shows ("$X/mo" or "Up to $X/mo"), largest first; on an equal displayed
  * figure a firm estimate before an upper bound; findings with no dollar
- * figure after every priced one, in their incoming order.
+ * figure (savingsFigure: no basis, or a figure not above $0) after every
+ * priced one, in their incoming order. A recorded sub-cent figure shows as 0.
  */
 export function rankByDisplayedSavings<T extends { potentialSavings: number; metadata?: Record<string, unknown> | null }>(recs: readonly T[]): T[] {
-  const shown = (rec: T) => displayedAmount(formatSavingsCurrency(rec.potentialSavings))
-  const isCeiling = (rec: T) => Number(savingsBasisKind(rec) === 'ceiling')
   return recs
-    .map((rec, index) => ({ rec, index, priced: savingsBasisKind(rec) !== null }))
+    .map((rec, index) => ({ rec, index, fig: savingsFigure(rec) }))
     .sort((a, b) => {
-      if (a.priced !== b.priced) return a.priced ? -1 : 1
-      if (!a.priced) return a.index - b.index
-      return shown(b.rec) - shown(a.rec)
-        || isCeiling(a.rec) - isCeiling(b.rec)
-        || b.rec.potentialSavings - a.rec.potentialSavings
+      if (a.fig.kind === 'none' || b.fig.kind === 'none') {
+        if (a.fig.kind !== b.fig.kind) return a.fig.kind === 'none' ? 1 : -1
+        return a.index - b.index
+      }
+      const shown = (fig: SavingsFigureWithAmount) => (fig.subCent ? 0 : displayedAmount(formatSavingsCurrency(fig.amount)))
+      return shown(b.fig) - shown(a.fig)
+        || Number(a.fig.kind === 'ceiling') - Number(b.fig.kind === 'ceiling')
+        || b.fig.amount - a.fig.amount
         || a.index - b.index
     })
     .map(({ rec }) => rec)
@@ -254,9 +217,9 @@ export function rankByDisplayedSavings<T extends { potentialSavings: number; met
  * the figure's basis under the title; null for no dollar figure.
  */
 export function opportunityFigure(rec: { potentialSavings: number; metadata?: Record<string, unknown> | null }): { strong: boolean; note: string | null } {
-  const kind = savingsBasisKind(rec)
-  if (kind === 'ceiling') return { strong: false, note: 'Upper-bound estimate' }
-  if (kind === 'estimate') return { strong: displayedAmount(formatSavingsCurrency(rec.potentialSavings)) >= SMALL_SAVINGS_USD, note: 'Monthly estimate' }
+  const fig = savingsFigure(rec)
+  if (fig.kind === 'ceiling') return { strong: false, note: 'Upper-bound estimate' }
+  if (fig.kind === 'estimate') return { strong: !fig.subCent && displayedAmount(formatSavingsCurrency(fig.amount)) >= SMALL_SAVINGS_USD, note: 'Monthly estimate' }
   return { strong: false, note: null }
 }
 

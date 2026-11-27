@@ -112,7 +112,7 @@ export function AIInsightCard({
         </div>
 
         {/* Estimated Savings */}
-        {estimatedSavings && estimatedSavings > 0 && (
+        {typeof estimatedSavings === 'number' && estimatedSavings > 0 && (
           <div className="space-y-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
             <div className="flex items-center gap-2">
               <div className="h-6 w-6 rounded-md bg-green-100 flex items-center justify-center">

@@ -256,7 +256,7 @@ export default function ReportDetailPage() {
                       </div>
                     </div>
                     <p className="text-meta text-ink-muted leading-relaxed">{rec.description}</p>
-                    {rec.estimatedSavings && <p className="text-label text-ink-success mt-2">Est. savings: ${rec.estimatedSavings.toLocaleString()}/mo{rec.estimatedSavingsPriceUnknown === true ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}</p>}
+                    {typeof rec.estimatedSavings === 'number' && rec.estimatedSavings > 0 && <p className="text-label text-ink-success mt-2">Est. savings: ${rec.estimatedSavings.toLocaleString()}/mo{rec.estimatedSavingsPriceUnknown === true ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}</p>}
                   </div>
                 )
               })}

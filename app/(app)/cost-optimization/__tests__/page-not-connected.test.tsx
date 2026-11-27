@@ -163,13 +163,14 @@ describe('PR2: Cost Optimization connected is unchanged', () => {
     expect(screen.queryByTestId('unmeasured-value')).toBeNull()
   })
 
-  it('a real zero stays: 0 open and $0 are shown, never "—"', async () => {
+  it('a real zero count stays: 0 open is shown, and no open findings read "None found" (ruling Q1), never "$0" or "—"', async () => {
     svc.connection = 'connected'
     svc.stats = stats({ activeRecommendations: 0, totalPotentialSavings: 0, estimatedFindings: 0, bySeverity: { high: 0, medium: 0, low: 0 } })
     svc.recs = []
     renderPage()
     await waitFor(() => expect(kpiCard('Open opportunities')).toHaveTextContent('0'))
-    expect(kpiCard('Estimated monthly savings')).toHaveTextContent('$0')
+    await waitFor(() => expect(screen.getByTestId('savings-no-figure')).toHaveTextContent(/^None found$/))
+    expect(kpiCard('Estimated monthly savings').textContent).not.toMatch(/\$0/)
     expect(screen.queryByTestId('unmeasured-value')).toBeNull()
   })
 })

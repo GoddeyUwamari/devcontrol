@@ -35,6 +35,7 @@ vi.mock('recharts', async (importOriginal) => {
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import CostsPage from '../page'
+import { expectNoMoneyZero, NO_FIGURE_RECS, STATS_NONE_OPEN, STATS_OPEN_NO_FIGURE, SUB_CENT_RECS } from '@/lib/__tests__/support/no-money-zero'
 
 vi.mock('next/link', () => ({ default: ({ href, children, ...rest }: any) => <a href={href} {...rest}>{children}</a> }))
 vi.mock('@/lib/hooks/use-plan', () => ({ usePlan: () => ({ isPro: true }) }))
@@ -746,5 +747,34 @@ describe('mock-match fixes 3 and 4: a linear line, and Review to Cost Optimizati
     const source = readFileSync(join(process.cwd(), 'app/(app)/cost-optimization/page.tsx'), 'utf8')
     expect(source).toContain("const OPPORTUNITIES_ANCHOR = 'opportunities';")
     expect(source).toMatch(/<section id=\{OPPORTUNITIES_ANCHOR\}/)
+  })
+})
+
+describe('"Never show $0" sweep: Costs savings tile and Opportunities with no-figure data', () => {
+  const savingsText = () => `${tile('savings').textContent} ${screen.queryByTestId('opportunities-empty')?.textContent ?? ''} ${screen.queryAllByTestId('opportunity-card').map((c) => c.textContent).join(' ')}`
+
+  it.each([
+    ['open findings, none with a figure', STATS_OPEN_NO_FIGURE, 'No dollar estimate'],
+    ['nothing open', STATS_NONE_OPEN, 'None found'],
+    ['a stats response with no total', { ...STATS_OPEN_NO_FIGURE, totalPotentialSavings: null }, '—'],
+  ])('%s: the tile reads %s and no card or tile shows a money zero', async (_name, stats, value) => {
+    mockGetStats.mockResolvedValue(stats)
+    mockGetAll.mockResolvedValue(stats.activeRecommendations > 0 ? NO_FIGURE_RECS : [])
+    mockGetAnalysisRuns.mockResolvedValue([{ ...completedRun, run_state: 'completed' }])
+    renderPage()
+    await waitFor(() => expect(tile('savings')).toHaveTextContent(value))
+    if (stats.activeRecommendations > 0) await waitFor(() => expect(screen.getAllByTestId('opportunity-card').length).toBeGreaterThan(0))
+    expectNoMoneyZero(savingsText())
+  })
+
+  it('Lambda/DynamoDB/small-S3 rows without a recorded amount read "No dollar estimate"; with one, "Less than $0.01/mo"', async () => {
+    mockGetStats.mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, activeRecommendations: 5 })
+    mockGetAll.mockResolvedValue([NO_FIGURE_RECS[2], NO_FIGURE_RECS[3], NO_FIGURE_RECS[4], ...SUB_CENT_RECS])
+    renderPage()
+    const cards = await screen.findAllByTestId('opportunity-card')
+    const figures = cards.map((c) => within(c).getByTestId('opportunity-savings').textContent)
+    // Ranked: the two recorded sub-cent figures first (priced as shown, but never counted), then no figure in incoming order.
+    expect(figures).toEqual(['Less than $0.01/mo', 'Less than $0.01/mo', 'No dollar estimate', 'No dollar estimate', 'No dollar estimate'])
+    expectNoMoneyZero(savingsText())
   })
 })

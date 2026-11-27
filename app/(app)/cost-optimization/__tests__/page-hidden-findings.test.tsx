@@ -239,8 +239,9 @@ describe('Still detected group', () => {
     await loaded()
     // The KPI value itself: the card also holds the High / Medium / Low chips, whose counts are 0 here.
     await waitFor(() => expect(kpiCard('Open opportunities').querySelector('.text-kpi')).toHaveTextContent(/^0$/))
-    expect(within(kpiCard('Estimated monthly savings')).getByText('$0')).toBeInTheDocument()
-    expect(within(kpiCard('Estimated monthly savings')).queryByText(/\$13/)).not.toBeInTheDocument()
+    // "Never show $0", ruling Q1: no open findings after an analysis is "None found", never "$0".
+    expect(within(kpiCard('Estimated monthly savings')).getByText('None found')).toBeInTheDocument()
+    expect(within(kpiCard('Estimated monthly savings')).queryByText(/\$/)).not.toBeInTheDocument()
   })
 
   it('nothing open: "Nothing to act on right now", with the group below it (no "No active recommendations" headline)', async () => {
@@ -297,13 +298,22 @@ describe('Still detected group', () => {
     expect(card.textContent).not.toMatch(/Up to/)
   })
 
-  it('round 3: no amount at all keeps C8\'s muted "$0/mo" (decision 5)', async () => {
+  it('"Never show $0", ruling Q3: with no amount at all the group has no amount line, never "Estimated $0/mo"', async () => {
     svc.getHidden.mockResolvedValue(hidden([item({ detection: { potentialSavings: null, savingsBasis: null } })], { stillDetected: { count: 1, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} } }))
     renderPage()
     await loaded()
-    const c8 = within(slot()).getByTestId('still-detected-estimate')
-    expect(c8).toHaveTextContent('Estimated $0/mo if addressed')
-    expect(c8.className).toMatch(/text-slate-500/)
+    expect(within(slot()).queryByTestId('still-detected-estimate')).not.toBeInTheDocument()
+    expect(within(slot()).queryByTestId('still-detected-ceiling')).not.toBeInTheDocument()
+    expect(slot().textContent).not.toMatch(/\$0/)
+  })
+
+  it('"Never show $0": a still-detected row whose basis has a figure not above $0 reads "No dollar estimate"', async () => {
+    svc.getHidden.mockResolvedValue(hidden([item({ detection: { potentialSavings: 0, savingsBasis: 'estimated: lambda' } })], { stillDetected: { count: 1, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} } }))
+    renderPage()
+    await loaded()
+    const card = within(slot()).getByTestId('hidden-item')
+    expect(within(card).getByTestId('item-no-figure')).toHaveTextContent('No dollar estimate')
+    expect(card.textContent).not.toMatch(/\$0/)
   })
 
   it('renders only what /hidden says: never derives "still detected" itself', async () => {

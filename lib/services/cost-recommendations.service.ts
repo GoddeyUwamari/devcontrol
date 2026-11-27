@@ -242,6 +242,12 @@ function findingCount(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+/** A /stats dollar total: a finite number (or numeric string), else null -- never a coerced 0. */
+function statsAmount(value: unknown): number | null {
+  const amount = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+  return Number.isFinite(amount) ? amount : null;
+}
+
 export const costRecommendationsService = {
   // Get all recommendations. limit/offset are already supported by the backend
   // (repository.findAll -- ORDER BY potential_savings DESC, created_at DESC) but were
@@ -293,7 +299,8 @@ export const costRecommendationsService = {
     return {
       totalRecommendations: result.total_recommendations || 0,
       activeRecommendations: result.active_recommendations || 0,
-      totalPotentialSavings: parseFloat(result.total_potential_savings) || 0,
+      // An absent or non-numeric total is null (shown "—"), never a fabricated $0 ("Never show $0", S2).
+      totalPotentialSavings: statsAmount(result.total_potential_savings),
       potentialSavingsByResourceType: result.potential_savings_by_resource_type ?? {},
       potentialSavingsCeiling: parseFloat(result.potential_savings_ceiling) || 0,
       potentialSavingsCeilingByResourceType: result.potential_savings_ceiling_by_resource_type ?? {},

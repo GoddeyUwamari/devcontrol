@@ -280,9 +280,12 @@ export default function CostsPage() {
     : zeroRecsState === 'unknown' ? 'Could not be retrieved'
     : zeroRecsState === 'in_progress' ? 'Cost analysis in progress'
     : zeroRecsState === 'failed' ? 'Latest cost analysis did not complete'
+    : stats && stats.totalPotentialSavings === null ? 'Could not be retrieved'
     : 'No cost analysis has run yet'
   // Founder ruling Q2: Cost Optimization's wording, firm and upper-bound figures apart, grey under $1/mo, never "$0/mo".
-  const savingsTile = recsUnavailable || !stats ? null : describeSavingsTile(stats, { partialRun: !isDemoActive && latestRunPartial })
+  // A stats response with no total is "—" with the unavailable line, like a failed fetch ("Never show $0", S2).
+  const describedTile = recsUnavailable || !stats ? null : describeSavingsTile(stats, { partialRun: !isDemoActive && latestRunPartial })
+  const savingsTile = describedTile?.kind === 'unavailable' ? null : describedTile
   const savingsStrong = savingsTile?.kind === 'firm' && savingsTile.strong
 
   const checks = activeChecks(ruleCatalog)

@@ -13,6 +13,7 @@ import CostOptimizationPage from '../page'
 import type { CostRecommendation } from '@/lib/types'
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service'
 import { run, waitForLastAnalysis } from './fixtures'
+import { expectNoMoneyZero, NO_FIGURE_RECS, STATS_NONE_OPEN, STATS_OPEN_NO_FIGURE, SUB_CENT_RECS } from '@/lib/__tests__/support/no-money-zero'
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -295,11 +296,24 @@ describe('money rule on the page', () => {
     return { monthly: within(kpiCard('Estimated monthly savings')).getByText('/mo').parentElement as HTMLElement }
   }
 
-  it('0 with no estimates: "$0", muted', async () => {
-    const { monthly } = await show(0, 0)
-    expect(monthly).toHaveTextContent(/^\$0\/mo$/)
-    expect(monthly.className).toMatch(/text-slate-500/)
+  it('"Never show $0": 0 with no estimates and nothing open is "None found" in grey (ruling Q1), never "$0"', async () => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 0, totalPotentialSavings: 0, estimatedFindings: 0 }))
+    renderPage()
+    await loaded()
+    const value = await screen.findByTestId('savings-no-figure')
+    expect(value).toHaveTextContent(/^None found$/)
+    expect(value.className).toMatch(/text-ink-muted/)
+    expect(kpiCard('Estimated monthly savings').textContent).not.toMatch(/\$0/)
     expect(screen.queryByText(/\/yr/)).not.toBeInTheDocument()
+  })
+
+  it('"Never show $0": open findings with no figure are "No dollar estimate" in grey, never "$0/mo"', async () => {
+    svc.getStats.mockResolvedValue(stats({ activeRecommendations: 3, totalPotentialSavings: 0, estimatedFindings: 0, potentialSavingsCeiling: 0 }))
+    renderPage()
+    await loaded()
+    const value = await screen.findByTestId('savings-no-figure')
+    expect(value).toHaveTextContent(/^No dollar estimate$/)
+    expect(kpiCard('Estimated monthly savings').textContent).not.toMatch(/\$0/)
   })
 
   it('rounded-total edge: 0 with positive estimates behind it is "<$0.01/mo" (ruling 4), never "$0"', async () => {
@@ -400,4 +414,39 @@ describe('severity filter with no match', () => {
 afterEach(() => {
   // @ts-expect-error -- restore jsdom's (absent) scrollIntoView between tests
   delete Element.prototype.scrollIntoView
+})
+
+describe('"Never show $0" sweep: Cost Optimization with no-figure data', () => {
+  const noFigureStill = hidden([
+    item('rds', { issue: 'Idle RDS Instance', detection: { potentialSavings: 0, savingsBasis: null } }),
+    item('lambda', { issue: 'Low-Usage Lambda Function', detection: { potentialSavings: 0, savingsBasis: 'estimated: lambda' } }),
+    item('ddb', { issue: 'DynamoDB Capacity Mode Comparison', detection: { potentialSavings: 0, savingsBasis: 'comparison: gated' } }),
+    item('s3', { issue: 'S3 Lifecycle Optimization', detection: { potentialSavings: 0, savingsBasis: 'ceiling: s3' } }),
+  ])
+  noFigureStill.summary.stillDetected = { count: 4, estimatedMonthlySavings: 0, ceilingMonthlySavings: 0, ceilingByResourceType: {} }
+
+  it.each([
+    ['open findings, none with a figure', () => { svc.getStats.mockResolvedValue(STATS_OPEN_NO_FIGURE); svc.getAll.mockResolvedValue(NO_FIGURE_RECS) }],
+    ['nothing open', () => { svc.getStats.mockResolvedValue(STATS_NONE_OPEN) }],
+    ['stats failed', () => { svc.getStats.mockRejectedValue(new Error('500')); svc.getAll.mockResolvedValue(NO_FIGURE_RECS) }],
+  ])('%s: no money zero (MONEY_ZERO) anywhere on the page', async (_name, setup) => {
+    setup()
+    svc.getHidden.mockResolvedValue(noFigureStill)
+    renderPage()
+    await loaded()
+    await waitFor(() => expect(screen.queryAllByTestId('hidden-item').length).toBe(4))
+    expectNoMoneyZero(document.body.textContent)
+  })
+
+  it('every no-figure card reads "No dollar estimate"; Lambda and S3 WITH a recorded amount read "Less than $0.01/mo"', async () => {
+    svc.getStats.mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, activeRecommendations: NO_FIGURE_RECS.length + 2 })
+    svc.getAll.mockResolvedValue([...NO_FIGURE_RECS, ...SUB_CENT_RECS])
+    renderPage()
+    await loaded()
+    await waitFor(() => expect(screen.getAllByTestId('opportunity-savings')).toHaveLength(NO_FIGURE_RECS.length + 2))
+    const figures = screen.getAllByTestId('opportunity-savings').map((el) => el.querySelector('p')!.textContent)
+    expect(figures.filter((f) => f === 'Less than $0.01/mo')).toHaveLength(2)
+    expect(figures.filter((f) => f === 'No dollar estimate')).toHaveLength(NO_FIGURE_RECS.length)
+    expectNoMoneyZero(document.body.textContent)
+  })
 })

@@ -18,9 +18,10 @@ vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: 
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { expectNoMoneyZero } from '@/lib/__tests__/support/no-money-zero'
 import EfficiencyPage from '../page'
 
-const m = vi.hoisted(() => ({ tier: 'free' as 'free' | 'pro', connection: 'not_connected' as 'not_connected' | 'connected' | 'FAIL' | 'PENDING' }))
+const m = vi.hoisted(() => ({ tier: 'free' as 'free' | 'pro', connection: 'not_connected' as 'not_connected' | 'connected' | 'FAIL' | 'PENDING', recStats: null as unknown }))
 
 vi.mock('next/link', () => ({ default: ({ href, children, ...rest }: any) => <a href={href} {...rest}>{children}</a> }))
 vi.mock('@/lib/hooks/use-plan', () => ({
@@ -54,7 +55,7 @@ function stubNetwork() {
     }
     if (url === '/api/platform/costs/summary') return { data: COST_SUMMARY } as never
     if (url.startsWith('/api/infrastructure')) return { data: m.connection === 'connected' ? INFRA_CONNECTED : { success: true, data: [] } } as never
-    if (url === '/api/cost-recommendations/stats') return { data: REC_STATS } as never
+    if (url === '/api/cost-recommendations/stats') return { data: m.recStats ?? REC_STATS } as never
     throw new Error('unexpected GET ' + url)
   })
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -93,6 +94,7 @@ const tile = (label: string) => screen.getByText(label).parentElement as HTMLEle
 beforeEach(() => {
   m.tier = 'free'
   m.connection = 'not_connected'
+  m.recStats = null
   vi.spyOn(console, 'error').mockImplementation(() => {})
   stubNetwork()
 })
@@ -158,13 +160,16 @@ describe.each(['free', 'pro'] as const)('PR4b: /costs/efficiency with no AWS acc
 describe('PR4b: /costs/efficiency connected is unchanged', () => {
   beforeEach(() => { m.connection = 'connected' })
 
+  // Real zeros stay (Stopped or Starting Resources "$0.00" is inventory); no open recommendations is "None found"
+  // ("Never show $0", ruling Q1), never "$0".
   it.each(['free', 'pro'] as const)('%s plan: header actions, real $0 figures and their sublines, every section; no card or "—" tiles', async (tier) => {
     m.tier = tier
     renderPage()
     await waitFor(() => expect(tile('Stopped or Starting Resources')).toHaveTextContent('$0.00'))
-    await waitFor(() => expect(tile('Est. Savings Opportunity')).toHaveTextContent('$0'))
+    await waitFor(() => expect(tile('Est. Savings Opportunity')).toHaveTextContent('None found'))
+    expect(tile('Est. Savings Opportunity').textContent).not.toMatch(/\$/)
     expect(screen.getByText('Estimated at running rates; AWS charges less while instances are stopped.')).toBeInTheDocument()
-    expect(screen.getByText('Estimated monthly savings from recommendations')).toBeInTheDocument()
+    expect(within(tile('Est. Savings Opportunity')).getByText('No open recommendations')).toBeInTheDocument()
     expect(screen.getByText(/Review Optimizations/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Export/ })).toBeInTheDocument()
     for (const heading of ['Spend breakdown', 'Resource efficiency vs cost', 'Top wasteful resources', 'Recent cost anomalies', 'Efficiency score by service']) {
@@ -187,5 +192,20 @@ describe('PR4b: /costs/efficiency connected is unchanged', () => {
     expect(screen.getByText(PLAN_BANNER)).toBeInTheDocument()
     expect(screen.queryByTestId('not-connected-card')).toBeNull()
     expect(screen.queryByTestId('unmeasured-value')).toBeNull()
+  })
+})
+
+describe('"Never show $0" sweep: Est. Savings Opportunity with no-figure data', () => {
+  it.each([
+    ['open findings, none with a figure', { active_recommendations: 4, unestimated_findings: 4 }, 'No dollar estimate', 'No dollar estimate yet for the open opportunities.'],
+    ['every open figure an upper bound', { active_recommendations: 1, potential_savings_ceiling: 7, potential_savings_ceiling_by_resource_type: { S3: 7 } }, 'Up to $7/mo · upper bound only', 'No firm estimate yet.'],
+    ['a response with no total', { active_recommendations: 2, total_potential_savings: undefined }, '—', 'Could not be retrieved'],
+  ])('%s: %s, never "$0"', async (_name, over, value, note) => {
+    m.connection = 'connected'
+    m.recStats = { ...REC_STATS, data: { ...REC_STATS.data, ...over } }
+    renderPage()
+    await waitFor(() => expect(tile('Est. Savings Opportunity')).toHaveTextContent(value))
+    expect(tile('Est. Savings Opportunity')).toHaveTextContent(note)
+    expectNoMoneyZero(tile('Est. Savings Opportunity').textContent)
   })
 })

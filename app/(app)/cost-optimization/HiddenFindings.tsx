@@ -4,7 +4,7 @@ import { useId, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, Loader2, RotateCcw, XCircle } from 'lucide-react';
 import type { HiddenFinding, HiddenFindings } from '@/lib/services/cost-recommendations.service';
 import { cn, formatSavingsCurrency } from '@/lib/utils';
-import { DEFAULT_PRICE_DISCLOSURE, formatRecommendationSavings, isDefaultPriceEstimate, savingsBasisKind } from '@/lib/savings-basis';
+import { DEFAULT_PRICE_DISCLOSURE, NO_DOLLAR_ESTIMATE, formatSavingsFigure, isDefaultPriceEstimate, savingsFigure } from '@/lib/savings-basis';
 import { LOW_ACTIVITY_DISPLAY_LABEL, lowActivitySavingsHeadline } from '@/lib/finding-display';
 import { Button } from '@/components/ui/button';
 import { SeverityBadge } from '@/components/ui/severity-badge';
@@ -64,9 +64,6 @@ export type HiddenView =
 
 const CAN_REOPEN = ['owner', 'admin', 'member'];
 
-// Zero reads as muted, never green (PR 2 founder decision 5).
-const ZERO_CLASS = 'text-slate-500';
-
 export interface ItemActions {
   /** The current role; null while unknown, which fails closed (disabled). */
   role: string | null;
@@ -92,15 +89,26 @@ function ItemSavings({ item }: { item: HiddenFinding }) {
   // which is what makes the backend label it): the C-3 "Up to ... if it's no longer needed" figure,
   // but never for an estimate (founder screenshot review, round 3): the group summary counts an
   // estimate as "Estimated $X/mo", so its card shows the plain "$X/mo" (formatRecommendationSavings).
-  const kind = savingsBasisKind(rec);
-  const lowActivity = item.detection.state === 'still_detected' && item.issueLabel === LOW_ACTIVITY_DISPLAY_LABEL && kind !== 'estimate';
+  // "Never show $0" (savingsFigure): a figure not above $0 reads "No dollar estimate" in grey, with no ceiling
+  // or default-price line under it. /hidden sends no recorded sub-cent amount, so a still-detected figure
+  // stored as 0.00 is never shown as one (no API change in this PR).
+  const fig = savingsFigure(rec);
+  const lowActivity = item.detection.state === 'still_detected' && item.issueLabel === LOW_ACTIVITY_DISPLAY_LABEL && fig.kind !== 'estimate';
+  if (fig.kind === 'none') {
+    return (
+      <div className="sm:text-right">
+        <p className="text-ui font-semibold text-ink-muted whitespace-nowrap" data-testid="item-no-figure">{NO_DOLLAR_ESTIMATE}</p>
+        <p className="text-label text-ink-muted font-medium" data-testid="not-counted">{NOT_COUNTED_WHILE_RESOLVED}</p>
+      </div>
+    );
+  }
   return (
     <div className="sm:text-right">
       <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">
-        {lowActivity ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency) : formatRecommendationSavings(rec, formatSavingsCurrency)}
+        {lowActivity ? lowActivitySavingsHeadline(fig, formatSavingsCurrency) : formatSavingsFigure(fig, formatSavingsCurrency)}
       </p>
       <p className="text-label text-ink-muted font-medium" data-testid="not-counted">{NOT_COUNTED_WHILE_RESOLVED}</p>
-      {kind === 'ceiling' && (
+      {fig.kind === 'ceiling' && (
         <p className="text-label text-ink-muted font-medium">Estimated ceiling, not an expected saving</p>
       )}
       {isDefaultPriceEstimate(rec) && (
@@ -249,9 +257,9 @@ export function StillDetectedSlot({ view, actions, onRetry, retrying = false }: 
             </h2>
             <p className="text-meta text-ink-muted mb-2">{stillDetectedSubtext(count)}</p>
             {/* Each amount in its own kind's words (round 3): C8 "Estimated" only for estimates; a group of
-                ceilings only shows C9, never "Estimated $0/mo". With no amount at all, C8's muted $0/mo stays. */}
-            {(estimate > 0 || ceiling === 0) && (
-              <p className={cn('text-ui font-semibold tabular-nums', estimate === 0 ? ZERO_CLASS : 'text-slate-900')} data-testid="still-detected-estimate">{estimatedIfAddressed(formatSavingsCurrency(estimate))}</p>
+                ceilings only shows C9, never "Estimated $0/mo". With no amount at all, no amount line (ruling Q3). */}
+            {estimate > 0 && (
+              <p className="text-ui font-semibold tabular-nums text-slate-900" data-testid="still-detected-estimate">{estimatedIfAddressed(formatSavingsCurrency(estimate))}</p>
             )}
             {ceiling > 0 && <p className="text-meta text-ink-muted mt-0.5" data-testid="still-detected-ceiling">{ceilingLine(formatSavingsCurrency(ceiling))}</p>}
           </div>

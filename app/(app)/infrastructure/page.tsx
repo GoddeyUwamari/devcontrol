@@ -24,8 +24,8 @@ import { usePlan } from '@/lib/hooks/use-plan'
 import { ExportReportsDialog } from '@/components/aws-resources/ExportReportsDialog'
 import { PlanRequiredNotice } from '@/components/plan/plan-required-notice'
 import { PLAN_ENTITLEMENTS } from '@/lib/plan/entitlements'
-import { formatSavingsCurrency } from '@/lib/utils'
-import { DEFAULT_PRICE_SUFFIX, isDefaultPriceEstimate, rankBySavings, savingsBasisKind, type SavingsBasisKind } from '@/lib/savings-basis'
+import { formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils'
+import { DEFAULT_PRICE_SUFFIX, describeSavingsTotal, isDefaultPriceEstimate, rankBySavings, savingsFigure, type SavingsBasisKind } from '@/lib/savings-basis'
 import { formatCalculatedAgo } from './calculatedAgo'
 import { describeAttentionCard } from './attentionCard'
 import { largestEstimatedCosts } from './costByResource'
@@ -156,23 +156,26 @@ async function fetchTopActions(): Promise<any[] | null> {
     const anomalyData = anomalyRes.ok ? await anomalyRes.json() : { anomalies: [] }
     const costActions = rankBySavings(recs)
       .slice(0, 3)
-      .map((r) => ({
+      .map((r) => {
+        // "Never show $0" (lib/savings-basis.ts savingsFigure): an estimate above $0 is summed into the
+        // header's recoverable total, a ceiling is shown apart as "up to", a recorded sub-cent amount reads
+        // "less than $0.01/mo" (never summed), and anything else is no dollar amount at all.
+        const fig = savingsFigure(r)
+        return {
         id: r.id, title: r.issue || 'Cost optimization available',
         // Kept raw (not rounded per-item) so totalRecoverable below sums to the same
         // figure as the backend-aggregated intelWaste/recommendationStats total — round
-        // only at display time, same rule as Math.round(totalRecoverable) further down.
-        savings: r.potentialSavings || 0,
-        // What the figure is (lib/savings-basis.ts): an estimate is summed into
-        // "Est. savings", a ceiling is shown apart as "up to", and a figure with
-        // no basis is no dollar amount at all.
-        savingsKind: savingsBasisKind(r) as SavingsBasisKind | null,
+        // only at display time. null: no dollar figure.
+        savings: fig.kind === 'none' ? null : fig.amount,
+        savingsKind: fig.kind === 'none' ? null : fig.kind as SavingsBasisKind,
+        subCent: fig.kind !== 'none' && fig.subCent,
         // The default figure for an unpriced instance type is labelled, never shown as a known price.
         defaultPrice: isDefaultPriceEstimate(r),
         // No risk or urgency label: nothing computes one. A rank is list order only.
         // PR 3d-2 (D10): the resource's own region; the segment is left out without one (never a literal).
         subtitle: `${r.resourceName ?? 'Resource'}${r.awsRegion ? ` · ${r.awsRegion}` : ''} · cost leakage active`,
         type: 'cost' as const,
-      }))
+      }})
     const reliabilityActions = (anomalyData.anomalies ?? anomalyData ?? [])
       .filter((a: any) => a.severity === 'critical' || a.severity === 'high')
       .slice(0, 1)
@@ -295,7 +298,7 @@ function InfrastructureContent() {
     enabled: !isDemoActive,
   })
 
-  const { data: recommendationStats, isLoading: savingsLoading } = useQuery({
+  const { data: recommendationStats, isLoading: savingsLoading, isError: savingsError } = useQuery({
     queryKey: ['cost-recommendations-stats'],
     queryFn: costRecommendationsService.getStats,
     enabled: !isDemoActive,
@@ -466,12 +469,20 @@ function InfrastructureContent() {
   // computed_at), relative to now -- see formatCalculatedAgo for the clock-skew
   // handling. Omitted when absent, unparseable, or implausibly in the future.
   const intelCalculatedAgo = intelReady ? formatCalculatedAgo(intel?.computed_at, new Date()) : null
-  const intelWaste       = isDemoActive ? 1060 : (recommendationStats?.totalPotentialSavings ?? 0)
+  // "Never show $0" (lib/savings-basis.ts describeSavingsTotal), ruling Q4: the open findings' total from /stats.
+  // A failed or missing stats read is 'unavailable' ("—"), never a $0 figure.
+  const formatSavings = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
+  const savingsTotal     = describeSavingsTotal(savingsError ? null : recommendationStats, { format: formatSavings })
+  // "$X/mo active waste" only with a figure (ruling Q4): an estimate total, or every open figure an upper bound.
+  const intelWasteLine   = isDemoActive ? `${formatSavingsCurrency(1060)}/mo active waste`
+    : savingsTotal.kind === 'firm' ? `${formatSavingsTotal(recommendationStats!.totalPotentialSavings, recommendationStats!.estimatedFindings)}/mo active waste`
+    : savingsTotal.kind === 'upper_bound_only' ? `Up to ${formatSavingsCurrency(recommendationStats!.potentialSavingsCeiling)}/mo active waste · upper bound`
+    : null
   const scoreCirc        = 144.5
   const scoreOffset      = intelScore > 0 ? scoreCirc - (intelScore / 100) * scoreCirc : scoreCirc
   const scoreChip        = (score: number) => ({ color: score >= 80 ? '#065F46' : '#92400E', bg: score >= 80 ? '#D1FAE5' : '#FEF3C7' })
 
-  const DEMO_TOP_ACTIONS: { id: string; rank: string; type: 'cost' | 'reliability'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; defaultPrice?: boolean; sub: string }[] = [
+  const DEMO_TOP_ACTIONS: { id: string; rank: string; type: 'cost' | 'reliability'; title: string; savings: number | null; savingsKind?: SavingsBasisKind | null; subCent?: boolean; defaultPrice?: boolean; sub: string }[] = [
     { id: 'demo-1', rank: '01', type: 'cost'        as const, title: 'Remove unattached Elastic IPs',            savings: 11,   sub: '3 unattached addresses · us-east-1'                                 },
     { id: 'demo-2', rank: '02', type: 'reliability' as const, title: 'Investigate CloudFront latency warnings',   savings: null, sub: 'production-cdn · potential downtime risk · degraded user experience' },
     { id: 'demo-3', rank: '03', type: 'cost'        as const, title: 'Remove unused EBS volumes',                 savings: 320,  sub: '6 unattached volumes · us-east-1 · no impact to workloads'          },
@@ -482,24 +493,39 @@ function InfrastructureContent() {
     ? DEMO_TOP_ACTIONS
     : (topActionsData ?? []).map((a, i) => ({
         id: a.id, rank: String(i + 1).padStart(2, '0'),
-        type: a.type, title: a.title, savings: a.savings, savingsKind: a.savingsKind, defaultPrice: a.defaultPrice === true, sub: a.subtitle,
+        type: a.type, title: a.title, savings: a.savings, savingsKind: a.savingsKind, subCent: a.subCent === true, defaultPrice: a.defaultPrice === true, sub: a.subtitle,
       }))
 
   // Demo figures are illustrative estimates; a real action counts only as what its
   // savings_basis says. Ceilings never enter totalRecoverable.
   const actionKind = (a: { savings: number | null; savingsKind?: SavingsBasisKind | null }) => (isDemoActive ? 'estimate' : a.savingsKind ?? null)
-  const totalRecoverable = displayTopActions.reduce((sum, a) => sum + (actionKind(a) === 'estimate' ? a.savings ?? 0 : 0), 0)
-  // Count of top actions with a dollar figure, for the Top Actions header. No action is
-  // labelled "zero-risk": only Idle EC2 stop / unattached-volume delete have a real rollback
-  // path (remediation.service.ts); RDS downgrade, EIP delete, and RI purchase
-  // recommendations don't, and nothing on this page changes AWS anyway.
-  const optimizationCount = displayTopActions.filter(a => a.savings != null).length
+  // A priced change: an estimate above $0 (a recorded sub-cent amount is shown, never counted or summed).
+  const isPricedAction = (a: { savings: number | null; savingsKind?: SavingsBasisKind | null; subCent?: boolean }) =>
+    actionKind(a) === 'estimate' && a.subCent !== true && typeof a.savings === 'number' && a.savings > 0
+  const pricedActions = displayTopActions.filter(isPricedAction)
+  const totalRecoverable = pricedActions.reduce((sum, a) => sum + a.savings!, 0)
+  // Ruling Q4: the header counts ALL recommended (cost) changes, priced or not, and names the priced
+  // count next to any recoverable total, so it never implies every recommendation is priced. No action
+  // is labelled "zero-risk": only Idle EC2 stop / unattached-volume delete have a real rollback path
+  // (remediation.service.ts); RDS downgrade, EIP delete, and RI purchase recommendations don't, and
+  // nothing on this page changes AWS anyway.
+  const optimizationCount = displayTopActions.filter(a => a.type === 'cost').length
+  const pricedCount = pricedActions.length
   const displayRecommendationsCount = isDemoActive ? 3 : recommendationsCount
-  const formatSavings = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val)
+  // Recoverable Savings (ruling Q4): the firm total in cents, or the shared words; "—" while loading, on a
+  // stats error, and when nothing is open but no finding was ever recorded (no scan is known to have run).
+  const neverRecorded = !isDemoActive && savingsTotal.kind === 'none_found' && (recommendationStats?.totalRecommendations ?? 0) === 0
   const potentialSavingsValue = isDemoActive
     ? '$1,697/mo'
-    : savingsLoading ? '—'
-    : formatSavings(recommendationStats?.totalPotentialSavings ?? 0)
+    : savingsLoading || neverRecorded ? '—'
+    : savingsTotal.kind === 'firm' ? savingsTotal.amount
+    : savingsTotal.value
+  const savingsFirm = isDemoActive || savingsTotal.kind === 'firm'
+  const potentialSavingsLine = isDemoActive || savingsTotal.kind === 'firm' ? 'Approve to capture savings'
+    : savingsLoading || savingsTotal.kind === 'unavailable' ? ''
+    : neverRecorded ? 'Run scan to identify savings'
+    : savingsTotal.kind === 'none_found' ? 'No open opportunities'
+    : savingsTotal.lines[0] ?? ''
 
   // Per-resource list-price estimates, one row per resource -- not billed spend
   // and not per AWS service (see costByResource.ts).
@@ -632,7 +658,7 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Primary Issue</p>
             <p className="text-sm font-semibold text-slate-900 mb-0.5">{intelTopAction}</p>
-            <p className="text-xs font-bold text-red-600">{formatSavingsCurrency(intelWaste)}/mo active waste</p>
+            {intelWasteLine && <p className="text-xs font-bold text-red-600" data-testid="intel-active-waste">{intelWasteLine}</p>}
           </div>
 
           {topDriverImpact !== null && (
@@ -752,16 +778,16 @@ function InfrastructureContent() {
         {/* Recoverable Savings */}
         <div className="col-span-2 lg:col-span-1 bg-white rounded-xl p-4 sm:p-8 border border-emerald-200">
           <p className="text-xs font-semibold text-emerald-600 uppercase tracking-widest mb-4">Recoverable Savings</p>
-          <div className="text-3xl sm:text-4xl font-bold text-green-600 tracking-tight leading-none mb-2">{potentialSavingsValue}</div>
+          <div className={savingsFirm ? 'text-3xl sm:text-4xl font-bold text-green-600 tracking-tight leading-none mb-2' : 'text-xl sm:text-2xl font-bold text-slate-500 tracking-tight leading-none mb-2'} data-testid="recoverable-savings-value">{potentialSavingsValue}</div>
           <p className="text-xs text-slate-500 mb-1">
             {/* Real mode shows no share: monthly savings over a month-to-date (or
                 estimated) amount is not a percentage of spend. */}
             {isDemoActive ? '18% of total spend' : ''}
           </p>
           <p className="text-[13px] text-slate-500 leading-relaxed">
-            {(recommendationStats?.totalPotentialSavings ?? 0) > 0 ? 'Approve to capture savings' : isDemoActive ? 'Approve to capture savings' : 'Run scan to identify savings'}
+            {potentialSavingsLine}
           </p>
-          {(isDemoActive || (recommendationStats?.totalPotentialSavings ?? 0) > 0) && (
+          {savingsFirm && (
             <a href="/cost-optimization" className="text-xs font-semibold text-emerald-600 no-underline inline-flex items-center gap-1 mt-1.5">
               Review opportunities →
             </a>
@@ -775,7 +801,8 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-0.5">Top Actions</p>
             <p className="text-[13px] text-slate-500">
-              Ranked by impact · {optimizationCount} recommended changes ready · <strong className="text-emerald-600">{formatSavingsCurrency(totalRecoverable)}/mo recoverable today</strong>
+              Ranked by impact · {optimizationCount} recommended changes ready
+              {pricedCount > 0 && <> · <strong className="text-emerald-600">{formatSavingsCurrency(totalRecoverable)}/mo recoverable from {pricedCount} priced change{pricedCount === 1 ? '' : 's'}</strong></>}
             </p>
           </div>
         </div>
@@ -792,10 +819,11 @@ function InfrastructureContent() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900 mb-0.5">
                     {action.title}
-                    {action.savings != null && (
-                      actionKind(action) === 'estimate' ? <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo{action.defaultPrice ? <span className="text-slate-500 font-semibold"> {DEFAULT_PRICE_SUFFIX}</span> : null}</span>
-                      : actionKind(action) === 'ceiling' ? <span className="text-emerald-600 font-bold"> — up to {formatSavingsCurrency(action.savings)}/mo</span>
-                      : <span className="text-slate-500 font-semibold"> — no dollar estimate</span>
+                    {action.type === 'cost' && (
+                      action.savings == null || actionKind(action) === null ? <span className="text-slate-500 font-semibold"> — no dollar estimate</span>
+                      : action.subCent ? <span className="text-slate-500 font-semibold"> — less than $0.01/mo{actionKind(action) === 'ceiling' ? ' (upper bound)' : ''}</span>
+                      : actionKind(action) === 'estimate' ? <span className="text-emerald-600 font-bold"> — save {formatSavingsCurrency(action.savings)}/mo{action.defaultPrice ? <span className="text-slate-500 font-semibold"> {DEFAULT_PRICE_SUFFIX}</span> : null}</span>
+                      : <span className="text-emerald-600 font-bold"> — up to {formatSavingsCurrency(action.savings)}/mo</span>
                     )}
                   </p>
                   <p className="text-xs text-slate-500">{action.sub}</p>

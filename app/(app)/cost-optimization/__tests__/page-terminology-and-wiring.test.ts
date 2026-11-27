@@ -87,15 +87,16 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   // savings_basis metadata). The card must say "Up to $X/mo", not present it
   // as a plain expected monthly saving.
   it('detects ceiling-basis recommendations from the metadata.savings_basis contract (lib/savings-basis), not resourceType/issue guessing', () => {
-    // PR 4 added the default-price helpers to the same import; the three names are still imported from lib/savings-basis.
-    expect(source).toMatch(/import \{[^}]*\bdescribeCeilings\b[^}]*\bformatRecommendationSavings\b[^}]*\bsavingsBasisKind\b[^}]*\} from '@\/lib\/savings-basis'/)
-    expect(source).toMatch(/savingsBasisKind\(rec\) === 'ceiling'/)
+    // "Never show $0": the one row rule (savingsFigure) and the shared total (describeSavingsTotal), both from lib/savings-basis.
+    expect(source).toMatch(/import \{[^}]*\bdescribeSavingsTotal\b[^}]*\bformatSavingsFigure\b[^}]*\bsavingsFigure\b[^}]*\} from '@\/lib\/savings-basis'/)
+    expect(source).toMatch(/savingsFigure\(rec\)\.kind === 'ceiling'/)
   })
 
-  it('renders each card\'s figure through formatRecommendationSavings ("Up to $X/mo" for a ceiling, "No dollar estimate" without a basis)', () => {
+  it('renders each card\'s figure through formatSavingsFigure ("Up to $X/mo" for a ceiling, "No dollar estimate" without a figure)', () => {
     // FP PR 2b: a low-activity finding's figure reads "$X/mo if it's no longer needed" (W3), with "Up to" only
-    // when its basis isn't an estimate (round 4); every other card still goes through formatRecommendationSavings.
-    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(rec\.potentialSavings, formatSavingsCurrency, savingsBasisKind\(rec\)\)\s*: formatRecommendationSavings\(rec, formatSavingsCurrency\)\}/)
+    // when its basis isn't an estimate (round 4); every other card goes through formatSavingsFigure ("Never show $0").
+    expect(source).toMatch(/const fig = savingsFigure\(rec\);/)
+    expect(source).toMatch(/\{isLowActivityFinding\(rec\)\s*\? lowActivitySavingsHeadline\(fig, formatSavingsCurrency\)\s*: formatSavingsFigure\(fig, formatSavingsCurrency\)\}/)
     expect(source).not.toMatch(/formatSavings\(rec\.potentialSavings\)/)
   })
 
@@ -106,8 +107,9 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
   })
 
   it('the Estimated Monthly Savings KPI excludes ceilings and states each type\'s upper bound on its own line', () => {
-    expect(source).toMatch(/const ceilingLines = describeCeilings\(stats\?\.potentialSavingsCeilingByResourceType \?\? \{\}, formatWholeDollars\)/)
-    expect(source).toMatch(/\{ceilingLines\.map\(\(line\) => \(/)
+    // describeSavingsTotal's firm kind carries describeCeilings' lines ("Never show $0" moved the rule to lib/savings-basis).
+    expect(source).toMatch(/const savingsTotal = describeSavingsTotal\(statsAvailable \? stats : null, \{ partialRun: scan\.key === 'partial', format: formatWholeDollars \}\)/)
+    expect(source).toMatch(/\{savingsTotal\.lines\.map\(\(line\) => \(/)
   })
 
   it('discloses the ceiling nature of the figure near the amount, not just in the page-wide disclaimer', () => {

@@ -12,6 +12,8 @@ import { tierRequiredOf, type TierRequired } from '@/lib/plan/tier-required';
 import { usePlanNotice } from '@/lib/plan/use-plan-notice';
 import { remediationService, RemediationWorkflow, WorkflowStatus } from '@/lib/services/remediation.service';
 import { logError } from '@/lib/safe-log';
+import { formatSavingsCurrency } from '@/lib/utils';
+import { formatPlainSavings, NONE_YET } from '@/lib/savings-basis';
 import awsAccountsService from '@/lib/services/aws-accounts.service';
 import { NotConnectedCard, UnmeasuredValue } from '@/components/aws/not-connected';
 
@@ -166,7 +168,8 @@ function WorkflowDetailPanel({
           {[
             ['Resource ID', <code key="r" style={{ fontSize: '0.82rem', fontFamily: 'monospace' }}>{workflow.resource_id}</code>],
             ['Resource Type', workflow.resource_type.toUpperCase()],
-            ['Estimated Savings', `$${Number(workflow.estimated_savings).toFixed(2)}/mo`],
+            // "Never show $0" (ruling Q5): a workflow stored with no figure (estimated_savings 0) has no dollar estimate.
+            ['Estimated Savings', formatPlainSavings(workflow.estimated_savings, (v) => `$${v.toFixed(2)}`)],
             ['Action Params', Object.keys(workflow.action_params).length > 0 ?
               <code key="ap" style={{ fontSize: '0.78rem', fontFamily: 'monospace' }}>
                 {JSON.stringify(workflow.action_params, null, 2)}
@@ -450,9 +453,12 @@ export default function RemediationPage() {
   const approved  = workflows.filter((w) => w.status === 'approved').length;
   const completed = workflows.filter((w) => w.status === 'completed').length;
   const failedCount = workflows.filter((w) => w.status === 'failed').length;
+  // Ruling Q5: only completed workflows' estimates above $0 count; with none, "None yet", never "$0/mo".
   const savings   = workflows
     .filter((w) => w.status === 'completed')
-    .reduce((s, w) => s + Number(w.estimated_savings), 0);
+    .map((w) => Number(w.estimated_savings))
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .reduce((s, v) => s + v, 0);
 
   const TABS: { key: TabFilter; label: string }[] = [
     { key: 'all',              label: 'All' },
@@ -549,7 +555,7 @@ export default function RemediationPage() {
           { label: 'Approved',         value: approved,  color: '#16A34A', icon: <CheckCircle2 style={{ width: 18, height: 18, color: '#16A34A' }} /> },
           { label: 'Completed',        value: completed, color: '#111827', icon: <Shield style={{ width: 18, height: 18, color: '#7C3AED' }} /> },
           { label: 'Failed',           value: failedCount, color: failedCount > 0 ? '#991B1B' : '#6B7280', icon: <XCircle style={{ width: 18, height: 18, color: failedCount > 0 ? '#991B1B' : '#9CA3AF' }} /> },
-          { label: 'Savings Recovered', value: `$${savings.toFixed(0)}/mo`, color: savings > 0 ? '#16A34A' : '#374151', icon: null },
+          { label: 'Savings Recovered', value: savings > 0 ? `${formatSavingsCurrency(savings)}/mo` : NONE_YET, color: savings > 0 ? '#16A34A' : '#374151', icon: null },
         ].map(({ label, value, color, icon }) => (
           <div key={label} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '24px 28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -643,8 +649,8 @@ export default function RemediationPage() {
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 8px', borderRadius: 100, background: risk.bg, color: risk.color, textAlign: 'center' }}>
                   {wf.risk_level.charAt(0).toUpperCase() + wf.risk_level.slice(1)}
                 </span>
-                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#16A34A' }}>
-                  ${Number(wf.estimated_savings).toFixed(0)}/mo
+                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: Number(wf.estimated_savings) > 0 ? '#16A34A' : '#6B7280' }}>
+                  {formatPlainSavings(wf.estimated_savings)}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   {isExecuting && <Loader2 style={{ width: 12, height: 12, color: '#7C3AED', animation: 'spin 1s linear infinite' }} />}

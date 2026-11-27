@@ -203,7 +203,7 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$0.00/mo est.",
+    "value": "None found",
     "captions": [
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."
@@ -226,7 +226,7 @@
       "text": "Review recommendations →",
       "href": "/cost-optimization"
     },
-    "value": "$0.00/mo est.",
+    "value": "None found",
     "captions": [
       [
         "Estimated from AWS list prices by DevControl's cost checks, not from your bill."

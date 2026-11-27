@@ -25,9 +25,9 @@ import type { CostRunResult, OptimizationRuleCatalog } from '@/lib/services/cost
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
-import { cn, formatSavingsCurrency, formatSavingsTotal } from '@/lib/utils';
+import { cn, formatSavingsCurrency } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { DEFAULT_PRICE_DISCLOSURE, NO_DOLLAR_ESTIMATE, describeCeilings, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings, savingsBasisKind } from '@/lib/savings-basis';
+import { DEFAULT_PRICE_DISCLOSURE, NO_DOLLAR_ESTIMATE, UNAVAILABLE_FIGURE, describeSavingsTotal, formatSavingsFigure, isDefaultPriceEstimate, rankBySavings, savingsFigure } from '@/lib/savings-basis';
 import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline, rdsIdleEstimateWithheld, rdsIdleSavingsExplanation } from '@/lib/finding-display';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -94,7 +94,6 @@ import {
   summaryNew,
   summaryOpen,
   summaryUpperBoundOnly,
-  upperBoundOnly,
 } from './costOptimizationCopy';
 
 // Fetching more than this in one page is an edge case; the KPI tile (sourced
@@ -111,7 +110,7 @@ const RECOMMENDATIONS_FETCH_LIMIT = 100;
 // The card must not present a ceiling as if it were a plain monthly estimate,
 // nor a figure with no savings basis as any dollar amount.
 function isSavingsCeiling(rec: CostRecommendation): boolean {
-  return savingsBasisKind(rec) === 'ceiling';
+  return savingsFigure(rec).kind === 'ceiling';
 }
 
 // Despite the name (kept for call-site stability), this now shows 2 decimal
@@ -199,23 +198,26 @@ function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
       </div>
     );
   }
-  const kind = savingsBasisKind(rec);
+  // "Never show $0": the one row rule (lib/savings-basis.ts savingsFigure). A basis with a figure not above $0
+  // (a gate-blocked DynamoDB comparison, a Lambda or S3 figure stored as 0.00 with no recorded sub-cent amount)
+  // reads "No dollar estimate" in grey, with no basis line under it.
+  const fig = savingsFigure(rec);
   // An idle RDS instance-hour estimate's explanation (C1b): this card only, never the compact rows elsewhere.
   const rdsExplanation = rdsIdleSavingsExplanation(rec);
   return (
     <div className="sm:text-right" data-testid="opportunity-savings">
-      <p className={cn('text-section tabular-nums sm:whitespace-nowrap', kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
+      <p className={cn('text-section tabular-nums sm:whitespace-nowrap', fig.kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
         {isLowActivityFinding(rec)
-          ? lowActivitySavingsHeadline(rec.potentialSavings, formatSavingsCurrency, savingsBasisKind(rec))
-          : formatRecommendationSavings(rec, formatSavingsCurrency)}
+          ? lowActivitySavingsHeadline(fig, formatSavingsCurrency)
+          : formatSavingsFigure(fig, formatSavingsCurrency)}
       </p>
       {isSavingsCeiling(rec) && (
         <p className="text-label text-ink-muted font-medium">{UPPER_BOUND}</p>
       )}
-      {isDefaultPriceEstimate(rec) && (
+      {isDefaultPriceEstimate(rec) && fig.kind !== 'none' && (
         <p className="text-label text-ink-muted font-medium sm:max-w-[16rem] sm:ml-auto" data-testid="default-price-disclosure">{DEFAULT_PRICE_DISCLOSURE}</p>
       )}
-      {isLowActivityFinding(rec) && (
+      {isLowActivityFinding(rec) && fig.kind !== 'none' && (
         <p className="text-label text-ink-muted font-medium sm:max-w-[16rem] sm:ml-auto" data-testid="low-activity-savings-basis">
           {!isDefaultPriceEstimate(rec) && typeof rec.metadata?.instance_type === 'string'
             ? lowActivityListPriceBasis(rec.metadata.instance_type)
@@ -554,13 +556,11 @@ export default function CostOptimizationPage() {
   const statsAvailable = stats !== undefined && !statsError;
   const activeCount = statsAvailable ? stats.activeRecommendations : null;
   const totalEverCount = statsAvailable ? stats.totalRecommendations : 0;
-  const monthlySavings = statsAvailable ? stats.totalPotentialSavings : null;
-  // Findings with a positive estimate: a cent-rounded total of 0 with some behind it reads "<$0.01" (formatSavingsTotal).
-  const estimatedFindings = statsAvailable ? stats.estimatedFindings : null;
-  // Upper bounds (S3 lifecycle, DynamoDB capacity), one line per type, never added to the total.
-  // Rendered only when the monthly figure is available (below), so a failed stats fetch shows none.
-  const ceilingLines = describeCeilings(stats?.potentialSavingsCeilingByResourceType ?? {}, formatWholeDollars);
-  const monthlyLabel = monthlySavings === null ? null : formatSavingsTotal(monthlySavings, estimatedFindings);
+  // "Never show $0" (lib/savings-basis.ts describeSavingsTotal): a firm total ("<$0.01" when positive estimates
+  // round to 0) with its upper bounds on their own lines; every figure an upper bound; open findings with no
+  // figure ("No dollar estimate"); none open ("None found", ruling Q1); a failed stats fetch or a missing total
+  // ("Unavailable", never $0).
+  const savingsTotal = describeSavingsTotal(statsAvailable ? stats : null, { partialRun: scan.key === 'partial', format: formatWholeDollars });
   const bySeverity = statsAvailable ? stats.bySeverity : null;
 
   // Ruling 1a: a run that failed or had gaps says so on the Last analysis line, never in a banner.
@@ -599,7 +599,8 @@ export default function CostOptimizationPage() {
   const ceilingTotal = statsAvailable ? stats.potentialSavingsCeiling : 0;
   // formatSavingsCurrency: whole dollars from $1, cents below, "<$0.01" under a cent; never "$0" for a positive bound.
   const ceilingLabel = ceilingTotal > 0 ? formatSavingsCurrency(ceilingTotal) : null;
-  const upperBoundOnlySavings = monthlyLabel === '$0' && ceilingLabel !== null;
+  // "None found" only after an analysis finished (ruling Q1); before one has, or while one runs or after it failed, "—".
+  const analysisFinished = scan.key.startsWith('completed') || scan.key === 'partial';
 
   // Opportunities: firm estimates first, then upper bounds, then no basis, each largest first (rankBySavings,
   // the Costs and Infrastructure pages' order). The severity filter only narrows the loaded list.
@@ -614,10 +615,10 @@ export default function CostOptimizationPage() {
   if (activeCount !== null && severityCounts) {
     summaryLines.push(summaryOpen(activeCount, severityCounts.high, severityCounts.medium, severityCounts.low));
   }
-  if (monthlyLabel !== null && activeCount !== null && activeCount > 0) {
-    if (monthlyLabel !== '$0') summaryLines.push(summaryFirmSavings(monthlyLabel, ceilingLabel));
-    else if (ceilingLabel !== null) summaryLines.push(summaryUpperBoundOnly(ceilingLabel));
-    else summaryLines.push(SUMMARY_NO_ESTIMATE);
+  if (activeCount !== null && activeCount > 0) {
+    if (savingsTotal.kind === 'firm') summaryLines.push(summaryFirmSavings(savingsTotal.amount, ceilingLabel));
+    else if (savingsTotal.kind === 'upper_bound_only' && ceilingLabel !== null) summaryLines.push(summaryUpperBoundOnly(ceilingLabel));
+    else if (savingsTotal.kind === 'no_estimate') summaryLines.push(SUMMARY_NO_ESTIMATE);
   }
   if (scan.counts) summaryLines.push(summaryNew(scan.counts.new));
   // C3a: the latest run's log groups below the stored-size floor, and any skipped for their name length (its own record).
@@ -736,21 +737,26 @@ export default function CostOptimizationPage() {
             <Card className="order-3 col-span-2 md:order-2 md:col-span-1">
               <CardContent className="px-5">
                 <p className="text-label font-semibold text-ink-muted uppercase tracking-wide mb-2">{ESTIMATED_MONTHLY_SAVINGS}</p>
-                {notConnected ? <UnmeasuredValue /> : statsLoading ? <Skeleton className="h-8 w-24" /> : monthlyLabel === null ? (
+                {notConnected ? <UnmeasuredValue /> : statsLoading ? <Skeleton className="h-8 w-24" /> : savingsTotal.kind === 'unavailable' ? (
                   <p className="text-section text-ink-muted">{UNAVAILABLE}</p>
-                ) : upperBoundOnlySavings ? (
+                ) : savingsTotal.kind === 'upper_bound_only' ? (
                   // Every open figure is an upper bound: grey, never a firm total (founder ruling 4).
                   <>
-                    <p className="text-section tabular-nums text-ink-muted" data-testid="savings-upper-bound-only">{upperBoundOnly(ceilingLabel)}</p>
+                    <p className="text-section tabular-nums text-ink-muted" data-testid="savings-upper-bound-only">{savingsTotal.value}</p>
                     <p className="text-meta text-ink-muted mt-1">{NO_FIRM_ESTIMATE}</p>
                   </>
-                ) : (
+                ) : savingsTotal.kind === 'firm' ? (
                   <>
-                    <p className={cn('text-kpi tabular-nums', monthlyLabel === '$0' ? ZERO_CLASS : 'text-ink-success')}>{monthlyLabel}<span className="text-ui font-semibold text-ink-muted">/mo</span></p>
-                    {ceilingLines.map((line) => (
+                    <p className="text-kpi tabular-nums text-ink-success">{savingsTotal.amount}<span className="text-ui font-semibold text-ink-muted">/mo</span></p>
+                    {savingsTotal.lines.map((line) => (
                       <p key={line} className="text-meta text-ink-muted mt-1">{line}</p>
                     ))}
                   </>
+                ) : savingsTotal.kind === 'none_found' && !analysisFinished ? (
+                  <p className="text-section tabular-nums text-ink-muted" data-testid="savings-no-figure">{UNAVAILABLE_FIGURE}</p>
+                ) : (
+                  // Open findings with no dollar figure, or none open after an analysis: words in grey, never "$0/mo".
+                  <p className="text-section text-ink-muted" data-testid="savings-no-figure">{savingsTotal.value}</p>
                 )}
               </CardContent>
             </Card>

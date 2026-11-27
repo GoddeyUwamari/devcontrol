@@ -46,6 +46,7 @@ import { activityFeedService } from '@/lib/services/activity-feed.service'
 import { soc2Service } from '@/lib/services/soc2.service'
 import { complianceFrameworksService } from '@/lib/services/compliance-frameworks.service'
 import { authService } from '@/lib/services/auth.service'
+import { expectNoMoneyZero } from '@/lib/__tests__/support/no-money-zero'
 
 const NOW = Date.parse('2026-11-13T01:37:00Z')
 const SCAN_DONE = '2026-11-12T23:02:00Z' // today, 6:02 PM
@@ -589,12 +590,25 @@ describe('page: savings (F9, F10, DB-D13) and S1', () => {
     expect(screen.getAllByTestId('savings-ceiling-line').map((l) => l.textContent)).toEqual(['Up to $0.01/month if S3 data qualifies for Standard-IA (upper bound).'])
   })
 
-  it('an estimate of $0.00 is not green', async () => {
+  it('"Never show $0": an estimate total of $0.00 is no dollar figure, never "$0.00/mo"', async () => {
     setup({ recs: [rec('ebs0', 'EBS', 0, 'estimated:x')], stats: stats(0, 1, { EBS: 0 }, {}) })
     health.ok()
     renderDashboard()
     await settled()
-    expect(tones('EBS')).toEqual([['$0.00/mo', 'neutral', '']])
+    expect(tones('EBS')).toEqual([['No dollar estimate', 'neutral', '']])
+  })
+
+  it('"Never show $0" sweep (DB-1/DB-2): a stored-0 S3 ceiling and 0 estimate totals are no dollar figure; the card shows no money zero', async () => {
+    setup({
+      recs: [rec('s3-small', 'S3', 0, 'ceiling: s3'), rec('ebs0', 'EBS', 0, 'estimated:x'), rec('ri1', 'EC2', 0, null)],
+      stats: stats(0, 3, { EBS: 0, EC2: 0 }, { S3: 0 }),
+    })
+    health.ok()
+    renderDashboard()
+    await settled()
+    for (const type of ['S3', 'EBS', 'EC2']) expect(tones(type)).toEqual([['No dollar estimate', 'neutral', '']])
+    const opportunities = screen.getByRole('heading', { name: 'Cost-Saving Opportunities' }).closest('.rounded-2xl') as HTMLElement
+    expectNoMoneyZero(opportunities.textContent)
   })
 })
 

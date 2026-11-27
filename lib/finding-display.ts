@@ -1,3 +1,5 @@
+import { LESS_THAN_ONE_CENT, NO_DOLLAR_ESTIMATE, type SavingsFigure } from './savings-basis'
+
 /**
  * The label a cost finding is shown under -- the frontend mirror of
  * backend/src/services/finding-display.ts (identity: LOW_ACTIVITY_RULE in
@@ -36,13 +38,17 @@ export function displayIssue(rec: { issue?: string | null; metadata?: Record<str
 export const LOW_ACTIVITY_STORAGE_NOTE = "Doesn't include storage, which is still billed while an instance is stopped."
 
 /**
- * The headline figure of a low-activity finding (W3, C-3). `format` is the surface's own currency formatter.
- * `kind` is the amount's savings basis (savingsBasisKind): "Up to" only for anything but an estimate
- * (Cost Optimization tidy round 4): an estimate reads "$X/mo if it's no longer needed".
+ * The headline figure of a low-activity finding (W3, C-3). `fig` is the row's
+ * savingsFigure (lib/savings-basis.ts); `format` is the surface's own currency
+ * formatter. "Up to" only for anything but an estimate (Cost Optimization tidy
+ * round 4): an estimate reads "$X/mo if it's no longer needed". No figure
+ * ("Never show $0"): "No dollar estimate", never "Up to $0/mo".
  */
-export function lowActivitySavingsHeadline(potentialSavings: number, format: (value: number) => string, kind?: 'estimate' | 'ceiling' | null): string {
-  const figure = `${format(potentialSavings)}/mo if it's no longer needed`
-  return kind === 'estimate' ? figure : `Up to ${figure}`
+export function lowActivitySavingsHeadline(fig: SavingsFigure, format: (value: number) => string): string {
+  if (fig.kind === 'none') return NO_DOLLAR_ESTIMATE
+  if (fig.subCent) return `${LESS_THAN_ONE_CENT}/mo if it's no longer needed`
+  const figure = `${format(fig.amount)}/mo if it's no longer needed`
+  return fig.kind === 'estimate' ? figure : `Up to ${figure}`
 }
 
 /** The basis line for a list-price figure (C-3): the table is us-east-1 for every region. */

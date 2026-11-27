@@ -65,3 +65,14 @@ describe('AI report detail: default-price savings figures (PR 4, L1)', () => {
     expect(screen.queryByText(/\(price unknown\)/)).not.toBeInTheDocument()
   })
 })
+
+describe('"Never show $0" (AI-1): a recommendation whose estimatedSavings is 0 shows no savings line, never a bare "0"', () => {
+  it('estimatedSavings 0: the row ends at its description', async () => {
+    getReportDetail.mockResolvedValue(report([rec('Zero figure', { estimatedSavings: 0 })]))
+    render(<ReportDetailPage />)
+    const row = (await screen.findByText('Zero figure')).closest('div.border') as HTMLElement
+    expect(row.textContent).not.toMatch(/Est\. savings/)
+    expect(row.textContent).not.toMatch(/x0$|(?<![\w.])0(?![\w.])/)
+  })
+})
+

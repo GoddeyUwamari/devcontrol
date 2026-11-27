@@ -25,7 +25,7 @@ import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConne
 import type { InfrastructureResource } from '@/lib/types'
 import { isNotRunning } from './idle'
 import type { AnomalyDetection } from '@/types/anomaly.types'
-import { formatSavingsCurrency } from '@/lib/utils'
+import { describeSavingsTotal } from '@/lib/savings-basis'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK } from '@/lib/chart-theme'
 import { describeSpend, formatUsd, roundCents } from '../cost-display'
@@ -417,6 +417,7 @@ export default function EfficiencyPage() {
   const inventoryNote = resourcesLoading ? 'Loading…'
     : resourcesError ? 'Could not be retrieved'
     : 'Estimate from resource inventory'
+  const savingsTotal = describeSavingsTotal(savingsStats ?? null)
   const realKpis = {
     totalSpend: { label: realSpend.label, value: realSpend.value, note: realSpend.sub },
     costPerResource: {
@@ -424,10 +425,14 @@ export default function EfficiencyPage() {
       note: !resourcesLoading && !resourcesError && resources.length === 0 ? 'No discovered resources' : inventoryNote,
     },
     idleCost: { value: resourcesLoading || resourcesError ? '—' : formatUsd(realIdleCost), note: resourcesLoading || resourcesError ? inventoryNote : NOT_RUNNING_CAVEAT },
-    savings: {
-      value: savingsLoading || savingsError || !savingsStats ? '—' : formatSavingsCurrency(savingsStats.totalPotentialSavings),
-      note: savingsLoading ? 'Loading…' : savingsError || !savingsStats ? 'Could not be retrieved' : 'Estimated monthly savings from recommendations',
-    },
+    // "Never show $0" (lib/savings-basis.ts describeSavingsTotal): a firm total keeps this tile's figure and note;
+    // otherwise the shared words ("Up to $X/mo · upper bound only", "No dollar estimate", "None found") and line.
+    // This page doesn't read the analysis state, so "None found" says only what is true: nothing is open.
+    savings: savingsLoading || savingsError || savingsTotal.kind === 'unavailable'
+      ? { value: '—', note: savingsLoading ? 'Loading…' : 'Could not be retrieved' }
+      : savingsTotal.kind === 'firm'
+        ? { value: savingsTotal.amount, note: 'Estimated monthly savings from recommendations' }
+        : { value: savingsTotal.value, note: savingsTotal.kind === 'none_found' ? 'No open recommendations' : savingsTotal.lines[0] ?? '' },
   }
 
   // ── Scatter data ──

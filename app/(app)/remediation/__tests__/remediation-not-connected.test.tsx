@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { accountsResponse, type ConnectionMode } from '@/components/aws/__tests__/accounts-wire'
 import RemediationPage from '../page'
+import { expectNoMoneyZero } from '@/lib/__tests__/support/no-money-zero'
 
 const m = vi.hoisted(() => ({ tier: 'free' as 'free' | 'enterprise', connection: 'not_connected' as string }))
 
@@ -87,13 +88,52 @@ describe('PR4c: /remediation connected is unchanged', () => {
     expect(screen.queryByTestId('not-connected-card')).toBeNull()
   })
 
-  it.each(['connected', 'FAIL'])('Revenue Protection, %s: $0/mo Savings recovered and the five tabs; no card', async (connection) => {
+  it.each(['connected', 'FAIL'])('Revenue Protection, %s: "None yet" Savings recovered (ruling Q5, never a zero amount) and the five tabs; no card', async (connection) => {
     m.tier = 'enterprise'
     m.connection = connection
     renderPage()
     await waitFor(() => expect(screen.getByText('No workflows yet')).toBeInTheDocument())
-    expect(tile('Savings Recovered')).toHaveTextContent('$0/mo')
+    expect(tile('Savings Recovered')).toHaveTextContent('None yet')
+    expect(tile('Savings Recovered')).not.toHaveTextContent('$')
     expect(tabs()).toHaveLength(5)
     expect(screen.queryByTestId('not-connected-card')).toBeNull()
+  })
+})
+
+describe('"Never show $0", ruling Q5: Remediation rows and Savings Recovered', () => {
+  const workflow = (id: string, status: string, estimated_savings: number | string) => ({
+    id, organization_id: 'org-placeholder', recommendation_id: null, resource_id: `i-${id}`, resource_type: 'ec2', action_type: 'stop_instance',
+    action_params: {}, estimated_savings, risk_level: 'low', status, approved_by: null, approved_by_email: null, approved_by_name: null,
+    approved_at: null, rejected_at: null, rejection_reason: null, executed_by: null, executed_by_email: null, executed_by_name: null,
+    executed_at: null, completed_at: null, execution_log: null, rollback_available: false, rollback_snapshot_id: null,
+    created_at: '2026-11-20T00:00:00.000Z', updated_at: '2026-11-20T00:00:00.000Z',
+  })
+
+  it('a row with no figure reads "No dollar estimate"; nothing recovered reads "None yet"; no money zero', async () => {
+    m.tier = 'enterprise'
+    m.connection = 'connected'
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === '/api/aws/accounts') return accountsResponse('connected') as never
+      if (url.startsWith('/api/remediation')) return { data: { success: true, data: [workflow('a', 'completed', '0.00'), workflow('b', 'pending_approval', 42.5)] } } as never
+      throw new Error('unexpected GET ' + url)
+    })
+    renderPage()
+    await waitFor(() => expect(screen.getByText('No dollar estimate')).toBeInTheDocument())
+    expect(screen.getByText('$43/mo')).toBeInTheDocument()
+    expect(tile('Savings Recovered')).toHaveTextContent('None yet')
+    expectNoMoneyZero(document.body.textContent)
+  })
+
+  it('completed workflows with figures sum into Savings Recovered, in the shared formatter (cents under $1)', async () => {
+    m.tier = 'enterprise'
+    m.connection = 'connected'
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === '/api/aws/accounts') return accountsResponse('connected') as never
+      if (url.startsWith('/api/remediation')) return { data: { success: true, data: [workflow('a', 'completed', '0.40'), workflow('b', 'completed', '0')] } } as never
+      throw new Error('unexpected GET ' + url)
+    })
+    renderPage()
+    await waitFor(() => expect(tile('Savings Recovered')).toHaveTextContent('$0.40/mo'))
+    expectNoMoneyZero(document.body.textContent)
   })
 })
