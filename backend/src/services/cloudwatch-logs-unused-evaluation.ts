@@ -5,8 +5,9 @@
  *
  * One log group goes through, in this order:
  *   0. scope (judgeLogGroupScope), from DescribeLogGroups alone:
+ *        a stored size below the floor -> below floor (summary line, never a
+ *        card), whatever its class (fix round 1, founder ruling B1(b));
  *        Delivery class -> excluded; storedBytes missing -> couldn't check;
- *        below the floor -> below floor (summary line, never a card);
  *        no creation time -> couldn't check; created inside the window ->
  *        excluded (too new); name over 255 characters -> skipped (ruling D10);
  *   1. metric (judgeIncomingBytes): any IncomingBytes datapoint above 0 in the
@@ -97,11 +98,17 @@ const EXCLUDED_CLASSES: ReadonlySet<string> = new Set(CLOUDWATCH_LOGS_UNUSED_RUL
  * Every class but Delivery stores logs at the same storage price (Standard,
  * Infrequent Access, Essentials: AWS "Log classes"), so any other value,
  * including one this SDK doesn't model yet, is evaluated.
+ *
+ * The floor comes first (fix round 1, founder ruling B1(b)): a group with a
+ * reported size below the floor joins the below-floor summary line whatever
+ * its class, Delivery included. A Delivery group at or above the floor, or
+ * with no reported size, is excluded (counted as delivery_class, never a
+ * finding, never "couldn't check").
  */
 export function judgeLogGroupScope(group: LogGroup & { logGroupName: string }, window: LogGroupUnusedWindow): LogGroupScopeVerdict {
+  if (isStoredBytes(group.storedBytes) && !meetsStoredSizeFloor(group.storedBytes)) return { kind: 'below_floor', storedBytes: group.storedBytes };
   if (typeof group.logGroupClass === 'string' && EXCLUDED_CLASSES.has(group.logGroupClass)) return { kind: 'excluded', reason: 'delivery_class' };
   if (!isStoredBytes(group.storedBytes)) return { kind: 'couldnt_check', reason: 'no_stored_bytes' };
-  if (!meetsStoredSizeFloor(group.storedBytes)) return { kind: 'below_floor', storedBytes: group.storedBytes };
   const created = group.creationTime;
   if (typeof created !== 'number' || !Number.isFinite(created)) return { kind: 'couldnt_check', reason: 'no_creation_time' };
   if (created > window.start.getTime()) return { kind: 'excluded', reason: 'too_new' };

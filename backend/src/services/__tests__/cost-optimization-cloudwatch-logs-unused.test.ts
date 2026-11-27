@@ -2,23 +2,26 @@
  * C3a: the unused CloudWatch log group detector (config/cloudwatch-logs-unused-rule.ts,
  * cloudwatch-logs-unused-evaluation.ts) against fake DescribeLogGroups,
  * DescribeLogStreams and GetMetricData answers. No network. Every name is an
- * invented placeholder (the repo is public): no real account IDs, ARNs,
- * log group names or emails.
+ * invented placeholder and every size a synthetic figure (the repo is public):
+ * no real account IDs, ARNs, log group names, emails or account figures.
  *
  * Covers: an unused group; the floor (floor - 1, floor, floor + 1 bytes) and the
- * below-floor summary counts; Delivery class; missing storedBytes / creation
- * time; age (inside the window, at its start); names over 255 characters
- * (ruling D10); the metric (activity, zeros, empty, failed / partial / throttled
- * / denied, whole-call failure, activity winning on a failed read); the newest
- * stream (ruling D5: recent event, recent ingestion, missing time, no streams,
- * denied, throttled); listing failures and paging; no dollar figure, fixed Low
- * (rulings D3/D4); the description and evidence; no "$" in any C3 string;
- * attribution and home-region wiring; the run's counts.
+ * below-floor summary counts; Delivery class, with the floor checked first (fix
+ * round 1, ruling B1(b)); missing storedBytes / creation time; age (inside the
+ * window, at its start); the window itself, pinned to literal dates; names over
+ * 255 characters (ruling D10); the metric (activity, zeros, empty, failed /
+ * partial / throttled / denied, whole-call failure, activity winning on a failed
+ * read); the newest stream (ruling D5: recent event, recent ingestion, missing
+ * time, no streams, denied, throttled); listing failures and paging; no dollar
+ * figure, fixed Low (rulings D3/D4); the description and evidence; no "$" in any
+ * C3 string; attribution and home-region wiring; the run's counts.
  */
+import type { DescribeLogGroupsCommandInput, DescribeLogStreamsCommandInput } from '@aws-sdk/client-cloudwatch-logs';
+import type { GetMetricDataCommandInput } from '@aws-sdk/client-cloudwatch';
 import costOptimizationService from '../cost-optimization.service';
-import { AWSClientFactory } from '../aws-client-factory.service';
+import { AWSClientFactory, type AWSClients } from '../aws-client-factory.service';
 import { OptimizationRuleConfigService } from '../optimization-rule-config.service';
-import { logGroupUnusedDescription, logGroupUnusedWindow } from '../cloudwatch-logs-unused-evaluation';
+import { logGroupUnusedDescription, logGroupUnusedWindow, type CloudWatchLogsUnusedCheckCounts } from '../cloudwatch-logs-unused-evaluation';
 import { CLOUDWATCH_LOGS_UNUSED_RULE } from '../../config/cloudwatch-logs-unused-rule';
 import { BYTES_PER_GB, CLOUDWATCH_LOGS_UNUSED_FLOOR_BYTES } from '../../config/cloudwatch-logs-size';
 import { ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED, OPTIMIZATION_RULES } from '../../config/optimization-rules';
@@ -26,7 +29,52 @@ import { classifySavingsBasis } from '../estimated-savings';
 import { summarizeDetectors } from '../cost-analysis-outcome';
 import { fakeClient, accessDenied } from './helpers/low-activity-aws';
 
-const service = costOptimizationService as any;
+/** A command as the fake clients receive it: its class name and its input. */
+interface SentCommand<Input> {
+  constructor: { name: string };
+  input: Input;
+}
+type LogsCommand = SentCommand<Partial<DescribeLogGroupsCommandInput & DescribeLogStreamsCommandInput>>;
+type MetricsCommand = SentCommand<GetMetricDataCommandInput>;
+
+/** The finding fields these tests read (OptimizationIssue is private to the service). */
+interface IssueView {
+  resourceId: string;
+  resourceName: string;
+  resourceType: string;
+  issue: string;
+  description: string;
+  potentialSavings: number;
+  severity: string;
+  awsRegion: string;
+  metadata: Record<string, unknown> & {
+    savings_basis?: unknown;
+    rule?: unknown;
+    cloudwatch_logs_unused: Record<string, unknown> & { incoming_bytes: { observed: string } };
+  };
+}
+/** DetectorResult, as these tests read it. */
+interface DetectorResultView {
+  success: boolean;
+  issues: IssueView[];
+  unknownResourceIds?: string[];
+  endActiveForUnknown?: boolean;
+  failureReason?: string;
+  cloudwatchLogsUnused: CloudWatchLogsUnusedCheckCounts;
+}
+type FakeLogs = ReturnType<typeof fakeLogs>;
+type FakeMetrics = ReturnType<typeof fakeCloudWatch>;
+interface DetectorClients {
+  cloudWatchLogs?: FakeLogs;
+  cloudWatch: FakeMetrics;
+}
+
+/** The detector under test (private on the service), with the clients it reads. */
+const service = costOptimizationService as unknown as {
+  detectUnusedLogGroups(clients: DetectorClients, region: string, now?: Date): Promise<DetectorResultView>;
+};
+/** Every other private detector, by name, for the wiring tests' stubs. */
+const otherDetectors = costOptimizationService as unknown as Record<string, (...args: never[]) => Promise<unknown>>;
 const DAY = 24 * 3_600_000;
 const NOW = new Date('2026-11-26T12:00:00.000Z');
 const WINDOW = logGroupUnusedWindow(NOW);
@@ -49,7 +97,7 @@ type StreamAnswer = Array<{ lastEventTimestamp?: number; lastIngestionTime?: num
 type GroupsAnswer = unknown[] | Error | 'incomplete' | { pages: unknown[][] };
 
 function fakeLogs(groups: GroupsAnswer, streams: Record<string, StreamAnswer> = {}) {
-  return fakeClient((command: any) => {
+  return fakeClient((command: LogsCommand) => {
     const name = command.constructor.name;
     if (name === 'DescribeLogGroupsCommand') {
       expect(command.input.logGroupNamePattern).toBeUndefined();
@@ -64,7 +112,7 @@ function fakeLogs(groups: GroupsAnswer, streams: Record<string, StreamAnswer> = 
     }
     if (name === 'DescribeLogStreamsCommand') {
       expect(command.input).toMatchObject({ orderBy: 'LastEventTime', descending: true, limit: 1 });
-      const answer = streams[command.input.logGroupName] ?? [{ lastEventTimestamp: BEFORE, lastIngestionTime: BEFORE }];
+      const answer = streams[command.input.logGroupName ?? ''] ?? [{ lastEventTimestamp: BEFORE, lastIngestionTime: BEFORE }];
       if (answer instanceof Error) throw answer;
       return { logStreams: answer };
     }
@@ -78,19 +126,24 @@ interface FakeIncoming {
   status?: 'Complete' | 'PartialData' | 'Forbidden' | 'InternalError';
 }
 
+/** The log group a GetMetricData query asks about (its one LogGroupName dimension). */
+function queriedGroup(query: NonNullable<GetMetricDataCommandInput['MetricDataQueries']>[number]): string {
+  return query.MetricStat?.Metric?.Dimensions?.[0]?.Value ?? '';
+}
+
 function fakeCloudWatch(byGroup: Record<string, FakeIncoming> | Error) {
-  return fakeClient((command: any) => {
+  return fakeClient((command: MetricsCommand) => {
     if (byGroup instanceof Error) throw byGroup;
-    for (const q of command.input.MetricDataQueries as any[]) {
+    const queries = command.input.MetricDataQueries ?? [];
+    for (const q of queries) {
       expect(q.MetricStat).toMatchObject({ Metric: { Namespace: 'AWS/Logs', MetricName: 'IncomingBytes' }, Period: 86400, Stat: 'Sum' });
-      expect(q.MetricStat.Metric.Dimensions).toHaveLength(1);
-      expect(q.MetricStat.Metric.Dimensions[0].Name).toBe('LogGroupName');
+      expect(q.MetricStat?.Metric?.Dimensions).toHaveLength(1);
+      expect(q.MetricStat?.Metric?.Dimensions?.[0]?.Name).toBe('LogGroupName');
     }
     expect(command.input.StartTime).toEqual(WINDOW.start);
     expect(command.input.EndTime).toEqual(WINDOW.end);
-    const results = (command.input.MetricDataQueries as any[]).map((q) => {
-      const name = q.MetricStat.Metric.Dimensions[0].Value as string;
-      const spec = byGroup[name] ?? {};
+    const results = queries.map((q) => {
+      const spec = byGroup[queriedGroup(q)] ?? {};
       const Timestamps: Date[] = [];
       const Values: number[] = [];
       if (spec.daily) {
@@ -114,8 +167,10 @@ async function detect(groups: GroupsAnswer, options: { metrics?: Record<string, 
   return { result, cloudWatchLogs, cloudWatch };
 }
 
-const names = (result: any) => result.issues.map((i: any) => i.resourceId);
-const sumCounts = (c: any) =>
+/** The first command a fake client received. */
+const firstSent = <Input>(client: FakeLogs | FakeMetrics) => client.send.mock.calls[0][0] as SentCommand<Input>;
+const names = (result: DetectorResultView) => result.issues.map((i) => i.resourceId);
+const sumCounts = (c: CloudWatchLogsUnusedCheckCounts) =>
   c.flagged + c.below_floor.count +
   [c.not_flagged, c.couldnt_check, c.excluded, c.skipped].reduce((sum: number, bucket: Record<string, number>) => sum + Object.values(bucket).reduce((a, b) => a + b, 0), 0);
 
@@ -200,11 +255,11 @@ describe('unused log group: the floor (ruling D9) and the below-floor summary', 
     }
   });
 
-  it('a small account (about 17 MB in all) produces no finding, only the below-floor counts', async () => {
-    const groups = [group('/placeholder/a', { storedBytes: 17_000_000 }), group('/placeholder/b', { storedBytes: 1_680 }), group('/placeholder/c', { storedBytes: 0 })];
+  it('a small account (synthetic: about 12 MB in all) produces no finding, only the below-floor counts', async () => {
+    const groups = [group('/placeholder/a', { storedBytes: 12_345_678 }), group('/placeholder/b', { storedBytes: 2_048 }), group('/placeholder/c', { storedBytes: 0 })];
     const { result, cloudWatch } = await detect(groups);
     expect(result.issues).toEqual([]);
-    expect(result.cloudwatchLogsUnused.below_floor).toEqual({ count: 3, stored_bytes: 17_001_680, floor_bytes: FLOOR, floor_gb: '35.7' });
+    expect(result.cloudwatchLogsUnused.below_floor).toEqual({ count: 3, stored_bytes: 12_347_726, floor_bytes: FLOOR, floor_gb: '35.7' });
     expect(cloudWatch.count('GetMetricDataCommand')).toBe(0);
   });
 });
@@ -222,6 +277,42 @@ describe('unused log group: scope', () => {
     expect(result.cloudwatchLogsUnused.excluded).toEqual({ delivery_class: 1, too_new: 1 });
   });
 
+  // Fix round 1, founder ruling B1(b): the floor is checked before the Delivery-class exclusion.
+  it.each([
+    ['floor - 1', FLOOR - 1],
+    ['a small Delivery group', 4_096],
+    ['zero bytes', 0],
+  ])('a Delivery group below the floor (%s) joins the below-floor summary, not excluded, and nothing more is read', async (_label, bytes) => {
+    const { result, cloudWatch, cloudWatchLogs } = await detect([group('/placeholder/delivery-small', { logGroupClass: 'DELIVERY', storedBytes: bytes })]);
+    expect(result.issues).toEqual([]);
+    expect(result.cloudwatchLogsUnused.below_floor).toMatchObject({ count: 1, stored_bytes: bytes });
+    expect(result.cloudwatchLogsUnused.excluded.delivery_class).toBe(0);
+    expect(result.unknownResourceIds).toEqual([]);
+    expect(cloudWatch.count('GetMetricDataCommand')).toBe(0);
+    expect(cloudWatchLogs.count('DescribeLogStreamsCommand')).toBe(0);
+  });
+
+  it.each([
+    ['at the floor', FLOOR],
+    ['above the floor', FLOOR + 1],
+    ['far above the floor', BIG],
+  ])('a Delivery group %s: excluded (delivery_class), never a finding, not below floor, nothing more is read', async (_label, bytes) => {
+    const { result, cloudWatch, cloudWatchLogs } = await detect([group('/placeholder/delivery-big', { logGroupClass: 'DELIVERY', storedBytes: bytes })]);
+    expect(result.issues).toEqual([]);
+    expect(result.cloudwatchLogsUnused.excluded.delivery_class).toBe(1);
+    expect(result.cloudwatchLogsUnused.below_floor.count).toBe(0);
+    expect(result.unknownResourceIds).toEqual([]);
+    expect(cloudWatch.count('GetMetricDataCommand')).toBe(0);
+    expect(cloudWatchLogs.count('DescribeLogStreamsCommand')).toBe(0);
+  });
+
+  it('a Delivery group with no reported size stays excluded (never "couldn\'t check")', async () => {
+    const { result } = await detect([group('/placeholder/delivery-unsized', { logGroupClass: 'DELIVERY', storedBytes: undefined })]);
+    expect(result.cloudwatchLogsUnused.excluded.delivery_class).toBe(1);
+    expect(result.cloudwatchLogsUnused.couldnt_check.no_stored_bytes).toBe(0);
+    expect(result.unknownResourceIds).toEqual([]);
+  });
+
   it('missing storedBytes or creation time: couldn\'t check, never unused', async () => {
     const { result, cloudWatch } = await detect([
       group('/placeholder/no-size', { storedBytes: undefined }),
@@ -230,7 +321,7 @@ describe('unused log group: scope', () => {
     ]);
     expect(result.issues).toEqual([]);
     expect(result.cloudwatchLogsUnused.couldnt_check).toMatchObject({ no_stored_bytes: 2, no_creation_time: 1 });
-    expect(result.unknownResourceIds.sort()).toEqual(['/placeholder/bad-size', '/placeholder/no-created', '/placeholder/no-size']);
+    expect([...(result.unknownResourceIds ?? [])].sort()).toEqual(['/placeholder/bad-size', '/placeholder/no-created', '/placeholder/no-size']);
     expect(cloudWatch.count('GetMetricDataCommand')).toBe(0);
   });
 
@@ -243,7 +334,7 @@ describe('unused log group: scope', () => {
     expect(names(result)).toEqual([exact]);
     expect(result.cloudwatchLogsUnused.skipped).toEqual({ name_too_long: 1 });
     expect(result.unknownResourceIds).toEqual([long]);
-    const queried = (cloudWatch.send.mock.calls[0][0] as any).input.MetricDataQueries.map((q: any) => q.MetricStat.Metric.Dimensions[0].Value);
+    const queried = (firstSent<GetMetricDataCommandInput>(cloudWatch).input.MetricDataQueries ?? []).map(queriedGroup);
     expect(queried).toEqual([exact]);
     const check = summarizeDetectors([{ issue: ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED, success: true, recommendations: [], unknownResourceIds: result.unknownResourceIds, cloudwatchLogsUnused: result.cloudwatchLogsUnused }], true, []).checks[0];
     expect(check).toMatchObject({ rule_id: 'cloudwatch_unused_logs', outcome: 'complete', unknown: 1 });
@@ -254,6 +345,51 @@ describe('unused log group: scope', () => {
   it('a group with no name is ignored entirely', async () => {
     const { result } = await detect([{ storedBytes: BIG, creationTime: OLD }, group('/placeholder/ok')]);
     expect(result.cloudwatchLogsUnused.evaluated).toBe(1);
+  });
+});
+
+// SF-1: the window is pinned to literal timestamps, never derived from the function under test. 90 complete UTC
+// days, ending at UTC midnight of (now - 2 hours), half-open [start, end).
+describe('unused log group: the 90-day window and the 2-hour settle delay (literal dates)', () => {
+  it.each([
+    ['2026-11-26T12:00:00.000Z', '2026-08-28T00:00:00.000Z', '2026-11-26T00:00:00.000Z'],
+    // Just before the 2-hour delay has passed since midnight: today is not settled, so the window ends a day earlier.
+    ['2026-11-26T01:59:59.999Z', '2026-08-27T00:00:00.000Z', '2026-11-25T00:00:00.000Z'],
+    // Exactly two hours after midnight: today's midnight is the end.
+    ['2026-11-26T02:00:00.000Z', '2026-08-28T00:00:00.000Z', '2026-11-26T00:00:00.000Z'],
+    ['2026-03-01T05:00:00.000Z', '2025-12-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z'],
+  ])('now %s -> [%s, %s)', (now, start, end) => {
+    const window = logGroupUnusedWindow(new Date(now));
+    expect(window.start.toISOString()).toBe(start);
+    expect(window.end.toISOString()).toBe(end);
+  });
+
+  it('the detector queries IncomingBytes over exactly that window', async () => {
+    const { cloudWatch } = await detect([group('/placeholder/windowed')]);
+    const sent = firstSent<GetMetricDataCommandInput>(cloudWatch).input;
+    expect(sent.StartTime).toEqual(new Date('2026-08-28T00:00:00.000Z'));
+    expect(sent.EndTime).toEqual(new Date('2026-11-26T00:00:00.000Z'));
+  });
+
+  it('a group created one millisecond after 2026-08-28T00:00Z is too new; one created at that instant is evaluated', async () => {
+    const { result } = await detect([
+      group('/placeholder/created-after', { creationTime: Date.parse('2026-08-28T00:00:00.001Z') }),
+      group('/placeholder/created-at', { creationTime: Date.parse('2026-08-28T00:00:00.000Z') }),
+    ]);
+    expect(names(result)).toEqual(['/placeholder/created-at']);
+    expect(result.cloudwatchLogsUnused.excluded.too_new).toBe(1);
+  });
+
+  it('a newest stream last written at 2026-08-28T00:00Z is inside the window (not unused); one millisecond earlier is before it', async () => {
+    const start = Date.parse('2026-08-28T00:00:00.000Z');
+    const { result } = await detect([group('/placeholder/at-start'), group('/placeholder/just-before')], {
+      streams: {
+        '/placeholder/at-start': [{ lastEventTimestamp: start - DAY, lastIngestionTime: start }],
+        '/placeholder/just-before': [{ lastEventTimestamp: start - 1, lastIngestionTime: start - 1 }],
+      },
+    });
+    expect(names(result)).toEqual(['/placeholder/just-before']);
+    expect(result.cloudwatchLogsUnused.not_flagged.ingested_stream).toBe(1);
   });
 });
 
@@ -284,7 +420,7 @@ describe('unused log group: the IncomingBytes metric', () => {
     expect(result.success).toBe(true);
     expect(result.issues).toEqual([]);
     expect(result.cloudwatchLogsUnused.couldnt_check.cloudwatch_failed).toBe(2);
-    expect(result.unknownResourceIds.sort()).toEqual(['/placeholder/a', '/placeholder/b']);
+    expect([...(result.unknownResourceIds ?? [])].sort()).toEqual(['/placeholder/a', '/placeholder/b']);
   });
 });
 
@@ -343,7 +479,7 @@ describe('unused log group: listing', () => {
     const { result, cloudWatchLogs } = await detect({ pages: [[group('/placeholder/p1')], [group('/placeholder/p2')]] });
     expect(names(result).sort()).toEqual(['/placeholder/p1', '/placeholder/p2']);
     expect(cloudWatchLogs.count('DescribeLogGroupsCommand')).toBe(2);
-    expect((cloudWatchLogs.send.mock.calls[0][0] as any).input.limit).toBe(50);
+    expect(firstSent<DescribeLogGroupsCommandInput>(cloudWatchLogs).input.limit).toBe(50);
   });
 
   it('no CloudWatch Logs client: the check fails, never "nothing found"', async () => {
@@ -409,19 +545,21 @@ describe('C3a wiring in analyzeAllResources', () => {
   ];
   function stubOthers() {
     const clients = { enabled: true, region: 'eu-west-1', ec2: {}, rds: {}, s3: {}, lambda: {}, cloudWatch: {}, cloudWatchLogs: {}, backup: {} };
-    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clients as any);
-    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockResolvedValue({ ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' } as any);
-    for (const detector of OTHER_DETECTORS) jest.spyOn(service, detector).mockResolvedValue({ success: true, issues: [] });
+    jest.spyOn(AWSClientFactory, 'createClients').mockResolvedValue(clients as unknown as AWSClients);
+    jest.spyOn(OptimizationRuleConfigService.prototype, 'resolveEffectiveConfig').mockResolvedValue(
+      { ruleId: 'lambda_low_usage', parameterId: 'max_invocations', value: 10, source: 'default' } as unknown as Awaited<ReturnType<OptimizationRuleConfigService['resolveEffectiveConfig']>>
+    );
+    for (const detector of OTHER_DETECTORS) jest.spyOn(otherDetectors, detector).mockResolvedValue({ success: true, issues: [] });
   }
 
   it('runs on the home-region clients; its observation carries endActiveForUnknown and the counts', async () => {
     stubOthers();
-    const counts = { evaluated: 1, flagged: 0 };
+    const counts = { evaluated: 1, flagged: 0 } as unknown as CloudWatchLogsUnusedCheckCounts;
     const spy = jest.spyOn(service, 'detectUnusedLogGroups').mockResolvedValue({ success: true, issues: [], unknownResourceIds: ['/placeholder/x'], endActiveForUnknown: true, cloudwatchLogsUnused: counts });
     const analysis = await costOptimizationService.analyzeAllResources('org-c3a-wiring');
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][1]).toBe('eu-west-1');
-    expect((spy.mock.calls[0][0] as any).region).toBe('eu-west-1');
+    expect((spy.mock.calls[0][0] as unknown as { region?: string }).region).toBe('eu-west-1');
     expect(analysis.observations.find((o) => o.issue === ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED)).toEqual({
       issue: ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED, success: true, recommendations: [], unknownResourceIds: ['/placeholder/x'], endActiveForUnknown: true, cloudwatchLogsUnused: counts,
     });
@@ -430,7 +568,7 @@ describe('C3a wiring in analyzeAllResources', () => {
   it('a finding reaches reconciliation with no dollar figure and Low severity; the run records its counts', async () => {
     stubOthers();
     const real = service.detectUnusedLogGroups.bind(service);
-    jest.spyOn(service, 'detectUnusedLogGroups').mockImplementation((_clients: any, region: any) =>
+    jest.spyOn(service, 'detectUnusedLogGroups').mockImplementation((_clients, region) =>
       real({ cloudWatchLogs: fakeLogs([group('/placeholder/app-unused')]), cloudWatch: fakeCloudWatch({}) }, region, NOW));
     const analysis = await costOptimizationService.analyzeAllResources('org-c3a-wiring');
     const observation = analysis.observations.find((o) => o.issue === ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED)!;
@@ -446,7 +584,7 @@ describe('C3a wiring in analyzeAllResources', () => {
   it('a failed listing carries its failure class to the run record, never counts', async () => {
     stubOthers();
     const real = service.detectUnusedLogGroups.bind(service);
-    jest.spyOn(service, 'detectUnusedLogGroups').mockImplementation((_clients: any, region: any) =>
+    jest.spyOn(service, 'detectUnusedLogGroups').mockImplementation((_clients, region) =>
       real({ cloudWatchLogs: fakeLogs(accessDenied()), cloudWatch: fakeCloudWatch({}) }, region, NOW));
     const analysis = await costOptimizationService.analyzeAllResources('org-c3a-wiring');
     const check = summarizeDetectors(analysis.observations, true, []).checks.find((c) => c.issue === ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED)!;

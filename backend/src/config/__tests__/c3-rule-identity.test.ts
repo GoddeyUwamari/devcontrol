@@ -11,8 +11,8 @@
  * displayed size come from that one module -- a test here fails if any C3 code
  * converts bytes on its own.
  */
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readdirSync, readFileSync } from 'fs';
+import { join, relative, sep } from 'path';
 import { CLOUDWATCH_LOGS_UNUSED_RULE, CLOUDWATCH_LOG_GROUP_RESOURCE_TYPE, MAX_LOG_GROUP_NAME_LENGTH } from '../cloudwatch-logs-unused-rule';
 import {
   BYTES_PER_GB,
@@ -111,7 +111,7 @@ describe('the stored-size floor (ruling D9)', () => {
   it('a stored size is a finite, whole, non-negative number of bytes', () => {
     for (const bad of [undefined, null, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '38347922286']) {
       expect(isStoredBytes(bad)).toBe(false);
-      expect(meetsStoredSizeFloor(bad as any)).toBe(false);
+      expect(meetsStoredSizeFloor(bad as unknown as number)).toBe(false);
     }
   });
 });
@@ -146,7 +146,7 @@ describe('the one stored-size display (binding condition 2)', () => {
     expect(CLOUDWATCH_LOGS_UNUSED_RULE.floor.stored_bytes_min).toBe(CLOUDWATCH_LOGS_UNUSED_FLOOR_BYTES);
   });
 
-  it('no other C3 module converts bytes to GB on its own', () => {
+  it('no other C3 module converts bytes to GB on its own (C3 files, decimal forms too)', () => {
     const files = [
       '../cloudwatch-logs-unused-rule.ts',
       '../optimization-rules.ts',
@@ -163,5 +163,42 @@ describe('the one stored-size display (binding condition 2)', () => {
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     expect(/1024|1073741824|2\s*\*\*\s*30|1e9/.test(service.slice(start, end))).toBe(false);
+  });
+
+  // Fix round 1, review N-3: every file under backend/src, every way of writing 2^30. The only C3 location is
+  // config/cloudwatch-logs-size.ts. Each other file is listed with the exact number of conversions it holds today and
+  // why; a new file, or one more conversion in a listed file, fails here.
+  it('across all of backend/src, a 2^30 conversion appears only in cloudwatch-logs-size.ts or a listed, unrelated place', () => {
+    const SRC = join(__dirname, '..', '..');
+    const FORMS = /1073741824|1_073_741_824|\b1\s*<<\s*30\b|\b2\s*\*\*\s*30\b|Math\.pow\(\s*2\s*,\s*30\s*\)|\b1024\s*\*\s*1024\s*\*\s*1024\b/g;
+    const ALLOWED: Record<string, { count: number; reason: string }> = {
+      'config/cloudwatch-logs-size.ts': { count: 1, reason: 'C3: BYTES_PER_GB, the one stored-size conversion (ruling D9)' },
+      'services/cost-optimization.service.ts': { count: 1, reason: 'pre-existing S3 lifecycle check: BucketSizeBytes to GB (getBucketStandardStorageGB), not C3' },
+      'services/__tests__/cost-optimization-s3-lifecycle.test.ts': { count: 1, reason: 'pre-existing S3 lifecycle test fixture GB constant, not C3' },
+      'services/__tests__/cost-optimization-savings-basis-guard.test.ts': { count: 1, reason: 'pre-existing savings-basis guard S3 fixture GB constant, not C3' },
+      'services/__tests__/region-correctness.test.ts': { count: 1, reason: 'pre-existing region test S3 fixture GB constant, not C3' },
+      'config/__tests__/c3-rule-identity.test.ts': { count: 17, reason: 'this test: pins BYTES_PER_GB and the floor to literal 2^30 values, and holds these guards and their sample forms' },
+    };
+    const found: Record<string, number> = {};
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== 'node_modules') walk(full);
+        } else if (/\.(ts|tsx|js|mjs|cjs)$/.test(entry.name)) {
+          const matches = readFileSync(full, 'utf-8').match(FORMS);
+          if (matches) found[relative(SRC, full).split(sep).join('/')] = matches.length;
+        }
+      }
+    };
+    walk(SRC);
+    expect(found).toEqual(Object.fromEntries(Object.entries(ALLOWED).map(([file, entry]) => [file, entry.count])));
+  });
+
+  it('the backend-wide guard catches every form of 2^30 it names', () => {
+    const FORMS = /1073741824|1_073_741_824|\b1\s*<<\s*30\b|\b2\s*\*\*\s*30\b|Math\.pow\(\s*2\s*,\s*30\s*\)|\b1024\s*\*\s*1024\s*\*\s*1024\b/;
+    for (const form of ['x / 1073741824', 'x / 1_073_741_824', 'x / (1 << 30)', 'x / 2 ** 30', 'x / Math.pow(2, 30)', 'x / (1024 * 1024 * 1024)', 'x / 1024*1024*1024']) {
+      expect({ form, caught: FORMS.test(form) }).toEqual({ form, caught: true });
+    }
   });
 });

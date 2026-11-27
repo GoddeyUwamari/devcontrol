@@ -4,10 +4,12 @@
  * c3-stage-a.md Addenda 1 and 2.
  *
  * A log group is unused only when ALL of these hold:
- *   - it is not a Delivery-class group (kept one day by AWS);
  *   - DescribeLogGroups reported its storedBytes, and it is at least the floor
  *     (config/cloudwatch-logs-size.ts, ruling D9; below it the group is counted
- *     in the run's below-floor summary line, never listed);
+ *     in the run's below-floor summary line, never listed -- whatever its
+ *     class: the floor is checked first, fix round 1 ruling B1(b));
+ *   - it is not a Delivery-class group (kept one day by AWS; at or above the
+ *     floor it is counted as excluded, never a finding);
  *   - it was created before the 90-day window began (younger groups are excluded);
  *   - its name fits the finding identity (255 characters; longer names are
  *     skipped and counted, ruling D10);

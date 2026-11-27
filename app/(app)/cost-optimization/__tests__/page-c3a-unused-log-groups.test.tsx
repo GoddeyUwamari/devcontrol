@@ -9,7 +9,7 @@
  * the log groups below the stored-size floor into one line, and names the ones skipped for a long name
  * (rulings D3, D10), from the latest run's own record. Every size shown, the floor included, comes from the
  * backend's one conversion (binding condition 2), and no C3 string shows a dollar amount (binding condition 1).
- * The founder's own small account (about 17 MB in all): no finding, only the summary line.
+ * A small account (synthetic figures: 5 groups, about 12 MB in all): no finding, only the summary line.
  * Real page and real React Query, mocked services, placeholder data only (no real names, IDs or ARNs).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -155,10 +155,10 @@ describe('C3a: an unused log group finding on the page', () => {
 })
 
 describe('C3a: the below-floor summary line (rulings D3, D10)', () => {
-  it("the founder's own small account (about 17 MB): no finding, and one summary line for the groups below the floor", async () => {
-    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', checks: checksWith(belowFloorCounts(7, 17_251_493)) })])
+  it('a small account (synthetic: 5 groups, about 12 MB in all): no finding, and one summary line for the groups below the floor', async () => {
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', checks: checksWith(belowFloorCounts(5, 12_347_726)) })])
     renderPage()
-    await waitFor(() => expect(summaryItems()).toContain("7 CloudWatch log groups each store less than about 35.7 GB, so they aren't listed."))
+    await waitFor(() => expect(summaryItems()).toContain("5 CloudWatch log groups each store less than about 35.7 GB, so they aren't listed."))
     expect(screen.queryByTestId('opportunity-card')).not.toBeInTheDocument()
     // Exactly one line for them, however many groups.
     expect(summaryItems().filter((line) => line?.includes('CloudWatch log group'))).toHaveLength(1)
@@ -166,7 +166,7 @@ describe('C3a: the below-floor summary line (rulings D3, D10)', () => {
   })
 
   it('one group: singular wording', async () => {
-    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', checks: checksWith(belowFloorCounts(1, 1_680)) })])
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', checks: checksWith(belowFloorCounts(1, 4_096)) })])
     renderPage()
     await waitFor(() => expect(summaryItems()).toContain("1 CloudWatch log group stores less than about 35.7 GB, so it isn't listed."))
   })
@@ -176,6 +176,15 @@ describe('C3a: the below-floor summary line (rulings D3, D10)', () => {
     renderPage()
     await waitFor(() => expect(summaryItems()).toContain("2 CloudWatch log groups weren't checked because their names are longer than 255 characters."))
     expect(summaryItems().some((line) => line?.includes('less than about'))).toBe(false)
+  })
+
+  it('one name over 255 characters: the exact singular line (review N-2)', async () => {
+    expect(logGroupSummaryLines(checksWith(belowFloorCounts(0, 0, 1)))).toEqual([
+      "1 CloudWatch log group wasn't checked because its name is longer than 255 characters.",
+    ])
+    svc.getAnalysisRuns.mockResolvedValue([run({ source: 'discovery', checks: checksWith(belowFloorCounts(0, 0, 1), { unknown: 1 }), unknown_resource_count: 1 })])
+    renderPage()
+    await waitFor(() => expect(summaryItems()).toContain("1 CloudWatch log group wasn't checked because its name is longer than 255 characters."))
   })
 
   it('no below-floor groups, a failed check, or a run without the counts: no line (never a guessed 0)', () => {
