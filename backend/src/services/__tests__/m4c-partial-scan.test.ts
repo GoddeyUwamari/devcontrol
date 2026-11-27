@@ -417,7 +417,7 @@ describe('AC-3 G4: detector calls time out under the call policy', () => {
     (costOptimizationService as any).callPolicy = QUICK_POLICY;
     const hanging = () => ({ send: jest.fn(hang) });
     mockAwsClients({
-      ec2: hanging(), s3: hanging(), lambda: hanging(), cloudWatch: hanging(),
+      ec2: hanging(), s3: hanging(), lambda: hanging(), cloudWatch: hanging(), cloudWatchLogs: hanging(),
       getS3ClientForRegion: hanging, getCloudWatchClientForRegion: hanging,
       getDynamoDBClientForRegion: hanging, getApplicationAutoScalingClientForRegion: hanging,
     });
@@ -432,9 +432,11 @@ describe('AC-3 G4: detector calls time out under the call policy', () => {
     }
     const failed = analysis.observations.filter((o) => !o.success).map((o) => o.issue).sort();
     // C1 added two home-region detectors (idle RDS, old EBS snapshots): 6 + 2;
-    // C2 one more (idle NAT gateways): 8 + 1.
-    expect(failed).toHaveLength(9);
-    expect(failed).toEqual(expect.arrayContaining(['Idle RDS Instance', 'Old EBS Snapshot', 'Idle NAT Gateway']));
+    // C2 one more (idle NAT gateways): 8 + 1; C3a one more (unused log groups): 9 + 1.
+    expect(failed).toHaveLength(10);
+    expect(failed).toEqual(expect.arrayContaining(['Idle RDS Instance', 'Old EBS Snapshot', 'Idle NAT Gateway', 'Unused Log Group']));
+    // The unused log group check failed by its call's time limit, not for want of a client.
+    expect(analysis.observations.find((o) => o.issue === 'Unused Log Group')!.failureReason).toBe('timeout');
   });
 
   it('G4: a per-resource call that never answers makes that resource unknown; the others reconcile', async () => {

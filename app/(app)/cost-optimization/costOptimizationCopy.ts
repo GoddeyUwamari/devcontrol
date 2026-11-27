@@ -76,6 +76,20 @@ export function summaryFirmSavings(firm: string, ceiling: string | null): string
 }
 export const summaryUpperBoundOnly = (ceiling: string) => `No firm estimate yet. Up to ${ceiling}/mo is an upper bound only.`
 export const SUMMARY_NO_ESTIMATE = 'No dollar estimate yet for the open opportunities.'
+/**
+ * Summary bullets from the latest run's unused log group check (C3a, founder rulings D3 and D10): the log groups
+ * below the stored-size floor collapse into this one line, never cards. `floorGb` is the backend's own display of
+ * the floor ("35.7", the one shared conversion): this page never converts bytes itself. No dollar amount (binding
+ * condition 1).
+ */
+export const logGroupsBelowFloor = (count: number, floorGb: string) =>
+  count === 1
+    ? `1 CloudWatch log group stores less than about ${floorGb} GB, so it isn't listed.`
+    : `${count} CloudWatch log groups each store less than about ${floorGb} GB, so they aren't listed.`
+export const logGroupsNameTooLong = (count: number) =>
+  count === 1
+    ? "1 CloudWatch log group wasn't checked because its name is longer than 255 characters."
+    : `${count} CloudWatch log groups weren't checked because their names are longer than 255 characters.`
 /** Summary bullet: the latest run's new_count (scan.counts.new). */
 export const summaryNew = (count: number) => (count === 0 ? 'Nothing new since the last analysis.' : `${count} new since the last analysis.`)
 

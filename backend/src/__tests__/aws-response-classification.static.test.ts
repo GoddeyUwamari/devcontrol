@@ -103,6 +103,8 @@ const RESPONSE_CLASSIFICATION: Record<string, Classification> = {
   },
   'client-cloudwatch:GetMetricDataCommand': metadataOnly('metric datapoints'),
   'client-cloudwatch:GetMetricStatisticsCommand': metadataOnly('metric datapoints'),
+  'client-cloudwatch-logs:DescribeLogGroupsCommand': metadataOnly('log group names, creation time, retention, stored bytes, class, deletion protection, ARNs, KMS key ID (never log events)'),
+  'client-cloudwatch-logs:DescribeLogStreamsCommand': metadataOnly('log stream names, creation, last event and last ingestion times (never log events)'),
   'client-cloudwatch:DescribeAlarmsCommand': {
     kind: 'sanitised',
     projections: [

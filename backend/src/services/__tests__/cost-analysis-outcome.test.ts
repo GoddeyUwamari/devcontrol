@@ -131,7 +131,7 @@ describe('summarizeDetectors', () => {
 
   it('every implemented rule can be named by a check', () => {
     const implemented = getOptimizationRules().filter((rule) => rule.status === 'implemented');
-    expect(implemented).toHaveLength(12);
+    expect(implemented).toHaveLength(13);
     for (const rule of implemented) expect(rule.issue).toEqual(expect.any(String));
   });
 });

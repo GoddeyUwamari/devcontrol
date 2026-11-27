@@ -29,6 +29,7 @@ import {
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
   ISSUE_NAT_GATEWAY_IDLE,
+  ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED,
 } from '../config/optimization-rules';
 
 /** Open findings by what their dollar figure is (getActiveSavingsBreakdown). */
@@ -105,6 +106,8 @@ const HOME_REGION_SCOPED_ISSUES: ReadonlySet<string> = new Set([
   ISSUE_EBS_OLD_SNAPSHOT,
   // C2: lists the home region only (DescribeNatGateways).
   ISSUE_NAT_GATEWAY_IDLE,
+  // C3a: lists the home region only (DescribeLogGroups).
+  ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED,
 ]);
 
 /** The same issues as a list, for statements that take them as an array (home region change, HR-D11). */

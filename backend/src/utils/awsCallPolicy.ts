@@ -189,6 +189,8 @@ export function withCallPolicyOnClients<T extends object>(clients: T, policy: Aw
  */
 export const MAX_LISTING_PAGES = 100;
 export const MAX_LIST_FUNCTIONS_PAGES = 200;
+/** DescribeLogGroups answers at most 50 log groups a page (C3a): 200 pages, 10,000 groups. */
+export const MAX_DESCRIBE_LOG_GROUPS_PAGES = 200;
 
 /** One page of a listing: its items, and the token for the next page (none: the last page). */
 export interface ListingPage<T> {

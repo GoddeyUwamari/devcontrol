@@ -82,6 +82,8 @@ const COMMAND_TO_IAM: Record<string, CommandEntry> = {
   'client-cloudwatch:GetMetricDataCommand': read('cloudwatch:GetMetricData'),
   'client-cloudwatch:GetMetricStatisticsCommand': read('cloudwatch:GetMetricStatistics'),
   'client-cloudwatch:DescribeAlarmsCommand': read('cloudwatch:DescribeAlarms'),
+  'client-cloudwatch-logs:DescribeLogGroupsCommand': read('logs:DescribeLogGroups'),
+  'client-cloudwatch-logs:DescribeLogStreamsCommand': read('logs:DescribeLogStreams'),
   'client-ecs:DescribeServicesCommand': read('ecs:DescribeServices'),
   'client-eks:DescribeClusterCommand': read('eks:DescribeCluster'),
   'client-dynamodb:DescribeTableCommand': read('dynamodb:DescribeTable'),

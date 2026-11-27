@@ -36,6 +36,8 @@ const SCAN_CHECKS: { group: string; items: string }[] = [
   { group: 'Storage', items: 'Unattached EBS · gp2 → gp3 · Old EBS snapshots · S3 lifecycle' },
   { group: 'Data & Serverless', items: 'Idle RDS · DynamoDB capacity · Lambda usage' },
   { group: 'Network', items: 'Idle NAT gateways' },
+  // C3a (Rule B only; C3b adds log retention to this row).
+  { group: 'Observability', items: 'Unused CloudWatch log groups' },
 ]
 
 const TIME_LINES = ['Read-only AWS access · No agents · No code changes', 'Revoke access anytime']

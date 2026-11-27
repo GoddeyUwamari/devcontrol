@@ -19,6 +19,7 @@ import { RDSClient } from '@aws-sdk/client-rds';
 import { S3Client } from '@aws-sdk/client-s3';
 import { S3ControlClient } from '@aws-sdk/client-s3-control';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
+import { CloudWatchLogsClient } from '@aws-sdk/client-cloudwatch-logs';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { ElasticLoadBalancingV2Client } from '@aws-sdk/client-elastic-load-balancing-v2';
@@ -53,6 +54,13 @@ export interface AWSClients {
   // never read account-level settings need not provide it.
   s3Control?: S3ControlClient;
   cloudWatch: CloudWatchClient;
+  /**
+   * CloudWatch Logs (C3a: the unused log group check lists log groups and reads
+   * each candidate's newest log stream; never log events). Optional so mocks
+   * that never reach that check need not provide it; a missing client makes
+   * the check fail ('error'), never "nothing found".
+   */
+  cloudWatchLogs?: CloudWatchLogsClient;
   lambda: LambdaClient;
   ecs: ECSClient;
   elb: ElasticLoadBalancingV2Client;
@@ -290,6 +298,7 @@ export class AWSClientFactory {
       s3: new S3Client(config),
       s3Control: new S3ControlClient(config),
       cloudWatch: new CloudWatchClient(config),
+      cloudWatchLogs: new CloudWatchLogsClient(config),
       lambda: new LambdaClient(config),
       ecs: new ECSClient(config),
       elb: new ElasticLoadBalancingV2Client(config),

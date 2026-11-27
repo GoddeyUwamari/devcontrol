@@ -27,6 +27,7 @@ import { DescribeDBInstancesCommand, DBInstance } from '@aws-sdk/client-rds';
 import { ListBackupVaultsCommand, ListRecoveryPointsByBackupVaultCommand, BackupVaultListMember, RecoveryPointByBackupVault } from '@aws-sdk/client-backup';
 import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, ListFunctionsCommand } from '@aws-sdk/client-lambda';
+import { DescribeLogGroupsCommand, DescribeLogStreamsCommand, LogGroup } from '@aws-sdk/client-cloudwatch-logs';
 import { projectLambdaFunction } from './aws-response-projections';
 import { PoolClient } from 'pg';
 import { CreateRecommendationRequest, RecommendationSeverity } from '../types';
@@ -98,6 +99,19 @@ import {
   type NatMetricReading,
   type NatMetricReadings,
 } from './nat-gateway-idle-evaluation';
+import { CLOUDWATCH_LOGS_UNUSED_RULE, CLOUDWATCH_LOG_GROUP_RESOURCE_TYPE } from '../config/cloudwatch-logs-unused-rule';
+import {
+  emptyCloudWatchLogsUnusedCounts,
+  judgeIncomingBytes,
+  judgeLogGroupScope,
+  judgeNewestStream,
+  logGroupUnusedDescription,
+  logGroupUnusedFindingMetadata,
+  logGroupUnusedWindow,
+  neverExpires,
+  type CloudWatchLogsUnusedCheckCounts,
+  type NewestStreamRead,
+} from './cloudwatch-logs-unused-evaluation';
 import { pool } from '../config/database';
 import {
   EC2_PRICE_SOURCE_DEFAULT,
@@ -109,6 +123,8 @@ import {
   AwsCallPolicy,
   DEFAULT_AWS_CALL_POLICY,
   MAX_LIST_FUNCTIONS_PAGES,
+  MAX_DESCRIBE_LOG_GROUPS_PAGES,
+  mapWithConcurrency,
   listAllPages,
   withCallPolicyOnClients,
   type Listing,
@@ -127,6 +143,7 @@ import {
   ISSUE_RDS_IDLE_INSTANCE,
   ISSUE_EBS_OLD_SNAPSHOT,
   ISSUE_NAT_GATEWAY_IDLE,
+  ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED,
 } from '../config/optimization-rules';
 import {
   estimateEBSMonthlyCost,
@@ -306,6 +323,8 @@ interface DetectorResult {
   failureReason?: CheckFailureReason;
   /** See DetectorObservation.natIdle. */
   natIdle?: NatIdleCheckCounts;
+  /** See DetectorObservation.cloudwatchLogsUnused. */
+  cloudwatchLogsUnused?: CloudWatchLogsUnusedCheckCounts;
 }
 
 // One entry per non-RI detector category, tagged with the fixed `issue`
@@ -339,6 +358,8 @@ export interface DetectorObservation {
   failureReason?: CheckFailureReason;
   /** The idle NAT gateway rule's counts by reason (no resource IDs). */
   natIdle?: NatIdleCheckCounts;
+  /** The unused CloudWatch log group rule's counts by reason, below-floor summary and skipped names (no names). */
+  cloudwatchLogsUnused?: CloudWatchLogsUnusedCheckCounts;
 }
 
 /** Every private IPv4 and IPv6 address on an instance's network interfaces. */
@@ -469,7 +490,7 @@ class CostOptimizationService {
     }
 
     try {
-      const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities, idleRDS, oldSnapshots, idleNat] = await Promise.all([
+      const [idleEC2, unusedEIPs, unattachedEBS, gp2ToGp3, s3Lifecycle, lowUsageLambda, dynamoDBCapacity, dynamoDBModeComparison, riOpportunities, idleRDS, oldSnapshots, idleNat, unusedLogGroups] = await Promise.all([
         this.detectLowActivityEC2Instances(clients, clients.region),
         this.detectUnusedElasticIPs(clients.ec2, clients.region),
         this.detectUnattachedEBSVolumes(clients.ec2, clients.region),
@@ -490,6 +511,8 @@ class CostOptimizationService {
         this.detectOldEBSSnapshots(clients, clients.region),
         // C2, home region only like the rest.
         this.detectIdleNatGateways(clients, clients.region),
+        // C3a, home region only like the rest.
+        this.detectUnusedLogGroups(clients, clients.region),
       ]);
 
       const toRequest = (issue: OptimizationIssue): CreateRecommendationRequest => ({
@@ -550,6 +573,14 @@ class CostOptimizationService {
           unknownResourceIds: idleNat.unknownResourceIds,
           endActiveForUnknown: idleNat.endActiveForUnknown,
           natIdle: idleNat.natIdle,
+        },
+        {
+          issue: ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED,
+          success: unusedLogGroups.success, failureReason: unusedLogGroups.failureReason,
+          recommendations: unusedLogGroups.issues.map(toRequest),
+          unknownResourceIds: unusedLogGroups.unknownResourceIds,
+          endActiveForUnknown: unusedLogGroups.endActiveForUnknown,
+          cloudwatchLogsUnused: unusedLogGroups.cloudwatchLogsUnused,
         },
       ];
 
@@ -1181,6 +1212,172 @@ class CostOptimizationService {
     } catch (error) {
       console.error('[IdleNAT] DescribeRouteTables failed; candidates are reported as not checked:', (error as Error)?.name ?? 'Error');
       return null;
+    }
+  }
+
+  /**
+   * Unused CloudWatch log groups (C3a, Rule B; the rule:
+   * config/cloudwatch-logs-unused-rule.ts, applied by
+   * cloudwatch-logs-unused-evaluation.ts). Home region only. Never reads log
+   * events.
+   *
+   * Lists the region's log groups (DescribeLogGroups, every page, no name
+   * filter: logGroupNamePattern would drop storedBytes from the answer; an
+   * incomplete or failed listing fails the category). Groups below the stored
+   * size floor are only counted (the run's below-floor summary line); longer
+   * names than the finding identity holds are skipped and counted (ruling D10).
+   * For the remaining candidates: 90 complete UTC days of daily IncomingBytes
+   * (Sum, by LogGroupName) in GetMetricData batches, then, for each candidate
+   * with no ingestion in the metric, its newest log stream (DescribeLogStreams,
+   * newest event first, limit 1; ruling D5, required). A failed or partial read
+   * of either, or no stream, makes the group "couldn't check" -- never unused.
+   * Couldn't-check and skipped groups go in unknownResourceIds with
+   * endActiveForUnknown (writing can resume, so a finding never outlives its
+   * evidence; decisions stay open).
+   *
+   * No dollar figure (ruling D3): potentialSavings 0, no savings_basis ("No
+   * dollar estimate"); severity is the shared calculateSeverity of no saving,
+   * Low (ruling D4).
+   */
+  private async detectUnusedLogGroups(
+    clients: Pick<AWSClients, 'cloudWatchLogs' | 'cloudWatch'>,
+    region: string,
+    now: Date = new Date()
+  ): Promise<DetectorResult> {
+    const logs = clients.cloudWatchLogs;
+    if (!logs) {
+      console.error('[UnusedLogGroups] no CloudWatch Logs client; the check is reported as failed');
+      return { success: false, issues: [], failureReason: 'error' };
+    }
+    let listing: Listing<LogGroup>;
+    try {
+      listing = await listAllPages('unused log groups: DescribeLogGroups', async (token) => {
+        const page = await logs.send(new DescribeLogGroupsCommand({ limit: CLOUDWATCH_LOGS_UNUSED_RULE.listing.page_size, nextToken: token }));
+        return { items: page.logGroups || [], nextToken: page.nextToken };
+      }, MAX_DESCRIBE_LOG_GROUPS_PAGES);
+    } catch (error) {
+      console.error('Error listing log groups for the unused check:', (error as Error)?.name ?? 'Error');
+      return { success: false, issues: [], failureReason: classifyCheckFailure(error) };
+    }
+    if (!listing.complete) return { success: false, issues: [], failureReason: 'too_many_resources' };
+
+    const window = logGroupUnusedWindow(now);
+    const issues: OptimizationIssue[] = [];
+    const unknownResourceIds: string[] = [];
+    const counts = emptyCloudWatchLogsUnusedCounts();
+    const done = (): DetectorResult => ({ success: true, issues, unknownResourceIds, endActiveForUnknown: true, cloudwatchLogsUnused: counts });
+
+    const candidates: Array<{ group: LogGroup & { logGroupName: string }; storedBytes: number; createdAt: Date }> = [];
+    for (const group of listing.items) {
+      if (typeof group.logGroupName !== 'string' || group.logGroupName === '') continue;
+      const named = group as LogGroup & { logGroupName: string };
+      counts.evaluated += 1;
+      const scope = judgeLogGroupScope(named, window);
+      if (scope.kind === 'excluded') {
+        counts.excluded[scope.reason] += 1;
+      } else if (scope.kind === 'below_floor') {
+        counts.below_floor.count += 1;
+        counts.below_floor.stored_bytes += scope.storedBytes;
+      } else if (scope.kind === 'couldnt_check') {
+        counts.couldnt_check[scope.reason] += 1;
+        unknownResourceIds.push(named.logGroupName);
+      } else if (scope.kind === 'skipped') {
+        counts.skipped[scope.reason] += 1;
+        unknownResourceIds.push(named.logGroupName);
+      } else {
+        candidates.push({ group: named, storedBytes: scope.storedBytes, createdAt: scope.createdAt });
+      }
+    }
+    if (candidates.length === 0) return done();
+
+    const { namespace, metric, dimension, stat, period_seconds } = CLOUDWATCH_LOGS_UNUSED_RULE.metric;
+    const queries: BatchMetricQuery[] = candidates.map((candidate, i) => ({
+      id: `ib${i}`,
+      namespace,
+      metricName: metric,
+      dimensions: [{ Name: dimension, Value: candidate.group.logGroupName }],
+      period: period_seconds,
+      stat,
+    }));
+    const fetched = await fetchMetricDataBatchWithStatus(clients.cloudWatch, queries, window.start, window.end).catch((error) => {
+      console.error('[UnusedLogGroups] CloudWatch read failed; every candidate is reported as not checked:', (error as Error)?.name ?? 'Error');
+      return null;
+    });
+
+    const quiet: Array<{ candidate: (typeof candidates)[number]; observed: 'empty' | 'zeros' }> = [];
+    candidates.forEach((candidate, i) => {
+      const id = `ib${i}`;
+      const verdict = judgeIncomingBytes({ outcome: fetched?.statuses.get(id)?.outcome ?? 'query_failed', series: fetched?.results.get(id) ?? null }, window);
+      if (verdict.kind === 'not_unused') {
+        counts.not_flagged.ingested_metric += 1;
+      } else if (verdict.kind === 'couldnt_check') {
+        counts.couldnt_check.cloudwatch_failed += 1;
+        unknownResourceIds.push(candidate.group.logGroupName);
+      } else {
+        quiet.push({ candidate, observed: verdict.observed });
+      }
+    });
+
+    // At most the policy's concurrency at once (DescribeLogStreams: 25 TPS per account and region).
+    const streams = await mapWithConcurrency(quiet, this.callPolicy.concurrency, ({ candidate }) => this.readNewestLogStream(logs, candidate.group.logGroupName));
+    quiet.forEach(({ candidate, observed }, i) => {
+      const verdict = judgeNewestStream(streams[i], window);
+      const name = candidate.group.logGroupName;
+      if (verdict.kind === 'not_unused') {
+        counts.not_flagged.ingested_stream += 1;
+        return;
+      }
+      if (verdict.kind === 'couldnt_check') {
+        counts.couldnt_check[verdict.reason] += 1;
+        unknownResourceIds.push(name);
+        return;
+      }
+
+      counts.flagged += 1;
+      // No dollar figure (ruling D3): the shared severity of no saving is Low (ruling D4).
+      const severity = this.calculateSeverity(0);
+      issues.push({
+        resourceId: name,
+        resourceName: name,
+        resourceType: CLOUDWATCH_LOG_GROUP_RESOURCE_TYPE,
+        issue: ISSUE_CLOUDWATCH_LOG_GROUP_UNUSED,
+        description: logGroupUnusedDescription({
+          storedBytes: candidate.storedBytes,
+          neverExpire: neverExpires(candidate.group),
+          deletionProtection: candidate.group.deletionProtectionEnabled === true,
+        }),
+        potentialSavings: 0,
+        severity,
+        awsRegion: region,
+        metadata: {
+          ...logGroupUnusedFindingMetadata({
+            group: candidate.group,
+            storedBytes: candidate.storedBytes,
+            createdAt: candidate.createdAt,
+            window,
+            evaluatedAt: now,
+            metricObserved: observed,
+            lastEventTime: verdict.lastEventTime,
+            lastIngestionTime: verdict.lastIngestionTime,
+          }),
+          savings_note: CLOUDWATCH_LOGS_UNUSED_RULE.savings.reason,
+          severity_basis: SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE,
+        },
+      });
+    });
+    return done();
+  }
+
+  /** A log group's newest log stream (newest event first, one stream); 'failed' on any error, never "none". */
+  private async readNewestLogStream(logs: NonNullable<AWSClients['cloudWatchLogs']>, logGroupName: string): Promise<NewestStreamRead> {
+    const { order_by, descending, limit } = CLOUDWATCH_LOGS_UNUSED_RULE.newest_stream;
+    try {
+      const page = await logs.send(new DescribeLogStreamsCommand({ logGroupName, orderBy: order_by, descending, limit }));
+      const stream = page.logStreams?.[0];
+      return stream ? { kind: 'stream', stream } : { kind: 'none' };
+    } catch (error) {
+      console.error('[UnusedLogGroups] DescribeLogStreams failed; the group is reported as not checked:', (error as Error)?.name ?? 'Error');
+      return { kind: 'failed' };
     }
   }
 

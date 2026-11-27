@@ -2,8 +2,8 @@
  * C2: idle NAT gateways on Cost Optimization, with the rule catalog served
  * exactly as GET /api/cost-recommendations/optimization-rules builds it from
  * backend/src/config/optimization-rules.ts, so the coverage numbers come from
- * the registry itself: "AWS cost optimization · 12 active checks" across
- * EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway (the catalog's total is
+ * the registry itself: "AWS cost optimization · 13 active checks" (C3a) across
+ * EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch (the catalog's total is
  * never shown: scan result banner PR), the check listed and explained, the
  * data-processing check still planned.
  *
@@ -123,26 +123,26 @@ beforeEach(() => {
 })
 
 describe('C2: coverage comes from the registry', () => {
-  it('12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway; idle NAT gateways listed and explained; data processing still planned', async () => {
+  it('13 active checks (C3a) across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch; idle NAT gateways listed and explained; data processing still planned', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 12 active checks$/))
-    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway$/)
-    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^12 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway\.$/)
+    await waitFor(() => expect(screen.getByTestId('coverage-card-line')).toHaveTextContent(/^AWS cost optimization · 13 active checks$/))
+    expect(screen.getByTestId('coverage-services-line')).toHaveTextContent(/^EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch$/)
+    expect(screen.getByTestId('coverage-line')).toHaveTextContent(/^13 active checks across EC2 · EBS · RDS · S3 · Lambda · DynamoDB · NAT Gateway · CloudWatch\.$/)
     expect(container.textContent).not.toMatch(/\b34\b|of 34/)
-    expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway'])
+    expect(within(screen.getByTestId('coverage-services')).getAllByText(/./).map((el) => el.textContent)).toEqual(['EC2', 'EBS', 'RDS', 'S3', 'Lambda', 'DynamoDB', 'NAT Gateway', 'CloudWatch'])
 
     const names = within(screen.getByTestId('check-names')).getAllByRole('listitem').map((li) => li.textContent)
-    expect(names).toHaveLength(12)
+    expect(names).toHaveLength(13)
     expect(names).toContain('Idle NAT gateways')
     expect(within(screen.getByTestId('how-checks-work')).getByText(NAT_DETAIL)).toBeInTheDocument()
 
     const planned = within(screen.getByTestId('planned-checks'))
-    expect(planned.getByText('Planned / Coming soon (22)')).toBeInTheDocument()
+    expect(planned.getByText('Planned / Coming soon (21)')).toBeInTheDocument()
     expect(planned.getByText(/NAT Gateway — Unnecessary data processing/)).toBeInTheDocument()
     expect(planned.queryByText(/Idle NAT gateways/)).not.toBeInTheDocument()
 
     // Every check ran and nothing was unchecked: the all-clear body is true here.
-    expect(await screen.findByTestId('empty-all-checks-body')).toHaveTextContent(/^Your resources passed all 12 active checks in the last analysis\./)
+    expect(await screen.findByTestId('empty-all-checks-body')).toHaveTextContent(/^Your resources passed all 13 active checks in the last analysis\./)
     // ...and so is the green all-clear tick (no neutral clock).
     expectEmptyStateIcon(screen.getByTestId('empty-all-checks'), 'all-clear')
   })
