@@ -202,4 +202,17 @@ describe('"Never show $0" (founder rulings 2026-11-26): no-figure rows and recor
       'Cost optimization found · Low-Usage Lambda Function — no dollar estimate',
     ]);
   });
+
+  it('a low-activity row with a recorded sub-cent amount reads "less than $0.01/month", never "up to less than" (review N-4)', async () => {
+    route([
+      { created_at: T(1), potential_savings: '0.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: x', price_source: 'list_table', savings_unrounded_usd: 0.002, ...LOW_ACTIVITY },
+      { created_at: T(2), potential_savings: '0.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: x', price_source: 'default_unlisted_type', savings_unrounded_usd: 0.002, ...LOW_ACTIVITY },
+    ]);
+    const out = await messages();
+    expect(out).toEqual([
+      'Cost optimization found · Low-activity instance — less than $0.01/month',
+      'Cost optimization found · Low-activity instance — less than $0.01/month (default estimate, price unknown)',
+    ]);
+    for (const message of out) expect(message).not.toMatch(/up to less/);
+  });
 });

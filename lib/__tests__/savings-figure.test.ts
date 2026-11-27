@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  countSubCentFigures,
   describeSavingsTotal,
   formatPlainSavings,
   formatRecommendationSavings,
@@ -132,6 +133,29 @@ describe('describeSavingsTotal: the one total rule', () => {
     for (const input of [null, undefined, stats({ totalPotentialSavings: null, activeRecommendations: 2 }), stats({ totalPotentialSavings: Number.NaN })]) {
       expect(describeSavingsTotal(input)).toEqual({ kind: 'unavailable', value: '—', lines: [] })
     }
+  })
+
+  it('review N-5: open rows read "Less than $0.01/mo" -- still "No dollar estimate" (not priced), with a sentence that matches them', () => {
+    expect(describeSavingsTotal(stats({ activeRecommendations: 2 }), { openSubCent: 2 }))
+      .toEqual({ kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: ['Each open opportunity is under $0.01/mo.'] })
+    expect(describeSavingsTotal(stats({ activeRecommendations: 3 }), { openSubCent: 2 }))
+      .toEqual({ kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: ['Some open opportunities are under $0.01/mo; the rest have no dollar estimate yet.'] })
+    expect(describeSavingsTotal(stats({ activeRecommendations: 3 }), { openSubCent: 0 }).lines).toEqual(['No dollar estimate yet for the open opportunities.'])
+    // Only the no-estimate sentence changes: a firm or upper-bound total, or none open, is unaffected.
+    expect(describeSavingsTotal(stats({ totalPotentialSavings: 5, estimatedFindings: 1, activeRecommendations: 2 }), { openSubCent: 1 })).toMatchObject({ kind: 'firm', value: '$5/mo' })
+    expect(describeSavingsTotal(stats({ activeRecommendations: 2, potentialSavingsCeiling: 7 }), { openSubCent: 1 })).toMatchObject({ kind: 'upper_bound_only' })
+    expect(describeSavingsTotal(stats(), { openSubCent: 1 })).toMatchObject({ kind: 'none_found' })
+  })
+
+  it('countSubCentFigures counts only rows with a recorded sub-cent amount', () => {
+    expect(countSubCentFigures([
+      row(0, EST, { [SAVINGS_UNROUNDED_FIELD]: 0.002 }),
+      row(0, CEIL, { [SAVINGS_UNROUNDED_FIELD]: 0.004 }),
+      row(0, EST),
+      row(0.4, EST, { [SAVINGS_UNROUNDED_FIELD]: 0.002 }),
+      row(0, undefined, { [SAVINGS_UNROUNDED_FIELD]: 0.002 }),
+    ])).toBe(2)
+    expect(countSubCentFigures([])).toBe(0)
   })
 
   it('never "$0" in any kind', () => {

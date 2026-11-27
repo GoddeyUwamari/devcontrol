@@ -181,9 +181,9 @@ export type SavingsTile = SavingsTotal
  */
 export function describeSavingsTile(
   stats: Pick<RecommendationStats, 'totalPotentialSavings' | 'estimatedFindings' | 'potentialSavingsCeiling' | 'potentialSavingsCeilingByResourceType' | 'activeRecommendations'>,
-  { partialRun = false }: { partialRun?: boolean } = {},
+  { partialRun = false, openSubCent = 0 }: { partialRun?: boolean; openSubCent?: number } = {},
 ): SavingsTile {
-  return describeSavingsTotal(stats, { partialRun })
+  return describeSavingsTotal(stats, { partialRun, openSubCent })
 }
 
 /**

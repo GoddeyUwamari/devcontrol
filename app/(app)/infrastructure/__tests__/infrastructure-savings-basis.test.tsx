@@ -226,5 +226,32 @@ describe('/infrastructure Top Actions -- savings basis', () => {
     renderPage()
     expect(await screen.findByTestId('intel-active-waste')).toHaveTextContent(/^\$0\.08\/mo active waste$/)
     expect(screen.getByTestId('recoverable-savings-value')).toHaveTextContent(/^\$0\.08$/)
+    // A firm figure keeps the red emphasis.
+    expect(screen.getByTestId('intel-active-waste').className).toMatch(/text-red-600/)
+  })
+
+  it('review N-7: every open figure an upper bound -- "Up to $X/mo active waste · upper bound" in a neutral colour, not red', async () => {
+    vi.mocked(costRecommendationsService.getStats).mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, potentialSavingsCeiling: 2.1, potentialSavingsCeilingByResourceType: { S3: 2.1 } } as never)
+    vi.mocked(costRecommendationsService.getAll).mockResolvedValue([] as never)
+    mockServicesStats.mockResolvedValue({ total: 1, healthy: 1, needs_attention: 0 })
+    renderPage()
+    const line = await screen.findByTestId('intel-active-waste')
+    // Whole dollars from $1 (formatSavingsCurrency), as before this round; only the colour changed.
+    expect(line).toHaveTextContent(/^Up to \$2\/mo active waste · upper bound$/)
+    expect(line.className).toMatch(/text-slate-500/)
+    expect(line.className).not.toMatch(/red/)
+  })
+
+  it('review N-1: a sub-cent ceiling row keeps its " (upper bound)" marker; a sub-cent estimate has none', async () => {
+    mockServicesStats.mockResolvedValue({ total: 2, healthy: 2, needs_attention: 0 })
+    vi.mocked(costRecommendationsService.getAll).mockResolvedValue([
+      { ...rec('b-1', 'S3 Lifecycle Optimization', 0, { savings_basis: 'ceiling: s3', savings_unrounded_usd: 0.0021 }), resourceType: 'S3' },
+      { ...rec('fn-1', 'Low-Usage Lambda Function', 0, { savings_basis: 'estimated: lambda list price', savings_unrounded_usd: 0.0012 }), resourceType: 'Lambda' },
+    ] as never)
+    renderPage()
+    const action = async (title: string) => (await screen.findByText(title, { selector: 'p' })) as HTMLElement
+    expect(await action('S3 Lifecycle Optimization')).toHaveTextContent(/— less than \$0\.01\/mo \(upper bound\)$/)
+    expect(await action('Low-Usage Lambda Function')).toHaveTextContent(/— less than \$0\.01\/mo$/)
+    await waitFor(() => expect(header()).toHaveTextContent(/^Ranked by impact · 2 recommended changes ready$/))
   })
 })

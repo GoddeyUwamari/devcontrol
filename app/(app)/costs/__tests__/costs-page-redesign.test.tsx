@@ -777,4 +777,33 @@ describe('"Never show $0" sweep: Costs savings tile and Opportunities with no-fi
     expect(figures).toEqual(['Less than $0.01/mo', 'Less than $0.01/mo', 'No dollar estimate', 'No dollar estimate', 'No dollar estimate'])
     expectNoMoneyZero(savingsText())
   })
+
+  it('review N-1 / N-6: a sub-cent ceiling keeps "Upper-bound estimate"; both sub-cent figures are grey', async () => {
+    mockGetStats.mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, activeRecommendations: 2 })
+    mockGetAll.mockResolvedValue(SUB_CENT_RECS)
+    renderPage()
+    const cards = await screen.findAllByTestId('opportunity-card')
+    const byId = (id: string) => cards.find((c) => c.textContent?.includes(id)) as HTMLElement
+    expect(within(byId('bucket-subcent')).getByTestId('opportunity-basis')).toHaveTextContent(/^Upper-bound estimate$/)
+    expect(within(byId('fn-subcent')).getByTestId('opportunity-basis')).toHaveTextContent(/^Monthly estimate$/)
+    for (const card of cards) {
+      const figure = within(card).getByTestId('opportunity-savings')
+      expect(figure).toHaveTextContent(/^Less than \$0\.01\/mo$/)
+      expect(figure.className).toContain('text-ink-muted')
+      expect(figure.className).not.toMatch(/ink-success|green/)
+    }
+  })
+
+  it.each([
+    ['every open finding is sub-cent', () => SUB_CENT_RECS, 2, 'Each open opportunity is under $0.01/mo.'],
+    ['some open findings are sub-cent', () => [...SUB_CENT_RECS, NO_FIGURE_RECS[0]], 3, 'Some open opportunities are under $0.01/mo; the rest have no dollar estimate yet.'],
+  ])('review N-5: %s -- the tile stays "No dollar estimate" with a sentence that matches the cards', async (_name, recs, active, line) => {
+    mockGetStats.mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, activeRecommendations: active })
+    mockGetAll.mockResolvedValue(recs())
+    renderPage()
+    await waitFor(() => expect(tile('savings')).toHaveTextContent(line))
+    expect(tile('savings')).toHaveTextContent('No dollar estimate')
+    expect(tile('savings').textContent).not.toMatch(/No dollar estimate yet for the open opportunities/)
+    expectNoMoneyZero(savingsText())
+  })
 })

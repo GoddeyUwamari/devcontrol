@@ -6,12 +6,14 @@
  * gate-blocked figure, or anything stored as at least $0.01. The stored
  * potential_savings figure and its rounding are unchanged.
  */
+import { execFileSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { CloudWatchClient } from '@aws-sdk/client-cloudwatch';
 import { S3Client } from '@aws-sdk/client-s3';
 import costOptimizationService from '../cost-optimization.service';
+import { codeLinesOf } from '../../__tests__/helpers/source-scan';
 import { EffectiveOptimizationRuleConfig } from '../optimization-rule-config.service';
 import {
   countSavingsFindings,
@@ -147,8 +149,52 @@ describe('which detectors record it', () => {
     const source = readFileSync(join(__dirname, '..', 'cost-optimization.service.ts'), 'utf8');
     const calls = source.match(/\.\.\.subCentSavingsMetadata\((\w+)\)/g) ?? [];
     expect(calls).toEqual(['...subCentSavingsMetadata(monthlySavingsCeiling)', '...subCentSavingsMetadata(monthlyCost)']);
-    // The DynamoDB comparison's gate-blocked figure never gets one.
-    const ddb = source.slice(source.indexOf('recommendationGate.recommend ?'), source.indexOf('recommendationGate.recommend ?') + 2000);
-    expect(ddb).not.toMatch(/subCentSavingsMetadata/);
+    // The DynamoDB comparison's gate-blocked figure never gets one. The anchor must exist (review N-3):
+    // a renamed anchor would otherwise slice an empty string and pass without checking anything.
+    const anchor = source.indexOf('recommendationGate.recommend ?');
+    expect(anchor).toBeGreaterThanOrEqual(0);
+    const ddb = source.slice(anchor, anchor + 2000);
+    expect(ddb).toMatch(/potentialSavings/);
+    expect(ddb).not.toMatch(/subCentSavingsMetadata|savings_unrounded_usd|SAVINGS_UNROUNDED_FIELD/);
+  });
+
+  // Review N-3: every backend source file is scanned (comments removed), not one. Any new mention of the
+  // field, its constant or its helper anywhere -- a direct `savings_unrounded_usd:` write, a jsonb_set, a
+  // new detector -- changes this map and fails until it is reviewed here.
+  it('the field is written only through subCentSavingsMetadata, from those two detectors; one file reads it', () => {
+    const repo = join(__dirname, '..', '..', '..', '..');
+    const files = execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', 'backend/src'], { cwd: repo, encoding: 'utf8' })
+      .split('\n').filter((f) => /\.[jt]sx?$/.test(f) && !/(^|\/)__tests__\//.test(f) && !/\.test\.[jt]sx?$/.test(f));
+    expect(files).toContain('backend/src/services/cost-optimization.service.ts');
+    const mentions: Record<string, string[]> = {};
+    for (const file of files) {
+      let text: string;
+      try { text = readFileSync(join(repo, file), 'utf8'); } catch { continue; }
+      if (!/savings_unrounded_usd|SAVINGS_UNROUNDED_FIELD|subCentSavingsMetadata/i.test(text)) continue;
+      const lines = codeLinesOf(text).map(({ text: line }) => line.trim()).filter((line) => /savings_unrounded_usd|SAVINGS_UNROUNDED_FIELD|subCentSavingsMetadata/i.test(line));
+      if (lines.length > 0) mentions[file] = lines;
+    }
+    expect(mentions).toEqual({
+      // Definitions: the field name, the writer helper (only for 0 < x < 0.005) and the reader.
+      'backend/src/services/estimated-savings.ts': [
+        "export const SAVINGS_UNROUNDED_FIELD = 'savings_unrounded_usd';",
+        'export function subCentSavingsMetadata(amount: number): { [SAVINGS_UNROUNDED_FIELD]?: number } {',
+        'return storesAsZeroCents(amount) ? { [SAVINGS_UNROUNDED_FIELD]: amount } : {};',
+        'const value = metadata?.[SAVINGS_UNROUNDED_FIELD];',
+      ],
+      // The only writers: S3 lifecycle and low-usage Lambda, through the helper.
+      'backend/src/services/cost-optimization.service.ts': [
+        'subCentSavingsMetadata,',
+        '...subCentSavingsMetadata(monthlySavingsCeiling),',
+        '...subCentSavingsMetadata(monthlyCost),',
+      ],
+      // A reader: selects the JSON value and passes it to savingsFigure in a local object (no write).
+      'backend/src/services/activity-feed.service.ts': [
+        "import { EC2_PRICE_SOURCE_DEFAULT, LESS_THAN_ONE_CENT, SAVINGS_UNROUNDED_FIELD, savingsFigure } from './estimated-savings';",
+        "metadata->'savings_unrounded_usd' AS savings_unrounded_usd,",
+        'type Row = { potential_savings: unknown; savings_basis: unknown; price_source?: unknown; savings_unrounded_usd?: unknown };',
+        'metadata: { savings_basis: row.savings_basis, [SAVINGS_UNROUNDED_FIELD]: row.savings_unrounded_usd },',
+      ],
+    });
   });
 });

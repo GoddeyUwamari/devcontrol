@@ -108,7 +108,9 @@ describe('Cost Optimization page: ceiling-basis savings are never presented as a
 
   it('the Estimated Monthly Savings KPI excludes ceilings and states each type\'s upper bound on its own line', () => {
     // describeSavingsTotal's firm kind carries describeCeilings' lines ("Never show $0" moved the rule to lib/savings-basis).
-    expect(source).toMatch(/const savingsTotal = describeSavingsTotal\(statsAvailable \? stats : null, \{ partialRun: scan\.key === 'partial', format: formatWholeDollars \}\)/)
+    expect(source).toMatch(/const savingsTotal = describeSavingsTotal\(statsAvailable \? stats : null, \{ partialRun: scan\.key === 'partial', format: formatWholeDollars, openSubCent \}\)/)
+    // Review N-5: the open rows' sub-cent count, from the loaded list (never a total).
+    expect(source).toMatch(/const openSubCent = countSubCentFigures\(recommendations\);/)
     expect(source).toMatch(/\{savingsTotal\.lines\.map\(\(line\) => \(/)
   })
 

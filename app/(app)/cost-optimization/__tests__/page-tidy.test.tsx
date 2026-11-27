@@ -449,4 +449,58 @@ describe('"Never show $0" sweep: Cost Optimization with no-figure data', () => {
     expect(figures.filter((f) => f === 'No dollar estimate')).toHaveLength(NO_FIGURE_RECS.length)
     expectNoMoneyZero(document.body.textContent)
   })
+
+  it('review N-1 / N-6: a sub-cent ceiling keeps its "upper bound" marker; sub-cent figures are grey, a priced estimate keeps estimate ink', async () => {
+    const priced = { ...SUB_CENT_RECS[0], id: 'fn-priced', resourceId: 'fn-priced', resourceName: 'fn-priced', potentialSavings: 0.4, metadata: { savings_basis: 'estimated: lambda' } }
+    svc.getStats.mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, activeRecommendations: 3, estimatedFindings: 1, totalPotentialSavings: 0.4 })
+    svc.getAll.mockResolvedValue([...SUB_CENT_RECS, priced])
+    renderPage()
+    await loaded()
+    await waitFor(() => expect(screen.getAllByTestId('opportunity-savings')).toHaveLength(3))
+    const blocks = screen.getAllByTestId('opportunity-savings')
+    const byFigure = (text: string) => blocks.filter((el) => el.querySelector('p')!.textContent === text)
+    const subCent = byFigure('Less than $0.01/mo')
+    expect(subCent).toHaveLength(2)
+    // The S3 ceiling (bucket-subcent) carries the marker; the Lambda estimate does not.
+    expect(subCent.filter((el) => el.textContent === 'Less than $0.01/moupper bound')).toHaveLength(1)
+    expect(subCent.filter((el) => el.textContent === 'Less than $0.01/mo')).toHaveLength(1)
+    for (const el of subCent) {
+      expect(el.querySelector('p')!.className).toMatch(/text-ink-muted/)
+      expect(el.querySelector('p')!.className).not.toMatch(/text-slate-900/)
+    }
+    // A priced estimate keeps estimate ink, even under $1 (only sub-cent changed in fix round 1).
+    const [pricedBlock] = byFigure('$0.40/mo')
+    expect(pricedBlock.querySelector('p')!.className).toMatch(/text-slate-900/)
+  })
+
+  it.each([
+    ['every open finding is sub-cent', () => SUB_CENT_RECS, 2, 'Each open opportunity is under $0.01/mo.'],
+    ['some open findings are sub-cent', () => [...SUB_CENT_RECS, NO_FIGURE_RECS[0]], 3, 'Some open opportunities are under $0.01/mo; the rest have no dollar estimate yet.'],
+  ])('review N-5: %s -- the tile stays "No dollar estimate" (not priced, no total) and its sentence matches the cards', async (_name, recs, active, line) => {
+    svc.getStats.mockResolvedValue({ ...STATS_OPEN_NO_FIGURE, activeRecommendations: active, totalRecommendations: active })
+    svc.getAll.mockResolvedValue(recs())
+    renderPage()
+    await loaded()
+    await waitFor(() => expect(screen.getByTestId('savings-sub-cent-line')).toHaveTextContent(line))
+    expect(screen.getByTestId('savings-no-figure')).toHaveTextContent(/^No dollar estimate$/)
+    expect(screen.getByTestId('savings-sub-cent-line').className).toMatch(/text-ink-muted/)
+    // The page summary says the same, not "No dollar estimate yet for the open opportunities."
+    const summary = screen.getByTestId('summary-lines')
+    expect(summary).toHaveTextContent(line)
+    expect(summary.textContent).not.toMatch(/No dollar estimate yet for the open opportunities/)
+    // Never a total: no figure in the savings card, only the words and the sentence.
+    const card = kpiCard('Estimated monthly savings')
+    expect(card.textContent).toBe(`Estimated monthly savingsNo dollar estimate${line}`)
+    expectNoMoneyZero(document.body.textContent)
+  })
+
+  it('review N-5: with no sub-cent rows the tile shows no extra sentence and the summary is unchanged', async () => {
+    svc.getStats.mockResolvedValue(STATS_OPEN_NO_FIGURE)
+    svc.getAll.mockResolvedValue(NO_FIGURE_RECS)
+    renderPage()
+    await loaded()
+    await waitFor(() => expect(screen.getByTestId('savings-no-figure')).toHaveTextContent(/^No dollar estimate$/))
+    expect(screen.queryByTestId('savings-sub-cent-line')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('summary-lines')).toHaveTextContent('No dollar estimate yet for the open opportunities.'))
+  })
 })

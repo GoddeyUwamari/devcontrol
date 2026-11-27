@@ -54,6 +54,13 @@ export const NONE_FOUND_SUB = 'No open opportunities after the latest analysis'
 export const NONE_FOUND_PARTIAL = 'None found in the checks that ran'
 export const NONE_FOUND_PARTIAL_SUB = "Some checks couldn't run in the latest analysis"
 export const NO_ESTIMATE_SUB = 'No dollar estimate yet for the open opportunities.'
+/**
+ * Review N-5: the total's sentence when open cards read "Less than $0.01/mo". Sub-cent is not
+ * priced (ruling 5), so the value stays "No dollar estimate" (no total is implied); the sentence
+ * says what the cards say instead of "no dollar estimate yet" for them.
+ */
+export const SUB_CENT_EACH_SUB = 'Each open opportunity is under $0.01/mo.'
+export const SUB_CENT_SOME_SUB = 'Some open opportunities are under $0.01/mo; the rest have no dollar estimate yet.'
 /** Ruling Q5: Remediation's Savings Recovered with nothing recovered. */
 export const NONE_YET = 'None yet'
 /** Data that failed to load: never a zero. */
@@ -106,6 +113,11 @@ export function savingsFigure(rec: { potentialSavings: number | string | null | 
 }
 
 /** True when the figure is a stored amount above $0 (what totals and "priced" counts include); a sub-cent row is not. */
+/** How many of these rows read "Less than $0.01/mo" (a recorded sub-cent amount): for describeSavingsTotal's `openSubCent`. */
+export function countSubCentFigures(recs: ReadonlyArray<{ potentialSavings: number | string | null | undefined; metadata?: Record<string, unknown> | null }>): number {
+  return recs.filter((rec) => { const fig = savingsFigure(rec); return fig.kind !== 'none' && fig.subCent }).length
+}
+
 export function isPricedFigure(fig: SavingsFigure): fig is { kind: SavingsBasisKind; amount: number; subCent: false } {
   return fig.kind !== 'none' && !fig.subCent
 }
@@ -171,10 +183,13 @@ export type SavingsTotal =
  * Never "$0". `partialRun`: the latest analysis was partial, so "none found"
  * covers only the checks that ran. Callers handle loading and "not analyzed
  * yet" first. `format` formats the firm total and the upper bounds.
+ * `openSubCent`: how many loaded open rows read "Less than $0.01/mo"
+ * (countSubCentFigures); with no priced figure, the "No dollar estimate"
+ * sentence then says they are under $0.01/mo (review N-5), never a total.
  */
 export function describeSavingsTotal(
   stats: SavingsTotalInput | null | undefined,
-  { partialRun = false, format = formatSavingsCurrency }: { partialRun?: boolean; format?: (value: number) => string } = {},
+  { partialRun = false, format = formatSavingsCurrency, openSubCent = 0 }: { partialRun?: boolean; format?: (value: number) => string; openSubCent?: number } = {},
 ): SavingsTotal {
   if (!stats) return { kind: 'unavailable', value: UNAVAILABLE_FIGURE, lines: [] }
   const total = stats.totalPotentialSavings
@@ -194,7 +209,10 @@ export function describeSavingsTotal(
   if (stats.potentialSavingsCeiling > 0) {
     return { kind: 'upper_bound_only', value: upperBoundOnly(format(stats.potentialSavingsCeiling)), lines: [NO_FIRM_ESTIMATE] }
   }
-  if (stats.activeRecommendations > 0) return { kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: [NO_ESTIMATE_SUB] }
+  if (stats.activeRecommendations > 0) {
+    const line = openSubCent <= 0 ? NO_ESTIMATE_SUB : openSubCent >= stats.activeRecommendations ? SUB_CENT_EACH_SUB : SUB_CENT_SOME_SUB
+    return { kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: [line] }
+  }
   return partialRun
     ? { kind: 'none_found', value: NONE_FOUND_PARTIAL, lines: [NONE_FOUND_PARTIAL_SUB] }
     : { kind: 'none_found', value: NONE_FOUND, lines: [NONE_FOUND_SUB] }

@@ -658,7 +658,8 @@ function InfrastructureContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Primary Issue</p>
             <p className="text-sm font-semibold text-slate-900 mb-0.5">{intelTopAction}</p>
-            {intelWasteLine && <p className="text-xs font-bold text-red-600" data-testid="intel-active-waste">{intelWasteLine}</p>}
+            {/* An upper bound is not waste found for sure: neutral, red only for a firm figure (review N-7). */}
+            {intelWasteLine && <p className={`text-xs font-bold ${!isDemoActive && savingsTotal.kind === 'upper_bound_only' ? 'text-slate-500' : 'text-red-600'}`} data-testid="intel-active-waste">{intelWasteLine}</p>}
           </div>
 
           {topDriverImpact !== null && (

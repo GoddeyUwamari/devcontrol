@@ -104,7 +104,8 @@ function ItemSavings({ item }: { item: HiddenFinding }) {
   }
   return (
     <div className="sm:text-right">
-      <p className="text-ui font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+      {/* A recorded sub-cent amount would be grey, as on every page (review N-6); /hidden sends none today. */}
+      <p className={cn('text-ui font-semibold tabular-nums whitespace-nowrap', fig.subCent ? 'text-ink-muted' : 'text-slate-900')}>
         {lowActivity ? lowActivitySavingsHeadline(fig, formatSavingsCurrency) : formatSavingsFigure(fig, formatSavingsCurrency)}
       </p>
       <p className="text-label text-ink-muted font-medium" data-testid="not-counted">{NOT_COUNTED_WHILE_RESOLVED}</p>

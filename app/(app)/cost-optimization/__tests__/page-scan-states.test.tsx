@@ -292,6 +292,28 @@ describe('zero values are muted, never green', () => {
     expect(active).toHaveClass('text-slate-500')
   })
 
+  // Review N-2 (ruling Q1): "None found" only after an analysis finished. Before one has, while one runs or
+  // after it failed, nothing open is "—" -- never "None found", never a money zero.
+  it.each([
+    ['never analyzed', () => { svc.getAnalysisRuns.mockResolvedValue([]); svc.getStats.mockResolvedValue(stats({ totalRecommendations: 0 })) }],
+    ['analysis running', () => svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'running', status: 'running', completed_at: null })])],
+    ['analysis failed', () => svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'failed', status: 'failed', error_message: 'None of the cost checks could complete. Try again.' })])],
+    ['analysis interrupted', () => svc.getAnalysisRuns.mockResolvedValue([run({ run_state: 'interrupted', status: 'failed', completed_at: null })])],
+  ])('nothing open, %s: the savings tile is "—", not "None found"', async (_name, setup) => {
+    setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('savings-no-figure')).toHaveTextContent(/^—$/))
+    const tile = kpiCard('Estimated monthly savings')
+    expect(screen.getByTestId('savings-no-figure')).toHaveClass('text-ink-muted')
+    expect(tile.textContent).not.toMatch(/None found/)
+    expect(tile.textContent).not.toMatch(/\$0/)
+  })
+
+  it('nothing open after a completed analysis: "None found" (the finished case, for contrast)', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByTestId('savings-no-figure')).toHaveTextContent(/^None found$/))
+  })
+
   it('non-zero values keep their colours', async () => {
     svc.getStats.mockResolvedValue(stats({ activeRecommendations: 2, totalPotentialSavings: 40 }))
     renderPage()

@@ -31,7 +31,7 @@ import type { ContextSection, CostRecommendation, CostSpendEvidence } from '@/li
 import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
-import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate } from '@/lib/savings-basis'
+import { DEFAULT_PRICE_SUFFIX, countSubCentFigures, formatRecommendationSavings, isDefaultPriceEstimate } from '@/lib/savings-basis'
 import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, noFinalDayThisMonth, previousMonthLine, roundCents } from './cost-display'
 import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
@@ -284,7 +284,8 @@ export default function CostsPage() {
     : 'No cost analysis has run yet'
   // Founder ruling Q2: Cost Optimization's wording, firm and upper-bound figures apart, grey under $1/mo, never "$0/mo".
   // A stats response with no total is "—" with the unavailable line, like a failed fetch ("Never show $0", S2).
-  const describedTile = recsUnavailable || !stats ? null : describeSavingsTile(stats, { partialRun: !isDemoActive && latestRunPartial })
+  // Review N-5: open rows that read "Less than $0.01/mo" are named in the "No dollar estimate" sentence (never totalled).
+  const describedTile = recsUnavailable || !stats ? null : describeSavingsTile(stats, { partialRun: !isDemoActive && latestRunPartial, openSubCent: demo ? 0 : countSubCentFigures(activeRecs) })
   const savingsTile = describedTile?.kind === 'unavailable' ? null : describedTile
   const savingsStrong = savingsTile?.kind === 'firm' && savingsTile.strong
 

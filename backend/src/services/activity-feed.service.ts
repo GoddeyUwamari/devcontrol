@@ -201,10 +201,12 @@ export class ActivityFeedService {
     const lowActivityPhrase = (row: Row) => {
       const fig = figureOf(row);
       if (fig.kind === 'none') return 'no dollar estimate';
-      const amount = fig.subCent ? LESS_THAN_ONE_CENT : formatSavingsCents(fig.amount);
+      // A recorded sub-cent amount: "less than $0.01/month", never "up to less than ..." (review N-4;
+      // the frontend twin, lowActivitySavingsHeadline, reads "Less than $0.01/mo if it's no longer needed").
+      const phrase = fig.subCent ? `${LESS_THAN_ONE_CENT}/month` : `up to ${formatSavingsCents(fig.amount)}/month`;
       return row.price_source === EC2_PRICE_SOURCE_DEFAULT
-        ? `up to ${amount}/month (default estimate, price unknown)`
-        : `up to ${amount}/month`;
+        ? `${phrase} (default estimate, price unknown)`
+        : phrase;
     };
     return result.rows.map((row) => {
       const ruleIdentity = { rule_version: row.rule_version, rule: { id: row.rule_id, version: row.rule_object_version } };

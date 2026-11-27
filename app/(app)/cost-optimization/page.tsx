@@ -27,7 +27,7 @@ import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
 import { cn, formatSavingsCurrency } from '@/lib/utils';
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography';
-import { DEFAULT_PRICE_DISCLOSURE, NO_DOLLAR_ESTIMATE, UNAVAILABLE_FIGURE, describeSavingsTotal, formatSavingsFigure, isDefaultPriceEstimate, rankBySavings, savingsFigure } from '@/lib/savings-basis';
+import { DEFAULT_PRICE_DISCLOSURE, NO_DOLLAR_ESTIMATE, UNAVAILABLE_FIGURE, countSubCentFigures, describeSavingsTotal, formatSavingsFigure, isDefaultPriceEstimate, rankBySavings, savingsFigure } from '@/lib/savings-basis';
 import { LOW_ACTIVITY_STORAGE_NOTE, displayIssue, isLowActivityFinding, lowActivityListPriceBasis, lowActivitySavingsHeadline, rdsIdleEstimateWithheld, rdsIdleSavingsExplanation } from '@/lib/finding-display';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -206,7 +206,8 @@ function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
   const rdsExplanation = rdsIdleSavingsExplanation(rec);
   return (
     <div className="sm:text-right" data-testid="opportunity-savings">
-      <p className={cn('text-section tabular-nums sm:whitespace-nowrap', fig.kind === 'estimate' ? 'text-slate-900' : 'text-ink-muted')}>
+      {/* Estimate ink only for a priced estimate: a recorded sub-cent amount is grey, as on Costs (review N-6, the under-$1 rule). */}
+      <p className={cn('text-section tabular-nums sm:whitespace-nowrap', fig.kind === 'estimate' && !fig.subCent ? 'text-slate-900' : 'text-ink-muted')}>
         {isLowActivityFinding(rec)
           ? lowActivitySavingsHeadline(fig, formatSavingsCurrency)
           : formatSavingsFigure(fig, formatSavingsCurrency)}
@@ -560,7 +561,9 @@ export default function CostOptimizationPage() {
   // round to 0) with its upper bounds on their own lines; every figure an upper bound; open findings with no
   // figure ("No dollar estimate"); none open ("None found", ruling Q1); a failed stats fetch or a missing total
   // ("Unavailable", never $0).
-  const savingsTotal = describeSavingsTotal(statsAvailable ? stats : null, { partialRun: scan.key === 'partial', format: formatWholeDollars });
+  // Review N-5: open cards that read "Less than $0.01/mo" are named under "No dollar estimate" (never totalled).
+  const openSubCent = countSubCentFigures(recommendations);
+  const savingsTotal = describeSavingsTotal(statsAvailable ? stats : null, { partialRun: scan.key === 'partial', format: formatWholeDollars, openSubCent });
   const bySeverity = statsAvailable ? stats.bySeverity : null;
 
   // Ruling 1a: a run that failed or had gaps says so on the Last analysis line, never in a banner.
@@ -618,7 +621,7 @@ export default function CostOptimizationPage() {
   if (activeCount !== null && activeCount > 0) {
     if (savingsTotal.kind === 'firm') summaryLines.push(summaryFirmSavings(savingsTotal.amount, ceilingLabel));
     else if (savingsTotal.kind === 'upper_bound_only' && ceilingLabel !== null) summaryLines.push(summaryUpperBoundOnly(ceilingLabel));
-    else if (savingsTotal.kind === 'no_estimate') summaryLines.push(SUMMARY_NO_ESTIMATE);
+    else if (savingsTotal.kind === 'no_estimate') summaryLines.push(openSubCent > 0 ? savingsTotal.lines[0] : SUMMARY_NO_ESTIMATE);
   }
   if (scan.counts) summaryLines.push(summaryNew(scan.counts.new));
   // C3a: the latest run's log groups below the stored-size floor, and any skipped for their name length (its own record).
@@ -756,7 +759,12 @@ export default function CostOptimizationPage() {
                   <p className="text-section tabular-nums text-ink-muted" data-testid="savings-no-figure">{UNAVAILABLE_FIGURE}</p>
                 ) : (
                   // Open findings with no dollar figure, or none open after an analysis: words in grey, never "$0/mo".
-                  <p className="text-section text-ink-muted" data-testid="savings-no-figure">{savingsTotal.value}</p>
+                  <>
+                    <p className="text-section text-ink-muted" data-testid="savings-no-figure">{savingsTotal.value}</p>
+                    {savingsTotal.kind === 'no_estimate' && openSubCent > 0 && (
+                      <p className="text-meta text-ink-muted mt-1" data-testid="savings-sub-cent-line">{savingsTotal.lines[0]}</p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
