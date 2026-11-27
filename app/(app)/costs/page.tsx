@@ -4,43 +4,58 @@ import { useState, useRef, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import {
   Search, Download, TrendingUp, TrendingDown, Minus,
-  Sparkles, Loader2, X, ChevronRight,
-  Zap, Lock,
+  Sparkles, Loader2, X, Zap, Lock,
 } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
-import { costRecommendationsService } from '@/lib/services/cost-recommendations.service'
+import { costRecommendationsService, type CostAnalysisRun } from '@/lib/services/cost-recommendations.service'
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
 import awsAccountsService from '@/lib/services/aws-accounts.service'
+import awsServicesService from '@/lib/services/aws-services.service'
 import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected'
 import { pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
+import { deriveCostScanState, type CostScanState } from '../cost-optimization/costScanState'
+import { LAST_ANALYSIS, LAST_ANALYSIS_SOURCE } from '../cost-optimization/costOptimizationCopy'
 import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
 import Link from 'next/link'
-import type { CostRecommendation, RecommendationSeverity } from '@/lib/types'
+import type { ContextSection, CostRecommendation, CostSpendEvidence } from '@/lib/types'
 import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
-import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate, rankBySavings } from '@/lib/savings-basis'
-import { describeAnnualizedSavings, describeMonthOverMonth, describeSpend, formatUsd, MOM_BASIS_LABEL, noFinalDayThisMonth, previousMonthLine, roundCents, TODAY_STILL_BILLING } from './cost-display'
-import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote, type CostReportState } from '@/lib/cost-trend-basis'
+import { DEFAULT_PRICE_SUFFIX, formatRecommendationSavings, isDefaultPriceEstimate } from '@/lib/savings-basis'
+import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, noFinalDayThisMonth, previousMonthLine, roundCents } from './cost-display'
+import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
+import {
+  acrossCategories, activeChecks, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, lastAnalysisParts, PAGE_SUBTITLE, rankByDisplayedSavings,
+  servicesLine, TREND_RANGES, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
+} from './cost-intelligence'
+import { whyLine } from './why-evidence'
+import { CostDriversCard } from './CostDriversCard'
+import { OPPORTUNITY_LIMIT, OpportunitiesCard, type OpportunityRow } from './OpportunitiesCard'
+import { PageCoverageCard } from './PageCoverageCard'
+import { DEMO_FINDING_COUNT, DEMO_GROWTH_PERCENT, DEMO_HOME_REGION, DEMO_STATS, demoAnalysisAt, demoMtdSpend, demoRecommendations, demoTrendPoints } from './demo-data'
 
-/** The lighter stroke of the periods AWS Cost Explorer is still updating. */
+/** The Spend Trend series (founder spec item 8): pink fill and line. */
+const TREND_LINE = '#BE185D'
+const TREND_FILL = '#FBCFE8'
+/** The lighter stroke of the day AWS Cost Explorer is still updating. */
 const UPDATING_STROKE = '#94A3B8'
 
-/** The Spend Trend tooltip: no amount for a period not reported yet, "so far" for one still updating. */
-function SpendTrendTooltip({ active, payload, label, unit, rows }: { active?: boolean; payload?: Array<{ payload?: CostsTrendRow }>; label?: string; unit: 'day' | 'month'; rows: CostsTrendRow[] }) {
+/** The Spend Trend tooltip: no amount for a day not reported yet, "so far" for one still updating. */
+function SpendTrendTooltip({ active, payload, label, rows }: { active?: boolean; payload?: Array<{ payload?: CostsTrendRow }>; label?: string; rows: CostsTrendRow[] }) {
   if (!active) return null
   // A gap has no drawn value; fall back to the row by its label.
   const row = payload?.find((entry) => entry?.payload)?.payload ?? rows.find((r) => r.date === label)
-  const lines = costsTrendTooltipLines(row, unit)
+  const lines = costsTrendTooltipLines(row, 'day')
   if (lines.length === 0) return null
   return (
     <div style={CHART_TOOLTIP.contentStyle} data-testid="spend-trend-tooltip">
@@ -49,22 +64,6 @@ function SpendTrendTooltip({ active, payload, label, unit, rows }: { active?: bo
     </div>
   )
 }
-
-const SERVICE_COLORS: Record<string, string> = {
-  'Compute (EC2, Lambda, ECS)': '#3B82F6',
-  'Storage (S3, EBS)':          '#06B6D4',
-  'Database (RDS, DynamoDB)':   '#8B5CF6',
-  'Network (Data Transfer)':    '#F59E0B',
-  'Other Services':             '#94A3B8',
-}
-
-const DATE_RANGES: { label: string; days: number; range: '7d' | '30d' | '90d' | '6mo' | '1yr' }[] = [
-  { label: '7D',  days: 7,   range: '7d'  },
-  { label: '30D', days: 30,  range: '30d' },
-  { label: '3M',  days: 90,  range: '90d' },
-  { label: '6M',  days: 180, range: '6mo' },
-  { label: '1Y',  days: 365, range: '1yr' },
-]
 
 /** Ask AI result header: says whether the question was answered, found nothing, or could not be answered. */
 const NL_OUTCOME_LABEL: Record<NLQueryOutcome, (rows: number) => string> = {
@@ -75,77 +74,29 @@ const NL_OUTCOME_LABEL: Record<NLQueryOutcome, (rows: number) => string> = {
   error: () => 'Could not be retrieved',
 }
 
-const severityStyles: Record<RecommendationSeverity, string> = {
-  HIGH: 'bg-red-50 text-red-700 border-red-200',
-  MEDIUM: 'bg-amber-50 text-amber-700 border-amber-200',
-  LOW: 'bg-slate-100 text-slate-600 border-slate-200',
+/** Demo-only month-to-date section, so the demo spend tile reads like a real one (Q14). */
+function demoSpendSection(amount: number): ContextSection<CostSpendEvidence> {
+  return {
+    state: 'available', source: 'Demo data', provenance: 'actual', asOf: null, coverage: null, reason: null,
+    data: { amount, basis: 'billed_month_to_date', lastDayInProgress: false },
+  }
 }
-
-// Demo-only illustrative figures — not sourced from any backend service.
-// Kept internally consistent with each other (annual = monthly*12, count = list length)
-// rather than reusing the old forecast/optimization services' own demo generators,
-// since both of those are being removed as part of this migration.
-const DEMO_TOP_SAVINGS: { title: string; savings: number; severity: RecommendationSeverity }[] = [
-  { title: 'RDS Reserved Instance Pricing', savings: 890, severity: 'HIGH' as RecommendationSeverity },
-  { title: 'Idle RDS Instances',            savings: 445, severity: 'MEDIUM' as RecommendationSeverity },
-  { title: 'Underloaded EC2 Instances',     savings: 362, severity: 'MEDIUM' as RecommendationSeverity },
-]
-const DEMO_TOTAL_SAVINGS = DEMO_TOP_SAVINGS.reduce((sum, r) => sum + r.savings, 0)
-const DEMO_MTD_SPEND = 22050
-const DEMO_GROWTH_RATE = 8.2
-
-const DEMO_SPEND_DATA: { date: string; actual?: number; forecast?: number }[] = [
-  { date: 'Apr 1',  actual: 218 }, { date: 'Apr 2',  actual: 215 },
-  { date: 'Apr 3',  actual: 220 }, { date: 'Apr 4',  actual: 217 },
-  { date: 'Apr 5',  actual: 214 }, { date: 'Apr 6',  actual: 216 },
-  { date: 'Apr 7',  actual: 213 }, { date: 'Apr 8',  actual: 185 },
-  { date: 'Apr 9',  actual: 187 }, { date: 'Apr 10', actual: 184 },
-  { date: 'Apr 11', actual: 186 }, { date: 'Apr 12', actual: 183 },
-  { date: 'Apr 13', actual: 188 }, { date: 'Apr 14', actual: 197 },
-  { date: 'Apr 15', actual: 193 }, { date: 'Apr 16', actual: 191 },
-  { date: 'Apr 17', actual: 194 }, { date: 'Apr 18', actual: 242 },
-  { date: 'Apr 19', actual: 210 }, { date: 'Apr 20', actual: 198 },
-  { date: 'Apr 21', actual: 192 }, { date: 'Apr 22', actual: 189 },
-  { date: 'Apr 23', actual: 191 }, { date: 'Apr 24', actual: 188 },
-  { date: 'Apr 25', actual: 186 }, { date: 'Apr 26', forecast: 188 },
-  { date: 'Apr 27', forecast: 185 }, { date: 'Apr 28', forecast: 183 },
-  { date: 'Apr 29', forecast: 187 }, { date: 'Apr 30', forecast: 184 },
-]
-
-const DEMO_CHART_DATA: { date: string; actual: number | null; forecast: number | null }[] = [
-  { date: 'Apr 1',  actual: 215, forecast: null }, { date: 'Apr 2',  actual: 212, forecast: null },
-  { date: 'Apr 3',  actual: 218, forecast: null }, { date: 'Apr 4',  actual: 210, forecast: null },
-  { date: 'Apr 5',  actual: 216, forecast: null }, { date: 'Apr 6',  actual: 213, forecast: null },
-  { date: 'Apr 7',  actual: 220, forecast: null }, { date: 'Apr 8',  actual: 185, forecast: null },
-  { date: 'Apr 9',  actual: 187, forecast: null }, { date: 'Apr 10', actual: 188, forecast: null },
-  { date: 'Apr 11', actual: 186, forecast: null }, { date: 'Apr 12', actual: 190, forecast: null },
-  { date: 'Apr 13', actual: 188, forecast: null }, { date: 'Apr 14', actual: 195, forecast: null },
-  { date: 'Apr 15', actual: 192, forecast: null }, { date: 'Apr 16', actual: 190, forecast: null },
-  { date: 'Apr 17', actual: 193, forecast: null }, { date: 'Apr 18', actual: 240, forecast: null },
-  { date: 'Apr 19', actual: 198, forecast: null }, { date: 'Apr 20', actual: 193, forecast: null },
-  { date: 'Apr 21', actual: 195, forecast: null }, { date: 'Apr 22', actual: 191, forecast: null },
-  { date: 'Apr 23', actual: 194, forecast: null }, { date: 'Apr 24', actual: 197, forecast: null },
-  { date: 'Apr 25', actual: 192, forecast: null }, { date: 'Apr 26', actual: null, forecast: 188 },
-  { date: 'Apr 27', actual: null, forecast: 190 }, { date: 'Apr 28', actual: null, forecast: 186 },
-  { date: 'Apr 29', actual: null, forecast: 192 }, { date: 'Apr 30', actual: null, forecast: 195 },
-]
 
 export default function CostsPage() {
   const { isPro } = usePlan()
-  const [selectedRange, setSelectedRange] = useState('30D')
+  const [selectedRange, setSelectedRange] = useState<TrendRangeLabel>(DEFAULT_TREND_RANGE)
   const [nlQuery, setNlQuery] = useState('')
   const [nlResult, setNlResult] = useState<NLQueryResult | null>(null)
   const [nlLoading, setNlLoading] = useState(false)
   const [nlError, setNlError] = useState<string | null>(null)
   const [nlUpgradeBanner, setNlUpgradeBanner] = useState(false)
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const demoMode = useDemoMode()
   const salesDemoMode = useSalesDemo((state) => state.enabled)
   const isDemoActive = demoMode || salesDemoMode
 
-  const selectedRangeParam = DATE_RANGES.find(r => r.label === selectedRange)?.range ?? '30d'
+  const range = TREND_RANGES.find(r => r.label === selectedRange) ?? TREND_RANGES[1]
 
   // Source A: month-to-date spend and the month-over-month comparison as evidence
   // sections (actual Cost Explorer / inventory estimate / unavailable / error),
@@ -162,16 +113,14 @@ export default function CostsPage() {
     enabled: !isDemoActive,
   })
 
-  // Source A: per-category daily cost trend, same endpoint as dashboard/page.tsx.
+  // Source A: daily cost trend with each point's report state and per-service breakdown.
   // The key is this page's own: /costs/efficiency caches a failed request under
   // ['cost-trend', '6mo'] as [], which must never read as "no data" here.
-  const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<
-    Array<{ date: string; compute: number; storage: number; database: number; network: number; other: number; total: number; lineItems?: number; reportState?: CostReportState; provisional?: boolean }>
-  >({
-    queryKey: ['costs-page', 'cost-trend', selectedRangeParam, orgId ?? null, utcDay],
+  const { data: costTrend = [], isLoading: costTrendLoading, isError: costTrendError } = useQuery<CostTrendPointView[]>({
+    queryKey: ['costs-page', 'cost-trend', range.range, orgId ?? null, utcDay],
     queryFn: async () => {
       const token = document.cookie.split(';').find(c => c.trim().startsWith('auth-token='))?.split('=')[1] || localStorage.getItem('accessToken')
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${selectedRangeParam}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/platform/costs/trend?range=${range.range}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
       })
@@ -193,14 +142,11 @@ export default function CostsPage() {
     enabled: !isDemoActive,
   })
 
-  // Cost analysis runs both manually (cost_analysis_runs) and inside the
-  // scheduled discovery job (resource_discovery_jobs.cost_analysis_completed).
-  // Both histories feed pickLatestAnalysis(), the same merge the Cost
-  // Optimization page uses. Until an analysis has completed, zero
-  // recommendations means "not analyzed yet", not "no savings found".
+  // Every cost analysis, manual and scheduled (the same list and cache entry as Cost Optimization's
+  // Last analysis line). A discovery job is read only for an organization with no run row at all.
   const { data: analysisRuns, isLoading: analysisRunsLoading, isError: analysisRunsError } = useQuery({
-    queryKey: ['cost-analysis-runs', 5],
-    queryFn: () => costRecommendationsService.getAnalysisRuns(5),
+    queryKey: ['cost-analysis-runs', 'all', 5],
+    queryFn: () => costRecommendationsService.getAnalysisRuns(5, 'all'),
     staleTime: 60_000,
     retry: false,
     enabled: !isDemoActive,
@@ -225,11 +171,30 @@ export default function CostsPage() {
   const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
   const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError
 
-  const { data: activeRecs = [], isError: activeRecsError } = useQuery<CostRecommendation[]>({
+  const { data: activeRecs = [], isLoading: activeRecsLoading, isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
     staleTime: 5 * 60 * 1000,
     enabled: !isDemoActive,
+  })
+
+  // The Optimization Rule Registry (spec item 6): the active checks and their service categories, never literals.
+  // Code-defined metadata, not account data, so the demo reads it too. Same key as Cost Optimization.
+  const { data: ruleCatalog, isLoading: rulesLoading, isError: rulesError } = useQuery({
+    queryKey: ['optimization-rules'],
+    queryFn: costRecommendationsService.getOptimizationRules,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+
+  // Where the cost checks run (What this page covers): the home region from the coverage response.
+  const { data: servicesCoverage, isLoading: coverageLoading, isError: coverageError } = useQuery({
+    queryKey: ['services-coverage'],
+    queryFn: () => awsServicesService.getCoverage(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    enabled: !isDemoActive && !notConnected && !connectionLoading,
   })
 
   const handleNlQuery = async (e: React.FormEvent) => {
@@ -249,44 +214,53 @@ export default function CostsPage() {
     }
   }
 
-  const selectedDays = DATE_RANGES.find(r => r.label === selectedRange)?.days ?? 30
-  // 6M/1Y trend points are monthly totals (Cost Explorer MONTHLY granularity); shorter ranges are daily.
-  const trendUnit = selectedRangeParam === '6mo' || selectedRangeParam === '1yr' ? 'month' : 'day'
-  const chartData = useMemo(() => {
-    if (isDemoActive) return DEMO_CHART_DATA
-    // UTC calendar-date labels; a period Cost Explorer has not reported yet is a gap, never $0 (DAY1-D14, DAY1-D15).
-    return costsTrendChartData(costTrend.slice(-selectedDays))
-  }, [isDemoActive, costTrend, selectedDays])
-  const trendNotReportedNote = isDemoActive ? null : unreportedTrendNote(costTrend.slice(-selectedDays), selectedRangeParam === '6mo' || selectedRangeParam === '1yr' ? 'month' : 'day')
-  const trendHasUpdating = !isDemoActive && costTrend.slice(-selectedDays).some(isStillUpdating)
+  // ── Safeguard 1: ONE set of days for the chart, the cost drivers donut and its total label ──
+  // Demo mode (ruling D4): the demo series, findings and last analysis are relative to today (UTC), never fixed dates.
+  const demo = useMemo(() => {
+    if (!isDemoActive) return null
+    const points = demoTrendPoints(utcDay)
+    const analysisAt = demoAnalysisAt(Date.now())
+    return { points, spendSection: demoSpendSection(demoMtdSpend(points, utcDay)), analysisAt, recommendations: demoRecommendations(analysisAt) }
+  }, [isDemoActive, utcDay])
+  const trendPoints: CostTrendPointView[] = demo ? demo.points : costTrend
+  const windowPoints = useMemo(() => trendWindow(trendPoints, range.days), [trendPoints, range.days])
+  // UTC calendar-date labels; a day Cost Explorer has not reported yet is a gap, never $0 (DAY1-D14, DAY1-D15).
+  const chartData = useMemo(() => costsTrendChartData(windowPoints), [windowPoints])
+  const drivers = useMemo(() => costDrivers(windowPoints), [windowPoints])
+  const windowDates = windowDatesLabel(windowPoints)
+  const trendNotReportedNote = isDemoActive ? null : unreportedTrendNote(windowPoints, 'day')
+  const trendHasUpdating = windowPoints.some(isStillUpdating)
   // Whether the trend has real Cost Explorer points to show; an empty or failed series is never drawn as $0.
-  const hasTrendData = !isDemoActive && !costTrendLoading && !costTrendError && costTrend.length > 0
+  const hasTrendData = isDemoActive || (!costTrendLoading && !costTrendError && costTrend.length > 0)
 
   const spend = isDemoActive
-    ? { label: 'Month-to-Date Spend', value: `$${DEMO_MTD_SPEND.toLocaleString()}`, sub: 'Live from AWS Cost Explorer', amount: DEMO_MTD_SPEND, provenance: 'actual' as const }
+    ? { ...describeSpend(demo?.spendSection, { isLoading: false, isError: false }), sub: 'Demo data' }
     : describeSpend(costSummary?.spend, { isLoading: costSummaryLoading, isError: costSummaryError })
-  // Month-over-month is FIXED to month to date vs the same days last month (the
-  // backend's comparison over a 90-day trend, costSummary.monthOverMonth). It is
-  // independent of the chart range: selectedRange changes only the Spend Trend data.
+  // Month-over-month is FIXED to this month's finished days vs the same days last month (the
+  // backend's comparison over a 90-day trend, costSummary.monthOverMonth), independent of the
+  // chart range. Shown in a neutral colour whichever way it moves (founder ruling Q3).
   const mom = isDemoActive
-    ? { value: `+${DEMO_GROWTH_RATE}%`, sub: 'Spend trending up vs last month', changePercent: DEMO_GROWTH_RATE, direction: 'up' as const, includesToday: false }
+    ? { value: `+${DEMO_GROWTH_PERCENT}%`, sub: 'Spend up vs the same days last month · demo data', changePercent: DEMO_GROWTH_PERCENT, direction: 'up' as const, includesToday: false }
     : describeMonthOverMonth(costSummary?.monthOverMonth, { isLoading: costSummaryLoading, isError: costSummaryError }, { noFinishedDay: noFinalDayThisMonth(costSummary?.spend) })
-  // Only a real percentage drives colors and the spike banner; a missing comparison is neither up nor down.
-  const growthRate = mom.changePercent
 
   const savingsMissing = !isDemoActive && (recStatsLoading || recStatsError || !recStats)
-  const displaySavings = isDemoActive ? DEMO_TOTAL_SAVINGS : (recStats?.totalPotentialSavings ?? 0)
-  const activeRecsCount = isDemoActive ? DEMO_TOP_SAVINGS.length : (recStats?.activeRecommendations ?? 0)
+  const stats = isDemoActive ? DEMO_STATS : recStats
+  const activeRecsCount = stats?.activeRecommendations ?? 0
   // Zero recommendations is only a measured result once the latest analysis
   // (scheduled or manual) has completed.
   const latestAnalysis = pickLatestAnalysis({ latestDiscoveryJob: discoveryJobs?.[0], latestAnalysisRun: analysisRuns?.[0] })
+  // Fix round 1, N-4: a partial run (the API's status says 'failed', run_state says 'partial') finished the checks
+  // that ran, so zero open findings is a result for those checks: "None found in the checks that ran", like the
+  // Last analysis line ("N of M checks ran · 0 found"). The run is the latest analysis only when it was picked
+  // over the discovery job ('manual' is pickLatestAnalysis's label for a run row, manual or scheduled).
+  const latestRunPartial = latestAnalysis?.source === 'manual' && analysisRuns?.[0]?.run_state === 'partial'
   const zeroRecsState: null | 'loading' | 'unknown' | 'in_progress' | 'failed' | 'not_evaluated' =
     isDemoActive || savingsMissing || activeRecsCount > 0 ? null
       : analysisRunsLoading || discoveryJobsLoading ? 'loading'
       : analysisRunsError || discoveryJobsError ? 'unknown'
       : !latestAnalysis ? 'not_evaluated'
       : latestAnalysis.status === 'running' ? 'in_progress'
-      : latestAnalysis.status === 'failed' ? 'failed'
+      : latestAnalysis.status === 'failed' && !latestRunPartial ? 'failed'
       : null
   const recsUnavailable = savingsMissing || zeroRecsState !== null
   const recsUnavailableSub = !isDemoActive && recStatsLoading ? 'Loading…'
@@ -296,61 +270,73 @@ export default function CostsPage() {
     : zeroRecsState === 'in_progress' ? 'Cost analysis in progress'
     : zeroRecsState === 'failed' ? 'Latest cost analysis did not complete'
     : 'No cost analysis has run yet'
-  const savingsValue = recsUnavailable ? '—' : `${formatSavingsCurrency(displaySavings)}/mo`
+  // Founder ruling Q2: Cost Optimization's wording, firm and upper-bound figures apart, grey under $1/mo, never "$0/mo".
+  const savingsTile = recsUnavailable || !stats ? null : describeSavingsTile(stats, { partialRun: !isDemoActive && latestRunPartial })
+  const savingsStrong = savingsTile?.kind === 'firm' && savingsTile.strong
 
-  // Each figure is labelled by its savings_basis: "$X/mo", "Up to $X/mo" (a
-  // ceiling), or "No dollar estimate" -- see lib/savings-basis.ts.
-  const topSavingsRows: { id: string; title: string; savingsLabel: string; severity: RecommendationSeverity }[] = isDemoActive
-    ? DEMO_TOP_SAVINGS.map((d, i) => ({ id: `demo-${i}`, title: d.title, savingsLabel: `${formatSavingsCurrency(d.savings)}/mo`, severity: d.severity }))
-    : rankBySavings(activeRecs)
-        .slice(0, 3)
-        .map(r => ({ id: r.id, title: r.issue || r.resourceName || 'Cost optimization available', savingsLabel: `${formatRecommendationSavings(r, formatSavingsCurrency)}${isDefaultPriceEstimate(r) ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}`, severity: r.severity }))
+  const checks = activeChecks(ruleCatalog)
 
-  // Real per-service savings for the Cost by Service list, from the same activeRecs
-  // (source C) already fetched above — no fabricated per-category dollar figure.
-  const categorySavings = useMemo(() => {
-    if (isDemoActive) return null
-    // The total is the server's de-duplicated per-type figure (two
-    // recommendations can draw on the same instance's cost), not a client sum.
-    // No database entry: idle RDS findings (C1b: an instance-hour estimate when exactly priced) count in the
-    // totals and are listed on Cost Optimization; no category row here.
-    const summarize = (type: string) => {
-      const recs = activeRecs.filter(r => r.resourceType === type)
-      const total = recStats?.potentialSavingsByResourceType?.[type] ?? 0
-      const top = rankBySavings(recs)[0]
-      return { total, issue: top?.issue ?? null }
-    }
-    return {
-      compute: summarize('EC2'),
-    }
-  }, [isDemoActive, activeRecs, recStats])
+  // The scan state Cost Optimization's Last analysis line reads (runs first; jobs only with no run row).
+  const scan: CostScanState = deriveCostScanState({
+    connection: { data: awsAccounts?.connection, isError: accountsError },
+    runs: { data: analysisRuns, isError: analysisRunsError },
+    jobs: { data: discoveryJobs, isError: discoveryJobsError },
+    isAnalyzing: false,
+  })
+  const latestRun: CostAnalysisRun | undefined = analysisRuns?.[0]
 
-  const costAnomalyDetected = !isDemoActive && growthRate !== null && growthRate > 20
+  // Opportunities (spec item 11): the top OPPORTUNITY_LIMIT by the savings figure each card shows (N-7), each with
+  // its "Why:" line. Each figure is labelled by its savings_basis: "$X/mo", "Up to $X/mo" (a ceiling), or
+  // "No dollar estimate".
+  const opportunityRows: OpportunityRow[] = rankByDisplayedSavings(demo ? demo.recommendations : activeRecs)
+    .slice(0, OPPORTUNITY_LIMIT)
+    .map(r => ({
+      id: r.id,
+      title: r.issue || r.resourceName || 'Cost optimization available',
+      savingsLabel: `${formatRecommendationSavings(r, formatSavingsCurrency)}${isDefaultPriceEstimate(r) ? ` ${DEFAULT_PRICE_SUFFIX}` : ''}`,
+      severity: r.severity,
+      why: whyLine(r),
+    }))
+
+  // What this page covers (spec item 12). The demo feeds the same rules with demo signals.
+  const pageCoverage = isDemoActive
+    ? coverageRows({
+        spend: { section: demo?.spendSection, isLoading: false, isError: false },
+        trend: { isLoading: false, isError: false },
+        scan: { key: 'completed_open', source: 'scheduled', completedAt: null, errorMessage: null, counts: null, failedChecks: 0, uncheckedResources: 0 },
+        runs: ruleCatalog && demo ? [demoRun(ruleCatalog.rules.filter((rule) => rule.status === 'implemented').map((rule) => rule.id), demo.analysisAt)] : undefined,
+        catalog: { data: ruleCatalog, isError: rulesError },
+        coverage: { homeRegion: DEMO_HOME_REGION, multiRegion: null, isLoading: false, isError: false },
+      })
+    : coverageRows({
+        spend: { section: costSummary?.spend, isLoading: costSummaryLoading, isError: costSummaryError },
+        trend: { isLoading: costTrendLoading, isError: costTrendError },
+        scan,
+        runs: analysisRuns,
+        catalog: { data: ruleCatalog, isError: rulesError },
+        coverage: { homeRegion: servicesCoverage?.account?.home_region ?? null, multiRegion: servicesCoverage?.multi_region, isLoading: coverageLoading, isError: coverageError },
+      })
 
   const handleExportCSV = () => {
-    // Real export uses costTrend (source A, already fetched for the Spend Trend chart
-    // above) — real per-day/per-category numbers, not DEMO_SPEND_DATA's fabricated ones.
+    // The export is exactly the days the page shows (fix round 1, N-2): the same window as the chart, the
+    // cost drivers and their dates (safeguard 1). Real per-day/per-category numbers, or the demo's own points.
     const rows: (string | number)[][] = []
     // The real rows are trend totals: say so in the file, which travels without the page.
     if (!isDemoActive) rows.push([`AWS Cost Explorer daily totals · ${TREND_TOTALS_NOTE}`])
     rows.push(['Date', 'Service', 'Cost'])
-    if (isDemoActive) {
-      rows.push(...DEMO_SPEND_DATA.map(d => [d.date, 'Total', d.actual ?? d.forecast ?? 0]))
-    } else {
-      // Cents, not whole dollars: a sub-dollar day must not export as 0.
-      for (const p of costTrend) {
-        // A day Cost Explorer has not reported yet has no amounts, never $0.
-        if (isNotReportedYet(p)) {
-          rows.push([p.date, 'Total', NOT_REPORTED_TOOLTIP])
-          continue
-        }
-        rows.push([p.date, 'Compute (EC2, Lambda, ECS)', roundCents(p.compute)])
-        rows.push([p.date, 'Storage (S3, EBS)',          roundCents(p.storage)])
-        rows.push([p.date, 'Database (RDS, DynamoDB)',   roundCents(p.database)])
-        rows.push([p.date, 'Network (Data Transfer)',    roundCents(p.network)])
-        rows.push([p.date, 'Other Services',              roundCents(p.other)])
-        rows.push([p.date, isStillUpdating(p) ? 'Total (still updating; AWS Cost Explorer may still add charges)' : 'Total', roundCents(p.total)])
+    // Cents, not whole dollars: a sub-dollar day must not export as 0.
+    for (const p of windowPoints) {
+      // A day Cost Explorer has not reported yet has no amounts, never $0.
+      if (isNotReportedYet(p)) {
+        rows.push([p.date, 'Total', NOT_REPORTED_TOOLTIP])
+        continue
       }
+      rows.push([p.date, 'Compute (EC2, Lambda, ECS)', roundCents(p.compute)])
+      rows.push([p.date, 'Storage (S3, EBS)',          roundCents(p.storage)])
+      rows.push([p.date, 'Database (RDS, DynamoDB)',   roundCents(p.database)])
+      rows.push([p.date, 'Network (Data Transfer)',    roundCents(p.network)])
+      rows.push([p.date, 'Other Services',              roundCents(p.other)])
+      rows.push([p.date, isStillUpdating(p) ? 'Total (still updating; AWS Cost Explorer may still add charges)' : 'Total', roundCents(p.total)])
     }
     // Quote every field: the service names contain commas.
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -363,89 +349,76 @@ export default function CostsPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Real per-category totals for the selected window, from the same costTrend response
-  // already fetched for the chart — no fabricated percentage split of month-to-date spend.
-  const categoryTotals = useMemo(() => {
-    if (isDemoActive) return null
-    return costTrend.reduce((acc, p) => {
-      acc.compute  += p.compute  ?? 0
-      acc.storage  += p.storage  ?? 0
-      acc.database += p.database ?? 0
-      acc.network  += p.network  ?? 0
-      acc.other    += p.other    ?? 0
-      return acc
-    }, { compute: 0, storage: 0, database: 0, network: 0, other: 0 })
-  }, [isDemoActive, costTrend])
-
-  const serviceBreakdown: { name: string; amount: number; pct: number; trend?: string; up?: boolean }[] = isDemoActive
-    ? [
-        { name: 'Compute (EC2, Lambda, ECS)', amount: Math.round(DEMO_MTD_SPEND * 0.63), pct: 63, trend: '+13%', up: true },
-        { name: 'Storage (S3, EBS)',          amount: Math.round(DEMO_MTD_SPEND * 0.18), pct: 18, trend: '-5%',  up: false },
-        { name: 'Database (RDS, DynamoDB)',   amount: Math.round(DEMO_MTD_SPEND * 0.10), pct: 10, trend: '+8%',  up: true },
-        { name: 'Network (Data Transfer)',    amount: Math.round(DEMO_MTD_SPEND * 0.05), pct: 5,  trend: '+2%',  up: true },
-        { name: 'Other Services',            amount: Math.round(DEMO_MTD_SPEND * 0.04), pct: 4,  trend: '-1%',  up: false },
-      ]
-    : (() => {
-        const ct = categoryTotals!
-        const total = ct.compute + ct.storage + ct.database + ct.network + ct.other
-        const pct = (v: number) => total > 0 ? Math.round((v / total) * 100) : 0
-        return [
-          { name: 'Compute (EC2, Lambda, ECS)', amount: roundCents(ct.compute),  pct: pct(ct.compute) },
-          { name: 'Storage (S3, EBS)',          amount: roundCents(ct.storage),  pct: pct(ct.storage) },
-          { name: 'Database (RDS, DynamoDB)',   amount: roundCents(ct.database), pct: pct(ct.database) },
-          { name: 'Network (Data Transfer)',    amount: roundCents(ct.network),  pct: pct(ct.network) },
-          { name: 'Other Services',             amount: roundCents(ct.other),    pct: pct(ct.other) },
-        ]
-      })()
-
-  const kpiCards = [
+  // ── KPI row (spec item 6): shown once. Every tile keeps its link; missing or loading is "—" (safeguard 5). ──
+  const neutral = 'text-ink-muted'
+  /** The tile value size for anything that isn't a headline figure (ruling Q2, SF-1). */
+  const SECONDARY_VALUE_SIZE = 'text-ui sm:text-section'
+  const kpiTiles: {
+    key: string; label: string; value: string; lines: string[]; valueClass: string; href: string; accent: string
+    TrendIcon?: typeof Minus; previous?: string | null; basis?: string; names?: string; wide?: boolean; valueSize?: string
+    /** Shown instead of `label` where the tile is too narrow for its longest word (no mid-word wrapping, founder D7). */
+    shortLabel?: string
+  }[] = [
     {
-      key: 'savings', label: 'Estimated Savings Opportunity',
-      value: savingsValue,
-      // No "% of current spend": the savings estimate is a monthly run-rate over the
-      // resource inventory, current spend is Cost Explorer month-to-date billing --
-      // different periods and scopes, so the ratio is not a real billing ratio.
-      sub: recsUnavailable ? recsUnavailableSub : describeAnnualizedSavings(displaySavings),
-      subColor: recsUnavailable ? 'text-ink-muted' : 'text-ink-success', TrendIcon: recsUnavailable ? Minus : TrendingDown, trendColor: recsUnavailable ? 'text-ink-muted' : 'text-ink-success',
-      // No AWS account: no green savings accent on an unmeasured "—" (PR2).
-      href: '/cost-optimization', borderTop: notConnected ? '' : 'border-t-[3px] border-t-green-500', valueColor: 'text-ink-success',
-    },
-    {
-      key: 'mtd', label: spend.label,
-      value: spend.value,
-      sub: spend.sub,
+      key: 'mtd', label: spend.label, value: spend.value, lines: [spend.sub],
       // While no day of this month has finished: last month's total (the Dashboard's line).
       previous: isDemoActive ? null : previousMonthLine(costSummary?.spend),
-      subColor: 'text-ink-muted', TrendIcon: Minus, trendColor: 'text-ink-muted',
-      href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
+      valueClass: 'text-slate-900', href: '/invoices', accent: '',
     },
     {
-      key: 'momchange', label: 'Month-over-Month Change',
-      value: mom.value,
-      sub: mom.sub,
-      subColor: growthRate === null ? 'text-ink-muted' : growthRate > 10 ? 'text-ink-danger' : growthRate > 5 ? 'text-ink-warning' : 'text-ink-success',
+      key: 'momchange', label: 'Month-over-Month Change', value: mom.value, lines: [mom.sub],
       TrendIcon: mom.direction === 'up' ? TrendingUp : mom.direction === 'down' ? TrendingDown : Minus,
-      trendColor: growthRate === null ? 'text-ink-muted' : growthRate > 5 ? 'text-ink-warning' : 'text-ink-success',
-      href: '/invoices', borderTop: '', valueColor: 'text-slate-900',
+      // Safeguard 2: the % compares finished days only, not the month to date, and not the selected range.
+      basis: `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}`,
+      valueClass: 'text-slate-900', href: '/invoices', accent: '',
     },
     {
-      key: 'activerecs', label: 'Active Recommendations',
+      key: 'savings', label: 'Estimated Savings Opportunity',
+      value: savingsTile?.value ?? '—',
+      lines: savingsTile?.lines ?? [recsUnavailableSub],
+      // Ruling Q2 / SF-1: green and full KPI size only for a firm figure of $1/mo or more (as displayed, N-3). A
+      // smaller firm figure and the words ("Up to … · upper bound only", "No dollar estimate", "None found") are grey
+      // (slate-600, text-ink-muted) at the smaller secondary size.
+      valueClass: savingsStrong ? 'text-ink-success' : neutral,
+      valueSize: savingsTile && !savingsStrong ? SECONDARY_VALUE_SIZE : undefined,
+      // No AWS account, or a figure under $1/mo or only an upper bound: no green savings accent (PR2, ruling Q2).
+      href: '/cost-optimization', accent: !notConnected && savingsStrong ? 'border-t-[3px] border-t-green-500' : '',
+    },
+    {
+      key: 'activerecs', label: 'Active Recommendations', shortLabel: 'Findings',
       value: recsUnavailable ? '—' : `${activeRecsCount}`,
-      sub: recsUnavailable ? recsUnavailableSub : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations',
-      subColor: activeRecsCount > 0 ? 'text-ink-warning' : 'text-ink-muted',
-      TrendIcon: activeRecsCount > 0 ? TrendingUp : Minus,
-      trendColor: activeRecsCount > 0 ? 'text-ink-warning' : 'text-ink-muted',
-      href: '/cost-optimization', borderTop: '', valueColor: 'text-slate-900',
+      lines: [recsUnavailable ? recsUnavailableSub : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations'],
+      valueClass: 'text-slate-900', href: '/cost-optimization', accent: '',
+    },
+    {
+      key: 'checks', label: 'Active checks',
+      value: checks ? `${checks.count}` : '—',
+      lines: [checks ? acrossCategories(checks.services.length) : rulesLoading ? 'Loading…' : rulesError ? 'Could not be retrieved' : 'Not available'],
+      names: checks ? servicesLine(checks.services) : undefined,
+      valueClass: 'text-slate-900', href: '/cost-optimization', accent: '', wide: true,
     },
   ]
 
+  // Last analysis (spec item 7, ruling Q6): the latest run's own N of M and K found.
+  const lastAnalysis = (() => {
+    if (isDemoActive) {
+      const parts = [...(checks ? [`${checks.count} of ${checks.count} checks ran`] : []), `${DEMO_FINDING_COUNT} found`]
+      return `2 hours ago (${LAST_ANALYSIS_SOURCE.scheduled}) · ${parts.join(' · ')}`
+    }
+    if (scan.key === 'loading') return 'Loading…'
+    if (scan.key === 'status_unavailable') return "Couldn't load analysis status"
+    if (scan.key === 'never_analyzed') return 'Never'
+    if (scan.key === 'running') return 'Running…'
+    const when = scan.completedAt ? `${formatDistanceToNow(new Date(scan.completedAt), { addSuffix: true })}${scan.source ? ` (${LAST_ANALYSIS_SOURCE[scan.source]})` : ''}` : '—'
+    return [when, ...lastAnalysisParts(scan, latestRun)].join(' · ')
+  })()
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto overflow-x-hidden">
-      <style>{`@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }`}</style>
 
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <h1 className={PAGE_TITLE_CLASS}>Cost Intelligence</h1>
             {demoMode && (
@@ -453,113 +426,63 @@ export default function CostsPage() {
                 Demo Mode
               </span>
             )}
-            {isDemoActive ? (
-              <span className="inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-                Synced 2 min ago
-              </span>
-            ) : costSummary?.spend.asOf && !notConnected && !connectionLoading ? (
+            {!isDemoActive && costSummary?.spend.asOf && !notConnected && !connectionLoading ? (
               <span className="inline-flex items-center gap-1.5 text-label font-medium bg-slate-100 border border-slate-200 rounded-full px-2.5 py-1 text-ink-muted">
                 Cost data as of {new Date(costSummary.spend.asOf).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
             ) : null}
-            {isDemoActive ? (
-              <span className="inline-flex items-center gap-1.5 text-label font-medium rounded-full px-2.5 py-1 bg-green-50 border border-green-200 text-ink-success">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-green-500" />
-                All systems clear
-              </span>
-            ) : growthRate !== null && !notConnected && !connectionLoading ? (
-              // Only a real comparison can say whether spend spiked; a missing one says nothing.
-              <span className={`inline-flex items-center gap-1.5 text-label font-medium rounded-full px-2.5 py-1 ${
-                costAnomalyDetected
-                  ? 'bg-red-50 border border-red-200 text-ink-danger'
-                  : 'bg-green-50 border border-green-200 text-ink-success'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${costAnomalyDetected ? 'bg-red-500' : 'bg-green-500'}`} />
-                {costAnomalyDetected ? 'Spend up over 20% vs last month' : 'No spend spike vs last month'}
-              </span>
-            ) : null}
           </div>
-          <p className={PAGE_SUBTITLE_CLASS}>
-            AWS spend visibility, forecasting, and AI-powered cost optimization.
-          </p>
+          <p className={PAGE_SUBTITLE_CLASS}>{PAGE_SUBTITLE}</p>
+          {!notConnected && !connectionLoading && (
+            <p className="text-meta text-ink-muted mt-2 mb-0" data-testid="last-analysis">
+              {LAST_ANALYSIS}: {lastAnalysis}
+            </p>
+          )}
         </div>
         {connectionLoading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : (
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white text-slate-600 px-4 py-2.5 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white text-slate-600 px-4 py-2.5 min-h-11 sm:min-h-0 rounded-lg text-ui font-medium border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
             <Download size={14} /> Export CSV
           </button>
-          <a href="/cost-optimization" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 rounded-lg text-ui font-semibold no-underline transition-colors whitespace-nowrap">
+          <a href="/cost-optimization" className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 min-h-11 sm:min-h-0 rounded-lg text-ui font-semibold no-underline transition-colors whitespace-nowrap">
             <Zap size={14} /> Optimize Now
           </a>
         </div>
         )}
       </div>
 
-      {connectionLoading ? <NotConnectedLoading tiles={4} /> : (<>
+      {connectionLoading ? <NotConnectedLoading tiles={5} /> : (<>
 
-      {/* ── COST ANOMALY BANNER ── */}
-      {(isDemoActive || (costAnomalyDetected && !notConnected)) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 mb-6 flex items-start gap-3.5">
-          <div className="relative shrink-0 mt-0.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-            <div className="absolute inset-[-3px] rounded-full border-2 border-amber-500 opacity-40" style={{ animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite' }} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <p className="text-label font-semibold text-amber-900 m-0">{isDemoActive ? 'Cost Anomaly Detected' : 'Spend Up Sharply vs Last Month'}</p>
-              <span className="text-label font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{isDemoActive ? 'AI Detected' : 'Month-over-month'}</span>
-            </div>
-            <p className="text-meta text-amber-800 leading-relaxed mb-2.5">
-              {isDemoActive
-                ? 'EC2 compute spending increased 35% in the last 24 hours. Possible cause: Lambda invocation spike on payment-processor triggering auto-scaling. Estimated impact: $864/month if sustained.'
-                : `Spend over this month's finished days is more than 20% above the same days last month (AWS Cost Explorer)${mom.includesToday ? `; ${TODAY_STILL_BILLING}` : ''}. Review your recent deployments and scaling events.`
-              }
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              <a href="/cost-optimization" className="text-label font-medium text-amber-800 px-3 py-1.5 rounded-lg no-underline inline-flex items-center gap-1">
-                View optimization recommendations →
-              </a>
-            </div>
-          </div>
-          <div className="shrink-0 text-right bg-white border border-amber-200 rounded-lg px-3 py-2 hidden sm:block">
-            <p className="text-label font-semibold text-amber-700 uppercase tracking-widest mb-1">Est. Impact</p>
-            {isDemoActive ? (
-              <>
-                <p className="text-section text-ink-warning m-0">+$864<span className="text-label font-medium">/mo</span></p>
-                <p className="text-meta text-amber-700 mt-0.5">if sustained</p>
-              </>
-            ) : (
-              <>
-                <p className="text-section text-ink-warning m-0">{mom.value}</p>
-                <p className="text-meta text-amber-700 mt-0.5">vs last month</p>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── 4 KPI CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        {kpiCards.map(({ key, label, value, sub, subColor, TrendIcon, trendColor, href, borderTop, valueColor, previous }: (typeof kpiCards)[number] & { previous?: string | null }) => (
+      {/* ── KPI ROW: shown once (spec item 6) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+        {kpiTiles.map(({ key, label, value, lines, valueClass, href, accent, TrendIcon, previous, basis, names, wide, valueSize, shortLabel }) => (
           // Each tile fills its grid row, so a wrapped label never leaves the row's tiles at different heights.
-          <Link key={key} href={href} className="no-underline block h-full">
-            <div
-              className={`h-full bg-white rounded-xl p-4 sm:p-6 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${borderTop}`}
-              onMouseEnter={() => setHoveredCard(key)}
-              onMouseLeave={() => setHoveredCard(null)}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-label font-semibold text-ink-muted uppercase tracking-widest">{label}</span>
-                {!notConnected && <span className="text-ink-muted text-ui">›</span>}
+          <Link key={key} href={href} className={`no-underline block h-full ${wide ? 'col-span-2 lg:col-span-1' : ''}`}>
+            <div className={`h-full bg-white rounded-xl p-4 sm:p-5 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${accent}`} data-testid={`kpi-${key}`}>
+              <div className="flex items-center justify-between mb-3 gap-2">
+                {/* Words never break mid-word (founder D7): a label whose longest word can't fit uses its short form there.
+                    Only `display` changes per breakpoint (fix round 1: toggling sr-only per breakpoint left the label 1px
+                    wide at 640–1023px and from 1280px); screen readers always get the full label once, from the sr-only copy. */}
+                <span className="text-label font-semibold text-ink-muted uppercase tracking-widest min-w-0 break-normal" data-testid={`kpi-${key}-label`}>
+                  {shortLabel ? (<>
+                    <span className="sm:hidden lg:inline xl:hidden" aria-hidden="true">{shortLabel}</span>
+                    <span className="hidden sm:inline lg:hidden xl:inline" aria-hidden="true">{label}</span>
+                    <span className="sr-only">{label}</span>
+                  </>) : label}
+                </span>
+                {!notConnected && <span className="text-ink-muted text-ui shrink-0" aria-hidden="true">›</span>}
               </div>
               {/* No AWS account: label and "—" only, nothing under it (PR2). */}
               {notConnected ? <UnmeasuredValue className="text-section sm:text-kpi" /> : (<>
-              <div className={`text-section sm:text-kpi tabular-nums leading-none mb-2 ${valueColor}`}>{value}</div>
-              <div className={`flex items-center gap-1.5 text-meta ${subColor}`}>
-                <TrendIcon size={12} className={trendColor} />
-                <span className="leading-relaxed">{sub}</span>
-              </div>
+              <div className={`${valueSize ?? 'text-section sm:text-kpi leading-none'} tabular-nums mb-2 break-words ${valueClass}`} data-testid={`kpi-${key}-value`}>{value}</div>
+              {lines.map((line) => (
+                <div key={line} className={`flex items-start gap-1.5 text-meta ${neutral}`}>
+                  {TrendIcon && <TrendIcon size={12} className={`${neutral} mt-1 shrink-0`} aria-hidden="true" />}
+                  <span className="leading-relaxed">{line}</span>
+                </div>
+              ))}
+              {names && <p className="text-meta text-slate-700 font-medium mt-1.5 m-0 leading-relaxed" data-testid="kpi-checks-services">{names}</p>}
+              {basis && <p className="text-meta text-ink-muted mt-1.5 m-0 leading-relaxed" data-testid="mom-basis">{basis}</p>}
               {previous && <p className="text-meta text-ink-muted mt-2 m-0" data-testid="previous-month-line">{previous}</p>}
               </>)}
             </div>
@@ -569,9 +492,104 @@ export default function CostsPage() {
 
       {notConnected && <NotConnectedCard className="mb-5" />}
 
-      {/* ── NL SEARCH ── */}
+      {/* ── SPEND TREND: its own row (spec item 8) ── */}
+      <section aria-labelledby="spend-trend-heading" className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-100 mb-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <div className="min-w-0">
+            <h2 id="spend-trend-heading" className="text-ui font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
+            <p className="text-meta text-ink-muted leading-relaxed m-0">
+              {isDemoActive ? 'Demo data · daily spend' : `Historical AWS spend by day, from Cost Explorer · ${TREND_TOTALS_NOTE}`}
+            </p>
+          </div>
+          {!notConnected && <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto self-start sm:self-auto">
+            {TREND_RANGES.map(({ label }) => (
+              <button
+                key={label}
+                onClick={() => setSelectedRange(label)}
+                aria-pressed={selectedRange === label}
+                className={`px-3 py-1.5 min-h-11 sm:min-h-0 rounded-md text-label font-semibold border-none cursor-pointer transition-all whitespace-nowrap ${
+                  selectedRange === label ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted hover:text-slate-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>}
+        </div>
+
+        {/* The days drawn: the same days the cost drivers below add up (safeguard 1). */}
+        {hasTrendData && windowDates && (
+          <p className="text-meta text-ink-muted m-0 mb-4" data-testid="trend-window">{windowPoints.length} days · {windowDates}</p>
+        )}
+
+        {costTrendLoading && !isDemoActive ? (
+          <div className={`${notConnected ? 'py-6' : 'h-60'} flex items-center justify-center`}>
+            <Loader2 size={20} className="text-slate-400 animate-spin" />
+          </div>
+        ) : !hasTrendData ? (
+          // No AWS account: about the height of the cost drivers' message (PR2).
+          <div className={`${notConnected ? 'py-6' : 'h-60'} flex items-center justify-center text-center px-4`}>
+            <p className="text-meta text-ink-muted m-0">
+              {costTrendError
+                ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
+                : 'No AWS Cost Explorer spend data is available for this range.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden">
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={chartData} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="actualGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={TREND_FILL} stopOpacity={0.9} />
+                    <stop offset="100%" stopColor={TREND_FILL} stopOpacity={0.15} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} stroke="#F1F5F9" />
+                <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
+                <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
+                <Tooltip filterNull={false} content={<SpendTrendTooltip rows={chartData} />} />
+                <Area type="monotone" dataKey="actual" stroke={TREND_LINE} strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: TREND_LINE, strokeWidth: 0 }} />
+                {/* The day Cost Explorer is still updating: the same line, lighter and dashed, joined to the last final point (ruling Q7b). */}
+                {trendHasUpdating && (
+                  <Area type="monotone" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
+                    dot={(props: any) => props?.payload?.reportState === 'updating'
+                      ? <circle key={props.key ?? `u-${props.index}`} cx={props.cx} cy={props.cy} r={3} fill={UPDATING_STROKE} stroke="none" data-testid="spend-trend-updating-dot" />
+                      : <g key={props.key ?? `u-${props.index}`} />}
+                    activeDot={{ r: 4, fill: UPDATING_STROKE, strokeWidth: 0 }} />
+                )}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Legend */}
+        {!notConnected && <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-slate-100">
+          <div className="flex items-center gap-2">
+            <svg width="24" height="2" className="shrink-0" aria-hidden="true">
+              <line x1="0" y1="1" x2="24" y2="1" stroke={TREND_LINE} strokeWidth="2" />
+            </svg>
+            <span className="text-label text-ink-muted font-medium">Actual spend</span>
+          </div>
+          {/* The lighter, dashed line of the day AWS Cost Explorer is still updating. */}
+          {trendHasUpdating && hasTrendData && (
+            <div className="flex items-center gap-2" data-testid="trend-updating-legend">
+              <svg width="24" height="2" className="shrink-0" aria-hidden="true">
+                <line x1="0" y1="1" x2="24" y2="1" stroke={UPDATING_STROKE} strokeWidth="2" strokeDasharray="4 3" />
+              </svg>
+              <span className="text-label text-ink-muted font-medium">{STILL_UPDATING_LEGEND}</span>
+            </div>
+          )}
+          {trendNotReportedNote && hasTrendData && (
+            <span className="text-meta text-ink-muted" data-testid="trend-not-reported">{trendNotReportedNote}</span>
+          )}
+          <span className="text-meta text-ink-muted ml-auto hidden sm:block">Values shown as daily spend</span>
+        </div>}
+      </section>
+
+      {/* ── ASK AI: directly after Spend Trend, its own feature (spec item 9) ── */}
       {notConnected ? null : !isPro ? (
-        <div className="mb-6 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-7 text-center">
+        <div className="mb-5 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-7 text-center">
           <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-3">
             <Lock size={18} className="text-violet-600" />
           </div>
@@ -594,7 +612,7 @@ export default function CostsPage() {
               </a>
             </div>
           )}
-          <form method="post" onSubmit={handleNlQuery} className="mb-6">
+          <form method="post" onSubmit={handleNlQuery} className="mb-5">
             <div className="relative">
               <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
@@ -625,14 +643,6 @@ export default function CostsPage() {
                 </button>
               ))}
             </div>
-            {isDemoActive && !nlResult && (
-              <div className="mt-2.5 flex items-center justify-between bg-slate-50 border-l-2 border-violet-500 rounded-r-lg px-4 py-3 gap-4">
-                <p className="text-meta text-ink-muted leading-relaxed m-0">
-                  <strong className="text-slate-900">AI insight:</strong> Your EC2 instances are 38% underutilized. 3 instances running at &lt;5% CPU for 21+ days.
-                </p>
-                <span className="text-label font-semibold text-ink-success shrink-0">$362/mo savings</span>
-              </div>
-            )}
             {nlResult && (
               <div className="mt-3 bg-white border border-violet-200 rounded-xl overflow-hidden">
                 <div className="bg-violet-50 px-5 py-3 flex items-center justify-between">
@@ -682,321 +692,44 @@ export default function CostsPage() {
         </>
       )}
 
-      {/* ── SPEND TREND CHART ── */}
-      <div className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-100 mb-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-          <div>
-            <h2 className="text-ui font-semibold text-slate-900 mb-1 tracking-tight">Spend Trend</h2>
-            <p className="text-meta text-ink-muted leading-relaxed m-0">
-              {isDemoActive ? 'Historical spend and AI forecast · Dashed line indicates prediction' : `Historical AWS spend by ${trendUnit}, from Cost Explorer · ${TREND_TOTALS_NOTE}`}
-            </p>
-          </div>
-          {!notConnected && <div className="flex bg-slate-50 rounded-lg p-1 gap-0.5 overflow-x-auto">
-            {DATE_RANGES.map(({ label }) => (
-              <button
-                key={label}
-                onClick={() => setSelectedRange(label)}
-                className={`px-3 py-1.5 rounded-md text-label font-semibold border-none cursor-pointer transition-all whitespace-nowrap ${
-                  selectedRange === label ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-ink-muted hover:text-slate-700'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>}
-        </div>
+      {/* ── COST DRIVERS: by AWS service, the chart's days (spec item 10) ── */}
+      <CostDriversCard
+        drivers={hasTrendData ? drivers : null}
+        showBasis={!notConnected && !isDemoActive}
+        message={
+          !isDemoActive && costTrendLoading ? 'Loading…'
+            : costTrendError ? 'Cost by service could not be retrieved from AWS Cost Explorer.'
+            : !hasTrendData ? 'No AWS Cost Explorer spend data is available for this range.'
+            : 'Cost by AWS service is not available for this range.'
+        }
+      />
 
-        {/* No AWS account: only the empty-chart message below (no KPI row, top drivers, range tabs or legend; PR2). */}
-        {!notConnected && (<>
-        {/* Chart summary */}
-        <div className="flex flex-wrap gap-4 sm:gap-8 mb-5 pb-5 border-b border-slate-100">
-          {[
-            { label: spend.label,              value: spend.value, color: 'text-slate-900' },
-            {
-              label: 'Month-over-Month', value: mom.value, color: growthRate === null ? 'text-ink-muted' : growthRate > 5 ? 'text-ink-danger' : 'text-ink-success',
-              // Fixed basis, stated because this strip sits under the range tabs it does not follow.
-              // Built from the same daily trend as the chart: after credits and refunds, each category floored at $0 (TREND_TOTALS_NOTE).
-              note: isDemoActive ? undefined : `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}${mom.includesToday ? ` · ${TODAY_STILL_BILLING}` : ''}`,
-            },
-            { label: 'Active Recommendations', value: recsUnavailable ? '—' : `${activeRecsCount}`, color: 'text-ink-muted' },
-            { label: 'Estimated Savings Opportunity', value: savingsValue, color: 'text-ink-success' },
-          ].map(({ label, value, color, note }: { label: string; value: string; color: string; note?: string }) => (
-            <div key={label}>
-              <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-1">{label}</p>
-              <p className={`text-section tracking-tight tabular-nums m-0 ${color}`}>{value}</p>
-              {note && <p className="text-meta text-ink-muted mt-0.5 m-0" data-testid="mom-basis">{note}</p>}
-            </div>
-          ))}
-        </div>
-
-        {/* Top drivers */}
-        <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
-          <p className="text-label font-semibold text-ink-muted uppercase tracking-widest m-0 self-center">Top drivers</p>
-          {isDemoActive || hasTrendData ? [
-            { name: 'Compute',  amount: isDemoActive ? 5200 : categoryTotals!.compute,  color: '#3B82F6' },
-            { name: 'Database', amount: isDemoActive ? 2400 : categoryTotals!.database, color: '#8B5CF6' },
-            { name: 'Storage',  amount: isDemoActive ? 3800 : categoryTotals!.storage,  color: '#06B6D4' },
-          ].map(({ name, amount, color }) => (
-            <div key={name} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-              <span className="text-meta text-ink-muted">{name}</span>
-              <span className="text-label font-semibold text-slate-900 tabular-nums">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
-            </div>
-          )) : (
-            <span className="text-meta text-ink-muted self-center">{costTrendLoading ? 'Loading…' : 'Not available'}</span>
-          )}
-        </div>
-        </>)}
-
-        {/* Chart */}
-        {isDemoActive ? (
-          <div className="overflow-hidden">
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={DEMO_SPEND_DATA.slice(-Math.min(selectedDays, DEMO_SPEND_DATA.length))} margin={{ top: 28, right: 8, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="demoActualGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0F172A" stopOpacity={0.12} />
-                    <stop offset="100%" stopColor="#0F172A" stopOpacity={0.01} />
-                  </linearGradient>
-                  <linearGradient id="demoForecastGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7C3AED" stopOpacity={0.10} />
-                    <stop offset="100%" stopColor="#7C3AED" stopOpacity={0.01} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="#F1F5F9" />
-                <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[150, (d: number) => Math.ceil(d * 1.05)]} />
-                <Tooltip contentStyle={CHART_TOOLTIP.contentStyle} labelStyle={CHART_TOOLTIP.labelStyle} formatter={(v: any, name: any) => [`$${typeof v === 'number' ? v.toLocaleString() : v}/mo`, name === 'actual' ? 'Actual Spend' : 'AI Forecast']} />
-                <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#demoActualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
-                <Area type="monotone" dataKey="forecast" stroke="#7C3AED" strokeWidth={2} fill="url(#demoForecastGradient)" dot={false} connectNulls={false} strokeDasharray="6 3" activeDot={{ r: 4, fill: '#7C3AED', strokeWidth: 0 }} />
-                <ReferenceLine x="Apr 8"  stroke="#3B6D11" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'Apr 8 · Optimized', position: 'insideTopLeft' as const, fontSize: 9, fill: '#3B6D11' } as any} />
-                <ReferenceLine x="Apr 14" stroke="#EF9F27" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'Apr 14 · EC2 idle',  position: 'insideTopLeft' as const, fontSize: 9, fill: '#854F0B' } as any} />
-                <ReferenceLine x="Apr 18" stroke="#E24B4A" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'Apr 18 · Spike',      position: 'insideTopLeft' as const, fontSize: 9, fill: '#A32D2D' } as any} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        ) : costTrendLoading ? (
-          <div className={`${notConnected ? 'py-6' : 'h-60'} flex items-center justify-center`}>
-            <Loader2 size={20} className="text-slate-400 animate-spin" />
-          </div>
-        ) : !hasTrendData ? (
-          // No AWS account: about the height of Cost by Service's message (PR2).
-          <div className={`${notConnected ? 'py-6' : 'h-60'} flex items-center justify-center text-center px-4`}>
-            <p className="text-meta text-ink-muted m-0">
-              {costTrendError
-                ? 'The spend trend could not be retrieved from AWS Cost Explorer.'
-                : 'No AWS Cost Explorer spend data is available for this range.'}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-hidden">
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={chartData} margin={{ top: 28, right: 8, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="actualGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0F172A" stopOpacity={0.12} />
-                    <stop offset="100%" stopColor="#0F172A" stopOpacity={0.01} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="#F1F5F9" />
-                <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
-                <Tooltip filterNull={false} content={<SpendTrendTooltip unit={trendUnit} rows={chartData as CostsTrendRow[]} />} />
-                <Area type="monotone" dataKey="actual" stroke="#0F172A" strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: '#0F172A', strokeWidth: 0 }} />
-                {/* Periods Cost Explorer is still updating: the same line, lighter and dashed, joined to the last final point. */}
-                {trendHasUpdating && (
-                  <Area type="monotone" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
-                    dot={(props: any) => props?.payload?.reportState === 'updating'
-                      ? <circle key={props.key ?? `u-${props.index}`} cx={props.cx} cy={props.cy} r={3} fill={UPDATING_STROKE} stroke="none" data-testid="spend-trend-updating-dot" />
-                      : <g key={props.key ?? `u-${props.index}`} />}
-                    activeDot={{ r: 4, fill: UPDATING_STROKE, strokeWidth: 0 }} />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* Legend */}
-        {!notConnected && <div className="flex flex-wrap gap-4 sm:gap-6 mt-4 pt-4 border-t border-slate-100">
-          {(isDemoActive
-            ? [
-                { color: '#0F172A', dash: false, label: 'Actual spend' },
-                { color: '#7C3AED', dash: true,  label: 'AI forecast'  },
-              ]
-            : [
-                { color: '#0F172A', dash: false, label: 'Actual spend' },
-              ]
-          ).map(({ color, dash, label }) => (
-            <div key={label} className="flex items-center gap-2">
-              <svg width="24" height="2" className="shrink-0">
-                <line x1="0" y1="1" x2="24" y2="1" stroke={color} strokeWidth="2" strokeDasharray={dash ? '5 3' : '0'} />
-              </svg>
-              <span className="text-label text-ink-muted font-medium">{label}</span>
-            </div>
-          ))}
-          {/* The lighter, dashed line of the periods AWS Cost Explorer is still updating. */}
-          {trendHasUpdating && hasTrendData && (
-            <div className="flex items-center gap-2" data-testid="trend-updating-legend">
-              <svg width="24" height="2" className="shrink-0">
-                <line x1="0" y1="1" x2="24" y2="1" stroke={UPDATING_STROKE} strokeWidth="2" strokeDasharray="4 3" />
-              </svg>
-              <span className="text-label text-ink-muted font-medium">{STILL_UPDATING_LEGEND}</span>
-            </div>
-          )}
-          {trendNotReportedNote && hasTrendData && (
-            <span className="text-meta text-ink-muted" data-testid="trend-not-reported">{trendNotReportedNote}</span>
-          )}
-          <span className="text-meta text-ink-muted ml-auto hidden sm:block">
-            {isDemoActive ? 'Values shown as monthly equivalent' : trendUnit === 'month' ? 'Values shown as monthly spend' : 'Values shown as daily spend'}
-          </span>
-        </div>}
-      </div>
-
-      {/* ── COST BY SERVICE + TOP SAVINGS ── */}
-      {/* No AWS account: Cost by Service alone, full width (Top Savings hidden; PR2). */}
-      <div className={`grid grid-cols-1 gap-5 mb-5 ${notConnected ? '' : 'lg:grid-cols-2'}`}>
-
-        {/* Cost by Service */}
-        <div className="bg-white rounded-2xl p-5 sm:p-8 border border-slate-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-ui font-semibold text-slate-900 m-0 tracking-tight">Cost by Service</h2>
-              {!isDemoActive && !notConnected && <p className="text-meta text-ink-muted m-0 mt-0.5" data-testid="cost-by-service-basis">AWS Cost Explorer · selected range ({selectedRange}) · {TREND_TOTALS_NOTE}</p>}
-            </div>
-            {!notConnected && <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
-              Full breakdown <ChevronRight size={12} />
-            </a>}
-          </div>
-          <div className="flex flex-col gap-4">
-            {!isDemoActive && !hasTrendData ? (
-              <p className="text-meta text-ink-muted m-0 py-6 text-center">
-                {costTrendLoading ? 'Loading…'
-                  : costTrendError ? 'Cost by service could not be retrieved from AWS Cost Explorer.'
-                  : 'No AWS Cost Explorer spend data is available for this range.'}
-              </p>
-            ) : (() => {
-              const totalServiceSpend = serviceBreakdown.reduce((sum, s) => sum + s.amount, 0)
-              const hasSpend = totalServiceSpend > 0
-              return serviceBreakdown.map(({ name, amount, pct, trend, up }) => {
-                const pctOfTotal = hasSpend ? Math.round((amount / totalServiceSpend) * 100) : 0
-                const isCompute = name.startsWith('Compute')
-                const isDatabase = name.startsWith('Database')
-                const savingsFlag = amount === 0 ? null : isDemoActive
-                  ? (isCompute ? '⚠ $362 savings available · Underloaded EC2' : isDatabase ? '⚠ $1,335 savings via reserved pricing' : null)
-                  : (isCompute && categorySavings!.compute.total > 0
-                      ? `⚠ ${formatSavingsCurrency(categorySavings!.compute.total)}/mo estimated savings available · ${categorySavings!.compute.issue}`
-                      : null)
-                return (
-                  <div key={name}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
-                        <span className="text-label text-slate-700 font-medium">{name}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {hasSpend && <span className="text-label text-ink-muted font-medium tabular-nums">{pctOfTotal}%</span>}
-                        {hasSpend && trend != null && <span className={`text-label font-medium ${up ? 'text-ink-warning' : 'text-ink-success'}`}>{trend}</span>}
-                        <span className="text-ui font-semibold text-slate-900 min-w-[60px] text-right tabular-nums">{isDemoActive ? `$${amount.toLocaleString()}` : formatUsd(amount)}</span>
-                      </div>
-                    </div>
-                    <div className="h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${hasSpend ? pct : 0}%`, background: SERVICE_COLORS[name] ?? '#94A3B8' }} />
-                    </div>
-                    {savingsFlag && <p className="text-label text-ink-warning mt-1 font-medium">{savingsFlag}</p>}
-                  </div>
-                )
-              })
-            })()}
-          </div>
-        </div>
-
-        {/* Top Savings */}
-        {!notConnected && <div className="bg-white rounded-2xl p-5 sm:p-8 border border-green-200 border-t-[3px] border-t-green-500">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-ui font-semibold text-ink-success m-0 tracking-tight">Top Savings</h2>
-            <a href="/cost-optimization" className="text-label font-semibold text-violet-600 no-underline flex items-center gap-1">
-              View all <ChevronRight size={12} />
-            </a>
-          </div>
-
-          {isDemoActive && (
-            <div className="flex items-center justify-between mb-3.5">
-              <div>
-                <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-1.5">Optimization Confidence</p>
-                <div className="flex items-center gap-2">
-                  <div className="h-1 bg-slate-100 rounded-full w-24">
-                    <div className="h-full bg-green-500 rounded-full" style={{ width: '94%' }} />
-                  </div>
-                  <span className="text-ui font-semibold text-ink-success">94%</span>
-                </div>
-              </div>
-              <span className="text-label text-ink-success font-semibold bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Safe to apply</span>
-            </div>
-          )}
-
-          <div className="bg-green-50 rounded-xl p-4 mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-label font-semibold text-ink-success uppercase tracking-widest mb-1">Estimated Savings Opportunity</p>
-              <p className="text-section text-ink-success tabular-nums m-0">{recsUnavailable ? '—' : <>{formatSavingsCurrency(displaySavings)}<span className="text-ui font-medium">/mo</span></>}</p>
-              {recsUnavailable
-                ? <p className="text-meta text-ink-muted mt-1 m-0">{recsUnavailableSub}</p>
-                : <p className="text-meta text-green-700 mt-1 m-0">{describeAnnualizedSavings(displaySavings)}</p>}
-            </div>
-            <div className="text-center sm:text-right">
-              <a href="/cost-optimization" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-label font-semibold no-underline inline-block transition-colors whitespace-nowrap">
-                Review savings
-              </a>
-              {isDemoActive && <p className="text-label text-ink-success mt-1 font-medium">No downtime risk · Fully reversible</p>}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {!isDemoActive && activeRecsError ? (
-              <div className="p-6 text-center">
-                <p className="text-meta text-ink-muted m-0">Recommendations could not be retrieved.</p>
-              </div>
-            ) : topSavingsRows.length > 0 ? topSavingsRows.map((rec) => (
-              <div key={rec.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <p className="text-label font-medium text-slate-900 m-0 leading-relaxed">{rec.title}</p>
-                  <span className="text-label font-semibold text-ink-success shrink-0">{rec.savingsLabel}</span>
-                </div>
-                <span className={`text-label font-semibold px-2 py-0.5 rounded-full border ${severityStyles[rec.severity]}`}>
-                  {rec.severity}
-                </span>
-              </div>
-            )) : (
-              <div className="p-6 text-center">
-                <p className="text-meta text-ink-muted m-0">No optimization recommendations yet. Run cost analysis to identify savings opportunities.</p>
-              </div>
-            )}
-          </div>
-        </div>}
-      </div>
-
-      {/* ── DEVCONTROL VALUE DELIVERED ── */}
-      {isDemoActive && (
-        <div className="bg-slate-50 rounded-2xl p-5 sm:p-8 border border-slate-100 mb-4">
-          <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-5">DevControl value delivered</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {[
-              { label: 'Saved this year',       value: '$23,400' },
-              { label: 'Optimizations applied', value: '27' },
-              { label: 'Efficiency score',      value: '100%',   note: '↑ from 72%' },
-              { label: 'Anomalies caught',      value: '14' },
-              { label: 'Monthly ROI',           value: '47×' },
-              { label: 'Policies running',      value: '3' },
-            ].map(({ label, value, note }) => (
-              <div key={label} className="bg-white rounded-xl p-4 border border-slate-100">
-                <p className="text-label font-semibold text-ink-muted uppercase tracking-widest mb-1.5">{label}</p>
-                <p className="text-section text-slate-900 m-0 tracking-tight leading-none tabular-nums">{value}</p>
-                {note && <p className="text-label text-ink-success mt-1 font-medium">{note}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* ── OPPORTUNITIES (spec item 11) ── */}
+      {!notConnected && (
+        <OpportunitiesCard
+          rows={!isDemoActive && activeRecsError ? [] : opportunityRows}
+          total={stats ? stats.activeRecommendations : null}
+          isError={!isDemoActive && activeRecsError}
+          // N-1: no empty-state text while the list or the tile's inputs are still loading.
+          isLoading={!isDemoActive && (activeRecsLoading || (recsUnavailable && recsUnavailableSub === 'Loading…'))}
+          // N-1: after an analysis that left nothing open, the card agrees with the savings tile ("None found").
+          emptyText={savingsTile?.kind === 'none_found' ? `${savingsTile.value}. ${savingsTile.lines[0]}.` : undefined}
+        />
       )}
+
+      {/* ── WHAT THIS PAGE COVERS (spec item 12) ── */}
+      {!notConnected && <PageCoverageCard rows={pageCoverage} />}
       </>)}
     </div>
   )
+}
+
+/** The demo's coverage input: a run with every active check complete, finished at `at` (demo only, ruling D4). */
+function demoRun(ruleIds: string[], at: string): CostAnalysisRun {
+  return {
+    id: 'demo-run', status: 'completed', run_state: 'completed', source: 'discovery', recommendations_found: null, total_potential_savings: null,
+    started_at: at, completed_at: at, created_at: at, error_message: null,
+    unknown_resource_count: 0,
+    checks: ruleIds.map((rule_id) => ({ rule_id, issue: rule_id, outcome: 'complete' as const, detected: 0, unknown: 0 })),
+  }
 }

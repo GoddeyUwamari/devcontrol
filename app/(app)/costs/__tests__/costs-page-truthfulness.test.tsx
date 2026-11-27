@@ -4,8 +4,8 @@
  *   - an unavailable or failed month-over-month comparison never reads as
  *     "0%" / "flat"; a real 0% still does;
  *   - month-to-date spend keeps its provenance (actual $0, estimate, missing);
- *   - the annual savings figure is labeled an annualized estimate, and no
- *     "% of current spend" ratio is shown;
+ *   - no annualized savings line and no "% of current spend" ratio (Cost
+ *     Intelligence redesign PR A removed the yearly line);
  *   - a failed or empty Cost Explorer trend is not drawn as $0 spend;
  *   - the Ask AI chips are PR #137-supported questions.
  * All figures are test fixtures, not production data.
@@ -35,8 +35,9 @@ const mockGetStats = vi.fn()
 const mockGetAll = vi.fn()
 const mockGetAnalysisRuns = vi.fn()
 vi.mock('@/lib/services/cost-recommendations.service', () => ({
-  costRecommendationsService: { getStats: () => mockGetStats(), getAll: () => mockGetAll(), getAnalysisRuns: () => mockGetAnalysisRuns() },
+  costRecommendationsService: { getStats: () => mockGetStats(), getAll: () => mockGetAll(), getAnalysisRuns: () => mockGetAnalysisRuns(), getOptimizationRules: async () => ({ rules: [], summary: { totalRules: 0, implementedCount: 0, plannedCount: 0, services: [] } }) },
 }))
+vi.mock('@/lib/services/aws-services.service', () => ({ default: { getCoverage: async () => ({ account: { connected: true, status: 'active', home_region: 'xx-test-1' } }) } }))
 
 const mockGetDiscoveryJobs = vi.fn()
 vi.mock('@/lib/services/aws-resources.service', () => ({
@@ -107,7 +108,7 @@ beforeEach(() => {
   mockGetAnalysisRuns.mockResolvedValue([analysisRun('completed')])
   mockGetDiscoveryJobs.mockResolvedValue([])
   vi.stubGlobal('fetch', trendResponse(true, [
-    { date: '2026-09-26', compute: 0.21, storage: 0.1, database: 0, network: 0, other: 0.05, total: 0.36 },
+    { date: '2026-09-26', compute: 0.21, storage: 0.1, database: 0, network: 0, other: 0.05, total: 0.36, byServiceDisplay: [{ service: 'EC2', amount: 0.21, color: '#111111' }, { service: 'S3', amount: 0.1, color: '#222222' }, { service: 'Other', amount: 0.05, color: '#333333' }] },
   ]))
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -217,12 +218,12 @@ describe('Costs page -- spend provenance', () => {
 describe('Costs page -- savings wording', () => {
   beforeEach(() => mockGetCostSummary.mockResolvedValue({ spend: spendActual(3.2), monthOverMonth: mom(0, 0) }))
 
-  it('the annual figure is an annualized estimate, and there is no "% of current spend"', async () => {
+  it('no annualized line (removed in PR A), and there is no "% of current spend"', async () => {
     renderPage()
 
-    expect((await screen.findAllByText('$12/yr annualized estimate (monthly estimate × 12)')).length).toBeGreaterThan(0)
+    expect(await within(await card('Estimated Savings Opportunity')).findByText('$0.96/mo')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/annualized|\/yr/)
     expect(document.body.textContent).not.toMatch(/% of current spend/)
-    expect(document.body.textContent).not.toMatch(/\$12 annually/)
   })
 
   it('a failed recommendations request is not a $0 opportunity', async () => {
@@ -288,7 +289,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     await expectNotMeasured('Could not be retrieved')
   })
 
-  it('after a completed analysis, zero is a measured result', async () => {
+  it('after a completed analysis, zero is a measured result: "None found", never "$0/mo" (ruling Q2)', async () => {
     mockGetAnalysisRuns.mockResolvedValue([analysisRun('completed')])
     renderPage()
 
@@ -296,7 +297,8 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     expect(await within(recsCard).findByText('No open recommendations')).toBeInTheDocument()
     expect(within(recsCard).getByText('0')).toBeInTheDocument()
     const savingsCard = await card('Estimated Savings Opportunity')
-    expect(savingsCard.textContent).toMatch(/\$0\/mo/)
+    expect(within(savingsCard).getByText('None found')).toBeInTheDocument()
+    expect(savingsCard.textContent).not.toMatch(/\$0/)
   })
 
   it('a completed scheduled (discovery) analysis counts: zero is a measured result', async () => {
@@ -307,7 +309,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     const recsCard = await card('Active Recommendations')
     expect(await within(recsCard).findByText('No open recommendations')).toBeInTheDocument()
     expect(within(recsCard).getByText('0')).toBeInTheDocument()
-    expect((await card('Estimated Savings Opportunity')).textContent).toMatch(/\$0\/mo/)
+    expect((await card('Estimated Savings Opportunity')).textContent).toContain('None found')
   })
 
   it('a scheduled job whose cost analysis did not finish is not a measured $0', async () => {
@@ -330,10 +332,12 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     await expectNotMeasured('Could not be retrieved')
   })
 
-  it('the page subtitle makes no real-time claim', async () => {
+  it('the page subtitle is the spec\'s (item 5): no real-time or "AI-powered" claim', async () => {
     renderPage()
     await card('Estimated Savings Opportunity')
-    expect(screen.getByText(/AWS spend visibility, forecasting/).textContent).not.toMatch(/real[- ]?time/i)
+    const subtitle = screen.getByText('AWS spend visibility, cost drivers, and evidence-backed optimization opportunities.')
+    expect(subtitle.textContent).not.toMatch(/real[- ]?time|AI-powered/i)
+    expect(document.body.textContent).not.toMatch(/AI-powered/)
   })
 
   it('top savings rows label each figure by its basis: estimate, "Up to" ceiling, or "No dollar estimate"', async () => {
@@ -353,8 +357,8 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     expect(await row('Unattached EBS Volume')).toHaveTextContent('$12/mo')
     expect(await row('Reserved Instance Opportunity')).toHaveTextContent('No dollar estimate')
     expect((await row('Reserved Instance Opportunity')).textContent).not.toMatch(/\$0/)
-    // Ranked by the counted estimate: the $12 estimate before the larger $41 ceiling, basis-less last.
-    const titles = ['Unattached EBS Volume', 'S3 Lifecycle Optimization', 'Reserved Instance Opportunity'].map((t) => screen.getByText(t))
+    // Ranked by the figure shown (fix round 1, N-7): the $41 upper bound before the $12 estimate, basis-less last.
+    const titles = ['S3 Lifecycle Optimization', 'Unattached EBS Volume', 'Reserved Instance Opportunity'].map((t) => screen.getByText(t))
     expect(titles[0].compareDocumentPosition(titles[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(titles[1].compareDocumentPosition(titles[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
@@ -413,11 +417,12 @@ describe('Costs page -- spend trend', () => {
     expect(screen.queryByText('Compute (EC2, Lambda, ECS)')).not.toBeInTheDocument()
   })
 
-  it('sub-dollar category spend keeps its cents', async () => {
+  it('sub-dollar service spend keeps its cents', async () => {
     renderPage()
 
-    expect(await screen.findByText('Compute (EC2, Lambda, ECS)')).toBeInTheDocument()
-    expect(screen.getAllByText('$0.21').length).toBeGreaterThan(0)
+    const list = await screen.findByTestId('cost-drivers-list')
+    expect(within(list).getByText('EC2')).toBeInTheDocument()
+    expect(within(list).getByText('$0.21')).toBeInTheDocument()
   })
 })
 
@@ -433,14 +438,15 @@ describe('Costs page -- Ask AI chips', () => {
 })
 
 describe('Costs page -- month-over-month basis', () => {
-  it('the Spend Trend strip states the fixed finished-days basis and the still-billing caveat for every chart range', async () => {
+  it('safeguard 2: the month-over-month tile states the fixed finished-days basis for every chart range', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(14.2, 1.42) })
     renderPage()
 
-    for (const range of ['7D', '30D', '3M', '6M', '1Y']) {
+    for (const range of ['7D', '30D', '3M']) {
       fireEvent.click(await screen.findByRole('button', { name: range }))
       const basis = await screen.findByTestId('mom-basis')
-      expect(basis.textContent).toBe("Finished days this month vs same days last month · not the selected range · After credits and refunds; amounts below $0 count as $0 · today's spend still being billed")
+      expect(basis.textContent).toBe('Finished days this month vs same days last month · not the selected range · After credits and refunds; amounts below $0 count as $0')
+      expect(within(await card('Month-over-Month Change')).getByTestId('mom-basis')).toBe(basis)
     }
     // The comparison is fetched once, not per range.
     expect(mockGetCostSummary).toHaveBeenCalledTimes(1)
@@ -468,7 +474,7 @@ describe('Costs page -- month-over-month basis', () => {
     expect(momCard.textContent).not.toMatch(/\d%/)
   })
 
-  it('the strip still states its basis when no comparison exists', async () => {
+  it('the tile still states its basis when no comparison exists', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: momMissing('unavailable') })
     renderPage()
 
@@ -477,33 +483,35 @@ describe('Costs page -- month-over-month basis', () => {
 })
 
 describe('Costs page -- trend cache is its own', () => {
-  it("a [] cached by /costs/efficiency under ['cost-trend', '6mo'] never reads as no data; the 6M view fetches and shows its failure", async () => {
+  it("a [] cached by another page under ['cost-trend', …] never reads as no data; the 3M view fetches and shows its failure", async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(0, 0) })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     client.setQueryData(['cost-trend', '6mo'], [])
+    client.setQueryData(['cost-trend', '90d'], [])
     const fetchMock = trendResponse(false)
     vi.stubGlobal('fetch', fetchMock)
     renderPage(client)
 
-    fireEvent.click(await screen.findByRole('button', { name: '6M' }))
+    fireEvent.click(await screen.findByRole('button', { name: '3M' }))
 
     expect(await screen.findByText('The spend trend could not be retrieved from AWS Cost Explorer.')).toBeInTheDocument()
     expect(screen.queryByText('No AWS Cost Explorer spend data is available for this range.')).not.toBeInTheDocument()
-    await waitFor(() => expect(fetchMock.mock.calls.some(call => String(call[0]).includes('/api/platform/costs/trend?range=6mo'))).toBe(true))
-    // The efficiency page's cache entry is left as it was.
+    await waitFor(() => expect(fetchMock.mock.calls.some(call => String(call[0]).includes('/api/platform/costs/trend?range=90d'))).toBe(true))
+    // The other pages' cache entries are left as they were.
     expect(client.getQueryData(['cost-trend', '6mo'])).toEqual([])
+    expect(client.getQueryData(['cost-trend', '90d'])).toEqual([])
   })
 })
 
-describe('Costs page -- spike banner', () => {
-  it('renders without an Investigate link to /anomalies', async () => {
+describe('Costs page -- spike banner and badge (removed, ruling Q13)', () => {
+  it('a +25% month shows its % in the tile, with no banner, badge or /anomalies link', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(25, 2.5) })
     renderPage()
 
-    expect(await screen.findByText('Spend Up Sharply vs Last Month')).toBeInTheDocument()
+    expect(await within(await card('Month-over-Month Change')).findByText('+25%')).toBeInTheDocument()
+    expect(screen.queryByText('Spend Up Sharply vs Last Month')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Spend up over 20%|No spend spike|more than 20% above/)).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/anomalies"]')).toBeNull()
-    expect(screen.queryByText(/Investigate/)).not.toBeInTheDocument()
-    expect(screen.getByText(/more than 20% above the same days last month \(AWS Cost Explorer\); today's spend still being billed/)).toBeInTheDocument()
   })
 })
 
@@ -520,11 +528,11 @@ describe('Costs page -- trend basis', () => {
     expect((await screen.findByTestId('mom-basis')).textContent).toContain('After credits and refunds; amounts below $0 count as $0')
   })
 
-  it('Cost by Service, summed from the trend categories, states the after-credits, floored basis', async () => {
+  it('Cost drivers, summed from the trend by AWS service, states the after-credits, floored basis', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(0, 0) })
     renderPage()
-    const basis = await screen.findByTestId('cost-by-service-basis')
-    expect(basis.textContent).toMatch(/^AWS Cost Explorer · selected range \(.+\) · After credits and refunds; amounts below \$0 count as \$0$/)
+    const basis = await screen.findByTestId('cost-drivers-basis')
+    expect(basis.textContent).toBe('AWS Cost Explorer · by AWS service · After credits and refunds; amounts below $0 count as $0')
   })
 
   it('the exported CSV opens with the same basis row before its header', async () => {
@@ -537,9 +545,7 @@ describe('Costs page -- trend basis', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     renderPage()
     // Wait for the trend rows so the export carries them.
-    const basis = await screen.findByTestId('cost-by-service-basis')
-    const panel = basis.closest('.rounded-2xl') as HTMLElement
-    await waitFor(() => expect(panel.textContent).toContain('Compute'))
+    await screen.findByTestId('cost-drivers-list')
     fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
     expect(click).toHaveBeenCalled()
     const lines = (await blob!.text()).split('\n')
