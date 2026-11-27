@@ -246,7 +246,7 @@ export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<st
 // potential_savings is DECIMAL(10,2): a positive figure under half a cent is
 // stored as 0.00. The detectors that can compute one (low-usage Lambda, S3
 // lifecycle) record the unrounded amount in metadata[SAVINGS_UNROUNDED_FIELD]
-// at detection time. Only that recorded amount reads
+// at detection time (subCentSavingsMetadata). Only that recorded amount reads
 // "less than $0.01" -- never a stored 0 without it. It is never added to a
 // total or a count: the stored column and every aggregate are unchanged.
 
@@ -255,6 +255,24 @@ export const SAVINGS_UNROUNDED_FIELD = 'savings_unrounded_usd';
 
 /** A row figure under one cent: one wording for an estimate and a ceiling (the saving is below the bound, so below a cent). */
 export const LESS_THAN_ONE_CENT = 'less than $0.01';
+
+/**
+ * True when DECIMAL(10,2) stores `amount` as 0.00 although it is above $0. pg
+ * sends a JS number as its shortest decimal string, and Postgres rounds half
+ * away from zero, so exactly the amounts in (0, 0.005) round to 0.00.
+ */
+export function storesAsZeroCents(amount: number): boolean {
+  return Number.isFinite(amount) && amount > 0 && amount < 0.005;
+}
+
+/**
+ * The metadata a detector adds next to a computed figure: the unrounded
+ * amount only when it is positive and would be stored as 0.00; otherwise
+ * nothing (never for 0, a gate-blocked figure, or anything at least half a cent).
+ */
+export function subCentSavingsMetadata(amount: number): { [SAVINGS_UNROUNDED_FIELD]?: number } {
+  return storesAsZeroCents(amount) ? { [SAVINGS_UNROUNDED_FIELD]: amount } : {};
+}
 
 export type SavingsFigure =
   | { kind: SavingsBasisKind; amount: number; subCent: boolean }
