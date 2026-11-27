@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest'
 import type { CostAnalysisRun, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service'
 import type { CostScanState } from '../../cost-optimization/costScanState'
 import {
-  activeChecks, costDrivers, coverageRows, describeSavingsTile, displayedAmount, formatDriverAmount, lastAnalysisParts, rankByDisplayedSavings, runFoundCount,
-  trendWindow, windowDatesLabel, type CostTrendPointView, type CoverageInput,
+  activeChecks, costDrivers, coverageRows, describeSavingsTile, displayedAmount, formatDriverAmount, lastAnalysisParts, opportunitiesFooter, opportunityFigure,
+  rankByDisplayedSavings, runFoundCount, topDrivers, trendSummary, trendWindow, windowDatesLabel, type CostTrendPointView, type CoverageInput,
 } from '../cost-intelligence'
 import { costsTrendChartData } from '../trend-chart-data'
 
@@ -281,5 +281,58 @@ describe('What this page covers (spec item 12): real signals, never the whole ac
     expect(row(coverageRows(input({ spend: { section: spendSection({ provenance: 'estimated' }), isLoading: false, isError: false } })), 'spend').status).toBe('partly_checked')
     expect(row(coverageRows(input({ spend: { section: undefined, isLoading: false, isError: true } })), 'spend').status).toBe('unavailable')
     expect(row(coverageRows(input({ spend: { section: undefined, isLoading: true, isError: false } })), 'spend').status).toBeNull()
+  })
+})
+
+// ─── Mock-match PR: the Spend Trend summary line, Top drivers, opportunity figures and footer ───
+describe('trendSummary: the window\'s reported days, unrounded', () => {
+  const pt = (date: string, total: number, reportState: 'final' | 'updating' | 'not_reported' = 'final'): CostTrendPointView =>
+    ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, lineItems: reportState === 'not_reported' ? 0 : 1, reportState })
+
+  it('adds the reported days (updating included, as so far) and averages over them; a not-reported day is neither', () => {
+    expect(trendSummary([pt('2026-11-24', 1), pt('2026-11-25', 0.5, 'updating'), pt('2026-11-26', 0, 'not_reported')])).toEqual({ total: 1.5, drawnDays: 2, dailyAverage: 0.75 })
+  })
+
+  it('no reported day: null, never "$0 total"', () => {
+    expect(trendSummary([])).toBeNull()
+    expect(trendSummary([pt('2026-11-26', 0, 'not_reported')])).toBeNull()
+  })
+
+  it('sums unrounded amounts: 30 days of $0.335 is $10.05, not 30 rounded days', () => {
+    const days = Array.from({ length: 30 }, (_, i) => pt(`2026-11-${String(i + 1).padStart(2, '0')}`, 0.335))
+    expect(formatDriverAmount(trendSummary(days)!.total)).toBe('$10.05')
+  })
+})
+
+describe('topDrivers: the cost drivers\' largest services, never the "Other" bucket', () => {
+  it('largest first, at most three, Other skipped even when it is the largest', () => {
+    const drivers = { slices: [{ service: 'EC2', amount: 5, fill: '#1' }, { service: 'S3', amount: 3, fill: '#2' }, { service: 'KMS', amount: 2, fill: '#3' }, { service: 'VPC', amount: 1, fill: '#4' }, { service: 'Other', amount: 9, fill: '#5' }], total: 20, days: 30, dates: 'x', includesUpdating: false }
+    expect(topDrivers(drivers).map((s) => s.service)).toEqual(['EC2', 'S3', 'KMS'])
+    expect(topDrivers(null)).toEqual([])
+  })
+})
+
+describe('opportunityFigure: green only for a firm figure of $1/mo or more as displayed', () => {
+  it.each([
+    [{ potentialSavings: 41, metadata: { savings_basis: 'ceiling: x' } }, false, 'Upper-bound estimate'],
+    [{ potentialSavings: 0.96, metadata: { savings_basis: 'estimated: x' } }, false, 'Monthly estimate'],
+    [{ potentialSavings: 0.996, metadata: { savings_basis: 'estimated: x' } }, true, 'Monthly estimate'],
+    [{ potentialSavings: 26.28, metadata: { savings_basis: 'estimated: x' } }, true, 'Monthly estimate'],
+    [{ potentialSavings: 0, metadata: {} }, false, null],
+  ])('%j -> strong %s, note %s', (rec, strong, note) => {
+    expect(opportunityFigure(rec)).toEqual({ strong, note })
+  })
+})
+
+describe('opportunitiesFooter: from the real counts', () => {
+  it.each([
+    [1, 1, 'This is the only open finding.'],
+    [3, 3, 'These are all 3 open findings.'],
+    [5, 6, '1 more open finding on Cost Optimization.'],
+    [5, 7, '2 more open findings on Cost Optimization.'],
+    [0, 4, null],
+    [2, null, null],
+  ])('%s shown of %s open: %s', (shown, total, line) => {
+    expect(opportunitiesFooter(shown, total)).toBe(line)
   })
 })

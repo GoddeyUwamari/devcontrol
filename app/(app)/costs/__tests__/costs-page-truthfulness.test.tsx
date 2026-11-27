@@ -352,7 +352,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     ])
     renderPage()
 
-    const row = async (title: string) => (await screen.findByText(title)).parentElement as HTMLElement
+    const row = async (title: string) => (await screen.findByText(title)).closest('[data-testid="opportunity-card"]') as HTMLElement
     expect(await row('S3 Lifecycle Optimization')).toHaveTextContent('Up to $41/mo')
     expect(await row('Unattached EBS Volume')).toHaveTextContent('$12/mo')
     expect(await row('Reserved Instance Opportunity')).toHaveTextContent('No dollar estimate')
@@ -370,7 +370,7 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
         metadata: { rule_version: 2, savings_basis: 'estimated: the us-east-1 on-demand list price for db.t3.medium PostgreSQL Single-AZ instance hours ($0.072/hour, 730 hours); storage, Provisioned IOPS, backups and snapshots are not included and are still billed while the instance is stopped; no reservation or discount applied; not billed cost', price_region: 'us-east-1', price_instance_class: 'db.t3.medium', price_engine_label: 'PostgreSQL', price_deployment: 'Single-AZ' } },
     ])
     renderPage()
-    const row = (await screen.findByText('Idle RDS Instance')).parentElement as HTMLElement
+    const row = (await screen.findByText('Idle RDS Instance')).closest('[data-testid="opportunity-card"]') as HTMLElement
     expect(row).toHaveTextContent('$53/mo')
     expect(document.body.textContent).not.toMatch(/Estimated from the|instance hours only|restarts a stopped database/)
   })
@@ -387,10 +387,10 @@ describe('Costs page -- zero recommendations before any cost analysis', () => {
     ])
     renderPage()
 
-    const row = async (title: string) => (await screen.findByText(title)).parentElement as HTMLElement
+    const row = async (title: string) => (await screen.findByText(title)).closest('[data-testid="opportunity-card"]') as HTMLElement
     expect(await row('Idle Instance (default)')).toHaveTextContent('$50/mo (price unknown)')
-    expect((await row('Idle Instance (listed)')).textContent).toMatch(/\$50\/mo$/)
-    expect((await row('Idle Instance (legacy)')).textContent).toMatch(/\$50\/mo$/)
+    expect(within(await row('Idle Instance (listed)')).getByTestId('opportunity-savings').textContent).toBe('$50/mo')
+    expect(within(await row('Idle Instance (legacy)')).getByTestId('opportunity-savings').textContent).toBe('$50/mo')
     expect(screen.getAllByText(/\(price unknown\)/)).toHaveLength(1)
   })
 

@@ -123,6 +123,45 @@ export function formatDriverAmount(amount: number): string {
 /** "30-day total" (the window's own day count). */
 export const windowTotalLabel = (days: number) => `${days}-day total`
 
+// ─── Spend Trend summary line (mock-match item 5) ────────────────────────────
+
+export interface TrendSummary {
+  /** Sum of the window's reported days (a not-reported day adds nothing; an updating day adds its amount so far). */
+  total: number
+  /** The days the chart draws an amount for (the reported days of the window). */
+  drawnDays: number
+  /** total / drawnDays. */
+  dailyAverage: number
+}
+
+/**
+ * The summary line inside the Spend Trend card (mock-match item 5), from
+ * exactly the window the chart draws (safeguard 1): pass the same
+ * `trendWindow` points. The days the chart draws are the reported ones, and
+ * their unrounded amounts are added, as the cost drivers add theirs, so the
+ * two 30-day totals never drift apart by per-day rounding (Stage A risk R2).
+ * null when no day is reported (never "$0 total").
+ */
+export function trendSummary(window: readonly CostTrendPointView[]): TrendSummary | null {
+  const drawn = window.filter((point) => !isNotReportedYet(point) && Number.isFinite(point.total))
+  if (drawn.length === 0) return null
+  const total = drawn.reduce((sum, point) => sum + point.total, 0)
+  return { total, drawnDays: drawn.length, dailyAverage: total / drawn.length }
+}
+
+/** How many services the summary line's "Top drivers" names. */
+export const TOP_DRIVER_COUNT = 3
+
+/**
+ * "Top drivers" on the summary line: the largest services of the cost drivers
+ * (the same window, safeguard 1), largest first. The API's "Other" bucket is
+ * not a service, so it is never a top driver. Empty when there is no breakdown.
+ */
+export function topDrivers(drivers: CostDrivers | null, count = TOP_DRIVER_COUNT): CostDriverSlice[] {
+  if (!drivers) return []
+  return drivers.slices.filter((slice) => slice.service !== OTHER_SERVICE).slice(0, count)
+}
+
 // ─── Savings tile (founder ruling Q2) ───────────────────────────────────────
 
 /** Founder ruling Q2: a figure under this many dollars a month is grey, never styled as a big saving. */
@@ -206,6 +245,32 @@ export function rankByDisplayedSavings<T extends { potentialSavings: number; met
         || a.index - b.index
     })
     .map(({ rec }) => rec)
+}
+
+/**
+ * How an opportunity card styles its figure (mock-match item 4, ruling Q2):
+ * green only for a firm estimate of at least SMALL_SAVINGS_USD as displayed
+ * (N-3); an upper bound, a small figure or no figure stays grey. `note` names
+ * the figure's basis under the title; null for no dollar figure.
+ */
+export function opportunityFigure(rec: { potentialSavings: number; metadata?: Record<string, unknown> | null }): { strong: boolean; note: string | null } {
+  const kind = savingsBasisKind(rec)
+  if (kind === 'ceiling') return { strong: false, note: 'Upper-bound estimate' }
+  if (kind === 'estimate') return { strong: displayedAmount(formatSavingsCurrency(rec.potentialSavings)) >= SMALL_SAVINGS_USD, note: 'Monthly estimate' }
+  return { strong: false, note: null }
+}
+
+/**
+ * The line under the Opportunities list (mock-match item 4), from real counts:
+ * `shown` cards of `total` open findings (/stats). null when the open count
+ * isn't known or nothing is listed.
+ */
+export function opportunitiesFooter(shown: number, total: number | null): string | null {
+  if (total === null || shown === 0) return null
+  if (total === 1 && shown === 1) return 'This is the only open finding.'
+  if (total <= shown) return `These are all ${shown} open findings.`
+  const more = total - shown
+  return `${more} more open finding${plural(more, '', 's')} on Cost Optimization.`
 }
 
 // ─── Checks tile (spec item 6: from the active catalog) ─────────────────────

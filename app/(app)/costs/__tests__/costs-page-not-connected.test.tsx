@@ -112,7 +112,7 @@ describe('PR2: Costs with no AWS account connected', () => {
     const card = await screen.findByTestId('not-connected-card')
     expect(card.textContent).toBe('No AWS account connectedConnect AWS account')
     expect(screen.queryByText('On the Optimization Engine plan')).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Opportunities' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Optimization opportunities' })).toBeNull()
     expect(screen.queryByTestId('page-coverage')).toBeNull()
     expect(screen.queryByRole('button', { name: /^(7D|30D|3M|90D|6M|1Y)$/ })).toBeNull()
     expect(screen.queryByText('Actual spend')).toBeNull()
@@ -134,6 +134,10 @@ describe('PR2: Costs with no AWS account connected', () => {
     renderPage()
     await screen.findByTestId('not-connected-card')
     expect(screen.queryByRole('button', { name: /Ask AI/ })).toBeNull()
+    // Mock-match item 6: the Ask card (its title, input and Ask button) is not rendered either (ruling D2).
+    expect(screen.queryByTestId('ask-ai')).toBeNull()
+    expect(screen.queryByText(/^Ask about /)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Ask$/ })).toBeNull()
   })
 
   it('connection loading: grey blocks only under the title and subtitle', async () => {
@@ -158,7 +162,7 @@ describe('PR2: Costs connected', () => {
     expect(screen.getByText(/Export CSV/)).toBeInTheDocument()
     expect(screen.getByText(/Optimize Now/)).toBeInTheDocument()
     expect(screen.getByText('On the Optimization Engine plan')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Opportunities' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Optimization opportunities' })).toBeInTheDocument()
     expect(await screen.findByTestId('page-coverage')).toBeInTheDocument()
     expect(kpiCard('Month-to-Date Spend')).toHaveTextContent('›')
     expect(screen.getAllByText('Latest cost analysis did not complete').length).toBeGreaterThan(0)
