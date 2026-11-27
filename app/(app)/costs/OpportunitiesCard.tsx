@@ -28,8 +28,11 @@ export const OPPORTUNITY_LIMIT = 5
 export const OPPORTUNITIES_TITLE = 'Optimization opportunities'
 export const OPPORTUNITIES_ERROR = 'Recommendations could not be retrieved.'
 export const OPPORTUNITIES_EMPTY = 'No optimization recommendations yet. Run cost analysis to identify savings opportunities.'
-/** Where each card's Review goes: the destination the page already links findings to (View all, the findings tiles). */
-export const OPPORTUNITY_REVIEW_HREF = '/cost-optimization'
+/**
+ * Where each card's Review goes: Cost Optimization's Opportunities section (its existing OPPORTUNITIES_ANCHOR,
+ * cost-optimization/page.tsx). That page has no per-finding anchor, so the section is the closest existing target.
+ */
+export const OPPORTUNITY_REVIEW_HREF = '/cost-optimization#opportunities'
 
 /**
  * Opportunities (spec item 11): the top open findings by the savings figure

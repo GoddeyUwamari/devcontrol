@@ -14,7 +14,7 @@
 import { cloneElement } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ organization: { id: 'org-test', name: 'Org Test' }, user: { id: 'u' } }) }))
-const charts = vi.hoisted(() => ({ data: [] as Array<{ date: string }> }))
+const charts = vi.hoisted(() => ({ data: [] as Array<{ date: string }>, areas: [] as Array<{ dataKey: unknown; type: unknown; strokeDasharray: unknown }> }))
 const m = vi.hoisted(() => ({ demo: false, connection: 'connected' as string }))
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>()
@@ -24,6 +24,11 @@ vi.mock('recharts', async (importOriginal) => {
     AreaChart: (props: React.ComponentProps<typeof actual.AreaChart>) => {
       charts.data = (props.data ?? []) as Array<{ date: string }>
       return <actual.AreaChart {...props} />
+    },
+    // Records each series' line type (mock-match fix 3); renders the real Area.
+    Area: (props: React.ComponentProps<typeof actual.Area>) => {
+      charts.areas.push({ dataKey: props.dataKey, type: props.type, strokeDasharray: props.strokeDasharray })
+      return <actual.Area {...props} />
     },
   }
 })
@@ -121,6 +126,7 @@ beforeEach(() => {
   m.demo = false
   m.connection = 'connected'
   charts.data = []
+  charts.areas = []
   mockGetCostSummary.mockResolvedValue(summary(14.2))
   mockGetStats.mockResolvedValue(recStats())
   mockGetAll.mockResolvedValue([])
@@ -412,7 +418,7 @@ describe('layout order (spec items 8–12) and what is kept', () => {
     expect(screen.getAllByText('Top drivers').map((el) => el.closest('[data-testid="trend-summary"]'))).toEqual([screen.getByTestId('trend-summary')])
     expect(screen.getAllByText('Review savings').map((el) => el.closest('[data-testid="kpi-savings"]'))).toEqual([tile('savings')])
     // The KPI row is shown once: each label reaches assistive tech once (visual-only copies are aria-hidden).
-    for (const label of ['Month-to-Date Spend', 'Month-over-Month Change', 'Estimated Savings Opportunity', 'Active Recommendations']) {
+    for (const label of ['Month-to-Date Spend', 'Month-over-Month Change', 'Savings Opportunity', 'Active Findings', 'Cost checks']) {
       expect(screen.getAllByText(label).filter((el) => !el.closest('[aria-hidden="true"]'))).toHaveLength(1)
     }
   })
@@ -421,37 +427,41 @@ describe('layout order (spec items 8–12) and what is kept', () => {
 /**
  * Founder D7: no KPI label ever breaks mid-word. Labels are break-normal (a word that can't fit would overflow, never
  * split), and no label word may be longer than the longest one measured to fit a tile at 360px in Chromium
- * ("OPPORTUNITY", 11 letters; pr-a-shots/harness/measure-labels-pw.cjs). A longer label must carry a short form
- * ("Findings" for "Active Recommendations"), with the full label kept for screen readers.
+ * ("OPPORTUNITY", 11 letters; mock-match-shots/harness). Mock-match fixes: the mock's labels ("Savings Opportunity",
+ * "Active Findings", "Cost checks"), and the icon badge at every width from 640px. With the badge, "OPPORTUNITY" can't
+ * fit in the five-across row at 1024–1279px (measured), so the savings tile shows its short form "Savings" there only.
  */
 const LONGEST_FITTING_WORD = 'OPPORTUNITY'.length
 describe('founder D7: no mid-word wrapping in the KPI tile labels', () => {
-  it('every label is break-normal, never break-words / break-all, and every visible word fits', async () => {
+  it('the mock\'s labels; every label is break-normal, never break-words / break-all, and every word fits', async () => {
     renderPage()
     await screen.findByTestId('kpi-checks-label')
     const labels = ['mtd', 'momchange', 'savings', 'activerecs', 'checks'].map((key) => screen.getByTestId(`kpi-${key}-label`))
+    // The full label of each tile (the sr-only copy where there is a short form).
+    expect(labels.map((l) => l.querySelector('.sr-only')?.textContent ?? l.textContent)).toEqual(['Month-to-Date Spend', 'Month-over-Month Change', 'Savings Opportunity', 'Active Findings', 'Cost checks'])
+    for (const old of ['Estimated Savings Opportunity', 'Active Recommendations', 'Active checks']) expect(screen.queryByText(old)).toBeNull()
     for (const label of labels) {
       expect(label.className).toContain('break-normal')
       expect(label.outerHTML).not.toMatch(/break-words|break-all|break-anywhere|overflow-wrap|word-break/)
-      // The words shown at the narrowest widths: the short form when there is one, else the label itself.
-      const narrow = label.querySelector('[aria-hidden="true"]')?.textContent ?? label.textContent ?? ''
-      for (const word of narrow.split(/[\s-]+/)) expect(word.length, `"${word}" in ${label.dataset.testid}`).toBeLessThanOrEqual(LONGEST_FITTING_WORD)
+      // Each visible form on its own (the short and full forms are separate spans).
+      const forms = label.children.length ? [...label.children].map((el) => el.textContent ?? '') : [label.textContent ?? '']
+      for (const word of forms.join(' ').split(/[\s-]+/)) expect(word.length, `"${word}" in ${label.dataset.testid}`).toBeLessThanOrEqual(LONGEST_FITTING_WORD)
     }
   })
 
   // Fix round 1: exactly one of the two visible forms is displayed at every width (display-only toggles, which cascade
   // by breakpoint), and screen readers get the full label once, from a permanent sr-only copy.
-  it('"Active Recommendations" shows "Findings" where it would not fit, the full label elsewhere, and once for screen readers', async () => {
+  it('"Savings Opportunity" shows "Savings" at 1024–1279px only, the full label elsewhere, and once for screen readers', async () => {
     renderPage()
-    const label = await screen.findByTestId('kpi-activerecs-label')
+    const label = await screen.findByTestId('kpi-savings-label')
     const [short, full, spoken] = [...label.children] as HTMLElement[]
-    expect([short.textContent, full.textContent, spoken.textContent]).toEqual(['Findings', 'Active Recommendations', 'Active Recommendations'])
+    expect([short.textContent, full.textContent, spoken.textContent]).toEqual(['Savings', 'Savings Opportunity', 'Savings Opportunity'])
     expect(short).toHaveAttribute('aria-hidden', 'true')
     expect(full).toHaveAttribute('aria-hidden', 'true')
     expect(spoken).not.toHaveAttribute('aria-hidden')
     expect(spoken.className).toBe('sr-only')
-    expect(short.className).toBe('sm:hidden lg:inline xl:hidden')
-    expect(full.className).toBe('hidden sm:inline lg:hidden xl:inline')
+    expect(short.className).toBe('hidden lg:inline xl:hidden')
+    expect(full.className).toBe('lg:hidden xl:inline')
     // Which form is displayed at each Tailwind breakpoint (base, sm 640, lg 1024, xl 1280): always exactly one.
     const displayedAt = (classes: string, tier: number) => {
       let shown = true
@@ -463,6 +473,9 @@ describe('founder D7: no mid-word wrapping in the KPI tile labels', () => {
       return shown
     }
     for (const tier of [0, 1, 2, 3]) expect([displayedAt(short.className, tier), displayedAt(full.className, tier)].filter(Boolean)).toHaveLength(1)
+    expect([0, 1, 2, 3].map((tier) => displayedAt(short.className, tier))).toEqual([false, false, true, false])
+    // The other tiles fit beside their badge at every width: no short form.
+    for (const key of ['mtd', 'momchange', 'activerecs', 'checks']) expect(screen.getByTestId(`kpi-${key}-label`).children).toHaveLength(0)
     // Never a per-breakpoint sr-only toggle anywhere on the page (it doesn't cascade in this Tailwind build).
     expect(document.body.innerHTML).not.toMatch(/\b(?:sm|md|lg|xl|2xl):(?:not-)?sr-only\b/)
   })
@@ -637,9 +650,13 @@ describe('mock-match items 2 and 4: tiles, Review and the Opportunities footer',
     // Each tile has its decorative icon badge, hidden from screen readers; the month-over-month one stays neutral (Q3).
     for (const key of ['mtd', 'momchange', 'savings', 'activerecs', 'checks']) expect(within(tile(key)).getByTestId(`kpi-${key}-badge`)).toHaveAttribute('aria-hidden', 'true')
     expect(within(tile('momchange')).getByTestId('kpi-momchange-badge').className).not.toMatch(/green|amber|red|orange/)
-    // Shown at 640–1023 and from 1440 (90rem) only, where the labels fit beside it (measured in Chromium with Geist).
-    // A px arbitrary breakpoint (min-[1440px]:) sorts before lg: in this Tailwind build, so lg:hidden would hide it.
-    for (const key of ['mtd', 'savings']) expect(within(tile(key)).getByTestId(`kpi-${key}-badge`).className).toMatch(/^hidden sm:flex lg:hidden min-\[90rem\]:flex /)
+    // Mock-match fixes: shown at every width from 640px (sm), hidden only on a phone; no breakpoint hides it above sm.
+    // (A px arbitrary breakpoint such as min-[1440px]: sorts before lg: in this Tailwind build, so none is allowed.)
+    for (const key of ['mtd', 'momchange', 'savings', 'activerecs', 'checks']) {
+      const classes = within(tile(key)).getByTestId(`kpi-${key}-badge`).className.split(' ')
+      expect(classes.slice(0, 2)).toEqual(['hidden', 'sm:flex'])
+      expect(classes.filter((c) => /^(?:md|lg|xl|2xl|min-\[[^\]]+\]|max-\[[^\]]+\]):(?:hidden|flex|block|inline)/.test(c))).toEqual([])
+    }
     expect(document.body.innerHTML).not.toMatch(/\b(?:min|max)-\[\d+px\]:/)
   })
 
@@ -659,7 +676,8 @@ describe('mock-match items 2 and 4: tiles, Review and the Opportunities footer',
     expect(figure.className).not.toMatch(/ink-success|green/)
     expect(within(card).getByTestId('opportunity-basis')).toHaveTextContent('Upper-bound estimate')
     const review = within(card).getByTestId('opportunity-review')
-    expect(review).toHaveAttribute('href', '/cost-optimization')
+    // Fix 4: Cost Optimization's Opportunities section (its existing anchor); that page has no per-finding anchor.
+    expect(review).toHaveAttribute('href', '/cost-optimization#opportunities')
     expect(review).toHaveAccessibleName('Review S3 Lifecycle Optimization on Cost Optimization')
     expect(screen.getByRole('link', { name: /View all/ })).toHaveAttribute('href', '/cost-optimization')
     expect(screen.getByTestId('opportunities-footer')).toHaveTextContent(/^This is the only open finding\.$/)
@@ -673,7 +691,7 @@ describe('mock-match items 2 and 4: tiles, Review and the Opportunities footer',
     expect(cards).toHaveLength(5)
     expect(within(cards[0]).getByTestId('opportunity-savings').className).toContain('text-ink-success')
     expect(within(cards[0]).getByTestId('opportunity-basis')).toHaveTextContent('Monthly estimate')
-    for (const card of cards) expect(within(card).getByTestId('opportunity-review')).toHaveAttribute('href', '/cost-optimization')
+    for (const card of cards) expect(within(card).getByTestId('opportunity-review')).toHaveAttribute('href', '/cost-optimization#opportunities')
     expect(screen.getByTestId('opportunities-footer')).toHaveTextContent(/^2 more open findings on Cost Optimization\.$/)
   })
 
@@ -706,5 +724,27 @@ describe('mock-match items 1 and 7: the bottom row and What this page covers', (
     // The mock's "Whole account, every region" over-claims (spend is what the connected account can see, Q12).
     expect(panel.textContent).not.toMatch(/whole account, every region/i)
     expect(within(panel).getByTestId('coverage-spend').textContent).not.toMatch(/whole account/i)
+  })
+})
+
+describe('mock-match fixes 3 and 4: a linear line, and Review to Cost Optimization\'s Opportunities section', () => {
+  it('the spend line and its still-updating tail are linear (straight segments between days), never smoothed', async () => {
+    renderPage()
+    await screen.findByTestId('trend-total')
+    await waitFor(() => expect(charts.areas.some((a) => a.dataKey === 'updating')).toBe(true))
+    const byKey = (key: string) => charts.areas.filter((a) => a.dataKey === key)
+    expect(byKey('actual').length).toBeGreaterThan(0)
+    for (const area of [...byKey('actual'), ...byKey('updating')]) expect(area.type).toBe('linear')
+    // The dashed "still updating" tail is kept.
+    expect(byKey('updating').every((a) => a.strokeDasharray === '4 3')).toBe(true)
+    expect(charts.areas.every((a) => a.type !== 'monotone')).toBe(true)
+  })
+
+  it('the anchor Review uses exists on Cost Optimization (its OPPORTUNITIES_ANCHOR section id)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const source = readFileSync(join(process.cwd(), 'app/(app)/cost-optimization/page.tsx'), 'utf8')
+    expect(source).toContain("const OPPORTUNITIES_ANCHOR = 'opportunities';")
+    expect(source).toMatch(/<section id=\{OPPORTUNITIES_ANCHOR\}/)
   })
 })

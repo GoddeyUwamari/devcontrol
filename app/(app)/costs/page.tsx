@@ -406,7 +406,7 @@ export default function CostsPage() {
       Icon: ChartLine, badge: 'bg-slate-100 text-slate-600', span: 'phone',
     },
     {
-      key: 'savings', label: 'Estimated Savings Opportunity',
+      key: 'savings', label: 'Savings Opportunity', shortLabel: 'Savings',
       value: savingsTile?.value ?? '—',
       lines: savingsTile?.lines ?? [recsUnavailableSub],
       // Ruling Q2 / SF-1: green and full KPI size only for a firm figure of $1/mo or more (as displayed, N-3). A
@@ -419,14 +419,14 @@ export default function CostsPage() {
       Icon: Leaf, badge: 'bg-green-50 text-green-700', cta: 'Review savings',
     },
     {
-      key: 'activerecs', label: 'Active Recommendations', shortLabel: 'Findings',
+      key: 'activerecs', label: 'Active Findings',
       value: recsUnavailable ? '—' : `${activeRecsCount}`,
       lines: [recsUnavailable ? recsUnavailableSub : activeRecsCount > 0 ? 'Ready to review' : 'No open recommendations'],
       valueClass: 'text-slate-900', href: '/cost-optimization', accent: '',
       Icon: Shield, badge: 'bg-orange-50 text-orange-700', cta: !recsUnavailable && activeRecsCount === 1 ? 'See finding' : 'See findings',
     },
     {
-      key: 'checks', label: 'Active checks',
+      key: 'checks', label: 'Cost checks',
       value: checks ? `${checks.count}` : '—',
       lines: [checks ? acrossCategories(checks.services.length) : rulesLoading ? 'Loading…' : rulesError ? 'Could not be retrieved' : 'Not available'],
       names: checks ? servicesLine(checks.services) : undefined,
@@ -505,23 +505,23 @@ export default function CostsPage() {
             <div className={`h-full flex flex-col bg-white rounded-xl p-4 sm:p-5 border border-slate-200 cursor-pointer transition-colors hover:border-violet-400 ${accent}`} data-testid={`kpi-${key}`}>
               <div className="flex items-center justify-between mb-3 gap-2">
                 <span className="flex items-center gap-2.5 min-w-0">
-                  {/* The mock's icon badge (decorative). Not on a phone (the phone board has none), and not in the five-across
-                      row below 1440px (the mock's width), where "RECOMMENDATIONS" needs the room (measured in Chromium with
-                      Geist: it overflows at 1280 with the badge). Only `display` changes per breakpoint. 90rem, not 1440px:
-                      Tailwind sorts a px arbitrary breakpoint before sm/lg, so lg:hidden would win over it. No AWS
-                      account: none, the tile is label and "—" only (PR2). */}
+                  {/* The mock's icon badge (decorative), at every width from 640px (founder, mock-match fixes); not on a
+                      phone, as on the phone board. A label that can't fit beside it uses its short form there (D7), never
+                      a hidden badge. No AWS account: none, the tile is label and "—" only (PR2). */}
                   {!notConnected && (
-                    <span className={`hidden sm:flex lg:hidden min-[90rem]:flex w-8 h-8 rounded-lg items-center justify-center shrink-0 ${badge}`} aria-hidden="true" data-testid={`kpi-${key}-badge`}>
+                    <span className={`hidden sm:flex w-8 h-8 rounded-lg items-center justify-center shrink-0 ${badge}`} aria-hidden="true" data-testid={`kpi-${key}-badge`}>
                       <Icon size={18} />
                     </span>
                   )}
                   {/* Words never break mid-word (founder D7): a label whose longest word can't fit uses its short form there.
-                      Only `display` changes per breakpoint (fix round 1: toggling sr-only per breakpoint left the label 1px
-                      wide at 640–1023px and from 1280px); screen readers always get the full label once, from the sr-only copy. */}
+                      With the badge, "OPPORTUNITY" only fails to fit in the five-across row at 1024–1279px (measured in
+                      Chromium with Geist), so the short form shows in that tier only. Only `display` changes per breakpoint
+                      (fix round 1: toggling sr-only per breakpoint left a label 1px wide); screen readers always get the
+                      full label once, from the sr-only copy. */}
                   <span className="text-label font-semibold text-ink-muted uppercase tracking-widest min-w-0 break-normal" data-testid={`kpi-${key}-label`}>
                     {shortLabel ? (<>
-                      <span className="sm:hidden lg:inline xl:hidden" aria-hidden="true">{shortLabel}</span>
-                      <span className="hidden sm:inline lg:hidden xl:inline" aria-hidden="true">{label}</span>
+                      <span className="hidden lg:inline xl:hidden" aria-hidden="true">{shortLabel}</span>
+                      <span className="lg:hidden xl:inline" aria-hidden="true">{label}</span>
                       <span className="sr-only">{label}</span>
                     </>) : label}
                   </span>
@@ -635,10 +635,12 @@ export default function CostsPage() {
                 <XAxis dataKey="date" tick={CHART_TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
                 <YAxis tick={{ ...CHART_TICK, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v}`} width={48} domain={[(d: number) => Math.max(0, Math.floor(d * 0.85)), (d: number) => Math.ceil(d * 1.15)]} />
                 <Tooltip filterNull={false} content={<SpendTrendTooltip rows={chartData} />} />
-                <Area type="monotone" dataKey="actual" stroke={TREND_LINE} strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: TREND_LINE, strokeWidth: 0 }} />
+                {/* Straight segments between daily points (mock-match fixes): a smoothed curve can draw bumps or dips
+                    between days that aren't in the data. */}
+                <Area type="linear" dataKey="actual" stroke={TREND_LINE} strokeWidth={2} fill="url(#actualGradient)" dot={false} connectNulls={false} activeDot={{ r: 4, fill: TREND_LINE, strokeWidth: 0 }} />
                 {/* The day Cost Explorer is still updating: the same line, lighter and dashed, joined to the last final point (ruling Q7b). */}
                 {trendHasUpdating && (
-                  <Area type="monotone" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
+                  <Area type="linear" dataKey="updating" stroke={UPDATING_STROKE} strokeWidth={2} strokeDasharray="4 3" fill="none" connectNulls={false} isAnimationActive={false}
                     dot={(props: any) => props?.payload?.reportState === 'updating'
                       ? <circle key={props.key ?? `u-${props.index}`} cx={props.cx} cy={props.cy} r={3} fill={UPDATING_STROKE} stroke="none" data-testid="spend-trend-updating-dot" />
                       : <g key={props.key ?? `u-${props.index}`} />}

@@ -59,7 +59,7 @@ vi.mock('@/lib/services/aws-accounts.service', () => ({
 }))
 vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQuery: vi.fn() } }))
 
-const KPI_LABELS = ['Estimated Savings Opportunity', 'Month-to-Date Spend', 'Month-over-Month Change', 'Active Recommendations', 'Active checks']
+const KPI_LABELS = ['Savings Opportunity', 'Month-to-Date Spend', 'Month-over-Month Change', 'Active Findings', 'Cost checks']
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -147,7 +147,7 @@ describe('PR2: Costs with no AWS account connected', () => {
     expect(screen.getByTestId('connection-loading-tiles').children).toHaveLength(5)
     expect(screen.getByTestId('header-action-loading')).toBeInTheDocument()
     expect(screen.queryByTestId('not-connected-card')).toBeNull()
-    expect(screen.queryByText('Estimated Savings Opportunity')).toBeNull()
+    expect(screen.queryByText('Savings Opportunity')).toBeNull()
     expect(screen.queryByText('On the Optimization Engine plan')).toBeNull()
     expect(screen.queryByText(/Optimize Now|Export CSV/)).toBeNull()
   })
