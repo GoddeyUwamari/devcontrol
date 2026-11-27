@@ -29,7 +29,7 @@ import type { AWSService, AWSServicesPage, AWSServicesStats, ServicesCoverage } 
 import type { AccountSecurityFinding, ComplianceSeverity } from '@/lib/services/account-security-findings.service'
 import type { CostSummary, RecommendationStats } from '@/lib/types'
 import type { SeverityLevel } from '@/lib/utils/severity-colors'
-import { describeCeilings, describeCeilingsWithoutEstimate, NO_DOLLAR_ESTIMATE } from '@/lib/savings-basis'
+import { describeCeilings, describeCeilingsWithoutEstimate, NO_DOLLAR_ESTIMATE, NONE_FOUND } from '@/lib/savings-basis'
 import { formatUsd, NO_BILLED_DAYS_YET, spendDaysLabel } from '../../costs/cost-display'
 import { describeServicesSpend, SPEND_UNAVAILABLE_TEXT } from '../../services/SummaryTiles'
 import { SEVERITY_LABEL, STATUS_LABEL, typeLabel } from '../../services/AttentionTable'
@@ -559,15 +559,19 @@ function savingsTile(i: OverviewInputs): Tile {
   if (i.savings.status === 'loading') return { ...base, value: '…', captions: [], line: null, info: [] }
   if (i.savings.status === 'error') return { ...base, value: '—', captions: [[OVERVIEW_COPY.savingsError]], line: [OVERVIEW_COPY.savingsError], info: [] }
   const s = i.savings.data
-  const total = Number.isFinite(s.totalPotentialSavings) ? s.totalPotentialSavings : 0
+  // "Never show $0": a stats response with no total is the error state ("—"), never a $0 figure.
+  if (s.totalPotentialSavings === null || !Number.isFinite(s.totalPotentialSavings)) {
+    return { ...base, value: '—', captions: [[OVERVIEW_COPY.savingsError]], line: [OVERVIEW_COPY.savingsError], info: [] }
+  }
+  const total = s.totalPotentialSavings
   const ceilings = s.potentialSavingsCeilingByResourceType ?? {}
   const active = s.activeRecommendations ?? 0
   if (active === 0) {
-    // No open findings: the value and sentences unchanged; the last one is the line, the rest behind ⓘ.
+    // No open findings: "None found" (ruling Q1), never "$0.00/mo est."; the last sentence is the line, the rest behind ⓘ.
     const captions: Rich[] = [[OVERVIEW_COPY.savingsSource]]
     for (const line of describeCeilings(ceilings, formatUsd)) captions.push([line])
     captions.push([OVERVIEW_COPY.savingsNone])
-    return { ...base, value: `${formatUsd(total)}/mo est.`, captions, line: [OVERVIEW_COPY.savingsNone], info: captions.slice(0, -1).map(textOf) }
+    return { ...base, value: NONE_FOUND, captions, line: [OVERVIEW_COPY.savingsNone], info: captions.slice(0, -1).map(textOf) }
   }
   const open = describeOpenSavings(total, active, ceilings, s.estimatedFindings, s.unestimatedFindings)
   if (open.value === NO_DOLLAR_ESTIMATE) {

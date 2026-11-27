@@ -50,8 +50,8 @@ export const coverageCardLine = (active: number) => `${COVERAGE_SCOPE} · ${acti
 export const serviceNamesLine = (names: readonly string[]) => names.join(' · ')
 
 /** The savings card when every open figure is an upper bound (founder ruling 4): never a firm total. */
-export const upperBoundOnly = (amount: string) => `Up to ${amount}/mo · upper bound only`
-export const NO_FIRM_ESTIMATE = 'No firm estimate yet.'
+// The shared savings-total wording (lib/savings-basis.ts describeSavingsTotal).
+export { NO_FIRM_ESTIMATE, upperBoundOnly } from '@/lib/savings-basis'
 
 export const opportunitiesHeading = (count: number) => `Opportunities (${count})`
 export const ALL = 'All'

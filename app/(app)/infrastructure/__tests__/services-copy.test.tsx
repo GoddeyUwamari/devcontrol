@@ -127,16 +127,17 @@ describe('savings: open findings, no estimate > 0', () => {
     expect(JSON.stringify(withEstimate)).not.toMatch(/S3|Standard-IA/)
   })
 
-  it('a non-finite total is not an estimate', () => {
-    expect(savingsOf({ activeRecommendations: 2, totalPotentialSavings: Number.NaN })).toMatchObject({ value: '—', line: ['No dollar estimate yet · 2 open opportunities'] })
+  it('a non-finite or absent total is not an estimate: "—" with the couldn\'t-load line ("Never show $0", S2)', () => {
+    expect(savingsOf({ activeRecommendations: 2, totalPotentialSavings: Number.NaN })).toMatchObject({ value: '—', line: [OVERVIEW_COPY.savingsError] })
+    expect(savingsOf({ activeRecommendations: 2, totalPotentialSavings: null })).toMatchObject({ value: '—', line: [OVERVIEW_COPY.savingsError] })
   })
 })
 
 describe('savings: zero, error and not connected are unchanged', () => {
-  it('no open findings: the exact pre-PR tile', () => {
+  it('no open findings: the pre-PR tile with "None found" for its value (ruling Q1, never "$0.00/mo est.")', () => {
     expect(savingsOf({})).toEqual({
       key: 'savings', label: 'Possible savings', link: { text: 'Review recommendations →', href: '/cost-optimization' },
-      value: '$0.00/mo est.', captions: [[SOURCE], [OVERVIEW_COPY.savingsNone]],
+      value: 'None found', captions: [[SOURCE], [OVERVIEW_COPY.savingsNone]],
       line: [OVERVIEW_COPY.savingsNone], info: [SOURCE],
     })
   })

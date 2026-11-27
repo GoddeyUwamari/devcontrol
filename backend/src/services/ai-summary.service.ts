@@ -57,7 +57,8 @@ const EMPTY_FIELDS: StructuredDashboardSummary = {
 };
 
 /** Bump when the prompt or the facts it is built from change, so cached prose is not reused. */
-const PROMPT_VERSION = 'dashboard-summary-v5';
+// v6: "Never show $0" -- open findings with no estimate total are stated as having no dollar estimate.
+const PROMPT_VERSION = 'dashboard-summary-v6';
 
 /** Evidence budget for the summary prompt, in estimated tokens. */
 export const SUMMARY_EVIDENCE_BUDGET_TOKENS = 6_000;
@@ -330,11 +331,15 @@ export class AISummaryService {
 
     if (hasEvidence(s.recommendations)) {
       const { active, totalEstimatedMonthlySavings } = s.recommendations.data;
-      if (active > 0) {
+      // "Never show $0" (ruling Q6): the model is never told "approximately $0/month". Each stored estimate is
+      // whole cents, so a total that is not above $0 means no open finding has a dollar estimate.
+      if (active > 0 && Number.isFinite(totalEstimatedMonthlySavings) && totalEstimatedMonthlySavings > 0) {
         facts.push(
           `${active} active cost optimization${active !== 1 ? 's have' : ' has'} estimated potential savings of approximately ` +
           `${formatSavingsCurrency(totalEstimatedMonthlySavings)}/month (a DevControl estimate, not realized savings).`
         );
+      } else if (active > 0) {
+        facts.push(`${active} active cost optimization${active !== 1 ? 's' : ''}; none has a dollar estimate yet.`);
       }
     } else {
       facts.push(`Cost recommendations: ${notAvailable(s.recommendations)}.`);

@@ -12,7 +12,7 @@
 import { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { formatSavingsCents } from '../utils/formatSavingsCurrency';
-import { classifySavingsBasis, EC2_PRICE_SOURCE_DEFAULT } from './estimated-savings';
+import { EC2_PRICE_SOURCE_DEFAULT, LESS_THAN_ONE_CENT, SAVINGS_UNROUNDED_FIELD, savingsFigure } from './estimated-savings';
 import { displayIssue, isLowActivityFinding } from './finding-display';
 import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service';
 
@@ -167,6 +167,7 @@ export class ActivityFeedService {
     const result = await client.query(
       `SELECT created_at, potential_savings, issue, severity, metadata->>'savings_basis' AS savings_basis,
               metadata->>'price_source' AS price_source,
+              metadata->'savings_unrounded_usd' AS savings_unrounded_usd,
               metadata->'rule_version' AS rule_version, metadata->'rule'->>'id' AS rule_id,
               metadata->'rule'->'version' AS rule_object_version
        FROM cost_recommendations
@@ -174,25 +175,39 @@ export class ActivityFeedService {
        ORDER BY created_at DESC LIMIT $2`,
       [organizationId, PER_SOURCE_LIMIT]
     );
-    // The figure is shown only as what its savings_basis says it is: an
-    // estimate, an upper bound, or (no supported basis) no figure at all.
-    // A default figure for an unpriced EC2 instance type is labelled as such
-    // (keyed on price_source, never on the amount).
-    const savingsPhrase = (row: { potential_savings: unknown; savings_basis: unknown; price_source?: unknown }) => {
-      const kind = classifySavingsBasis(row.savings_basis);
-      if (kind === 'estimate' && row.price_source === EC2_PRICE_SOURCE_DEFAULT) {
-        return `~${formatSavingsCents(row.potential_savings as string)}/month opportunity (default estimate, price unknown)`;
+    // The figure is shown only as what savingsFigure() says it is ("Never show
+    // $0"): an estimate or an upper bound above $0, a recorded sub-cent amount
+    // ("less than $0.01/month"), or no figure at all ("no dollar estimate") --
+    // never "~$0.00/month". A default figure for an unpriced EC2 instance type
+    // is labelled as such (keyed on price_source, never on the amount).
+    type Row = { potential_savings: unknown; savings_basis: unknown; price_source?: unknown; savings_unrounded_usd?: unknown };
+    const figureOf = (row: Row) => savingsFigure({
+      potential_savings: row.potential_savings as string | number | null,
+      metadata: { savings_basis: row.savings_basis, [SAVINGS_UNROUNDED_FIELD]: row.savings_unrounded_usd },
+    });
+    const savingsPhrase = (row: Row) => {
+      const fig = figureOf(row);
+      if (fig.kind === 'none') return 'no dollar estimate';
+      if (fig.subCent) return `${LESS_THAN_ONE_CENT}/month opportunity${fig.kind === 'ceiling' ? ' (upper bound)' : ''}`;
+      if (fig.kind === 'estimate' && row.price_source === EC2_PRICE_SOURCE_DEFAULT) {
+        return `~${formatSavingsCents(fig.amount)}/month opportunity (default estimate, price unknown)`;
       }
-      if (kind === 'estimate') return `~${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
-      if (kind === 'ceiling') return `up to ${formatSavingsCents(row.potential_savings as string)}/month opportunity`;
-      return 'no dollar estimate';
+      if (fig.kind === 'estimate') return `~${formatSavingsCents(fig.amount)}/month opportunity`;
+      return `up to ${formatSavingsCents(fig.amount)}/month opportunity`;
     };
     // A low-activity finding (FP2b C-11): its label, and its figure as "up to"
-    // -- the full instance cost, saved only if it's no longer needed.
-    const lowActivityPhrase = (row: { potential_savings: unknown; price_source?: unknown }) =>
-      row.price_source === EC2_PRICE_SOURCE_DEFAULT
-        ? `up to ${formatSavingsCents(row.potential_savings as string)}/month (default estimate, price unknown)`
-        : `up to ${formatSavingsCents(row.potential_savings as string)}/month`;
+    // -- the full instance cost, saved only if it's no longer needed. No
+    // figure: "no dollar estimate", never "up to $0.00/month".
+    const lowActivityPhrase = (row: Row) => {
+      const fig = figureOf(row);
+      if (fig.kind === 'none') return 'no dollar estimate';
+      // A recorded sub-cent amount: "less than $0.01/month", never "up to less than ..." (review N-4;
+      // the frontend twin, lowActivitySavingsHeadline, reads "Less than $0.01/mo if it's no longer needed").
+      const phrase = fig.subCent ? `${LESS_THAN_ONE_CENT}/month` : `up to ${formatSavingsCents(fig.amount)}/month`;
+      return row.price_source === EC2_PRICE_SOURCE_DEFAULT
+        ? `${phrase} (default estimate, price unknown)`
+        : phrase;
+    };
     return result.rows.map((row) => {
       const ruleIdentity = { rule_version: row.rule_version, rule: { id: row.rule_id, version: row.rule_object_version } };
       const lowActivity = isLowActivityFinding(row.issue, ruleIdentity);

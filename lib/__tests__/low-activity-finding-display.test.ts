@@ -56,11 +56,12 @@ describe('approved copy', () => {
   const dollars = (n: number) => `$${Math.round(n)}`
 
   it('C-3 headline and list-price basis', () => {
-    expect(lowActivitySavingsHeadline(8.5, dollars)).toBe("Up to $9/mo if it's no longer needed")
-    // Round 4: an estimate drops "Up to"; a ceiling (or an unknown basis) keeps it.
-    expect(lowActivitySavingsHeadline(8.5, dollars, 'estimate')).toBe("$9/mo if it's no longer needed")
-    expect(lowActivitySavingsHeadline(8.5, dollars, 'ceiling')).toBe("Up to $9/mo if it's no longer needed")
-    expect(lowActivitySavingsHeadline(8.5, dollars, null)).toBe("Up to $9/mo if it's no longer needed")
+    // Round 4: an estimate drops "Up to"; a ceiling keeps it. The figure is the row's savingsFigure ("Never show $0").
+    expect(lowActivitySavingsHeadline({ kind: 'estimate', amount: 8.5, subCent: false }, dollars)).toBe("$9/mo if it's no longer needed")
+    expect(lowActivitySavingsHeadline({ kind: 'ceiling', amount: 8.5, subCent: false }, dollars)).toBe("Up to $9/mo if it's no longer needed")
+    // No dollar figure (no basis, or a figure not above $0): never "Up to $0/mo".
+    expect(lowActivitySavingsHeadline({ kind: 'none' }, dollars)).toBe('No dollar estimate')
+    expect(lowActivitySavingsHeadline({ kind: 'estimate', amount: 0.003, subCent: true }, dollars)).toBe("Less than $0.01/mo if it's no longer needed")
     expect(lowActivityListPriceBasis('t2.micro')).toBe("Estimated from list price for t2.micro in us-east-1. Doesn't include storage, which is still billed while an instance is stopped.")
     expect(LOW_ACTIVITY_STORAGE_NOTE).toBe("Doesn't include storage, which is still billed while an instance is stopped.")
   })

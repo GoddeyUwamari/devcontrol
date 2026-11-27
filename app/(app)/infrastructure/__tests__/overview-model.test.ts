@@ -144,9 +144,9 @@ describe('O-K3 / RU-3 possible savings', () => {
     const three = view({ savings: ready({ ...NO_SAVINGS, activeRecommendations: 3 }) }).tiles!.savings
     expect(three.line).toEqual(['No dollar estimate yet · 3 open opportunities'])
   })
-  it('no recommendations: $0/mo est. and says so; no time is printed', () => {
+  it('no recommendations: "None found" (ruling Q1, never "$0.00/mo est.") and says so; no time is printed', () => {
     const s = view({ savings: ready(NO_SAVINGS) }).tiles!.savings
-    expect(s.value).toBe('$0.00/mo est.')
+    expect(s.value).toBe('None found')
     expect(s.captions).toContainEqual([OVERVIEW_COPY.savingsNone])
     expect(s.line).toEqual([OVERVIEW_COPY.savingsNone])
     expect(s.info).toEqual([OVERVIEW_COPY.savingsSource])

@@ -9,6 +9,7 @@ import { CloudWatchService }
 import awsCostService from './aws-cost.service'
 import type { ContextDataState, SpendProvenance } from './ai-context-contract'
 import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service'
+import { formatSavingsCurrency } from '../utils/formatSavingsCurrency'
 
 /** The cost component's basis sentence (without its period), as written into its reason. */
 export const COST_RUN_RATE_BASIS = 'Based on monthly run-rate estimate from resource inventory'
@@ -220,10 +221,10 @@ export class SystemIntelligenceService {
           ? costAnalysisRan
             ? 'Spend data unavailable — cost efficiency cannot be assessed'
             : 'No cost scan run yet'
+          // "Never show $0" (ruling Q6): the shared formatter, so a total under $1 shows cents ("$0.08/mo"),
+          // never "$0/mo estimated savings identified".
           : totalSavings > 0
-            ? `$${Math.round(
-                totalSavings
-              ).toLocaleString()}/mo estimated savings identified · ${totalOpps} opportunities`
+            ? `${formatSavingsCurrency(totalSavings)}/mo estimated savings identified · ${totalOpps} opportunities`
             // A completed scan with nothing active is not evidence of no savings:
             // a check may have failed or lacked data, and that is not recorded yet.
             : costAnalysisRan

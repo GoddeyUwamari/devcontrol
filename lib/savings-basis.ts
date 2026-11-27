@@ -8,6 +8,8 @@
  * missing or unrecognised basis is no supported dollar amount at all.
  */
 
+import { formatSavingsCurrency, formatSavingsTotal } from './utils'
+
 export type SavingsBasisKind = 'estimate' | 'ceiling'
 
 const ESTIMATE_BASIS_PREFIXES = ['estimated:', 'comparison:']
@@ -24,20 +26,205 @@ export function savingsBasisKind(rec: { metadata?: Record<string, unknown> | nul
   return null
 }
 
+// ─── The one savings-figure rule ("Never show $0", founder rulings 2026-11-26) ──
+//
+// A finding has a dollar figure only when its savings_basis is an estimate or
+// a ceiling AND its figure is a finite number above $0 -- the backend's own
+// count definition (countSavingsFindings in backend/src/services/estimated-savings.ts,
+// which mirrors this as savingsFigure; parity pinned by
+// lib/__tests__/savings-figure-parity.test.ts). Anything else is "No dollar
+// estimate", never "$0", "$0/mo" or "$0.00".
+//
+// Sub-cent (ruling Q2 safeguard): potential_savings is DECIMAL(10,2), so a
+// positive figure under half a cent is stored as 0.00. A detector that computed
+// one records the unrounded amount in metadata[SAVINGS_UNROUNDED_FIELD] at
+// detection time; only that recorded amount (0 < amount < $0.01, stored figure
+// exactly 0) reads "Less than $0.01/mo". A stored 0 without it is never sub-cent.
+
+/** metadata field the detectors write (backend SAVINGS_UNROUNDED_FIELD): the unrounded USD/month amount of a figure stored as 0.00. */
+export const SAVINGS_UNROUNDED_FIELD = 'savings_unrounded_usd'
+
+/** A row figure under one cent (ruling Q2): the same words for an estimate and a ceiling (the saving is below the bound, so below a cent). */
+export const LESS_THAN_ONE_CENT = 'Less than $0.01'
+
+/** Ruling Q1: no open findings after an analysis. */
+export const NONE_FOUND = 'None found'
+export const NONE_FOUND_SUB = 'No open opportunities after the latest analysis'
+/** A partial run (some checks couldn't run) that left no open findings (Cost Intelligence fix round 1, N-4). */
+export const NONE_FOUND_PARTIAL = 'None found in the checks that ran'
+export const NONE_FOUND_PARTIAL_SUB = "Some checks couldn't run in the latest analysis"
+export const NO_ESTIMATE_SUB = 'No dollar estimate yet for the open opportunities.'
 /**
- * One recommendation's figure, labelled by its basis: "$X/mo", "Up to $X/mo",
- * or "No dollar estimate" -- never "$0.00/mo" for a figure with no basis.
+ * Review N-5: the total's sentence when open cards read "Less than $0.01/mo". Sub-cent is not
+ * priced (ruling 5), so the value stays "No dollar estimate" (no total is implied); the sentence
+ * says what the cards say instead of "no dollar estimate yet" for them.
+ */
+export const SUB_CENT_EACH_SUB = 'Each open opportunity is under $0.01/mo.'
+export const SUB_CENT_SOME_SUB = 'Some open opportunities are under $0.01/mo; the rest have no dollar estimate yet.'
+/** Ruling Q5: Remediation's Savings Recovered with nothing recovered. */
+export const NONE_YET = 'None yet'
+/** Data that failed to load: never a zero. */
+export const UNAVAILABLE_FIGURE = '—'
+export const upperBoundOnly = (amount: string) => `Up to ${amount}/mo · upper bound only`
+export const NO_FIRM_ESTIMATE = 'No firm estimate yet.'
+
+/** Ruling Q2 (Cost Intelligence): a firm figure under this many dollars a month is grey, never styled as a big saving. */
+export const SMALL_SAVINGS_USD = 1
+
+export type SavingsFigure =
+  /** A stored figure above $0 with a supported basis. */
+  | { kind: SavingsBasisKind; amount: number; subCent: false }
+  /** A stored 0.00 whose detector recorded a genuine positive amount under one cent. Never in totals or priced counts. */
+  | { kind: SavingsBasisKind; amount: number; subCent: true }
+  | { kind: 'none' }
+
+/** A figure with an amount (stored above $0, or a recorded sub-cent amount). */
+export type SavingsFigureWithAmount = Exclude<SavingsFigure, { kind: 'none' }>
+
+const NO_FIGURE: SavingsFigure = { kind: 'none' }
+
+/** A finite number, or null -- never a coerced 0. Accepts DECIMAL strings. */
+function toAmount(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+/** The recorded unrounded amount when it is a genuine sub-cent figure (0 < x < 0.01), else null. */
+export function recordedSubCentAmount(metadata: Record<string, unknown> | null | undefined): number | null {
+  const value = metadata?.[SAVINGS_UNROUNDED_FIELD]
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 0.01 ? value : null
+}
+
+/** The one row rule. */
+export function savingsFigure(rec: { potentialSavings: number | string | null | undefined; metadata?: Record<string, unknown> | null }): SavingsFigure {
+  const kind = savingsBasisKind(rec)
+  if (kind === null) return NO_FIGURE
+  const stored = toAmount(rec.potentialSavings)
+  if (stored !== null && stored > 0) return { kind, amount: stored, subCent: false }
+  if (stored === 0) {
+    const subCent = recordedSubCentAmount(rec.metadata)
+    if (subCent !== null) return { kind, amount: subCent, subCent: true }
+  }
+  return NO_FIGURE
+}
+
+/** True when the figure is a stored amount above $0 (what totals and "priced" counts include); a sub-cent row is not. */
+/** How many of these rows read "Less than $0.01/mo" (a recorded sub-cent amount): for describeSavingsTotal's `openSubCent`. */
+export function countSubCentFigures(recs: ReadonlyArray<{ potentialSavings: number | string | null | undefined; metadata?: Record<string, unknown> | null }>): number {
+  return recs.filter((rec) => { const fig = savingsFigure(rec); return fig.kind !== 'none' && fig.subCent }).length
+}
+
+export function isPricedFigure(fig: SavingsFigure): fig is { kind: SavingsBasisKind; amount: number; subCent: false } {
+  return fig.kind !== 'none' && !fig.subCent
+}
+
+/**
+ * "$X/mo", "Up to $X/mo", "Less than $0.01/mo" or "No dollar estimate" -- never "$0".
+ * `format` is the surface's own currency formatter (only ever given an amount above $0).
+ */
+export function formatSavingsFigure(fig: SavingsFigure, format: (value: number) => string, suffix = '/mo'): string {
+  if (fig.kind === 'none') return NO_DOLLAR_ESTIMATE
+  if (fig.subCent) return `${LESS_THAN_ONE_CENT}${suffix}`
+  return fig.kind === 'ceiling' ? `Up to ${format(fig.amount)}${suffix}` : `${format(fig.amount)}${suffix}`
+}
+
+/**
+ * One recommendation's figure, labelled by its basis: formatSavingsFigure(savingsFigure(rec)).
  * `format` is the surface's own currency formatter.
  */
 export function formatRecommendationSavings(
-  rec: { potentialSavings: number; metadata?: Record<string, unknown> | null },
+  rec: { potentialSavings: number | string | null | undefined; metadata?: Record<string, unknown> | null },
   format: (value: number) => string,
   suffix = '/mo',
 ): string {
-  const kind = savingsBasisKind(rec)
-  if (kind === 'estimate') return `${format(rec.potentialSavings)}${suffix}`
-  if (kind === 'ceiling') return `Up to ${format(rec.potentialSavings)}${suffix}`
-  return NO_DOLLAR_ESTIMATE
+  return formatSavingsFigure(savingsFigure(rec), format, suffix)
+}
+
+/**
+ * The dollar amount a formatted savings figure shows ("$1.00" -> 1, "$53" -> 53,
+ * "<$0.01" -> 0), so styling follows what the user reads (Cost Intelligence fix round 1, N-3).
+ */
+export function displayedAmount(formatted: string): number {
+  if (formatted.startsWith('<')) return 0
+  const n = Number(formatted.replace(/[$,]/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+/** The /stats fields a savings total is described from. `totalPotentialSavings` null: the API sent no total. */
+export interface SavingsTotalInput {
+  totalPotentialSavings: number | null
+  estimatedFindings?: number | null
+  potentialSavingsCeiling: number
+  potentialSavingsCeilingByResourceType?: Record<string, number>
+  activeRecommendations: number
+}
+
+export type SavingsTotal =
+  /** A firm estimate total ("$X/mo"; `amount` without the suffix): green only at or above SMALL_SAVINGS_USD as displayed. */
+  | { kind: 'firm'; amount: string; value: string; strong: boolean; lines: string[] }
+  /** Every open figure is an upper bound: grey "Up to $X/mo · upper bound only". */
+  | { kind: 'upper_bound_only'; value: string; lines: string[] }
+  /** Open findings, none with a dollar figure. */
+  | { kind: 'no_estimate'; value: string; lines: string[] }
+  /** A completed analysis left no open findings (ruling Q1). */
+  | { kind: 'none_found'; value: string; lines: string[] }
+  /** No stats, or the API sent no total: "—", never a zero. */
+  | { kind: 'unavailable'; value: string; lines: string[] }
+
+/**
+ * A savings total from /stats (Cost Intelligence PR A's savings tile, moved
+ * here): the firm total (formatSavingsTotal: "<$0.01" when positive estimates
+ * round to 0) with each upper bound on its own line, never added together;
+ * "Up to $X/mo · upper bound only"; "No dollar estimate"; "None found"; "—".
+ * Never "$0". `partialRun`: the latest analysis was partial, so "none found"
+ * covers only the checks that ran. Callers handle loading and "not analyzed
+ * yet" first. `format` formats the firm total and the upper bounds.
+ * `openSubCent`: how many loaded open rows read "Less than $0.01/mo"
+ * (countSubCentFigures); with no priced figure, the "No dollar estimate"
+ * sentence then says they are under $0.01/mo (review N-5), never a total.
+ */
+export function describeSavingsTotal(
+  stats: SavingsTotalInput | null | undefined,
+  { partialRun = false, format = formatSavingsCurrency, openSubCent = 0 }: { partialRun?: boolean; format?: (value: number) => string; openSubCent?: number } = {},
+): SavingsTotal {
+  if (!stats) return { kind: 'unavailable', value: UNAVAILABLE_FIGURE, lines: [] }
+  const total = stats.totalPotentialSavings
+  if (total === null || !Number.isFinite(total)) return { kind: 'unavailable', value: UNAVAILABLE_FIGURE, lines: [] }
+  const ceilingByType = stats.potentialSavingsCeilingByResourceType ?? {}
+  const positiveEstimates = typeof stats.estimatedFindings === 'number' && stats.estimatedFindings > 0
+  if (total > 0 || (total === 0 && positiveEstimates)) {
+    const amount = total > 0 ? format(total) : formatSavingsTotal(total, stats.estimatedFindings)
+    return {
+      kind: 'firm',
+      amount,
+      value: `${amount}/mo`,
+      strong: displayedAmount(amount) >= SMALL_SAVINGS_USD,
+      lines: describeCeilings(ceilingByType, format),
+    }
+  }
+  if (stats.potentialSavingsCeiling > 0) {
+    return { kind: 'upper_bound_only', value: upperBoundOnly(format(stats.potentialSavingsCeiling)), lines: [NO_FIRM_ESTIMATE] }
+  }
+  if (stats.activeRecommendations > 0) {
+    const line = openSubCent <= 0 ? NO_ESTIMATE_SUB : openSubCent >= stats.activeRecommendations ? SUB_CENT_EACH_SUB : SUB_CENT_SOME_SUB
+    return { kind: 'no_estimate', value: NO_DOLLAR_ESTIMATE, lines: [line] }
+  }
+  return partialRun
+    ? { kind: 'none_found', value: NONE_FOUND_PARTIAL, lines: [NONE_FOUND_PARTIAL_SUB] }
+    : { kind: 'none_found', value: NONE_FOUND, lines: [NONE_FOUND_SUB] }
+}
+
+/**
+ * A plain savings amount with no basis metadata (a remediation workflow's
+ * estimated_savings): "$X/mo" above $0, otherwise "No dollar estimate".
+ */
+export function formatPlainSavings(amount: unknown, format: (value: number) => string = formatSavingsCurrency, suffix = '/mo'): string {
+  const value = toAmount(amount)
+  return value !== null && value > 0 ? `${format(value)}${suffix}` : NO_DOLLAR_ESTIMATE
 }
 
 // What each resource type's ceiling assumes. Mirror of CEILING_CONDITIONS in
@@ -109,13 +296,17 @@ const RANK: Record<SavingsBasisKind | 'none', number> = { estimate: 0, ceiling: 
 
 /**
  * A copy of `recs` ranked for a "top savings" list: estimates first (the
- * figures that are counted in totals), then ceilings, then figures with no
- * savings basis -- each group by its figure, largest first. An upper bound
- * never outranks an estimate just because it is bigger.
+ * figures that are counted in totals), then ceilings, then findings with no
+ * dollar figure (savingsFigure: no basis, or a figure not above $0) -- each
+ * group by its figure, largest first (a recorded sub-cent amount is below
+ * every stored one). An upper bound never outranks an estimate just because
+ * it is bigger.
  */
 export function rankBySavings<T extends { potentialSavings: number; metadata?: Record<string, unknown> | null }>(recs: readonly T[]): T[] {
-  const rank = (rec: T) => RANK[savingsBasisKind(rec) ?? 'none']
-  return [...recs].sort((a, b) => rank(a) - rank(b) || (b.potentialSavings || 0) - (a.potentialSavings || 0))
+  const figures = new Map(recs.map((rec) => [rec, savingsFigure(rec)] as const))
+  const rank = (rec: T) => RANK[figures.get(rec)!.kind]
+  const amount = (rec: T) => { const fig = figures.get(rec)!; return fig.kind === 'none' ? 0 : fig.amount }
+  return [...recs].sort((a, b) => rank(a) - rank(b) || amount(b) - amount(a))
 }
 
 // metadata.price_source written by the EC2 idle detector -- mirror of

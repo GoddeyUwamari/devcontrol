@@ -246,6 +246,21 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
     expect(result.components.cost.detail).toContain('$40/mo estimated savings identified');
   });
 
+  it('"Never show $0" (ruling Q6): a total under $1 is shown in cents, never "$0/mo estimated savings identified"', async () => {
+    const orgId = await insertOrgWithAwsAccount();
+    await insertAwsResource(orgId, 'i-small-rr', 100);
+    await insertActiveRecommendation(orgId, 'vol-small', 0.08);
+    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '100.00'));
+
+    const service = new SystemIntelligenceService();
+    stubSecurityAndObservability(service);
+
+    const result = await service.getSystemIntelligence(orgId);
+
+    expect(result.components.cost.detail).toContain('$0.08/mo estimated savings identified');
+    expect(result.components.cost.detail).not.toMatch(/(?<![\d.])\$0\/mo/);
+  });
+
   it('ACTIVE filtering is preserved: a RESOLVED recommendation is excluded from the cost score\'s savings detail, matching getStats() semantics', async () => {
     const orgId = await insertOrgWithAwsAccount();
     await insertAwsResource(orgId, 'i-active-rr', 500);

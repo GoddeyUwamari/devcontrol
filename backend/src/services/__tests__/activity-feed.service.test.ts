@@ -60,13 +60,14 @@ describe('optimization activity', () => {
     expect(sql).toMatch(/metadata->>'savings_basis' AS savings_basis/);
   });
 
-  it('DECIMAL-string savings render in cents, a ceiling reads "up to", no supported basis reads "no dollar estimate"', async () => {
+  it('DECIMAL-string savings render in cents, a ceiling reads "up to", no supported basis or no figure reads "no dollar estimate"', async () => {
     routeQueries();
     const events = await new ActivityFeedService().getActivityFeed(ORG);
     const optimization = events.filter((e) => e.type === 'optimization').map((e) => e.message);
     expect(optimization).toEqual([
       'Cost optimization found · Unattached volume — ~$0.48/month opportunity',
-      'Cost optimization found · gp2 volume — ~$0.00/month opportunity',
+      // "Never show $0": an estimate basis with a stored 0.00 and no recorded sub-cent amount has no dollar figure.
+      'Cost optimization found · gp2 volume — no dollar estimate',
       'Cost optimization found · Idle Instance — ~$12.50/month opportunity',
       'Cost optimization found · S3 Lifecycle Optimization — up to $41.27/month opportunity',
       'Cost optimization found · Reserved Instance Opportunity — no dollar estimate',
@@ -150,5 +151,68 @@ describe('anomaly activity', () => {
     routeQueries();
     const events = await new Service().getActivityFeed(ORG);
     expect(events.filter((e) => e.type === 'anomaly').map((e) => e.message)).toEqual(['Anomaly detected · legacy tag-derived spike']);
+  });
+});
+
+describe('"Never show $0" (founder rulings 2026-11-26): no-figure rows and recorded sub-cent amounts', () => {
+  // A money zero: "$0", "$0.0", "$0.00" (not "$0.01", not "<$0.01"), or a bare "0/mo".
+  const MONEY_ZERO = /(?<![<\d.,])\$0(?:\.0{1,2})?(?![.\d])|(?<![\d.$])0\/mo\b/;
+  const LOW_ACTIVITY = { rule_version: 2, rule_id: 'ec2_low_activity', rule_object_version: 2 };
+  const NO_FIGURE_ROWS = [
+    { created_at: T(1), potential_savings: '0.00', issue: 'Idle RDS Instance', severity: 'LOW', savings_basis: null },
+    { created_at: T(2), potential_savings: '0.00', issue: 'Unused CloudWatch Log Group', severity: 'LOW', savings_basis: null },
+    { created_at: T(3), potential_savings: '0.00', issue: 'DynamoDB Capacity Mode Comparison', severity: 'LOW', savings_basis: 'comparison: gate blocked' },
+    { created_at: T(4), potential_savings: '0.00', issue: 'Low-Usage Lambda Function', severity: 'LOW', savings_basis: 'estimated: lambda', savings_unrounded_usd: null },
+    { created_at: T(5), potential_savings: '0.00', issue: 'S3 Lifecycle Optimization', severity: 'LOW', savings_basis: 'ceiling: s3' },
+    { created_at: T(6), potential_savings: '0.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: x', ...LOW_ACTIVITY },
+  ];
+  const route = (rows: unknown[]) => mockClientQuery.mockImplementation(async (sql: string) => {
+    if (sql.includes('FROM cost_recommendations')) return { rows };
+    return { rows: [] };
+  });
+  const messages = async () => (await new ActivityFeedService().getActivityFeed(ORG)).filter((e) => e.type === 'optimization').map((e) => e.message);
+
+  it('reads the recorded sub-cent amount as JSON (a number), next to the basis', async () => {
+    route([]);
+    await new ActivityFeedService().getActivityFeed(ORG);
+    expect(sqlFor('cost_recommendations')[0]).toMatch(/metadata->'savings_unrounded_usd' AS savings_unrounded_usd/);
+  });
+
+  it('every no-figure row reads "no dollar estimate", never a money zero', async () => {
+    route(NO_FIGURE_ROWS);
+    const out = await messages();
+    expect(out).toHaveLength(NO_FIGURE_ROWS.length);
+    for (const message of out) {
+      expect(message).toMatch(/— no dollar estimate$/);
+      expect(message).not.toMatch(MONEY_ZERO);
+    }
+  });
+
+  it('a recorded sub-cent amount on a stored 0.00 reads "less than $0.01/month"; never inferred without it', async () => {
+    route([
+      { created_at: T(1), potential_savings: '0.00', issue: 'Low-Usage Lambda Function', severity: 'LOW', savings_basis: 'estimated: lambda', savings_unrounded_usd: 0.0012 },
+      { created_at: T(2), potential_savings: '0.00', issue: 'S3 Lifecycle Optimization', severity: 'LOW', savings_basis: 'ceiling: s3', savings_unrounded_usd: 0.004 },
+      { created_at: T(3), potential_savings: '0.00', issue: 'Low-Usage Lambda Function', severity: 'LOW', savings_basis: 'estimated: lambda' },
+      { created_at: T(4), potential_savings: '0.00', issue: 'Low-Usage Lambda Function', severity: 'LOW', savings_basis: 'estimated: lambda', savings_unrounded_usd: '0.003' },
+    ]);
+    expect(await messages()).toEqual([
+      'Cost optimization found · Low-Usage Lambda Function — less than $0.01/month opportunity',
+      'Cost optimization found · S3 Lifecycle Optimization — less than $0.01/month opportunity (upper bound)',
+      'Cost optimization found · Low-Usage Lambda Function — no dollar estimate',
+      'Cost optimization found · Low-Usage Lambda Function — no dollar estimate',
+    ]);
+  });
+
+  it('a low-activity row with a recorded sub-cent amount reads "less than $0.01/month", never "up to less than" (review N-4)', async () => {
+    route([
+      { created_at: T(1), potential_savings: '0.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: x', price_source: 'list_table', savings_unrounded_usd: 0.002, ...LOW_ACTIVITY },
+      { created_at: T(2), potential_savings: '0.00', issue: 'Idle Instance', severity: 'LOW', savings_basis: 'estimated: x', price_source: 'default_unlisted_type', savings_unrounded_usd: 0.002, ...LOW_ACTIVITY },
+    ]);
+    const out = await messages();
+    expect(out).toEqual([
+      'Cost optimization found · Low-activity instance — less than $0.01/month',
+      'Cost optimization found · Low-activity instance — less than $0.01/month (default estimate, price unknown)',
+    ]);
+    for (const message of out) expect(message).not.toMatch(/up to less/);
   });
 });

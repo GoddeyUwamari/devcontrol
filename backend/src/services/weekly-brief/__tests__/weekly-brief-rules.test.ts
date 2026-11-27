@@ -425,7 +425,7 @@ describe('R3: the clean state, one condition at a time', () => {
     });
     expect(f.savings).toMatchObject({ state: 'available', open: { count: 0 }, stillDetected: { count: 1 }, measured: true });
     expect(isClean(f)).toBe(false);
-    expect(tiles(f)[2]).toEqual({ label: 'ESTIMATED SAVINGS', sublabel: 'Open opportunities', value: '$0/mo', lines: ['1 still detected · about $4/mo estimated'] });
+    expect(tiles(f)[2]).toEqual({ label: 'ESTIMATED SAVINGS', sublabel: 'Open opportunities', value: 'None open', lines: ['1 still detected · about $4/mo estimated'] });
     expect(attentionItems(f).map(i => i.title)).toEqual(['Cost · 1 resolved finding detected again']);
     expect(summarySentence(f).bold).toBe('1 cost finding you marked resolved was detected again.');
     const { htmlText, text } = render(f);
@@ -645,9 +645,11 @@ describe("R6: savings use the Cost Optimization page's formatter", () => {
     }
   });
 
-  it('$0/mo only when nothing is open (still-detected only)', () => {
+  it('"None open" when nothing is open (still-detected only): ruling Q1, never "$0/mo"', () => {
     const f = facts({ stillDetected: still({ count: 2, estimatedMonthlySavings: 9 }) });
-    expect(tiles(f)[2]).toMatchObject({ value: '$0/mo', lines: ['2 still detected · about $9/mo estimated'] });
+    expect(tiles(f)[2]).toMatchObject({ value: 'None open', lines: ['2 still detected · about $9/mo estimated'] });
+    const { htmlText, text } = render(f);
+    for (const out of [htmlText, text]) expect(out).not.toMatch(/\$0\/mo/);
   });
 
   it('D-6: a still-detected estimate of $0.00 after rounding shows "N still detected" with no amount, never "no dollar estimate yet"', () => {

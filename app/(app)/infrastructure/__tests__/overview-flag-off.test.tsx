@@ -12,6 +12,13 @@
  * resource table (Pricing PR 1A). The .html files were re-recorded with only
  * that button's markup inserted; the .requests.txt files are unchanged.
  *
+ * A second deliberate change: "Never show $0" (review-logs/never-zero, ruling
+ * Q4). The Top Actions header names the priced count ("$X/mo recoverable from
+ * K priced change(s)") and drops the amount when nothing is priced; Recoverable
+ * Savings is grey words or "—" instead of a green "$0.00"; the active-waste and
+ * recoverable value elements carry test ids. Re-recorded with only those
+ * edits; the .requests.txt files are unchanged.
+ *
  * Determinism: the zone is pinned to UTC and the clock is frozen before the
  * page module loads (DEMO_RESOURCES calls new Date() at load; rows render
  * "Added {date}"; the posture strip renders "Calculated … ago"). Only Date is

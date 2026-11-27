@@ -117,6 +117,7 @@ import {
   EC2_PRICE_SOURCE_DEFAULT,
   EC2_PRICE_SOURCE_LIST_TABLE,
   SEVERITY_BASIS_FIXED_LOW_UNKNOWN_PRICE,
+  subCentSavingsMetadata,
   type EC2PriceSource,
 } from './estimated-savings';
 import {
@@ -1696,8 +1697,8 @@ class CostOptimizationService {
         const monthlySavingsCeiling = sizeGB * (S3_STANDARD_PER_GB_MONTH_USD - S3_STANDARD_IA_PER_GB_MONTH_USD);
 
         const description = lifecycleState === 'no_lifecycle_configuration'
-          ? `This bucket has no lifecycle configuration. If all ${sizeGB.toFixed(1)}GB of its current Standard storage qualified for a transition to Standard-IA, the maximum possible saving is estimated below -- actual savings depend on how much of this data is genuinely infrequently accessed, since Standard-IA adds a retrieval fee.`
-          : `This bucket has a lifecycle configuration, but its ${enabledRuleCount} enabled rule(s) only transition storage class and never expire objects or abort incomplete multipart uploads. The estimate below is the same storage-class-transition ceiling as a bucket with no configuration at all.`;
+          ? `This bucket has no lifecycle configuration. If all ${sizeGB.toFixed(1)}GB of its current Standard storage qualified for a transition to Standard-IA, the maximum possible saving is the Standard to Standard-IA price difference on that storage -- actual savings depend on how much of this data is genuinely infrequently accessed, since Standard-IA adds a retrieval fee.`
+          : `This bucket has a lifecycle configuration, but its ${enabledRuleCount} enabled rule(s) only transition storage class and never expire objects or abort incomplete multipart uploads. Its maximum possible saving is the same storage-class-transition ceiling as a bucket with no configuration at all.`;
 
         issues.push({
           resourceId: bucket.Name,
@@ -1713,6 +1714,8 @@ class CostOptimizationService {
             enabled_rule_count: enabledRuleCount,
             standard_storage_gb: sizeGB,
             savings_basis: 'ceiling: assumes 100% of current Standard storage transitions to Standard-IA; does not net out Standard-IA retrieval fees',
+            // "Never show $0" Q2: a positive ceiling stored as 0.00 (under ~0.48 GB) keeps its real amount.
+            ...subCentSavingsMetadata(monthlySavingsCeiling),
           },
         });
       }
@@ -1836,7 +1839,7 @@ class CostOptimizationService {
           issue: ISSUE_LAMBDA_LOW_USAGE,
           description: invocations === 0
             ? `This function had zero invocations over the last ${LAMBDA_USAGE_WINDOW_DAYS} days.`
-            : `This function was invoked only ${invocations} time(s) over the last ${LAMBDA_USAGE_WINDOW_DAYS} days. Estimated cost below is based on its actual invocation count and average duration in that window, not an assumed usage level.`,
+            : `This function was invoked only ${invocations} time(s) over the last ${LAMBDA_USAGE_WINDOW_DAYS} days. Its estimated cost is based on its actual invocation count and average duration in that window, not an assumed usage level.`,
           potentialSavings: monthlyCost,
           severity: this.calculateSeverity(monthlyCost),
           awsRegion: region,
@@ -1846,6 +1849,8 @@ class CostOptimizationService {
             memory_mb: memoryMB,
             usage_state: invocations === 0 ? 'zero_usage' : 'low_usage',
             savings_basis: `estimated: us-east-1 x86 request and duration list price for this function's observed ${LAMBDA_USAGE_WINDOW_DAYS}-day invocations and average duration at its configured memory, whatever its region or architecture; does not deduct the free tier; not billed cost`,
+            // "Never show $0" Q2: a positive estimate stored as 0.00 (under half a cent) keeps its real amount.
+            ...subCentSavingsMetadata(monthlyCost),
             configuration: {
               parameter: 'max_invocations',
               value: config.value,
@@ -2233,6 +2238,14 @@ class CostOptimizationService {
         analysis.throttleValidIntervals > 0 ? (analysis.throttleConfirmedIntervals > 0 ? 'observed' : 'none observed') : 'insufficient evidence'
       }\n` +
       `- Qualifies for review: ${qualifies ? 'YES' : 'NO'}`;
+    // F-1 (never-zero): rounded to cents exactly as the line prints it. A saving that prints as 0.00
+    // (exactly 0, or float residue such as 2.2e-16) gets no dollar figure; any other value keeps the
+    // original text. Display only: the stored figure is input.modeledMonthlySavings, unrounded.
+    const modeledSavingsCents = input.modeledMonthlySavings.toFixed(2);
+    const modeledSavingsText =
+      modeledSavingsCents === '0.00'
+        ? `none, because matching that demand would not lower the modeled monthly cost`
+        : `up to $${modeledSavingsCents}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)`;
 
     return (
       `DynamoDB capacity review identified\n\n` +
@@ -2256,7 +2269,7 @@ class CostOptimizationService {
       `Potential cost scenario\n` +
       `- Current modeled monthly cost: $${input.currentMonthlyCost.toFixed(2)}/month\n` +
       `- Modeled monthly savings if provisioned capacity matched the highest hourly-average demand observed during the analysis window: ` +
-      `up to $${input.modeledMonthlySavings.toFixed(2)}/month (an upper bound: a safe setting needs headroom above that demand, so the real saving is lower)\n\n` +
+      `${modeledSavingsText}\n\n` +
       `This is an illustrative cost scenario, not a recommended capacity setting. Short-lived spikes narrower than one hour, workload ` +
       `growth, burst capacity, and other DynamoDB capacity considerations are not fully modeled. Table-level throttle metrics confirm no ` +
       `provisioned-throughput throttling at the table level; they do not by themselves rule out partition-level or account-level throttling.`

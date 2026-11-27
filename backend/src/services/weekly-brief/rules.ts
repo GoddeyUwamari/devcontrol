@@ -140,6 +140,8 @@ const ALARMS_NOT_CONNECTED = 'Active CloudWatch alarms appear on Operational Hea
 /** F5: only when the finished total is $0. */
 const COST_ZERO_NOTE = 'Cost Explorer reported $0.00 for these days. If AWS credits cover your usage, it shows $0 here.';
 const NO_DEPLOYMENTS = 'No deployments recorded in DevControl this week.';
+/** Ruling Q1 ("Never show $0"): the savings tile when nothing is open but findings are still detected. */
+export const SAVINGS_NONE_OPEN = 'None open';
 
 /**
  * R1: no generated string may contain these words (a test scans every
@@ -416,8 +418,9 @@ function savingsTile(f: WeeklyFacts): BriefTile {
       : [];
     return tile(null, 'Nothing to review', ran);
   }
+  // Ruling Q1: nothing open (only still-detected findings) is "None open", never "$0/mo".
   const value = open.count === 0
-    ? `${formatSavings(0)}/mo`
+    ? SAVINGS_NONE_OPEN
     : formatOpenSavings(open.estimate, open.estimatedFindings) ?? `${open.count} open · no dollar estimate yet`;
   const lines = stillDetected.count > 0 ? [stillDetectedLine(stillDetected.count, stillDetected.estimate)] : [];
   return tile('Open opportunities', value, lines);

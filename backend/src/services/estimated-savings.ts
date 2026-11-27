@@ -234,3 +234,75 @@ export function describeCeilingsWithoutEstimate(ceilingByResourceType: Record<st
       ? `Up to ${format(amount)}/${period} ${CEILING_CONDITIONS[type]} (upper bound)`
       : `Up to ${format(amount)}/${period} from ${type} upper-bound figures`);
 }
+
+// ─── The one savings-figure rule ("Never show $0", founder rulings 2026-11-26) ──
+//
+// Mirror of savingsFigure() in lib/savings-basis.ts (parity pinned by
+// lib/__tests__/savings-figure-parity.test.ts). A finding has a dollar figure
+// only when its savings_basis is an estimate or a ceiling AND its stored
+// figure is a finite number above $0 -- countSavingsFindings()'s rule for an
+// estimate. Anything else has no dollar estimate and is never shown as "$0".
+//
+// potential_savings is DECIMAL(10,2): a positive figure under half a cent is
+// stored as 0.00. The detectors that can compute one (low-usage Lambda, S3
+// lifecycle) record the unrounded amount in metadata[SAVINGS_UNROUNDED_FIELD]
+// at detection time (subCentSavingsMetadata). Only that recorded amount reads
+// "less than $0.01" -- never a stored 0 without it. It is never added to a
+// total or a count: the stored column and every aggregate are unchanged.
+
+/** The metadata field holding the unrounded USD/month amount of a figure stored as 0.00. */
+export const SAVINGS_UNROUNDED_FIELD = 'savings_unrounded_usd';
+
+/** A row figure under one cent: one wording for an estimate and a ceiling (the saving is below the bound, so below a cent). */
+export const LESS_THAN_ONE_CENT = 'less than $0.01';
+
+/**
+ * True when DECIMAL(10,2) stores `amount` as 0.00 although it is above $0. pg
+ * sends a JS number as its shortest decimal string, and Postgres rounds half
+ * away from zero, so exactly the amounts in (0, 0.005) round to 0.00.
+ */
+export function storesAsZeroCents(amount: number): boolean {
+  return Number.isFinite(amount) && amount > 0 && amount < 0.005;
+}
+
+/**
+ * The metadata a detector adds next to a computed figure: the unrounded
+ * amount only when it is positive and would be stored as 0.00; otherwise
+ * nothing (never for 0, a gate-blocked figure, or anything at least half a cent).
+ */
+export function subCentSavingsMetadata(amount: number): { [SAVINGS_UNROUNDED_FIELD]?: number } {
+  return storesAsZeroCents(amount) ? { [SAVINGS_UNROUNDED_FIELD]: amount } : {};
+}
+
+export type SavingsFigure =
+  | { kind: SavingsBasisKind; amount: number; subCent: boolean }
+  | { kind: 'none' };
+
+/** The recorded unrounded amount when it is a genuine sub-cent figure (0 < x < 0.01), else null. */
+export function recordedSubCentAmount(metadata: Record<string, unknown> | null | undefined): number | null {
+  const value = metadata?.[SAVINGS_UNROUNDED_FIELD];
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 0.01 ? value : null;
+}
+
+/** A finite number (or a whole numeric string, as pg returns DECIMAL), else null -- the frontend mirror's parse. */
+function strictAmount(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? amount : null;
+  }
+  return null;
+}
+
+/** The one row rule (frontend mirror: lib/savings-basis.ts savingsFigure). */
+export function savingsFigure(rec: { potential_savings: number | string | null | undefined; metadata?: Record<string, unknown> | null }): SavingsFigure {
+  const kind = classifySavingsBasis(rec.metadata?.savings_basis);
+  if (kind === null) return { kind: 'none' };
+  const stored = strictAmount(rec.potential_savings);
+  if (stored !== null && stored > 0) return { kind, amount: stored, subCent: false };
+  if (stored === 0) {
+    const subCent = recordedSubCentAmount(rec.metadata);
+    if (subCent !== null) return { kind, amount: subCent, subCent: true };
+  }
+  return { kind: 'none' };
+}
