@@ -63,15 +63,18 @@ describe('B1: cost.top_estimated_resources', () => {
     const section = await collectProvider(topEstimatedResourcesProvider, ctx());
 
     expect(section.state).toBe('partial');
-    expect(section.completeness).toEqual({ unit: 'discovered resources with a defensible price', expected: LEGACY_ROWS.length, received: 2, missing: null });
+    // N excludes the VPC and the stopped instance (fix round 1, ruling 9).
+    expect(section.completeness).toEqual({ unit: 'discovered resources with a defensible price', expected: LEGACY_ROWS.length - 2, received: 2, missing: null });
     const data = section.data as any;
     expect(data.pricedResources).toBe(2);
-    expect(data.totalResources).toBe(LEGACY_ROWS.length);
+    expect(data.totalResources).toBe(LEGACY_ROWS.length - 2);
+    expect(data.excludedResources).toBe(2);
     expect(data.items).toEqual([
-      { ref: 'e1', resourceId: 'rds-orders-db', resourceType: 'rds', monthlyCost: 122, basis: 'us-east-1 list-price estimate', detail: 'instance hours only; excludes storage, I/O and backups' },
+      { ref: 'e1', resourceId: 'rds-orders-db', resourceType: 'rds', monthlyCost: 124.83, basis: 'us-east-1 list-price estimate', detail: 'instance hours only; excludes storage, I/O and backups' },
       { ref: 'e2', resourceId: 'ebs-data-vol', resourceType: 'ebs', monthlyCost: 20, basis: 'us-east-1 list-price estimate', detail: 'volume storage only' },
     ]);
     for (const amount of PLACEHOLDER_AMOUNTS) expect(data.items.map((i: any) => i.monthlyCost)).not.toContain(amount);
+    expect(data.items.map((i: any) => i.monthlyCost)).not.toContain(122);
     expect(section.coverage).toContain('Never add these figures together');
     expect(section.coverage).toContain('not $0');
     expect(section.coverage).not.toMatch(/^list-price/);

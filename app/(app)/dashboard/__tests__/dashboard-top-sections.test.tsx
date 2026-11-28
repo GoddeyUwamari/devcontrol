@@ -489,9 +489,9 @@ describe('9. estimated spend is labeled as an estimate', () => {
     const card = kpi('/costs')
     expect(within(card).getByTestId('kpi-title').textContent).toBe('Estimated Monthly Run-Rate')
     const dialog = openInfo(card, 'About Estimated Monthly Run-Rate')
-    expect(dialog).toHaveTextContent('Estimated from 3 of 4 priced resources · not AWS billed spend')
+    expect(dialog).toHaveTextContent('Estimated from 3 of 4 priced · not AWS billed spend')
     expect(dialog.textContent).not.toContain('Actual · AWS Cost Explorer')
-    expect(within(card).getByTestId('kpi-caption')).toHaveTextContent('Estimated from 3 of 4 priced resources · not AWS billed spend')
+    expect(within(card).getByTestId('kpi-caption')).toHaveTextContent('Estimated from 3 of 4 priced · not AWS billed spend')
   })
 
   it('actual spend: the panel gives provenance and the comparison basis with the still-billing note', async () => {

@@ -208,7 +208,7 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
 
   it('an inventory estimate is labeled as an estimate', async () => {
     const { prompt } = await run({ costs: estimatedCosts(3200) });
-    expect(prompt).toContain('The estimated monthly run-rate of the discovered resources DevControl can price is approximately $3,200.00 (us-east-1 list-price estimate, not AWS billed spend; Estimated from 5 of 5 priced resources).');
+    expect(prompt).toContain('The estimated monthly run-rate of the discovered resources DevControl can price is approximately $3,200.00 (us-east-1 list-price estimate, not AWS billed spend; Estimated from 5 of 5 priced).');
     expect(prompt).not.toMatch(/cloud spend is approximately/i);
     // Placeholder-costs PR 1: the dashboard summary carries the inventory claim rule.
     expect(prompt).toContain(INVENTORY_ESTIMATE_RULE);

@@ -241,24 +241,28 @@ export function rdsInstanceHourlyPrice(key: RdsInstancePriceKey): number | null 
   return typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : null;
 }
 
-// Discovery's original RDS instance table (awsResourceDiscovery.ts estimateRDSCost, moved here
-// unchanged so the inventory pricing rule reads the same numbers). $/month for 730 instance hours,
-// keyed by instance class ONLY. The code never stated its assumptions; compared with the AWS Price
-// List data in rds-instance-prices.json (us-east-1, version in RDS_INSTANCE_HOURLY_PRICE_SOURCE),
-// these figures track the MySQL/MariaDB Single-AZ on-demand instance-hour price (within 3.3%, never
-// above it) and sit 4-8% under PostgreSQL and far under the licensed engines. So the inventory
-// pricing rule (services/inventory-cost.ts) prices an RDS row from this table only when the row
-// records us-east-1, engine mysql or mariadb, Multi-AZ false and status available (ruling F-2).
-// Instance hours only: storage, Provisioned IOPS, backup storage and public IPv4 are excluded.
+// RDS instance table for discovery's estimate and the inventory pricing rule
+// (services/inventory-cost.ts). $/month = on-demand instance-hour price x 730 hours, keyed by
+// instance class. Assumptions: us-east-1, engine MySQL or MariaDB (General Public License; the two
+// are priced identically), Single-AZ, instance hours only (storage, Provisioned IOPS, backup storage
+// and public IPv4 are excluded). The rule prices a row from this table only when the row records
+// all of them plus status available (ruling F-2).
+//
+// Fix round 1 (founder ruling 2): refreshed from the older hand-typed figures (12, 24, 48, 96, 122,
+// 244, 175, 350) to the AWS Price List data in rds-instance-prices.json -- us-east-1,
+// "mysql|general-public-license", Single-AZ -- offer version 20261124233028 (published
+// 2026-11-24T23:30:28Z, retrieved 2026-11-25; RDS_INSTANCE_HOURLY_PRICE_SOURCE). Each figure is
+// that hourly price x 730, rounded to cents; config/__tests__/inventory-rds-table.test.ts pins
+// every entry to the JSON. Regional pricing is placeholder-costs PR 3.
 export const RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ: Readonly<Record<string, number>> = Object.freeze({
-  'db.t3.micro': 12,
-  'db.t3.small': 24,
-  'db.t3.medium': 48,
-  'db.t3.large': 96,
-  'db.m5.large': 122,
-  'db.m5.xlarge': 244,
-  'db.r5.large': 175,
-  'db.r5.xlarge': 350,
+  'db.t3.micro': 12.41, // 0.017/h
+  'db.t3.small': 24.82, // 0.034/h
+  'db.t3.medium': 49.64, // 0.068/h
+  'db.t3.large': 99.28, // 0.136/h
+  'db.m5.large': 124.83, // 0.171/h
+  'db.m5.xlarge': 249.66, // 0.342/h
+  'db.r5.large': 175.2, // 0.24/h
+  'db.r5.xlarge': 350.4, // 0.48/h
 });
 
 // AWS S3 storage pricing, us-east-1, $/GB-month, first 50TB tier -- verified

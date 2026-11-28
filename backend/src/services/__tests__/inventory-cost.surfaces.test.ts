@@ -57,7 +57,9 @@ describe('A1/A2: the inventory export "Monthly Cost" column', () => {
     const byName = (n: string) => cell(LEGACY_ROWS.find((r) => r.resource_name === n));
     expect(byName('network')).toBe('No direct charge. NAT gateways, endpoints and data transfer are charged separately.');
     expect(byName('ec2-stopped')).toBe('Not running: no instance-hour charge');
-    expect(byName('orders-db')).toBe('$122.00 (us-east-1 list-price estimate; instance hours only; excludes storage, I/O and backups)');
+    expect(byName('orders-db')).toBe('$124.83 (us-east-1 list-price estimate; instance hours only; excludes storage, I/O and backups)');
+    // Fix round 1 (ruling 8): stored 'stopped' but AWS said "stopping" -> No price.
+    expect(byName('ec2-stopping')).toBe('No price');
     expect(byName('data-vol')).toBe('$20.00 (us-east-1 list-price estimate; volume storage only)');
   });
 
@@ -65,7 +67,7 @@ describe('A1/A2: the inventory export "Monthly Cost" column', () => {
     const csv = (await new AWSResourcesExportService(mockClient(LEGACY_ROWS)).generateCSV('org', {}, ['resource_name', 'resource_type', 'cost'])).toString('utf8');
     for (const amount of PLACEHOLDER_AMOUNTS) expect(csv).not.toContain(`$${amount}`);
     expect(csv).not.toMatch(MONEY_ZERO);
-    expect(csv).toContain('orders-db,RDS,"$122.00 (us-east-1 list-price estimate; instance hours only; excludes storage, I/O and backups)"');
+    expect(csv).toContain('orders-db,RDS,"$124.83 (us-east-1 list-price estimate; instance hours only; excludes storage, I/O and backups)"');
     expect(csv.split('\n')[0]).toBe('Resource Name,Resource Type,Monthly Cost');
   });
 
@@ -82,6 +84,8 @@ describe('A1/A2: the inventory export "Monthly Cost" column', () => {
     const service = new AWSResourcesExportService(mockClient(LEGACY_ROWS));
     const withCost = pdfText(await service.generatePDF('org', {}, ['resource_name', 'cost']));
     expect(withCost).toContain('us-east-1 list-price estimate');
+    // Fix round 1 (ruling 9): the column's coverage, N excluding not-running / no-direct-charge.
+    expect(withCost).toContain(`Monthly Cost coverage: 2 of ${LEGACY_ROWS.length - 2} priced · 2 not running or no direct charge.`);
     expect(withCost).toContain('it is not $0');
     expect(withCost).toContain('No price');
     for (const amount of PLACEHOLDER_AMOUNTS) expect(withCost).not.toContain(`$${amount}`);
@@ -143,15 +147,15 @@ describe('A3: Cost Summary report (F-4)', () => {
 
   it('the appendix sums only priced rows with "K of N resources priced"; groups and the top 10 list priced rows only', async () => {
     const data = await fetchSummary(LEGACY_ROWS, async () => billed(10));
-    expect(data.inventory).toMatchObject({ pricedResources: 2, totalResources: LEGACY_ROWS.length, amount: 142 });
+    expect(data.inventory).toMatchObject({ pricedResources: 2, totalResources: LEGACY_ROWS.length - 2, excludedResources: 2, amount: expect.closeTo(144.83, 6) });
     expect(costSummaryAppendixLines(data.inventory)).toEqual([
-      `Coverage: 2 of ${LEGACY_ROWS.length} resources priced.`,
-      'Estimated monthly cost of the 2 priced resources: $142.00 (us-east-1 list-price estimate; not AWS billed spend). Resources without a price are not included and are not $0.',
+      `Coverage: 2 of ${LEGACY_ROWS.length - 2} priced · 2 not running or no direct charge.`,
+      'Estimated monthly cost of the 2 priced resources: $144.83 (us-east-1 list-price estimate; not AWS billed spend). Resources without a price are not included and are not $0.',
     ]);
     expect(data.topPriced.map((r: { resource: string }) => r.resource)).toEqual(['orders-db', 'data-vol']);
     const prod = data.inventoryByEnvironment.find((g: { name: string }) => g.name === 'production');
     const unknown = data.inventoryByEnvironment.find((g: { name: string }) => g.name === 'Unknown');
-    expect(inventoryGroupCell(prod.total)).toBe('$142.00 (us-east-1 list-price estimate)');
+    expect(inventoryGroupCell(prod.total)).toBe('$144.83 (us-east-1 list-price estimate)');
     expect(inventoryGroupCell(unknown.total)).toBe('No price');
     const text = await pdf(LEGACY_ROWS, async () => billed(10));
     for (const amount of PLACEHOLDER_AMOUNTS) expect(text).not.toContain(`$${amount}`);
@@ -173,7 +177,7 @@ describe('A3: Cost Summary report (F-4)', () => {
   it('a NULL-cost row never becomes $0.00 (the old parseFloat(r.cost || 0))', async () => {
     const data = await fetchSummary([row('fn', 'lambda', null)], async () => billed(5));
     expect(data.topPriced).toEqual([]);
-    expect(data.inventory).toMatchObject({ pricedResources: 0, totalResources: 1, amount: null });
+    expect(data.inventory).toMatchObject({ pricedResources: 0, totalResources: 1, excludedResources: 0, amount: null });
   });
 });
 
@@ -181,7 +185,7 @@ describe('D1/D2: the run-rate fallback and the "has billing data" figure', () =>
   const service = (rows: unknown[]) => new AWSCostService({ query: jest.fn(async () => ({ rows })) } as unknown as Pool);
 
   it('sums only priced resources and reports K of N', async () => {
-    await expect(service(LEGACY_ROWS).getInventoryPricedRunRate('org')).resolves.toMatchObject({ pricedResources: 2, totalResources: LEGACY_ROWS.length, amount: 142 });
+    await expect(service(LEGACY_ROWS).getInventoryPricedRunRate('org')).resolves.toMatchObject({ pricedResources: 2, totalResources: LEGACY_ROWS.length - 2, excludedResources: 2, amount: expect.closeTo(144.83, 6) });
   });
 
   it('D2: placeholders alone never become a spend figure (amount 0 -> statsHasSpendFigure false), with 0 of N', async () => {
@@ -189,7 +193,7 @@ describe('D1/D2: the run-rate fallback and the "has billing data" figure', () =>
     const s = service(unpriced);
     jest.spyOn(s, 'fetchMonthlyCosts').mockRejectedValue(new Error('AccessDeniedException'));
     await expect(s.getMonthlySpendWithFallback('org')).resolves.toEqual({
-      amount: 0, source: 'estimated', estimateCoverage: { pricedResources: 0, totalResources: unpriced.length },
+      amount: 0, source: 'estimated', estimateCoverage: { pricedResources: 0, totalResources: unpriced.length - 2, excludedResources: 2 },
     });
   });
 

@@ -35,9 +35,11 @@ export const LEGACY_ROWS = [
   legacyRow('cdn', 'cloudfront', '8.50'),
   legacyRow('network', 'vpc', '0.00'),
   legacyRow('lambda-no-usage', 'lambda', null, { metadata: { usage_state: 'unavailable', architecture: 'x86_64' } }),
-  legacyRow('ec2-stopped', 'ec2', '60.00', { status: 'stopped', metadata: { instance_type: 't3.large' } }),
+  legacyRow('ec2-stopped', 'ec2', '60.00', { status: 'stopped', metadata: { instance_type: 't3.large', instance_state: 'stopped' } }),
+  // Stored 'stopped' but AWS reported "stopping" (fix round 1, ruling 8): No price, and inside N.
+  legacyRow('ec2-stopping', 'ec2', '60.00', { status: 'stopped', metadata: { instance_type: 't3.large', instance_state: 'stopping' } }),
   // Established basis: priced.
-  legacyRow('orders-db', 'rds', '122.00', { status: 'available', env: 'production', team: 'Payments', metadata: { engine: 'mysql', multi_az: false, db_instance_class: 'db.m5.large' } }),
+  legacyRow('orders-db', 'rds', '124.83', { status: 'available', env: 'production', team: 'Payments', metadata: { engine: 'mysql', multi_az: false, db_instance_class: 'db.m5.large' } }),
   legacyRow('data-vol', 'ebs', '20.00', { status: 'in-use', env: 'production', team: 'Payments', metadata: { volume_type: 'gp2', size_gb: 200 } }),
 ];
 

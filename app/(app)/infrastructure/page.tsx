@@ -680,7 +680,8 @@ function InfrastructureContent() {
           {/* Component scores */}
           <div className="grid grid-cols-3 gap-2.5">
             {[
-              { key: 'cost',          label: COMPONENT_LABELS.cost,          value: `${intelCostScore}/100`, chip: scoreChip(intelCostScore), partial: isPartial('cost') },
+              // Cost with no usable billed spend has no score (placeholder-costs fix round 1, ruling 5).
+              { key: 'cost',          label: COMPONENT_LABELS.cost,          value: intelCostScore == null ? 'Insufficient data' : `${intelCostScore}/100`, chip: intelCostScore == null ? { color: '#475569', bg: '#F1F5F9' } : scoreChip(intelCostScore), partial: isPartial('cost') },
               { key: 'security',      label: COMPONENT_LABELS.security,      value: `${intelSecScore}/100`,  chip: scoreChip(intelSecScore),  partial: isPartial('security') },
               // Alert coverage is a coverage percentage, not a 0-100 grade.
               { key: 'observability', label: COMPONENT_LABELS.observability, value: `${intelObsScore}%`,     chip: scoreChip(intelObsScore),  partial: isPartial('observability') },

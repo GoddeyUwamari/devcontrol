@@ -276,7 +276,9 @@ describe('Cost Explorer failure', () => {
     expect(context.costs.comparison.state).toBe('unavailable');
     expect(context.costs.comparison.previousWindowTotal).toBeNull();
     expect(context.costs.comparison.changePercent).toBeNull();
-    expect(trendSpy).not.toHaveBeenCalled();
+    // No month-over-month request (the cost path's 90d trend). The System Intelligence score's own
+    // trailing-30-day read (placeholder-costs F-13 as amended) is a separate '30d' call.
+    expect(trendSpy).not.toHaveBeenCalledWith(expect.anything(), '90d');
 
     const formatted = format(context);
     expect(formatted).toMatch(/- Status: Could not be retrieved/);
@@ -331,7 +333,7 @@ describe('Inventory estimate fallback', () => {
     expect(context.costs.period).toEqual({ kind: 'point_in_time' });
     expect(context.costs.data?.topSpenders ?? null).toBeNull();
     expect(context.costs.costExplorer.state).toBe('error');
-    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 2, totalResources: 2 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 2, totalResources: 2, excludedResources: 0 });
     expect(context.costs.scope).toEqual({ kind: 'resource_inventory', connectedAccountId: ACCOUNT_ID, discoveryRegion: 'us-east-1' });
     expect(context.costs.scope).not.toHaveProperty('regions');
     expect(context.costs.scope).not.toHaveProperty('linkedAccountFilter');
@@ -342,7 +344,7 @@ describe('Inventory estimate fallback', () => {
     expect(formatted).toMatch(/Scope: AWS resources DevControl discovered under the connected IAM role/);
     expect(formatted).toMatch(/Regions: us-east-1 only/);
     expect(formatted).toMatch(/Estimated monthly cost of priced resources: \$42\.50/);
-    expect(formatted).toContain('Coverage: Estimated from 2 of 2 priced resources');
+    expect(formatted).toContain('Coverage: Estimated from 2 of 2 priced');
     expect(formatted).not.toMatch(/- month_to_date_spend:/);
     expect(formatted).not.toMatch(/scope\.kind: cost_explorer/);
   });
@@ -358,10 +360,10 @@ describe('Inventory estimate fallback', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('partial');
-    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 1, totalResources: 2 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 1, totalResources: 2, excludedResources: 0 });
     expect(context.costs.data!.current).toBe(40);
-    expect(context.costs.reason).toBe('Estimated from 1 of 2 priced resources; the other 1 have no price and are not included');
-    expect(format(context)).toContain('Coverage: Estimated from 1 of 2 priced resources; the other 1 have no price -- not $0, and not included');
+    expect(context.costs.reason).toBe('Estimated from 1 of 2 priced; the other 1 have no price and are not included');
+    expect(format(context)).toContain('Coverage: Estimated from 1 of 2 priced; the other 1 have no price -- not $0, and not included');
     expect(format(context)).not.toMatch(/\$49/);
   });
 });

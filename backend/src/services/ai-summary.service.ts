@@ -43,7 +43,7 @@ import { noUrgentFindingsLine, reviewedFindingsLine } from './top-risk-selection
 import { collectEvidence, fingerprintSections, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
 import { INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
-import { INVENTORY_PRICE_BASIS, inventoryCoverageText } from './inventory-cost';
+import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText } from './inventory-cost';
 import type { EvidenceBundle } from './ai/evidence/types';
 import { SECURITY_EVALUATION_MAX_AGE_SECONDS as EVALUATION_MAX_AGE, topRiskTitle, type PostureCountsEvidence, type TopRiskEvidence } from './ai/evidence/providers/security';
 import type { CostFindingsEvidence } from './ai/evidence/providers/cost';
@@ -303,7 +303,9 @@ export class AISummaryService {
       const partial = s.systemScore.state === 'partial'
         ? ` This composite is partial and must be described as partial: ${missing(s.systemScore)}.`
         : '';
-      facts.push(`Composite System Intelligence score: ${d.score}/100 (Cost ${d.cost}, Security ${d.security}, ${observability}).${partial}`);
+      // Fix round 1 (ruling 5): a cost component with no usable billed spend is not in the composite.
+      const cost = d.cost === null ? 'Cost not included: insufficient data' : `Cost ${d.cost}`;
+      facts.push(`Composite System Intelligence score: ${d.score}/100 (${cost}, Security ${d.security}, ${observability}).${partial}`);
     }
 
     if (hasEvidence(s.securityPosture) && hasEvidence(s.accountFindings)) {
@@ -384,7 +386,7 @@ export class AISummaryService {
       } else {
         // F-5: priced resources only, with K of N; never called spend.
         const coverage = d.estimateCoverage
-          ? `; ${inventoryCoverageText(d.estimateCoverage)}${d.estimateCoverage.totalResources > d.estimateCoverage.pricedResources ? ', the others have no price and are not included' : ''}`
+          ? `; ${inventoryRunRateCoverageText(d.estimateCoverage)}${d.estimateCoverage.totalResources > d.estimateCoverage.pricedResources ? ', the others have no price and are not included' : ''}`
           : '';
         facts.push(
           `The estimated monthly run-rate of the discovered resources DevControl can price is approximately ${money(d.amount)} ` +

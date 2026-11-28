@@ -16,7 +16,7 @@
     "Infrastructure Posture {class=text-section text-ink}",
     " [button]",
     "[icon]",
-    "Composite of cost (30%), security (40%), and alert coverage (30%) {class=text-meta text-ink-muted}",
+    "Composite of cost (30%), security (40%), and alert coverage (30%); without cost data, of security and alert coverage only {class=text-meta text-ink-muted}",
     "View details → {color=var(--text-accent) class=text-label} [href=/infrastructure]",
     "[icon]",
     "Cost {class=text-ui text-ink}",

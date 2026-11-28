@@ -72,7 +72,7 @@ describe('describeSpend (GET /api/platform/costs/summary)', () => {
 
   it('an estimate is labeled as a run-rate, an actual figure as month-to-date spend', () => {
     expect(describeSpend(section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate', estimateCoverage: { pricedResources: 3, totalResources: 10 } } }), ok)).toMatchObject({
-      label: ESTIMATED_RUN_RATE_LABEL, sub: 'Estimated from 3 of 10 priced resources · not AWS billed spend (Cost Explorer unavailable)',
+      label: ESTIMATED_RUN_RATE_LABEL, sub: 'Estimated from 3 of 10 priced · not AWS billed spend (Cost Explorer unavailable)',
     })
     // F-5: an estimate without its K of N is not shown.
     expect(describeSpend(section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate' } }), ok)).toMatchObject({ value: '—', provenance: null })
@@ -90,7 +90,7 @@ describe('describeStatsSpend (GET /api/platform/stats/dashboard)', () => {
       label: ACTUAL_SPEND_LABEL, value: '$1,234.50', provenance: 'actual',
     })
     expect(describeStatsSpend({ monthlyAwsCost: 412.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 10 } }, ok)).toMatchObject({
-      label: ESTIMATED_RUN_RATE_LABEL, value: '$412.50/mo', provenance: 'estimated', sub: 'Estimated from 3 of 10 priced resources · not AWS billed spend',
+      label: ESTIMATED_RUN_RATE_LABEL, value: '$412.50/mo', provenance: 'estimated', sub: 'Estimated from 3 of 10 priced · not AWS billed spend',
     })
     expect(describeStatsSpend({ monthlyAwsCost: 412.5, costSource: 'estimated' }, ok)).toMatchObject({ value: '—', provenance: null })
   })

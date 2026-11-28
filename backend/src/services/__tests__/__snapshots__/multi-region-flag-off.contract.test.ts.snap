@@ -788,6 +788,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
           "is_public": true,
           "metadata": {
             "availability_zone": "us-east-1a",
+            "instance_state": "running",
             "instance_type": "t3.micro",
             "launch_time": "<time>",
             "network_exposure": {
@@ -851,6 +852,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
           "is_public": false,
           "metadata": {
             "availability_zone": "us-east-1a",
+            "instance_state": "stopped",
             "instance_type": "t3.micro",
             "launch_time": "<time>",
             "network_exposure": {
@@ -2028,6 +2030,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
           "is_public": true,
           "metadata": {
             "availability_zone": "us-east-1a",
+            "instance_state": "running",
             "instance_type": "t3.micro",
             "launch_time": "<time>",
             "network_exposure": {
@@ -2091,6 +2094,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
           "is_public": false,
           "metadata": {
             "availability_zone": "us-east-1a",
+            "instance_state": "stopped",
             "instance_type": "t3.micro",
             "launch_time": "<time>",
             "network_exposure": {
@@ -2287,7 +2291,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
               "severity": "low",
             },
           ],
-          "estimated_monthly_cost": "12.00",
+          "estimated_monthly_cost": "12.41",
           "has_backup": true,
           "is_encrypted": true,
           "is_orphaned": false,
@@ -3294,6 +3298,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
           "is_public": true,
           "metadata": {
             "availability_zone": "us-east-1a",
+            "instance_state": "running",
             "instance_type": "t3.micro",
             "launch_time": "<time>",
             "network_exposure": {
@@ -3357,6 +3362,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
           "is_public": false,
           "metadata": {
             "availability_zone": "us-east-1a",
+            "instance_state": "stopped",
             "instance_type": "t3.micro",
             "launch_time": "<time>",
             "network_exposure": {
@@ -3553,7 +3559,7 @@ exports[`flag OFF: the discovery contract before multi-region scanning a full sc
               "severity": "low",
             },
           ],
-          "estimated_monthly_cost": "12.00",
+          "estimated_monthly_cost": "12.41",
           "has_backup": true,
           "is_encrypted": true,
           "is_orphaned": false,

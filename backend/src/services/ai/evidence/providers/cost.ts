@@ -47,9 +47,10 @@ export const monthOverMonthProvider = defineProvider<MonthOverMonthEvidence>({
 export interface TopEstimatedResources {
   /** Priced resources only (the shared rule, services/inventory-cost.ts), highest first. Unpriced resources are never listed. */
   items: Array<{ ref: string; resourceId: string; resourceType: string; monthlyCost: number; basis: string; detail: string }>;
-  /** K of N: the coverage of these estimates. */
+  /** K of N priced (N excludes not-running and no-direct-charge resources, which are M). */
   pricedResources: number;
   totalResources: number;
+  excludedResources: number;
 }
 
 export const topEstimatedResourcesProvider = defineProvider<TopEstimatedResources>({
@@ -99,7 +100,7 @@ export const topEstimatedResourcesProvider = defineProvider<TopEstimatedResource
           detail: cost.detail,
         }));
         return {
-          data: { items, pricedResources: total.pricedResources, totalResources: total.totalResources },
+          data: { items, pricedResources: total.pricedResources, totalResources: total.totalResources, excludedResources: total.excludedResources },
           completeness: { unit: PRICED_RESOURCES_UNIT, expected: total.totalResources, received: total.pricedResources, missing: null },
           untrusted: top.flatMap(({ row }, i) => untrustedFor(ref('e', i), 'name', row.resource_name)),
         };

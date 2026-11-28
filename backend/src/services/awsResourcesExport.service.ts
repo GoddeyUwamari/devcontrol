@@ -6,8 +6,10 @@ import { ExportColumn, ColumnMapping } from '../types/export.types';
 import { ResourceFilters, AWSResource } from '../types/aws-resources.types';
 import { activeComplianceFindings } from '../utils/frameworkApplicability';
 import {
+  aggregateInventoryRows,
   inventoryCost,
   inventoryCostCell,
+  inventoryCoverageText,
   inventoryCostColumns,
   INVENTORY_PRICE_BASIS,
   NO_DIRECT_CHARGE_TEXT,
@@ -233,13 +235,15 @@ export class AWSResourcesExportService {
       if (showsCost) {
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
-        doc.text(INVENTORY_COST_BASIS_NOTE, margin, margin + 0.55, { maxWidth: contentWidth });
+        // Coverage of the Monthly Cost column (fix round 1, ruling 9), then the basis note.
+        const coverage = `Monthly Cost coverage: ${inventoryCoverageText(aggregateInventoryRows(resources))}.`;
+        doc.text([coverage, ...INVENTORY_COST_BASIS_NOTE], margin, margin + 0.55, { maxWidth: contentWidth });
       }
 
       autoTable(doc, {
         head: [tableHeaders],
         body: tableData,
-        startY: showsCost ? margin + 1.2 : margin + 0.5,
+        startY: showsCost ? margin + 1.35 : margin + 0.5,
         margin: { left: margin, right: margin },
         theme: 'grid',
         headStyles: {

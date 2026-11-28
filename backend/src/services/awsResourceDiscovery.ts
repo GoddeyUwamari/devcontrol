@@ -2784,6 +2784,9 @@ export class AWSResourceDiscoveryService {
         private_ip: instance.PrivateIpAddress,
         availability_zone: instance.Placement?.AvailabilityZone,
         launch_time: instance.LaunchTime?.toISOString(),
+        // The state exactly as AWS reports it (status maps stopping and shutting-down to 'stopped'):
+        // only "stopped" reads "Not running" in the inventory pricing rule (placeholder-costs ruling 8).
+        instance_state: instance.State?.Name ?? null,
         tags_state: 'observed',
       };
 

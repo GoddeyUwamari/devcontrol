@@ -50,7 +50,7 @@ function noData(state: ContextSection<never>['state'], extra: Partial<ContextSec
 
 const RESOURCES: InventoryResources = {
   ec2: { count: 3 },
-  rds: { count: 0, pricedMonthlyCost: null, pricedCount: 0 },
+  rds: { count: 0, pricedMonthlyCost: null, pricedCount: 0, priceExpectedCount: 0, notRunningCount: 0 },
   lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
 };
 
@@ -208,7 +208,7 @@ describe('AIChatService getFallbackResponse (non-LLM degraded path)', () => {
     const response = await fallbackFor('What is my monthly AWS spend?', context);
 
     expect(response).toMatch(/\$500/);
-    expect(response).toMatch(/for the resources DevControl can price \(Estimated from 3 of 3 priced resources; us-east-1 list-price estimate from your last synced resource inventory/i);
+    expect(response).toMatch(/for the resources DevControl can price \(Estimated from 3 of 3 priced; us-east-1 list-price estimate from your last synced resource inventory/i);
   });
 
   it('a real "actual" cost still renders normally (no regression for the common case)', async () => {

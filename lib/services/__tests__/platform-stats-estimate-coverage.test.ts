@@ -22,6 +22,11 @@ describe('platformStatsService.getDashboardStats: costEstimateCoverage', () => {
     expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20 } })).costEstimateCoverage).toEqual({ pricedResources: 2, totalResources: 20 })
   })
 
+  it('fix round 1 (ruling 9): maps excluded (M) when well-formed, drops it otherwise', async () => {
+    expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20, excluded_resources: 3 } })).costEstimateCoverage).toEqual({ pricedResources: 2, totalResources: 20, excludedResources: 3 })
+    expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20, excluded_resources: -1 } })).costEstimateCoverage).toEqual({ pricedResources: 2, totalResources: 20 })
+  })
+
   it.each([
     ['absent', {}],
     ['null', { cost_estimate_coverage: null }],

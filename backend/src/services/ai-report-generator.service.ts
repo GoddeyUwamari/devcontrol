@@ -38,7 +38,7 @@ import type { FallbackReason } from './ai/model-response';
 import { collectEvidence, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
 import { canSeeLines, INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
-import { INVENTORY_PRICE_BASIS, inventoryCoverageText } from './inventory-cost';
+import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText } from './inventory-cost';
 import type { EvidenceBundle } from './ai/evidence/types';
 import type { ConfigChecksEvidence, AccountFindingsEvidence, RiskScoreEvidence, SecurityHubEvidence } from './ai/evidence/providers/security';
 import { isIdleEstimate, type CostFindingsEvidence, type TopEstimatedResources } from './ai/evidence/providers/cost';
@@ -619,7 +619,7 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
     }
     if (d.basis === 'estimated_monthly_run_rate') {
       // F-5: priced resources only, with K of N; never billed spend.
-      const coverage = d.estimateCoverage ? `; ${inventoryCoverageText(d.estimateCoverage)}${d.estimateCoverage.totalResources > d.estimateCoverage.pricedResources ? ', the others have no price and are not included' : ''}` : '';
+      const coverage = d.estimateCoverage ? `; ${inventoryRunRateCoverageText(d.estimateCoverage)}${d.estimateCoverage.totalResources > d.estimateCoverage.pricedResources ? ', the others have no price and are not included' : ''}` : '';
       return `DevControl estimates the monthly run-rate of the discovered resources it can price at ${money(d.amount)} (a ${INVENTORY_PRICE_BASIS}, not AWS billing data${coverage}).`;
     }
     const period = section.period?.kind === 'range' ? ` for ${section.period.start} up to ${section.period.endExclusive} (exclusive)` : '';

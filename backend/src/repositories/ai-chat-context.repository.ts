@@ -42,7 +42,7 @@ import { createEvidenceBasis, defaultBasisSources } from '../services/ai/evidenc
 import { collectEvidence, sectionOf } from '../services/ai/evidence/registry';
 import { defaultEvidenceRegistry } from '../services/ai/evidence/providers';
 import { topicsForConversation } from '../services/ai/evidence/select';
-import { aggregateInventoryRows, inventoryCostColumns, inventoryCoverageText, PRICED_RESOURCES_UNIT } from '../services/inventory-cost';
+import { aggregateInventoryRows, inventoryCostColumns, inventoryRunRateCoverageText, PRICED_RESOURCES_UNIT } from '../services/inventory-cost';
 
 const INVENTORY_SOURCE = 'DevControl resource inventory (periodic AWS discovery)';
 
@@ -560,7 +560,7 @@ export class AIChatContextRepository {
         [organizationId]
       );
       const priced = aggregateInventoryRows(rows);
-      const { pricedResources, totalResources } = priced;
+      const { pricedResources, totalResources, excludedResources } = priced;
 
       if (priced.amount !== null) {
         const partial = pricedResources < totalResources;
@@ -573,8 +573,8 @@ export class AIChatContextRepository {
           period: { kind: 'point_in_time' },
           completeness: { unit: PRICED_RESOURCES_UNIT, expected: totalResources, received: pricedResources, missing: null },
           coverage: null,
-          reason: partial ? `${inventoryCoverageText(priced)}; the other ${totalResources - pricedResources} have no price and are not included` : null,
-          data: { current: roundCents(priced.amount), topSpenders: null, estimateCoverage: { pricedResources, totalResources } },
+          reason: partial ? `${inventoryRunRateCoverageText(priced)}; the other ${totalResources - pricedResources} have no price and are not included` : null,
+          data: { current: roundCents(priced.amount), topSpenders: null, estimateCoverage: { pricedResources, totalResources, excludedResources } },
           ...costSectionFields('estimated'),
           costExplorer,
           comparison: noCurrentPeriod,
@@ -670,9 +670,12 @@ export class AIChatContextRepository {
       return {
         ec2: { count: parseInt(ec2Result.rows[0]?.total ?? '0', 10) },
         rds: {
-          count: rdsPriced.totalResources,
+          count: rdsResult.rows.length,
           pricedMonthlyCost: rdsPriced.amount !== null ? roundCents(rdsPriced.amount) : null,
           pricedCount: rdsPriced.pricedResources,
+          // N and M of "K of N priced · M not running" (fix round 1, ruling 9).
+          priceExpectedCount: rdsPriced.totalResources,
+          notRunningCount: rdsPriced.excludedResources,
         },
         lambda: {
           count: parseInt(lambdaResult.rows[0]?.total ?? '0', 10),

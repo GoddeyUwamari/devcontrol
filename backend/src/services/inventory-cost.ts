@@ -37,8 +37,10 @@ import {
   RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ,
 } from '../config/aws-pricing';
 
-/** The basis label of every priced figure (ruling F-2). */
+/** The basis label of every table-priced figure (ruling F-2). */
 export const INVENTORY_PRICE_BASIS = 'us-east-1 list-price estimate';
+/** Lambda's basis label (fix round 1, ruling 1): usage at us-east-1 list rates, free tier not deducted. */
+export const LAMBDA_PRICE_BASIS = 'us-east-1 list price, before free tier';
 export const NO_PRICE_TEXT = 'No price';
 export const NOT_RUNNING_TEXT = 'Not running: no instance-hour charge';
 export const NO_DIRECT_CHARGE_TEXT = 'No direct charge';
@@ -74,7 +76,7 @@ export interface InventoryCostRow {
 }
 
 export type InventoryCost =
-  | { kind: 'priced'; amount: number; basis: typeof INVENTORY_PRICE_BASIS; detail: string }
+  | { kind: 'priced'; amount: number; basis: typeof INVENTORY_PRICE_BASIS | typeof LAMBDA_PRICE_BASIS; detail: string }
   | { kind: 'not_running'; reason: string }
   | { kind: 'no_direct_charge'; reason: string }
   | { kind: 'no_price'; reason: string };
@@ -99,7 +101,8 @@ const ownNumber = (table: Readonly<Record<string, number>>, key: unknown): numbe
   typeof key === 'string' && Object.prototype.hasOwnProperty.call(table, key) ? finite(table[key]) : null;
 
 const noPrice = (reason: string): InventoryCost => ({ kind: 'no_price', reason });
-const priced = (amount: number, detail: string): InventoryCost => ({ kind: 'priced', amount, basis: INVENTORY_PRICE_BASIS, detail });
+const priced = (amount: number, detail: string, basis: typeof INVENTORY_PRICE_BASIS | typeof LAMBDA_PRICE_BASIS = INVENTORY_PRICE_BASIS): InventoryCost =>
+  ({ kind: 'priced', amount, basis, detail });
 
 function observedWithin(lastSynced: unknown, maxAgeMs: number, now: Date): boolean {
   if (lastSynced === null || lastSynced === undefined) return false;
@@ -167,7 +170,8 @@ function lambdaCost(row: InventoryCostRow, m: Record<string, unknown>): Inventor
   if (finite(row.stored_monthly_cost) === null) return noPrice('no stored figure');
   return priced(
     estimateLambdaMonthlyCostFromUsage(invocations, duration, memory),
-    'requests and duration from 30 days of CloudWatch usage; excludes the free tier'
+    'requests and duration from 30 days of CloudWatch usage',
+    LAMBDA_PRICE_BASIS
   );
 }
 
@@ -179,10 +183,14 @@ export function inventoryCost(row: InventoryCostRow, now: Date = new Date()): In
     case 'vpc':
       return { kind: 'no_direct_charge', reason: 'a VPC itself has no charge' };
     case 'ec2':
-      // F-6. Otherwise F-2 cannot be met: operating system and tenancy are not recorded.
-      return row.status === 'stopped'
+      // F-6 (fix round 1, ruling 8): only the instance state AWS reports as exactly "stopped" is not
+      // running. The stored status also maps stopping and shutting-down to 'stopped', and AWS bills a
+      // hibernating instance while stopping, so the raw state (metadata.instance_state, recorded by
+      // discovery) must say "stopped"; a row without it reads No price until its next discovery.
+      // Otherwise F-2 cannot be met: operating system and tenancy are not recorded.
+      return row.status === 'stopped' && m.instance_state === 'stopped'
         ? { kind: 'not_running', reason: 'stopped instance: no instance-hour charge (EBS storage is charged separately)' }
-        : noPrice('operating system and tenancy are not recorded');
+        : noPrice(row.status === 'stopped' ? 'stopped state not established (may be stopping)' : 'operating system and tenancy are not recorded');
     case 'rds':
       return rdsCost(row, m, now);
     case 'ebs':
@@ -224,8 +232,13 @@ export function inventoryCostCell(cost: InventoryCost): string {
 export interface InventoryCostTotal {
   /** K: resources with a priced figure. */
   pricedResources: number;
-  /** N: every resource considered. */
+  /**
+   * N: the resources a price is expected for -- priced plus no_price. Not-running and
+   * no-direct-charge resources are excluded from N (fix round 1, ruling 9); they are M.
+   */
   totalResources: number;
+  /** M: resources outside N because they are not running or have no direct charge. */
+  excludedResources: number;
   /** Sum of priced amounts; null when nothing is priced (never 0 for "nothing priced"). */
   amount: number | null;
   notRunning: number;
@@ -236,13 +249,15 @@ export interface InventoryCostTotal {
 /** The one aggregation: sums only priced amounts and returns K of N. */
 export function aggregateInventoryCosts(costs: readonly InventoryCost[]): InventoryCostTotal {
   let amount = 0;
-  const total: InventoryCostTotal = { pricedResources: 0, totalResources: costs.length, amount: null, notRunning: 0, noDirectCharge: 0, noPrice: 0 };
+  const total: InventoryCostTotal = { pricedResources: 0, totalResources: 0, excludedResources: 0, amount: null, notRunning: 0, noDirectCharge: 0, noPrice: 0 };
   for (const c of costs) {
     if (c.kind === 'priced') { total.pricedResources++; amount += c.amount; }
     else if (c.kind === 'not_running') total.notRunning++;
     else if (c.kind === 'no_direct_charge') total.noDirectCharge++;
     else total.noPrice++;
   }
+  total.totalResources = total.pricedResources + total.noPrice;
+  total.excludedResources = total.notRunning + total.noDirectCharge;
   total.amount = total.pricedResources > 0 ? amount : null;
   return total;
 }
@@ -255,7 +270,16 @@ export function aggregateInventoryRows(rows: readonly InventoryCostRow[], now: D
 /** The completeness unit of every inventory estimate section: K of N resources priced. */
 export const PRICED_RESOURCES_UNIT = 'discovered resources with a defensible price';
 
-/** F-5's label: "Estimated from K of N priced resources". */
-export function inventoryCoverageText(total: Pick<InventoryCostTotal, 'pricedResources' | 'totalResources'>): string {
-  return `Estimated from ${total.pricedResources} of ${total.totalResources} priced resources`;
+/**
+ * Coverage wherever it is shown (fix round 1, ruling 9): "K of N priced", and
+ * " · M not running or no direct charge" when M > 0.
+ */
+export function inventoryCoverageText(total: Pick<InventoryCostTotal, 'pricedResources' | 'totalResources'> & { excludedResources?: number }): string {
+  const m = total.excludedResources ?? 0;
+  return `${total.pricedResources} of ${total.totalResources} priced${m > 0 ? ` · ${m} not running or no direct charge` : ''}`;
+}
+
+/** The run-rate label (F-5 with ruling 9): "Estimated from K of N priced[ · M not running or no direct charge]". */
+export function inventoryRunRateCoverageText(total: Pick<InventoryCostTotal, 'pricedResources' | 'totalResources'> & { excludedResources?: number }): string {
+  return `Estimated from ${inventoryCoverageText(total)}`;
 }

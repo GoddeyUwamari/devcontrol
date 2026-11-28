@@ -10,6 +10,8 @@ import {
   inventoryCostCell,
   inventoryCoverageText,
   INVENTORY_PRICE_BASIS,
+  LAMBDA_PRICE_BASIS,
+  inventoryRunRateCoverageText,
   type InventoryCost,
   type InventoryCostRow,
 } from '../inventory-cost';
@@ -20,7 +22,7 @@ const cost = (row: InventoryCostRow) => inventoryCost(row, NOW);
 
 // Rows whose every F-2 assumption is established.
 const RDS: InventoryCostRow = {
-  resource_type: 'rds', region: 'us-east-1', status: 'available', stored_monthly_cost: '24.00',
+  resource_type: 'rds', region: 'us-east-1', status: 'available', stored_monthly_cost: '24.82',
   metadata: { engine: 'mysql', multi_az: false, db_instance_class: 'db.t3.small' },
 };
 const EBS: InventoryCostRow = {
@@ -61,13 +63,15 @@ const PLACEHOLDERS: Array<[string, InventoryCostRow]> = [
 
 describe('inventoryCost: priced only when every F-2 assumption is established', () => {
   it('RDS: us-east-1, MySQL/MariaDB, Single-AZ, available, a table class -> the table price, labelled', () => {
-    expect(cost(RDS)).toEqual({ kind: 'priced', amount: 24, basis: INVENTORY_PRICE_BASIS, detail: 'instance hours only; excludes storage, I/O and backups' });
-    expect(cost(withMeta(RDS, { engine: 'mariadb' }))).toMatchObject({ kind: 'priced', amount: 24 });
+    // Fix round 1 (ruling 2): AWS list price, db.t3.small $0.034/h x 730 = $24.82 (was the hand-typed $24).
+    expect(cost(RDS)).toEqual({ kind: 'priced', amount: 24.82, basis: INVENTORY_PRICE_BASIS, detail: 'instance hours only; excludes storage, I/O and backups' });
+    expect(cost(withMeta(RDS, { engine: 'mariadb' }))).toMatchObject({ kind: 'priced', amount: 24.82 });
+    expect(cost(withMeta(RDS, { db_instance_class: 'db.m5.large' }))).toMatchObject({ kind: 'priced', amount: 124.83 });
     expect(INVENTORY_PRICE_BASIS).toBe('us-east-1 list-price estimate');
   });
 
   it('RDS: the amount comes from the table, never from the stored figure', () => {
-    expect(cost({ ...RDS, stored_monthly_cost: '75.00' })).toMatchObject({ kind: 'priced', amount: 24 });
+    expect(cost({ ...RDS, stored_monthly_cost: '24.00' })).toMatchObject({ kind: 'priced', amount: 24.82 });
   });
 
   it.each([
@@ -113,9 +117,12 @@ describe('inventoryCost: priced only when every F-2 assumption is established', 
     expect(cost(row).kind).toBe('no_price');
   });
 
-  it('Lambda: us-east-1, x86_64, a recorded usage basis -> recomputed from the stored usage, labelled', () => {
+  it('Lambda: us-east-1, x86_64, a recorded usage basis -> recomputed from the stored usage, labelled "before free tier"', () => {
     const expected = estimateLambdaMonthlyCostFromUsage(1_000_000, 100, 128);
-    expect(cost(LAMBDA)).toMatchObject({ kind: 'priced', amount: expected, basis: INVENTORY_PRICE_BASIS });
+    // Fix round 1 (ruling 1): Lambda's own basis label.
+    expect(LAMBDA_PRICE_BASIS).toBe('us-east-1 list price, before free tier');
+    expect(cost(LAMBDA)).toEqual({ kind: 'priced', amount: expected, basis: 'us-east-1 list price, before free tier', detail: 'requests and duration from 30 days of CloudWatch usage' });
+    expect(inventoryCostCell(cost(LAMBDA))).toBe(`${formatInventoryUsd(expected)} (us-east-1 list price, before free tier; requests and duration from 30 days of CloudWatch usage)`);
     expect(cost(withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0 }))).toMatchObject({ kind: 'priced', amount: 0 });
   });
 
@@ -134,8 +141,22 @@ describe('inventoryCost: priced only when every F-2 assumption is established', 
 });
 
 describe('inventoryCost: the other kinds', () => {
-  it('F-6: a stopped EC2 instance is not running, whatever its stored figure', () => {
-    expect(cost({ resource_type: 'ec2', region: 'eu-west-1', status: 'stopped', stored_monthly_cost: '60.00', metadata: { instance_type: 't3.large' } }).kind).toBe('not_running');
+  it('F-6: an EC2 instance AWS reports as exactly "stopped" is not running, whatever its stored figure', () => {
+    expect(cost({ resource_type: 'ec2', region: 'eu-west-1', status: 'stopped', stored_monthly_cost: '60.00', metadata: { instance_type: 't3.large', instance_state: 'stopped' } }).kind).toBe('not_running');
+  });
+
+  it.each([
+    ['stopping (billed while hibernating)', 'stopping'],
+    ['shutting-down', 'shutting-down'],
+    ['a legacy row with no recorded state', undefined],
+    ['a null state', null],
+  ])('fix round 1 (ruling 8): stored status "stopped" but %s -> No price, never "Not running"', (_name, state) => {
+    const row = { resource_type: 'ec2', region: 'us-east-1', status: 'stopped', stored_monthly_cost: '60.00', metadata: { instance_type: 't3.large', ...(state !== undefined ? { instance_state: state } : {}) } };
+    expect(cost(row).kind).toBe('no_price');
+  });
+
+  it('a running instance with instance_state "stopped" (stale status mismatch) is not treated as stopped', () => {
+    expect(cost({ resource_type: 'ec2', region: 'us-east-1', status: 'running', metadata: { instance_type: 't3.large', instance_state: 'stopped' } }).kind).toBe('no_price');
   });
 
   it('F-6 + AWS RDS docs: a stopped RDS instance observed within seven days is not running; older -> no_price', () => {
@@ -188,7 +209,7 @@ describe('inventoryCost: the other kinds', () => {
 
 describe('cells and money', () => {
   it('a priced cell carries the amount, its basis and what it covers', () => {
-    expect(inventoryCostCell(cost(RDS))).toBe('$24.00 (us-east-1 list-price estimate; instance hours only; excludes storage, I/O and backups)');
+    expect(inventoryCostCell(cost(RDS))).toBe('$24.82 (us-east-1 list-price estimate; instance hours only; excludes storage, I/O and backups)');
   });
 
   it('a positive amount under a cent is "<$0.01", never "$0.00"; a genuine priced zero is "$0.00"', () => {
@@ -206,10 +227,16 @@ describe('cells and money', () => {
 describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
   const priced = (amount: number): InventoryCost => ({ kind: 'priced', amount, basis: INVENTORY_PRICE_BASIS, detail: '' });
 
-  it('K of N is correct and every kind is counted', () => {
+  it('K of N is correct; not-running and no-direct-charge are outside N (fix round 1, ruling 9)', () => {
     const total = aggregateInventoryCosts([priced(10), priced(2.5), { kind: 'no_price', reason: '' }, { kind: 'not_running', reason: '' }, { kind: 'no_direct_charge', reason: '' }]);
-    expect(total).toEqual({ pricedResources: 2, totalResources: 5, amount: 12.5, notRunning: 1, noDirectCharge: 1, noPrice: 1 });
-    expect(inventoryCoverageText(total)).toBe('Estimated from 2 of 5 priced resources');
+    expect(total).toEqual({ pricedResources: 2, totalResources: 3, excludedResources: 2, amount: 12.5, notRunning: 1, noDirectCharge: 1, noPrice: 1 });
+    expect(inventoryCoverageText(total)).toBe('2 of 3 priced · 2 not running or no direct charge');
+    expect(inventoryRunRateCoverageText(total)).toBe('Estimated from 2 of 3 priced · 2 not running or no direct charge');
+  });
+
+  it('with no excluded resources the M part is omitted', () => {
+    const total = aggregateInventoryCosts([priced(1), { kind: 'no_price', reason: '' }]);
+    expect(inventoryCoverageText(total)).toBe('1 of 2 priced');
   });
 
   it('no_price is never counted as 0: a priced total is unchanged by any number of unpriced rows', () => {
@@ -218,6 +245,7 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
     expect(more.amount).toBe(base.amount);
     expect(more.pricedResources).toBe(1);
     expect(more.totalResources).toBe(51);
+    expect(more.excludedResources).toBe(0);
   });
 
   it('nothing priced -> no total (null), never $0.00', () => {
@@ -230,7 +258,8 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
     const rows = [RDS, EBS, ...PLACEHOLDERS.map(([, r]) => r), { resource_type: 'vpc' }];
     const total = aggregateInventoryRows(rows, NOW);
     expect(total.pricedResources).toBe(2);
-    expect(total.totalResources).toBe(PLACEHOLDERS.length + 3);
-    expect(total.amount).toBe(34);
+    expect(total.totalResources).toBe(PLACEHOLDERS.length + 2);
+    expect(total.excludedResources).toBe(1);
+    expect(total.amount).toBeCloseTo(34.82, 10);
   });
 });

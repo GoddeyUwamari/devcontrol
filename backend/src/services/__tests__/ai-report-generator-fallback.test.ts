@@ -532,7 +532,7 @@ describe('AI Reports deterministic fallback', () => {
     const data = await evidence({ costs: estimatedCosts(3200, 10, 10) });
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
 
-    expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of the discovered resources it can price at $3,200.00 (a us-east-1 list-price estimate, not AWS billing data; Estimated from 10 of 10 priced resources).');
+    expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of the discovered resources it can price at $3,200.00 (a us-east-1 list-price estimate, not AWS billing data; Estimated from 10 of 10 priced).');
     expect(JSON.stringify(report)).not.toMatch(/AWS spending|Cloud Spending/i);
   });
 

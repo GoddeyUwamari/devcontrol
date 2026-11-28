@@ -11,7 +11,7 @@ import type { EvidenceBundle } from './ai/evidence/types';
 import { collectedSectionOf } from './ai/evidence/budget';
 import type { CpuTelemetryEvidence } from './ai/evidence/providers/operations';
 import { INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
-import { INVENTORY_PRICE_BASIS, inventoryCoverageText } from './inventory-cost';
+import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText } from './inventory-cost';
 import {
   CONTEXT_STATE_LABELS,
   OMITTED_REASON,
@@ -103,7 +103,8 @@ export interface InventoryResources {
   // pricedMonthlyCost: the shared inventory pricing rule's total (services/inventory-cost.ts:
   // us-east-1 list-price estimates, instance hours only -- not AWS billed spend) over the
   // pricedCount databases with a defensible price; null when none has one.
-  rds: { count: number; pricedMonthlyCost: number | null; pricedCount: number };
+  // priceExpectedCount = N (priced + no price); notRunningCount = M (stopped, excluded from N).
+  rds: { count: number; pricedMonthlyCost: number | null; pricedCount: number; priceExpectedCount: number; notRunningCount: number };
   // invocations is a real, usage-based figure -- SUM of each function's
   // real 30-day CloudWatch Invocations (see awsResourceDiscovery.ts's
   // discoverLambdaFunctions()/lambda-usage.util.ts), read back from
@@ -133,7 +134,7 @@ export interface ChatCostFigures {
     percentage: number | null;
   }> | null;
   /** For estimates: K of N -- how many discovered (non-terminated) resources have a defensible price (services/inventory-cost.ts). */
-  estimateCoverage: { pricedResources: number; totalResources: number } | null;
+  estimateCoverage: { pricedResources: number; totalResources: number; excludedResources?: number } | null;
 }
 
 /**
@@ -551,7 +552,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       lines.push(`- Basis: monthly run-rate estimate (${INVENTORY_PRICE_BASIS}) for the currently discovered resources that have a defensible price -- not billed spend for any period`);
       if (figures.estimateCoverage) {
         const { pricedResources, totalResources } = figures.estimateCoverage;
-        lines.push(`- Coverage: ${inventoryCoverageText(figures.estimateCoverage)}${totalResources > pricedResources ? `; the other ${totalResources - pricedResources} have no price -- not $0, and not included` : ''}`);
+        lines.push(`- Coverage: ${inventoryRunRateCoverageText(figures.estimateCoverage)}${totalResources > pricedResources ? `; the other ${totalResources - pricedResources} have no price -- not $0, and not included` : ''}`);
       }
       lines.push(`- Estimated monthly cost of priced resources: ${figures.current !== null ? this.formatMoney(figures.current) : 'not available'}`);
       lines.push('- Per-service breakdown: not available for estimates');
@@ -622,10 +623,14 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
     lines.push(`- EC2: ${ec2.count} instances (CPU utilization is its own evidence source below)`);
 
     // Only databases the shared pricing rule prices are summed; the rest have no price (never $0).
-    const unpricedRds = rds.count - rds.pricedCount;
+    const unpricedRds = rds.priceExpectedCount - rds.pricedCount;
+    // "K of N priced databases · M not running or no direct charge" (fix round 1, ruling 9).
+    const rdsCoverage = `${rds.pricedCount} of ${rds.priceExpectedCount} priced databases${rds.notRunningCount > 0 ? ` · ${rds.notRunningCount} not running or no direct charge` : ''}`;
     const rdsEstimate = rds.pricedMonthlyCost === null
-      ? rds.count > 0 ? '; no database has a defensible price (no price is not $0; do not give a cost figure for them)' : ''
-      : `; DevControl ${INVENTORY_PRICE_BASIS} ${this.formatMoney(rds.pricedMonthlyCost)}/month across the ${rds.pricedCount} of ${rds.count} databases with a defensible price (instance hours only; excludes storage, I/O and backups; not AWS billed spend)${unpricedRds > 0
+      ? rds.count > 0
+        ? `; no database has a defensible price (${rdsCoverage}; no price is not $0; do not give a cost figure for them)`
+        : ''
+      : `; DevControl ${INVENTORY_PRICE_BASIS} ${this.formatMoney(rds.pricedMonthlyCost)}/month for ${rdsCoverage} (instance hours only; excludes storage, I/O and backups; not AWS billed spend)${unpricedRds > 0
         ? `; the other ${unpricedRds} have no price -- not $0, and not included in that figure`
         : ''}`;
     lines.push(`- RDS: ${rds.count} databases${rdsEstimate}`);
@@ -764,7 +769,7 @@ ${renderEvidence(context.evidence, { except: CHAT_FORMATTED_PROVIDERS, style: 'p
     const spendPhrase = figures === null || figures.current === null
       ? null
       : costs.provenance === 'estimated'
-        ? `an estimated ${this.formatMoney(figures.current)}/month for the resources DevControl can price (${figures.estimateCoverage ? `${inventoryCoverageText(figures.estimateCoverage)}; ` : ''}${INVENTORY_PRICE_BASIS} from your last synced resource inventory as of ${costs.asOf ?? 'unknown'}, not a Cost Explorer billing figure)`
+        ? `an estimated ${this.formatMoney(figures.current)}/month for the resources DevControl can price (${figures.estimateCoverage ? `${inventoryRunRateCoverageText(figures.estimateCoverage)}; ` : ''}${INVENTORY_PRICE_BASIS} from your last synced resource inventory as of ${costs.asOf ?? 'unknown'}, not a Cost Explorer billing figure)`
         : `${this.formatMoney(figures.current)} month-to-date (AWS Cost Explorer${costs.asOf ? `, as of ${costs.asOf}` : ''}; covers your connected role's billing scope across all regions)`;
     const change = costs.comparison.changePercent;
     const changePhrase = change === null

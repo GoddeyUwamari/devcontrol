@@ -139,7 +139,13 @@ describe('month-to-date spend', () => {
     expect(d.sub).not.toMatch(/^Actual|Live from AWS/)
     expect(d.provenance).toBe('estimated')
     // Placeholder-costs F-5: the estimate names its coverage.
-    expect(d.sub).toBe('Estimated from 3 of 4 priced resources · not AWS billed spend (Cost Explorer unavailable)')
+    expect(d.sub).toBe('Estimated from 3 of 4 priced · not AWS billed spend (Cost Explorer unavailable)')
+  })
+
+  it('fix round 1 (ruling 9): M (not running or no direct charge) is named when present', () => {
+    const withExcluded = spendSection(42.5, 'estimated')
+    ;(withExcluded.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 3, totalResources: 4, excludedResources: 2 }
+    expect(describeSpend(withExcluded, ready).sub).toBe('Estimated from 3 of 4 priced · 2 not running or no direct charge · not AWS billed spend (Cost Explorer unavailable)')
   })
 
   it('F-5: an estimate without its K of N coverage, or with nothing priced, shows no figure', () => {

@@ -526,7 +526,7 @@ function largeAccountSections(): Record<string, () => Promise<ContextSection<unk
     }),
     'inventory.resource_types': available('DevControl resource inventory (periodic AWS discovery)', ['ec2', 'rds', 'lambda', 's3', 'elb', 'ebs', 'cloudfront', 'dynamodb', 'sqs', 'sns', 'ecs', 'eks']),
     'inventory.compute_detail': available('DevControl resource inventory (periodic AWS discovery)', {
-      ec2: { count: 60 }, rds: { count: 12, pricedMonthlyCost: 2140.5, pricedCount: 12 }, lambda: { count: 45, invocations: 1_820_400, invocationsKnownForCount: 43 },
+      ec2: { count: 60 }, rds: { count: 12, pricedMonthlyCost: 2140.5, pricedCount: 12, priceExpectedCount: 12, notRunningCount: 0 }, lambda: { count: 45, invocations: 1_820_400, invocationsKnownForCount: 43 },
     }),
   };
 }

@@ -4,10 +4,12 @@ import type { PlatformDashboardStats, ApiResponse, CostSummary } from '../types'
 /** The stats endpoint's K of N (snake_case), or null when it is absent or malformed. */
 function estimateCoverageOf(raw: unknown): PlatformDashboardStats['costEstimateCoverage'] {
   if (!raw || typeof raw !== 'object') return null
-  const { priced_resources: priced, total_resources: total } = raw as Record<string, unknown>
-  return Number.isInteger(priced) && Number.isInteger(total) && (priced as number) >= 0 && (priced as number) <= (total as number)
-    ? { pricedResources: priced as number, totalResources: total as number }
-    : null
+  const { priced_resources: priced, total_resources: total, excluded_resources: excluded } = raw as Record<string, unknown>
+  if (!(Number.isInteger(priced) && Number.isInteger(total) && (priced as number) >= 0 && (priced as number) <= (total as number))) return null
+  // M (not running or no direct charge, outside N): kept only when well-formed.
+  return Number.isInteger(excluded) && (excluded as number) >= 0
+    ? { pricedResources: priced as number, totalResources: total as number, excludedResources: excluded as number }
+    : { pricedResources: priced as number, totalResources: total as number }
 }
 
 export const platformStatsService = {

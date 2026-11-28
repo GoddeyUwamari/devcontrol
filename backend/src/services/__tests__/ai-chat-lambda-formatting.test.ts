@@ -30,7 +30,7 @@ function withLambda(lambda: InventoryResources['lambda']): ChatContext['resource
     scope: null, coverage: null, reason: null, provenance: null, period: null, completeness: null, derivedFrom: null,
     data: {
       ec2: { count: 0 },
-      rds: { count: 0, pricedMonthlyCost: null, pricedCount: 0 },
+      rds: { count: 0, pricedMonthlyCost: null, pricedCount: 0, priceExpectedCount: 0, notRunningCount: 0 },
       lambda,
     },
   };

@@ -12,6 +12,7 @@ import {
   inventoryCost,
   inventoryCostCell,
   inventoryCostColumns,
+  inventoryCoverageText,
   INVENTORY_PRICE_BASIS,
   NO_PRICE_TEXT,
   type InventoryCost,
@@ -112,7 +113,7 @@ export function costSummaryHeadlineLines(billed: BilledSpendHeadline): string[] 
 
 /** The appendix's coverage and total lines (F-4): "K of N resources priced"; no total when K = 0. */
 export function costSummaryAppendixLines(inventory: InventoryCostTotal): string[] {
-  const coverage = `Coverage: ${inventory.pricedResources} of ${inventory.totalResources} resources priced.`;
+  const coverage = `Coverage: ${inventoryCoverageText(inventory)}.`;
   if (inventory.amount === null) {
     return [coverage, 'No resource has a defensible price, so there is no inventory estimate.'];
   }
@@ -610,7 +611,7 @@ export class ReportGeneratorService {
       doc.text(title, margin, startY);
       autoTable(doc, {
         head: [[label, 'Resources priced', 'Estimated monthly cost of priced resources']],
-        body: groups.map((g) => [g.name, `${g.total.pricedResources} of ${g.total.totalResources}`, inventoryGroupCell(g.total)]),
+        body: groups.map((g) => [g.name, inventoryCoverageText(g.total), inventoryGroupCell(g.total)]),
         startY: startY + 0.2,
         margin: { left: margin, right: margin },
         theme: 'grid',

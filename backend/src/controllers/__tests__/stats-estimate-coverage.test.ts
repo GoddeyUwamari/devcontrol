@@ -27,12 +27,12 @@ afterEach(() => jest.restoreAllMocks());
 
 describe('dashboard stats: inventory estimate coverage', () => {
   it('an estimate carries its K of N', async () => {
-    const data = await stats({ amount: 142, source: 'estimated', estimateCoverage: { pricedResources: 2, totalResources: 20 } });
+    const data = await stats({ amount: 142, source: 'estimated', estimateCoverage: { pricedResources: 2, totalResources: 20, excludedResources: 0 } });
     expect(data).toMatchObject({ total_infrastructure_cost: 142, cost_source: 'estimated', cost_estimate_coverage: { priced_resources: 2, total_resources: 20 } });
   });
 
   it('nothing priced: amount 0 with 0 of N (the frontend shows no figure)', async () => {
-    const data = await stats({ amount: 0, source: 'estimated', estimateCoverage: { pricedResources: 0, totalResources: 20 } });
+    const data = await stats({ amount: 0, source: 'estimated', estimateCoverage: { pricedResources: 0, totalResources: 20, excludedResources: 0 } });
     expect(data).toMatchObject({ total_infrastructure_cost: 0, cost_estimate_coverage: { priced_resources: 0, total_resources: 20 } });
   });
 

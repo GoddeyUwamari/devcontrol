@@ -781,7 +781,7 @@ class AWSCostService {
    */
   async getMonthlySpendWithFallback(
     organizationId: string
-  ): Promise<{ amount: number; source: SpendProvenance; estimateCoverage?: { pricedResources: number; totalResources: number } }> {
+  ): Promise<{ amount: number; source: SpendProvenance; estimateCoverage?: { pricedResources: number; totalResources: number; excludedResources: number } }> {
     try {
       const liveCost = await this.fetchMonthlyCosts(organizationId)
       return { amount: liveCost.total, source: 'actual' }
@@ -798,7 +798,7 @@ class AWSCostService {
     return {
       amount: runRate.amount ?? 0,
       source: 'estimated',
-      estimateCoverage: { pricedResources: runRate.pricedResources, totalResources: runRate.totalResources },
+      estimateCoverage: { pricedResources: runRate.pricedResources, totalResources: runRate.totalResources, excludedResources: runRate.excludedResources },
     }
   }
 

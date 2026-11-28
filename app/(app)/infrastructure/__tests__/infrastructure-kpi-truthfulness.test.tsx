@@ -368,7 +368,7 @@ describe('/infrastructure spend card -- labeled by its source (cost summary, DAY
     await waitFor(() => expect(screen.getByTestId('infrastructure-spend-value').textContent).toContain('$412.50/mo'))
     expect(screen.getByTestId('infrastructure-spend-label').textContent).toBe('Estimated Monthly Run-Rate')
     expect(document.body.textContent).toContain('not AWS billed spend')
-    expect(document.body.textContent).toContain('Estimated from 3 of 4 priced resources')
+    expect(document.body.textContent).toContain('Estimated from 3 of 4 priced')
   })
 
   // An inventory estimate of $0 means nothing was estimated: no figure, not $0.00/mo.

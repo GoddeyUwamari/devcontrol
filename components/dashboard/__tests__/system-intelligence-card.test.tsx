@@ -112,7 +112,7 @@ describe('labels are the Infrastructure Posture vocabulary', () => {
   it('the card is titled Infrastructure Posture and describes what the composite is built from', () => {
     renderCard()
     expect(screen.getByText('Infrastructure Posture')).toBeInTheDocument()
-    expect(screen.getByText('Composite of cost (30%), security (40%), and alert coverage (30%)')).toBeInTheDocument()
+    expect(screen.getByText('Composite of cost (30%), security (40%), and alert coverage (30%); without cost data, of security and alert coverage only')).toBeInTheDocument()
     for (const oldName of ['Platform Efficiency Breakdown', 'Infrastructure Health', 'System Score']) {
       expect(screen.queryByText(oldName)).not.toBeInTheDocument()
     }

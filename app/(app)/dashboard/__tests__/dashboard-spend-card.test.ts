@@ -55,9 +55,9 @@ describe('Dashboard spend figure keeps its provenance', () => {
     const c = card({ spend: spend(42.5, 'estimated'), monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
     expect(c.label).toBe('Estimated Monthly Run-Rate')
     expect(c.value).toBe('$42.50/mo')
-    expect(c.caption).toBe('Estimated from 3 of 4 priced resources · not AWS billed spend')
+    expect(c.caption).toBe('Estimated from 3 of 4 priced · not AWS billed spend')
     expect(c.caption).not.toMatch(/Actual|Cost Explorer ·/)
-    expect(c.evidence?.source).toMatch(/^Estimated from 3 of 4 priced resources · not AWS billed spend/)
+    expect(c.evidence?.source).toMatch(/^Estimated from 3 of 4 priced · not AWS billed spend/)
   })
 
   it('unavailable, error, and a failed request are "—" -- never $0', () => {

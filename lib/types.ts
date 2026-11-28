@@ -548,7 +548,7 @@ export interface PlatformDashboardStats {
   teamsChange: number;
   costSource?: 'actual' | 'estimated';
   /** costSource 'estimated' only: K of N priced resources behind the estimate (placeholder-costs F-5). */
-  costEstimateCoverage?: { pricedResources: number; totalResources: number } | null;
+  costEstimateCoverage?: { pricedResources: number; totalResources: number; excludedResources?: number } | null;
 }
 
 /**
@@ -613,7 +613,7 @@ export interface CostSpendEvidence {
    * Inventory estimate only: K of N -- the estimate sums the pricedResources of the
    * totalResources discovered (placeholder-costs F-5). An estimate without it is not shown.
    */
-  estimateCoverage?: { pricedResources: number; totalResources: number } | null;
+  estimateCoverage?: { pricedResources: number; totalResources: number; excludedResources?: number } | null;
   lastDayInProgress: boolean;
   /**
    * Billed spend: the last UTC day AWS Cost Explorer has finished reporting

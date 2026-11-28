@@ -132,7 +132,7 @@ describe('Infrastructure Posture section on the real Dashboard page', () => {
 
     for (const label of ['Cost', 'Security', 'Alert Coverage']) expect(within(section).queryByText(label)).not.toBeInTheDocument()
     for (const word of ['Strong', 'Needs attention', 'At risk', 'Not yet available', 'Partial']) expect(section).not.toHaveTextContent(word)
-    expect(section.textContent?.replace('Composite of cost (30%), security (40%), and alert coverage (30%)', '')).not.toMatch(/\d/)
+    expect(section.textContent?.replace('Composite of cost (30%), security (40%), and alert coverage (30%); without cost data, of security and alert coverage only', '')).not.toMatch(/\d/)
     expect(section.querySelectorAll('[role="progressbar"]')).toHaveLength(0)
     // The KPI card: "—", never 0, and no bar.
     await waitFor(() => expect(within(postureKpi()).getByText('—')).toBeInTheDocument())
@@ -178,7 +178,7 @@ describe('Infrastructure Posture KPI', () => {
     renderDashboard()
     await waitFor(() => expect(within(postureKpi()).getByText('69')).toBeInTheDocument())
     const dialog = openPostureKpiInfo()
-    expect(dialog).toHaveTextContent('Composite of cost (30%), security (40%), and alert coverage (30%). A posture score, not measured uptime or performance.')
+    expect(dialog).toHaveTextContent('Composite of cost (30%), security (40%), and alert coverage (30%); without cost data, of security and alert coverage only. A posture score, not measured uptime or performance.')
     expect(within(within(dialog).getByTestId('posture-evidence-cost')).getByText('95 · Strong')).toBeInTheDocument()
     expect(within(within(dialog).getByTestId('posture-evidence-security')).getByText('59 · At risk')).toBeInTheDocument()
     expect(within(within(dialog).getByTestId('posture-evidence-observability')).getByText('55 /100')).toBeInTheDocument()
