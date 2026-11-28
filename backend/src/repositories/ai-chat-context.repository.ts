@@ -21,7 +21,7 @@ import {
   type InventoryScope,
 } from '../services/ai-chat.service';
 import { collectSection, type ContextSection } from '../services/ai-context-contract';
-import awsCostService, { MonthlyCost } from '../services/aws-cost.service';
+import awsCostService, { MonthlyCost, trendPointNet } from '../services/aws-cost.service';
 import type { CostReportState } from '../services/cost-trend-report-state';
 import {
   deriveCostMonthState,
@@ -98,6 +98,9 @@ function roundCents(amount: number): number {
 }
 
 const NO_FINAL_DAY_NOTE = 'no day of this month has finished reporting in AWS Cost Explorer yet (the latest days are still being reported)';
+
+/** A compared day whose per-service amounts are missing (an older cache entry): its real net is unknown. */
+const NO_NET_AMOUNTS_NOTE = 'the daily Cost Explorer data has no per-service amounts for some compared days, so the net comparison cannot be calculated';
 
 /** A comparison with no figures -- its state and note say why. */
 function emptyComparison(state: ContextDataState, note: string): CostComparison {
@@ -324,9 +327,16 @@ export class AIChatContextRepository {
    * day. While no day of this month qualifies, there is no comparison. All
    * date math is UTC, Cost Explorer's own day boundary. Points without a
    * reportState (an older backend's cache) count as final.
+   *
+   * Amounts (PR B1): each day's real net, the unclamped sum of its per-service
+   * Cost Explorer amounts (trendPointNet, the same figure as the point's
+   * netTotal), so a credit on one service is never lost to the $0 floor of
+   * `total` (the sum of floored categories). A compared day without byService
+   * makes the whole comparison unavailable: the clamped `total` is never used
+   * in its place.
    */
   private computeMonthOverMonthComparison(
-    costTrend: Array<{ date: string; total: number; reportState?: CostReportState }>,
+    costTrend: Array<{ date: string; total: number; reportState?: CostReportState; byService?: Array<{ service: string; amount: number }> }>,
     asOf: string | null = null,
     now: Date = new Date()
   ): CostComparison {
@@ -376,20 +386,39 @@ export class AIChatContextRepository {
 
     let currentSum = 0, currentDays = 0;
     let lastSum = 0, lastDays = 0;
+    let netUnknown = false;
 
     for (const entry of costTrend ?? []) {
       const [y, m, d] = entry.date.split('-').map(Number);
       const month = m - 1;
-      if (y === curYear && month === curMonth && d <= expectedCurrentDays) {
-        currentSum += entry.total;
+      const inCurrent = y === curYear && month === curMonth && d <= expectedCurrentDays;
+      const inPrevious = !inCurrent && y === lastMonthYear && month === lastMonth && d <= expectedPreviousDays;
+      if (!inCurrent && !inPrevious) continue;
+      const net = trendPointNet(entry);
+      if (net === null) {
+        netUnknown = true;
+        continue;
+      }
+      if (inCurrent) {
+        currentSum += net;
         currentDays++;
-      } else if (y === lastMonthYear && month === lastMonth && d <= expectedPreviousDays) {
-        lastSum += entry.total;
+      } else {
+        lastSum += net;
         lastDays++;
       }
     }
 
     const coverage = { currentDays, previousDays: lastDays, expectedCurrentDays, expectedPreviousDays };
+    if (netUnknown) {
+      return {
+        ...emptyComparison('unavailable', NO_NET_AMOUNTS_NOTE),
+        currentWindow,
+        previousWindow,
+        coverage,
+        finishedThrough,
+        asOf,
+      };
+    }
     const minDays = Math.max(1, Math.floor(expectedCurrentDays * 0.8));
     if (currentDays < minDays || lastDays < minDays) {
       return {

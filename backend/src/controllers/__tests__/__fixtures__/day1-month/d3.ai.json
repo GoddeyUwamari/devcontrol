@@ -49,7 +49,7 @@
   },
   "summaryFacts": [
     "AWS Cost Explorer month-to-date billed spend (2026-12-01 through 2026-12-03) is $26.60; the latest days are still updating in AWS Cost Explorer, so this figure is incomplete and may change.",
-    "Month-to-date spend vs the same days last month: unchanged at 0.0% ($13.30 vs $13.30, daily charges after credits, each category floored at $0)."
+    "Month-to-date spend vs the same days last month: unchanged at 0.0% ($13.30 vs $13.30, daily net amounts after credits and refunds, nothing floored at $0)."
   ],
   "chatContext": [
     "Cost data:",

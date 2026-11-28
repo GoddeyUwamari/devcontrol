@@ -58,6 +58,12 @@ interface CostDataPoint {
   // cached/rolling-deploy responses written before this field existed still render
   // via the category fallback below instead of breaking.
   byServiceDisplay?: CostServiceAmount[];
+  /**
+   * The period's real net from the backend (unclamped Σ byService, PR B1; may be negative).
+   * The tooltip Total, the "so far" amounts and the spike average read only this, never
+   * `total` or the $0-floored segments. null/absent (an older backend): the net is unknown.
+   */
+  netTotal?: number | null;
   /** Cost Explorer line items in the period. */
   lineItems?: number;
   /** The backend's report state: not_reported is a gap (never $0), updating is drawn lighter. */
@@ -76,6 +82,18 @@ interface CostTrendChartProps {
   onExport?: () => void;
   /** The clock for the 7-day view (the 7 UTC days ending today) and for which bar is today. Defaults to now. */
   now?: Date;
+}
+
+/** A point's real net (the backend's netTotal), or null when the backend did not send one. */
+function pointNet(point: { netTotal?: unknown } | undefined): number | null {
+  const net = point?.netTotal;
+  return typeof net === 'number' && Number.isFinite(net) ? net : null;
+}
+
+/** The net as money ("-$1.20" for a credit day), or "—" when it is unknown: never the clamped total. */
+function formatNet(point: { netTotal?: unknown } | undefined): string {
+  const net = pointNet(point);
+  return net === null ? '—' : formatUsdCents(net);
 }
 
 export function CostTrendChart({
@@ -136,7 +154,7 @@ export function CostTrendChart({
     if (active && payload && payload.length && isToday(payload[0]?.payload?.date)) {
       // Today, one line: still updating, not reported yet, or (a final $0 from the backend) "so far".
       const point = payload[0].payload;
-      const soFar = formatUsdCents(Number(point.total ?? 0));
+      const soFar = formatNet(point);
       const text = isNotReportedYet(point) ? TODAY_NOT_REPORTED_TOOLTIP : isStillUpdating(point) ? todayUpdatingTooltip(soFar) : todaySoFarTooltip(soFar);
       const rest = text.slice(TODAY_LABEL.length);
       return (
@@ -156,11 +174,11 @@ export function CostTrendChart({
     }
     if (active && payload && payload.length && isStillUpdating(payload[0]?.payload ?? {})) {
       // The amount so far, once: Cost Explorer may still add charges to this period.
-      const soFar = Number(payload[0]?.payload?.total ?? 0);
+      const soFar = formatNet(payload[0]?.payload);
       return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-[15rem]">
           <p className="text-ui font-semibold text-ink mb-1">{formatDate(label)}</p>
-          <p className="text-meta text-ink-muted m-0">{stillUpdatingTooltip(formatUsdCents(soFar))}</p>
+          <p className="text-meta text-ink-muted m-0">{stillUpdatingTooltip(soFar)}</p>
         </div>
       );
     }
@@ -194,7 +212,7 @@ export function CostTrendChart({
             <div className="flex items-center justify-between text-ui">
               <span className="font-medium text-gray-700">Total:</span>
               <span className="font-semibold text-gray-900">
-                ${payload.reduce((sum: number, entry: any) => sum + (hiddenSeries.has(entry.dataKey) ? 0 : entry.value), 0).toFixed(2)}
+                {formatNet(payload[0]?.payload)}
               </span>
             </div>
           </div>
@@ -266,6 +284,7 @@ export function CostTrendChart({
       date: point.date,
       forecast: point.forecast,
       total: point.total,
+      netTotal: point.netTotal ?? undefined,
       lineItems: point.lineItems,
       reportState: point.reportState,
       provisional: point.provisional,
@@ -342,8 +361,13 @@ export function CostTrendChart({
     (s) => !hiddenSeries.has(s.key) && chartData.some((row) => drawnLighter(row) && Number(row[s.key]) > 0),
   );
   const hasUpdating = lighterSeries.length > 0;
-  const avgTotal = reported.length > 0 ? reported.reduce((sum, d) => sum + d.total, 0) / reported.length : 0;
-  const hasSpike = reported.some(d => d.total > avgTotal * SPIKE_RATIO && d.total - avgTotal > MIN_SPIKE_DELTA);
+  // The average and each day are the real nets (netTotal), never the $0-floored `total`. A reported
+  // day without a net (an older backend) leaves the average unknown: no spike warning rather than one
+  // computed from clamped amounts.
+  const reportedNets = reported.map((d) => pointNet(d)).filter((n): n is number => n !== null);
+  const netsKnown = reportedNets.length === reported.length;
+  const avgTotal = netsKnown && reportedNets.length > 0 ? reportedNets.reduce((sum, n) => sum + n, 0) / reportedNets.length : 0;
+  const hasSpike = netsKnown && reportedNets.some((n) => n > avgTotal * SPIKE_RATIO && n - avgTotal > MIN_SPIKE_DELTA);
   // Hidden series still count: hiding one must not take the legend (and its toggles) away.
   const hasAmount = chartData.some(rowHasAmount);
   // The y-axis labels: dollars, or none at all when no drawn day has an amount (the fixed

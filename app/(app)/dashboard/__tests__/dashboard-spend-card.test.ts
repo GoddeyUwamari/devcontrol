@@ -93,7 +93,7 @@ describe('Dashboard spend face caption: one line, still-billing said once', () =
     expect(c.caption).not.toMatch(/not the selected range|still being billed/)
     expect(c.evidence).toEqual({
       source: "Sep 1–27 (UTC) · Actual · AWS Cost Explorer · today's spend still being billed",
-      comparison: 'Finished days this month vs same days last month · not the selected range · Sep 1–27 vs Aug 1–27 · After credits and refunds; amounts below $0 count as $0 · the current window ends today, which is still being billed',
+      comparison: 'Finished days this month vs same days last month · not the selected range · Sep 1–27 vs Aug 1–27 · the current window ends today, which is still being billed',
     })
   })
 
@@ -129,7 +129,7 @@ describe('Dashboard month-over-month trend', () => {
   it('a real 0% is a flat 0% trend, with its basis, windows, and (from an older backend) the still-billing note', () => {
     const c = card({ spend: spend(10), monthOverMonth: mom(0, 0) })
     expect(c.trend).toEqual({ direction: 'flat', label: '0% vs same days last month', color: 'var(--text-secondary)' })
-    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Sep 1–27 vs Aug 1–27 · After credits and refunds; amounts below $0 count as $0 · the current window ends today, which is still being billed')
+    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Sep 1–27 vs Aug 1–27 · the current window ends today, which is still being billed')
   })
 
   it('positive and negative changes show their real percentages (a fully billed window keeps its direction color)', () => {
@@ -199,17 +199,17 @@ describe('Dashboard spend comparison: finished days only (backend finishedThroug
     const c = card({ spend: oct3, monthOverMonth: windows(['2026-10-01', '2026-10-01'], ['2026-09-01', '2026-09-01']) })
     expect(c.caption).toBe('Oct 1–3 (UTC) · Actual · AWS Cost Explorer · today still billing')
     expect(c.trend?.label).toBe('0% vs same days last month')
-    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · After credits and refunds; amounts below $0 count as $0')
+    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1')
   })
 
   it('Oct 15: "Oct 1–13 vs Sep 1–13"', () => {
     const c = card({ spend: withFinished(spend(42), '2026-10-13'), monthOverMonth: windows(['2026-10-01', '2026-10-13'], ['2026-09-01', '2026-09-13']) })
-    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Oct 1–13 vs Sep 1–13 · After credits and refunds; amounts below $0 count as $0')
+    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Oct 1–13 vs Sep 1–13')
   })
 
   it('Mar 31: the capped previous window is disclosed', () => {
     const c = card({ spend: withFinished(spend(42), '2027-03-29'), monthOverMonth: windows(['2027-03-01', '2027-03-29'], ['2027-02-01', '2027-02-28']) })
-    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Mar 1–29 vs Feb 1–28 (Feb has only 28 days) · After credits and refunds; amounts below $0 count as $0')
+    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Mar 1–29 vs Feb 1–28 (Feb has only 28 days)')
   })
 
   it('a response without finishedThrough (older backend) never claims days are still being reported', () => {

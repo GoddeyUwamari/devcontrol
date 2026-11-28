@@ -635,10 +635,14 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
   private monthOverMonthSentence(section: ContextSection<MonthOverMonthEvidence>): string {
     if (!hasEvidence(section)) return missingSentence('The month-over-month cost comparison', section, `A month-over-month cost comparison is not available (${unavailablePhrase(section)}), so no cost trend is reported.`);
     const d = section.data;
-    const pct = d.changePercent !== null ? ` (${d.changePercent > 0 ? '+' : ''}${d.changePercent.toFixed(1)}%)` : ' (percentage undefined: the previous window totals $0.00)';
+    const pct = d.changePercent !== null
+      ? ` (${d.changePercent > 0 ? '+' : ''}${d.changePercent.toFixed(1)}%)`
+      : d.previousWindowTotal < 0
+        ? ' (percentage undefined: the previous window totals below $0.00, credits exceeded charges)'
+        : ' (percentage undefined: the previous window totals $0.00)';
     const today = d.currentWindowIncludesToday ? " The current window's last day is today and still being billed." : '';
     const partial = section.state === 'partial' ? ' Some days in the compared windows have no daily data.' : '';
-    return `Spend from ${d.currentWindow.start} to ${d.currentWindow.end} was ${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)} for ${d.previousWindow.start} to ${d.previousWindow.end}, a change of ${money(d.changeAmount)}${pct}, from AWS Cost Explorer daily charges after credits, each category floored at $0.${today}${partial}`;
+    return `Spend from ${d.currentWindow.start} to ${d.currentWindow.end} was ${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)} for ${d.previousWindow.start} to ${d.previousWindow.end}, a change of ${money(d.changeAmount)}${pct}, from AWS Cost Explorer daily net amounts after credits and refunds, nothing floored at $0.${today}${partial}`;
   }
 
   private securitySentence(section: ContextSection<ComplianceFindingsEvidence>): string {

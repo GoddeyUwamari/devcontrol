@@ -128,8 +128,9 @@ function dailyTrend(currentDaily: number, previousDaily: number | null) {
   const lastMonthYear = month === 0 ? year - 1 : year;
   const previousDays = Math.min(finishedDay, new Date(Date.UTC(year, month, 0)).getUTCDate());
   const iso = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  // byService carries the day's amount: the comparison sums the real net (PR B1), Σ byService.
   const point = (date: string, total: number) => ({
-    date, total, compute: total, storage: 0, database: 0, network: 0, other: 0, byService: [],
+    date, total, compute: total, storage: 0, database: 0, network: 0, other: 0, byService: [{ service: 'AWS Lambda', amount: total }],
   });
 
   const points = [];
@@ -525,7 +526,9 @@ function trendWithTotals(currentTotal: number, previousTotal: number) {
   const firstCurrent = points.find((p: any) => p.date.startsWith(currentPrefix));
   const firstPrevious = points.find((p: any) => !p.date.startsWith(currentPrefix));
   firstCurrent.total = currentTotal;
+  firstCurrent.byService = [{ service: 'AWS Lambda', amount: currentTotal }];
   firstPrevious.total = previousTotal;
+  firstPrevious.byService = [{ service: 'AWS Lambda', amount: previousTotal }];
   return points;
 }
 
@@ -607,7 +610,7 @@ describe('Comparison partial-day semantics', () => {
   it('before any day of this month has finished (Oct 2), the model is told there is no comparison and why -- never a percentage', () => {
     jest.setSystemTime(new Date('2026-10-02T12:00:00.000Z'));
     try {
-      const point = (date: string, total: number) => ({ date, total, compute: total, storage: 0, database: 0, network: 0, other: 0, byService: [] });
+      const point = (date: string, total: number) => ({ date, total, compute: total, storage: 0, database: 0, network: 0, other: 0, byService: [{ service: 'AWS Lambda', amount: total }] });
       const comparison = (contextRepo as any).computeMonthOverMonthComparison([
         point('2026-09-01', 14.33), point('2026-09-02', 14.33), point('2026-10-01', 0.19), point('2026-10-02', 0.01),
       ]);
@@ -653,7 +656,7 @@ describe('DORA context labeling', () => {
 });
 
 describe('Comparison provenance: asOf and basis', () => {
-  it('carries when its daily trend was fetched, and states its basis (after credits and refunds, daily category charges floored to zero)', async () => {
+  it('carries when its daily trend was fetched, and states its basis (daily net amounts after credits and refunds, nothing floored)', async () => {
     const orgId = await insertOrg();
     stubConnectedAccount();
     mockCostExplorer(500, [{ service: 'AWS Lambda', amount: 500 }]);
@@ -665,10 +668,10 @@ describe('Comparison provenance: asOf and basis', () => {
 
     expect(fetchedAt).toHaveBeenCalledWith(orgId, '90d');
     expect(comparison.asOf).toBe('2026-09-25T15:17:36.123Z');
-    expect(comparison.basis).toMatch(/daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero/);
+    expect(comparison.basis).toMatch(/daily net amounts across all services, after credits and refunds, with nothing floored at zero/);
     const section = (chatService as any).formatComparisonSection(comparison);
     expect(section).toMatch(/- As of: 2026-09-25T15:17:36\.123Z/);
-    expect(section).toMatch(/- Basis: sum of AWS Cost Explorer daily charges per cost category/);
+    expect(section).toMatch(/- Basis: sum of AWS Cost Explorer daily net amounts across all services/);
     // The calculation itself is unchanged -- only its provenance is new.
     expect(comparison.changeAmount).toBe(10 * dailyTrend(10, 5).currentDays - 5 * dailyTrend(10, 5).previousDays);
   });
@@ -694,7 +697,7 @@ describe('Comparison provenance: asOf and basis', () => {
 });
 
 function dailyBasis() {
-  return 'sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend';
+  return 'sum of AWS Cost Explorer daily net amounts across all services, after credits and refunds, with nothing floored at zero, so a window total can be negative; window totals cover finished days only and can differ from month-to-date spend';
 }
 
 describe('Credits: month-to-date spend vs the comparison window total', () => {
@@ -706,8 +709,8 @@ describe('Credits: month-to-date spend vs the comparison window total', () => {
       { service: 'Amazon Elastic Compute Cloud - Compute', amount: 15 },
       { service: 'Credits', amount: -5 },
     ]);
-    // The daily trend floors each negative category amount to zero (D2), so the
-    // same days sum to the $15 of charges, credit excluded.
+    // The finished days of the daily trend sum to $15 (the month-to-date figure
+    // also covers days the comparison leaves out), so the two figures differ.
     jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue(trendWithTotals(15, 12));
 
     const context = await contextRepo.gatherContext(orgId);
@@ -720,7 +723,7 @@ describe('Credits: month-to-date spend vs the comparison window total', () => {
     const formatted = format(context);
     expect(formatted).toMatch(/- Month-to-date spend: \$10\.00 \(observed spend for the period above/);
     expect(formatted).toMatch(/- Current window: .* total \$15\.00/);
-    expect(formatted).toMatch(/- Basis: .*after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend/);
+    expect(formatted).toMatch(/- Basis: .*after credits and refunds, with nothing floored at zero, so a window total can be negative; window totals cover finished days only and can differ from month-to-date spend/);
     expect(formatted).toMatch(/- Not the same total as month-to-date spend: this window's total \(\$15\.00\) and the month-to-date spend above \(\$10\.00\) are calculated differently \(see Basis\) -- present them as two different figures, never as the same total/);
   });
 

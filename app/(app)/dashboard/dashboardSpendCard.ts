@@ -15,7 +15,6 @@
  */
 import type { CostSummary } from '@/lib/types'
 import { describeComparisonWindows, describeMonthOverMonth, describeSpend, estimateCoverageSub, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthHasUnfinishedDays, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinalDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
-import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 export interface DashboardSpendCard {
   label: string
@@ -106,8 +105,8 @@ export function computeDashboardSpendCard(params: {
       color,
     }
     const windows = costSummary?.monthOverMonth.data ? ` · ${describeComparisonWindows(costSummary.monthOverMonth.data)}` : ''
-    // Built from the daily trend (after credits, each category floored at $0), unlike the net month-to-date figure above it.
-    comparison = `${MOM_BASIS_LABEL}${windows} · ${TREND_TOTALS_NOTE}${mom.includesToday ? ' · the current window ends today, which is still being billed' : ''}`
+    // Built from the daily trend's real nets (finished days, nothing floored at $0; PR B1), so no clamping note.
+    comparison = `${MOM_BASIS_LABEL}${windows}${mom.includesToday ? ' · the current window ends today, which is still being billed' : ''}`
   } else {
     const failed = isError || costSummary?.monthOverMonth.state === 'error'
     comparison = failed ? 'Month-over-month could not be retrieved' : 'Month-over-month not available'

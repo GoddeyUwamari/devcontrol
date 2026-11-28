@@ -146,6 +146,14 @@ export interface CostTrendPoint {
   // the top TOP_SERVICE_COUNT services (by total spend across the whole range) plus
   // an "Other" bucket, each with a stable color. Same optionality rationale as byService.
   byServiceDisplay?: { service: string; amount: number; color: string }[]
+  // The period's real net: the unclamped sum of byService[].amount (credits and
+  // refunds included, so it can be negative). Money calculations (the
+  // month-over-month comparison, the chart's tooltip Total and "so far", the
+  // spike average) read this, never `total` or byServiceDisplay, which are
+  // floored at $0. null when the point has no byService (an older cache entry):
+  // the net is unknown, never the clamped total. Optional for the same reason as
+  // byService. See trendPointNet().
+  netTotal?: number | null
   // Cost Explorer SERVICE groups in this period: 0 means Cost Explorer reported
   // nothing for it. Optional for the same reason as byService.
   lineItems?: number
@@ -162,6 +170,19 @@ export interface CostTrendPoint {
 }
 
 type CostCategory = 'compute' | 'storage' | 'database' | 'network' | 'other'
+
+/**
+ * A trend point's real net amount: the unclamped sum of its per-service Cost
+ * Explorer amounts (credits and refunds netted in, so it may be negative). The
+ * one definition behind CostTrendPoint.netTotal and the month-over-month
+ * comparison. null when the point carries no byService (an older cache entry):
+ * the net is then unknown, and is never rebuilt from the clamped `total` or
+ * byServiceDisplay segments.
+ */
+export function trendPointNet(point: { byService?: ReadonlyArray<{ amount: number }> | null }): number | null {
+  if (!Array.isArray(point.byService)) return null
+  return point.byService.reduce((sum, { amount }) => sum + amount, 0)
+}
 
 // How many individual services the trend chart shows before folding the rest into
 // "Other". 7 named services + 1 gray "Other" bucket = 8 segments, matching the
@@ -449,12 +470,12 @@ function assignServiceColors(orderedDisplayNames: string[]): Map<string, string>
 }
 
 /**
- * Mutates each point in place, adding byServiceDisplay: the top TOP_SERVICE_COUNT
- * services by total spend across the whole range (so chart segment membership is
- * stable across dates, not recomputed per-day), normalized to display names with
- * stable colors, plus an "Other" bucket for everything outside the top set.
+ * The range's display-name ranking behind byServiceDisplay: each display name's
+ * (normalizeServiceName) total over every point's byService, and the top
+ * TOP_SERVICE_COUNT names by that total (Array.prototype.sort is stable, so a
+ * tie keeps first-seen order). Read-only: the points are not changed.
  */
-function attachServiceDisplayBreakdown(points: CostTrendPoint[]): void {
+function rankDisplayServices(points: ReadonlyArray<CostTrendPoint>): { topServices: string[]; totalsByDisplayName: Map<string, number> } {
   const totalsByDisplayName = new Map<string, number>()
   for (const point of points) {
     for (const { service, amount } of point.byService || []) {
@@ -467,6 +488,35 @@ function attachServiceDisplayBreakdown(points: CostTrendPoint[]): void {
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_SERVICE_COUNT)
     .map(([name]) => name)
+  return { topServices, totalsByDisplayName }
+}
+
+/**
+ * The display names byServiceDisplay folds into "Other" for this range: every
+ * name outside the top TOP_SERVICE_COUNT of the same ranking
+ * (rankDisplayServices), once each, ordered by the name's range total
+ * (descending), then by name. Empty when nothing is folded in (7 or fewer
+ * services). Read-only: computed from the points as given, so the cached 90d
+ * series is never changed. GET /api/platform/costs/trend returns it as the
+ * range-level `otherServices`.
+ */
+export function otherServicesFrom(points: ReadonlyArray<CostTrendPoint>): string[] {
+  const { topServices, totalsByDisplayName } = rankDisplayServices(points)
+  const topServiceSet = new Set(topServices)
+  return [...totalsByDisplayName.entries()]
+    .filter(([name]) => !topServiceSet.has(name))
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([name]) => name)
+}
+
+/**
+ * Mutates each point in place, adding byServiceDisplay: the top TOP_SERVICE_COUNT
+ * services by total spend across the whole range (so chart segment membership is
+ * stable across dates, not recomputed per-day), normalized to display names with
+ * stable colors, plus an "Other" bucket for everything outside the top set.
+ */
+function attachServiceDisplayBreakdown(points: CostTrendPoint[]): void {
+  const { topServices, totalsByDisplayName } = rankDisplayServices(points)
   const topServiceSet = new Set(topServices)
   const hasOther = topServiceSet.size < totalsByDisplayName.size
   const colorByName = assignServiceColors(topServices)
@@ -970,6 +1020,7 @@ class AWSCostService {
         other,
         total: compute + storage + database + network + other,
         byService,
+        netTotal: trendPointNet({ byService }),
         lineItems: (result.Groups || []).length,
         estimated: typeof result.Estimated === 'boolean' ? result.Estimated : null,
       }

@@ -401,12 +401,14 @@ export class AISummaryService {
       const d = s.monthOverMonth.data;
       const pct = d.changePercent !== null
         ? `${d.changePercent > 0 ? 'up' : d.changePercent < 0 ? 'down' : 'unchanged at'} ${Math.abs(d.changePercent).toFixed(1)}%`
-        : 'a percentage change is undefined because the previous window totals $0.00';
+        : d.previousWindowTotal < 0
+          ? 'a percentage change is undefined because the previous window totals below $0.00 (credits exceeded charges)'
+          : 'a percentage change is undefined because the previous window totals $0.00';
       const today = d.currentWindowIncludesToday ? '; the current day is still being billed' : '';
       const partial = s.monthOverMonth.state === 'partial' ? '; some days have no daily data' : '';
       facts.push(
         `Month-to-date spend vs the same days last month: ${pct} (${money(d.currentWindowTotal)} vs ${money(d.previousWindowTotal)}, ` +
-        `daily charges after credits, each category floored at $0${today}${partial}).`
+        `daily net amounts after credits and refunds, nothing floored at $0${today}${partial}).`
       );
     } else if (hasEvidence(s.spend)) {
       facts.push(`Month-over-month change: ${notAvailable(s.monthOverMonth)}. Do not describe spend as up, down, flat, or unchanged.`);

@@ -187,7 +187,8 @@ describe('the 7-day and 30-day views draw the same per-day states (T5)', () => {
 
 describe('the spike average leaves today out (never a finished day)', () => {
   it('six $1 days and a final $100 today: no spike banner', async () => {
-    const data = DRAWN.map((date) => ({ date, compute: date === '2026-11-18' ? 100 : 1, storage: 0, database: 0, network: 0, other: 0, total: date === '2026-11-18' ? 100 : 1, lineItems: 1, reportState: 'final' }))
+    // netTotal as the backend sends it (PR B1; the spike reads it): positive-only, so it equals total.
+    const data = DRAWN.map((date) => ({ date, compute: date === '2026-11-18' ? 100 : 1, storage: 0, database: 0, network: 0, other: 0, total: date === '2026-11-18' ? 100 : 1, netTotal: date === '2026-11-18' ? 100 : 1, lineItems: 1, reportState: 'final' }))
     show(data)
     await screen.findByText('Today')
     expect(screen.queryByText(/May cause unexpected AWS bill increase/)).toBeNull()

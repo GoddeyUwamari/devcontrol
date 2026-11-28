@@ -116,8 +116,9 @@ describe('review L-1: the "so far" amount has a thousands separator, as on Costs
     const { costsTrendTooltipLines } = await import('../../../app/(app)/costs/trend-chart-data')
     open.index = 1
     render(<CostTrendChart data={[
-      { date: '2026-11-12', compute: 900, storage: 0, database: 0, network: 0, other: 0, total: 900, lineItems: 8, reportState: 'final', provisional: false },
-      { date: '2026-11-13', compute: 1234.5, storage: 0, database: 0, network: 0, other: 0, total: 1234.5, lineItems: 8, reportState: 'updating', provisional: true },
+      // netTotal as the backend sends it (PR B1): positive-only, so it equals total.
+      { date: '2026-11-12', compute: 900, storage: 0, database: 0, network: 0, other: 0, total: 900, netTotal: 900, lineItems: 8, reportState: 'final', provisional: false },
+      { date: '2026-11-13', compute: 1234.5, storage: 0, database: 0, network: 0, other: 0, total: 1234.5, netTotal: 1234.5, lineItems: 8, reportState: 'updating', provisional: true },
     ]} dateRange="7d" onDateRangeChange={() => {}} now={NOW} />)
     const tip = await screen.findByText('Still updating · $1,234.50 so far. AWS Cost Explorer may still add charges.')
     expect(tip).toBeInTheDocument()

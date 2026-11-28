@@ -65,11 +65,13 @@ export interface CostComparison {
 }
 
 /**
- * What the comparison windows sum: fetchCostTrend()'s daily category totals,
- * each floored at $0 (the Dashboard's comparison uses the same figures).
+ * What the comparison windows sum: each day's real net from fetchCostTrend(),
+ * the unclamped sum of its per-service amounts (trendPointNet / netTotal; PR
+ * B1). Nothing is floored at $0, so a credit lowers the window total (the
+ * Dashboard's comparison uses the same figures).
  */
 export const COMPARISON_BASIS =
-  'sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend';
+  'sum of AWS Cost Explorer daily net amounts across all services, after credits and refunds, with nothing floored at zero, so a window total can be negative; window totals cover finished days only and can differ from month-to-date spend';
 
 /** How each state reads in model-facing text (shared with every AI surface). */
 const STATE_LABELS = CONTEXT_STATE_LABELS;
@@ -595,9 +597,9 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
 
     lines.push(`- Current window: ${currentWindow.start} through ${currentWindow.end} inclusive (${formatInclusiveRange(currentWindow.start, currentWindow.end)}), total ${this.formatMoney(currentWindowTotal)} (${coverage.currentDays} of ${coverage.expectedCurrentDays} days of data)`);
     lines.push(`- Previous window: ${previousWindow.start} through ${previousWindow.end} inclusive (${formatInclusiveRange(previousWindow.start, previousWindow.end)}), total ${this.formatMoney(previousWindowTotal)} (${coverage.previousDays} of ${coverage.expectedPreviousDays} days of data)`);
-    // The window total is summed from daily category charges after credits,
-    // each category floored at $0 (see Basis); month-to-date spend is Cost
-    // Explorer's own net total.
+    // The window total is summed from each finished day's net after credits,
+    // nothing floored (see Basis); month-to-date spend is Cost Explorer's own
+    // net total for the month so far, finished or not.
     if (monthToDateSpend !== null && Math.round(monthToDateSpend * 100) !== Math.round(currentWindowTotal * 100)) {
       lines.push(`- Not the same total as month-to-date spend: this window's total (${this.formatMoney(currentWindowTotal)}) and the month-to-date spend above (${this.formatMoney(monthToDateSpend)}) are calculated differently (see Basis) -- present them as two different figures, never as the same total`);
     }
@@ -608,7 +610,9 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
       const sign = comparison.changeAmount > 0 ? '+' : '';
       const percent = comparison.changePercent !== null
         ? ` (${comparison.changePercent > 0 ? '+' : ''}${comparison.changePercent.toFixed(1)}%)`
-        : ' (percentage undefined: previous window total is $0.00)';
+        : previousWindowTotal < 0
+          ? ' (percentage undefined: previous window total is below $0.00, credits exceeded charges)'
+          : ' (percentage undefined: previous window total is $0.00)';
       lines.push(`- Change: ${sign}${this.formatMoney(comparison.changeAmount)}${percent}`);
     }
     return lines.join('\n');

@@ -57,7 +57,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Pool } from 'pg';
-import awsCostService, { thirtyDayTrendFrom, trendCacheSource, type CostTrendPoint, type CostTrendRange } from '../../services/aws-cost.service';
+import awsCostService, { otherServicesFrom, thirtyDayTrendFrom, trendCacheSource, trendPointNet, type CostTrendPoint, type CostTrendRange } from '../../services/aws-cost.service';
 import { StatsController } from '../stats.controller';
 import { WeeklySummaryRepository } from '../../repositories/weekly-summary.repository';
 import { ACCOUNT_ROW, type CeInput } from './dashboard-money-fixtures';
@@ -171,11 +171,34 @@ function useCase(name: string): void {
   mockCostExplorerSend.mockImplementation(async (command: { input: CeInput }) => ceResponse(command.input, CASES[name].ledger));
 }
 
+/**
+ * The trend response as it was before PR B. PR B only ADDS two fields: each
+ * point's netTotal (trendPointNet, the unclamped net) and the range-level
+ * otherServices (otherServicesFrom). Both are checked here against their one
+ * definition, then left out, so every pre-existing byte is still compared with
+ * the fixtures pinned before CE-2 (which must never be rewritten, see above).
+ */
+function withoutPrBAdditions(body: { success: boolean; data?: CostTrendPoint[]; otherServices?: string[] }): { success: boolean; data: CostTrendPoint[] } {
+  if (!body.success || !Array.isArray(body.data)) return body as { success: boolean; data: CostTrendPoint[] };
+  expect(body.otherServices).toEqual(otherServicesFrom(body.data));
+  const before: { success: boolean; data: CostTrendPoint[]; otherServices?: string[] } = {
+    ...body,
+    data: body.data.map((p) => {
+      expect(p.netTotal).toBe(trendPointNet(p));
+      const point = { ...p };
+      delete point.netTotal;
+      return point;
+    }),
+  };
+  delete before.otherServices;
+  return before;
+}
+
 async function trendEndpoint(range: CostTrendRange): Promise<{ success: boolean; data: CostTrendPoint[] }> {
   const json = jest.fn();
   await new StatsController({ query: ambientPool.query } as unknown as Pool)
     .getCostTrend({ user: { organizationId: ORG }, query: { range } } as never, { json, status: jest.fn(() => ({ json })) } as never);
-  return json.mock.calls[0][0];
+  return withoutPrBAdditions(json.mock.calls[0][0]);
 }
 
 /**
@@ -344,7 +367,7 @@ describe('CE-2: tenant isolation of the shared 90d entry', () => {
     const json = jest.fn();
     await new StatsController({ query: ambientPool.query } as unknown as Pool)
       .getCostTrend({ user: { organizationId: org }, query: { range } } as never, { json, status: jest.fn(() => ({ json })) } as never);
-    return json.mock.calls[0][0].data;
+    return withoutPrBAdditions(json.mock.calls[0][0]).data;
   }
 
   let rowFor: Record<string, unknown>;

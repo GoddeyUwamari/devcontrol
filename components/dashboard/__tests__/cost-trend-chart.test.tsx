@@ -58,8 +58,9 @@ describe('CostTrendChart -- basis', () => {
 })
 
 describe('periods AWS Cost Explorer has not reported yet (DAY1-D14)', () => {
+  // netTotal as the backend sends it (PR B1): positive-only here, so it equals total.
   const point = (date: string, total: number, lineItems: number, provisional: boolean) =>
-    ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, lineItems, provisional })
+    ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, netTotal: total, lineItems, provisional })
 
   // The 7-day view draws the 7 UTC days ending today: Nov 26 .. Dec 2 at this clock (today-bar T1).
   const DEC2 = new Date('2026-12-02T12:00:00Z')

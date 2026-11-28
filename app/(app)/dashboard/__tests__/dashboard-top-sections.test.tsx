@@ -499,7 +499,7 @@ describe('9. estimated spend is labeled as an estimate', () => {
     await settled()
     const dialog = openInfo(kpi('/costs'), 'About Month-to-Date Spend')
     expect(dialog).toHaveTextContent("Actual · AWS Cost Explorer · today's spend still being billed")
-    expect(dialog).toHaveTextContent('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · After credits and refunds; amounts below $0 count as $0 · the current window ends today, which is still being billed')
+    expect(dialog).toHaveTextContent('Finished days this month vs same days last month · not the selected range · Oct 1 vs Sep 1 · the current window ends today, which is still being billed')
   })
 })
 

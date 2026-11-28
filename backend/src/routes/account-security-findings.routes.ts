@@ -9,7 +9,7 @@ const controller = new AccountSecurityFindingsController();
 // Get active account-level security findings
 router.get('/', authenticateToken, (req, res) => controller.getActive(req, res));
 
-// Get active-finding statistics (by severity/category)
+// Open-finding statistics (by severity/category): not dismissed, not accepted risk
 router.get('/stats', authenticateToken, (req, res) => controller.getStats(req, res));
 
 // Disposition actions — user decisions about an ACTIVE finding. Never mutate
