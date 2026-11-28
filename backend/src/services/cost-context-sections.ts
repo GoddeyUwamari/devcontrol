@@ -28,6 +28,7 @@ import {
   type EvidencePeriod,
 } from './ai-context-contract';
 import type { CostMonthState } from './cost-month-state';
+import { PRICED_RESOURCES_UNIT } from './inventory-cost';
 import { COMPARISON_BASIS, lastIncludedDay, type ChatCostSection } from './ai-chat.service';
 
 export interface SpendEvidence {
@@ -39,12 +40,19 @@ export interface SpendEvidence {
   amount: number | null;
   /**
    * billed_month_to_date        = AWS Cost Explorer spend for the section's period
-   * estimated_monthly_run_rate  = DevControl list-price estimate for currently
-   *                               discovered resources; not billed spend
+   * estimated_monthly_run_rate  = DevControl us-east-1 list-price estimate for the
+   *                               currently discovered resources that have a defensible
+   *                               price (estimateCoverage); not billed spend
    */
   basis: 'billed_month_to_date' | 'estimated_monthly_run_rate';
   /** Cost Explorer SERVICE categories (not per-resource costs); null for estimates. */
   topServices: Array<{ service: string; amount: number; sharePercent: number | null }> | null;
+  /**
+   * Only for the inventory estimate: K of N -- the estimate sums the pricedResources of the
+   * totalResources discovered (placeholder-costs F-5, "Estimated from K of N priced resources").
+   * Absent for billed spend.
+   */
+  estimateCoverage?: { pricedResources: number; totalResources: number } | null;
   /** For billed spend: the period's last day is today and still being billed. */
   lastDayInProgress: boolean;
   /**
@@ -159,10 +167,11 @@ export async function spendSection(costs: ChatCostSection, options: { previousMo
         asOf: costs.asOf,
         data: {
           amount: current, basis: 'estimated_monthly_run_rate', topServices: null, lastDayInProgress: false, finishedThrough: null,
+          estimateCoverage: coverage ?? null,
           ...monthState,
         },
         completeness: coverage
-          ? { unit: 'discovered resources with a cost estimate', expected: coverage.totalResources, received: coverage.estimatedResources, missing: null }
+          ? { unit: PRICED_RESOURCES_UNIT, expected: coverage.totalResources, received: coverage.pricedResources, missing: null }
           : null,
       })
     );

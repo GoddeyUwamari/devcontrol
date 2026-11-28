@@ -2,9 +2,11 @@
  * Tier 0 shared source-of-truth: coverage for SystemIntelligenceService's cost
  * component after consolidation --
  *
- * 1. monthlySpend is the inventory's monthly run-rate
- *    (AWSCostService.getInventoryMonthlyRunRate()), never Cost Explorer
- *    month-to-date spend; costSource is always 'estimated'.
+ * 1. Placeholder-costs ruling F-13: the spend the score stands on is AWS Cost
+ *    Explorer month-to-date billed spend when Cost Explorer has a usable amount
+ *    (costSource 'actual'); otherwise the score takes its "insufficient spend
+ *    data" branch. Never the inventory sum (aws_resources.estimated_monthly_cost
+ *    holds flat placeholders).
  * 2. totalSavings/totalOpps now come from CostRecommendationsRepository.
  *    getStats() (the same source the Dashboard's Savings Actions card and the
  *    cost-recommendations API read) instead of an independently duplicated
@@ -50,6 +52,7 @@ jest.mock('@aws-sdk/client-cost-explorer', () => {
 });
 
 import { SystemIntelligenceService } from '../system-intelligence.service';
+import awsCostService, { type MonthlyCost } from '../aws-cost.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { ensureSharedFixtureTable } from '../../routes/__tests__/shared-fixture-tables';
 
@@ -72,12 +75,6 @@ function uniqueSuffix(): string {
 
 function randomAccountId(): string {
   return Math.floor(Math.random() * 1e12).toString().padStart(12, '0');
-}
-
-function costExplorerResponse(service: string, amount: string) {
-  return {
-    ResultsByTime: [{ Groups: [{ Keys: [service], Metrics: { UnblendedCost: { Amount: amount } } }] }],
-  };
 }
 
 async function insertOrgWithAwsAccount(): Promise<string> {
@@ -150,55 +147,84 @@ afterAll(async () => {
   await pool.end();
 });
 
+/** A usable Cost Explorer month-to-date result (the shape fetchMonthlyCosts returns). */
+function billedMonth(total: number, state: 'month_to_date' | 'latest_days_updating' | 'no_billed_days_yet' = 'month_to_date'): MonthlyCost {
+  const amountUsable = state !== 'no_billed_days_yet';
+  return {
+    total,
+    byService: [{ service: 'Amazon Elastic Compute Cloud - Compute', amount: total }],
+    period: { start: '2026-11-01', end: '2026-11-28' },
+    previousMonth: null,
+    monthState: { state, amountUsable, amount: amountUsable ? total : null } as unknown as MonthlyCost['monthState'],
+  };
+}
+
+function mockBilled(result: MonthlyCost | Error) {
+  return jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockImplementation(async () => {
+    if (result instanceof Error) throw result;
+    return result;
+  });
+}
+
+afterEach(() => jest.restoreAllMocks());
+
 describe('SystemIntelligenceService cost component -- consolidated monthly-spend + savings sources', () => {
-  it('Cost Explorer month-to-date spend is never the input: with live spend available, monthlySpend is still the inventory run-rate and Cost Explorer is not called', async () => {
+  it('F-13: Cost Explorer month-to-date billed spend is the input; inventory placeholders are never read', async () => {
     const orgId = await insertOrgWithAwsAccount();
-    await insertAwsResource(orgId, 'i-rr-1', 20);
-    await insertAwsResource(orgId, 'i-rr-2', 5);
+    // Flat placeholders that would dominate the old inventory sum.
+    await insertAwsResource(orgId, 'i-rr-1', 500);
+    await insertAwsResource(orgId, 'i-rr-2', 150);
     await insertActiveRecommendation(orgId, 'i-live-1', 0.96);
-    mockSend.mockResolvedValue(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '0.19'));
+    const billed = mockBilled(billedMonth(25));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);
 
     const { cost } = (await service.getSystemIntelligence(orgId)).components;
 
-    expect(cost.costSource).toBe('estimated');
+    expect(billed).toHaveBeenCalledWith(orgId);
+    expect(cost.costSource).toBe('actual');
     expect(cost.monthlySpend).toBeCloseTo(25, 2);
-    expect(mockSend).not.toHaveBeenCalled();
-    // run-rate $25 vs $0.96 savings: 100 x 25 / 25.96 = 96.3 -- not the MTD-driven 38.
+    // billed $25 vs $0.96 savings: 100 x 25 / 25.96 = 96.3 -- not the placeholder-driven 99.
     expect(cost.score).toBe(96);
+    expect(cost.reason).toContain('Based on AWS Cost Explorer month-to-date billed spend');
   });
 
-  it('the score does not move when month-to-date spend changes (MTD $0.19 vs $5,000)', async () => {
-    const scores: number[] = [];
-    for (const mtd of ['0.19', '5000.00']) {
-      const orgId = await insertOrgWithAwsAccount();
-      await insertAwsResource(orgId, `i-mtd-${mtd}`, 25);
-      await insertActiveRecommendation(orgId, `i-mtd-rec-${mtd}`, 0.96);
-      mockSend.mockReset();
-      mockSend.mockResolvedValue(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', mtd));
-
-      const service = new SystemIntelligenceService();
-      stubSecurityAndObservability(service);
-      scores.push((await service.getSystemIntelligence(orgId)).components.cost.score);
-    }
-    expect(scores).toEqual([96, 96]);
-  });
-
-  it('DB estimate path (Cost Explorer returns nothing): costSource is "estimated" and monthlySpend matches the aws_resources sum exactly', async () => {
+  it('F-13: a "latest days updating" month is still a usable billed amount', async () => {
     const orgId = await insertOrgWithAwsAccount();
-    await insertAwsResource(orgId, 'i-est-1', 120.5);
-    await insertAwsResource(orgId, 'i-est-2', 30.25);
-    mockSend.mockResolvedValueOnce({ ResultsByTime: [{ Groups: [] }] }); // live total = 0 -- forces fallback
+    await insertActiveRecommendation(orgId, 'i-upd-1', 0.96);
+    mockBilled(billedMonth(25, 'latest_days_updating'));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);
+    const { cost } = (await service.getSystemIntelligence(orgId)).components;
 
-    const result = await service.getSystemIntelligence(orgId);
+    expect(cost.costSource).toBe('actual');
+    expect(cost.score).toBe(96);
+  });
 
-    expect(result.components.cost.costSource).toBe('estimated');
-    expect(result.components.cost.monthlySpend).toBeCloseTo(150.75, 2);
+  it.each([
+    ['Cost Explorer fails', new Error('the Cost Explorer request failed'), undefined],
+    ['no billed days yet', billedMonth(0, 'no_billed_days_yet'), undefined],
+    // A real $0.00 billed month is billing data (costSource 'actual'), but nothing to divide by.
+    ['a billed month of $0.00', billedMonth(0), 'actual'],
+  ])('F-13: %s -> insufficient spend data, never the inventory sum', async (_name, result, expectedSource) => {
+    const orgId = await insertOrgWithAwsAccount();
+    await insertAwsResource(orgId, 'i-est-1', 120.5);
+    await insertAwsResource(orgId, 'i-est-2', 30.25);
+    await insertActiveRecommendation(orgId, 'i-est-rec', 10);
+    mockBilled(result);
+
+    const service = new SystemIntelligenceService();
+    stubSecurityAndObservability(service);
+    const { cost } = (await service.getSystemIntelligence(orgId)).components;
+
+    expect(cost.costSource).toBe(expectedSource);
+    expect(cost.monthlySpend === undefined || cost.monthlySpend === 0).toBe(true);
+    expect(cost.score).toBe(50);
+    expect(cost.detail).toBe('Spend data unavailable — cost efficiency cannot be assessed');
+    expect(cost.reason).toContain('Insufficient spend data to assess cost efficiency.');
+    expect(cost.reason).not.toContain('run-rate');
   });
 
   it('savings aggregate reuse: totalSavings/totalOpps in the cost detail exactly match CostRecommendationsRepository.getStats() for the same org (no independent duplicate query)', async () => {
@@ -206,7 +232,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
     await insertAwsResource(orgId, 'i-savings-rr', 1000);
     await insertActiveRecommendation(orgId, 'i-savings-1', 75);
     await insertActiveRecommendation(orgId, 'i-savings-2', 25);
-    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '1000.00'));
+    mockBilled(billedMonth(1000));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);
@@ -236,7 +262,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
        VALUES ($1, 'dev-db', 'RDS', 'Oversized Instance', 900, 'HIGH', 'ACTIVE')`,
       [orgId]
     );
-    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '1000.00'));
+    mockBilled(billedMonth(1000));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);
@@ -250,7 +276,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
     const orgId = await insertOrgWithAwsAccount();
     await insertAwsResource(orgId, 'i-small-rr', 100);
     await insertActiveRecommendation(orgId, 'vol-small', 0.08);
-    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '100.00'));
+    mockBilled(billedMonth(100));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);
@@ -271,7 +297,7 @@ describe('SystemIntelligenceService cost component -- consolidated monthly-spend
        VALUES ($1, 'i-resolved', 'EC2', 'Idle instance', 999, 'MEDIUM', 'RESOLVED')`,
       [orgId]
     );
-    mockSend.mockResolvedValueOnce(costExplorerResponse('Amazon Elastic Compute Cloud - Compute', '500.00'));
+    mockBilled(billedMonth(500));
 
     const service = new SystemIntelligenceService();
     stubSecurityAndObservability(service);

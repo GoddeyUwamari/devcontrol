@@ -21,7 +21,7 @@ export interface LegacyChatCosts {
   scope: ContextScope | null;
   topSpenders: Array<{ service: string; cost: number; percentage: number | null }> | null;
   costExplorer: { state: ContextDataState; reason: string | null };
-  estimateCoverage: { estimatedResources: number; totalResources: number } | null;
+  estimateCoverage: { pricedResources: number; totalResources: number } | null;
   comparison: CostComparison;
 }
 
@@ -36,7 +36,7 @@ export function chatCosts(c: LegacyChatCosts): ChatCostSection {
     scope: c.scope,
     period: c.period ? { kind: 'range', start: c.period.start, endExclusive: c.period.endExclusive } : c.source === 'estimated' ? { kind: 'point_in_time' } : null,
     completeness: c.estimateCoverage
-      ? { unit: 'discovered resources with a cost estimate', expected: c.estimateCoverage.totalResources, received: c.estimateCoverage.estimatedResources, missing: null }
+      ? { unit: 'discovered resources with a defensible price', expected: c.estimateCoverage.totalResources, received: c.estimateCoverage.pricedResources, missing: null }
       : null,
     coverage: null,
     reason: null,

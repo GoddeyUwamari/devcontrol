@@ -37,6 +37,15 @@ export const LOW_ACTIVITY_FINDING_RULE =
   "A low-activity instance finding means CPU and network stayed under DevControl's thresholds every day for 30 days and the instance isn't behind a load balancer or in an Auto Scaling group. " +
   'Never call it idle, unused, safe to stop or not needed; say it may no longer be needed and should be checked with its owner.';
 
+/**
+ * How every AI surface may use DevControl inventory cost estimates (placeholder-costs
+ * PR 1, rulings F-4/F-5): only priced resources carry a figure, it is a us-east-1
+ * list-price estimate, never billed spend, and unpriced resources are never a number.
+ */
+export const INVENTORY_ESTIMATE_RULE =
+  'DevControl inventory cost figures are us-east-1 list-price estimates for the resources DevControl can price, never AWS billed spend: never call them spend, a bill or actual cost, and never present an inventory estimate or a sum of them as what AWS charged. ' +
+  'Resources without a price have no figure: never give them a dollar amount, never treat them as $0, and never add them to a total. Never add per-resource estimates together yourself; use only a total the evidence states, with its "K of N priced resources" coverage, and say that the other resources have no price.';
+
 /** Longest single untrusted string kept; the rest is cut and marked. */
 export const UNTRUSTED_TEXT_MAX_CHARS = 200;
 

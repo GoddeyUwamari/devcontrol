@@ -344,7 +344,7 @@ describe('/infrastructure spend card -- labeled by its source (cost summary, DAY
     vi.mocked(platformStatsService.getCostSummary).mockResolvedValue({
       spend: {
         state: 'available', source: actual ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance, asOf: null, coverage: null, reason: null,
-        data: { amount, basis: actual ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false },
+        data: { amount, basis: actual ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false, ...(actual ? {} : { estimateCoverage: { pricedResources: 3, totalResources: 4 } }) },
       },
       monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
     } as any)
@@ -368,6 +368,7 @@ describe('/infrastructure spend card -- labeled by its source (cost summary, DAY
     await waitFor(() => expect(screen.getByTestId('infrastructure-spend-value').textContent).toContain('$412.50/mo'))
     expect(screen.getByTestId('infrastructure-spend-label').textContent).toBe('Estimated Monthly Run-Rate')
     expect(document.body.textContent).toContain('not AWS billed spend')
+    expect(document.body.textContent).toContain('Estimated from 3 of 4 priced resources')
   })
 
   // An inventory estimate of $0 means nothing was estimated: no figure, not $0.00/mo.

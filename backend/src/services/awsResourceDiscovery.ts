@@ -199,7 +199,7 @@ import {
 } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
-import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
+import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage, RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ } from '../config/aws-pricing';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
@@ -3780,16 +3780,9 @@ export class AWSResourceDiscoveryService {
    * Hardcoded estimates based on instance class
    */
   private estimateRDSCost(instanceClass: string): number {
-    const costs: Record<string, number> = {
-      'db.t3.micro': 12,
-      'db.t3.small': 24,
-      'db.t3.medium': 48,
-      'db.t3.large': 96,
-      'db.m5.large': 122,
-      'db.m5.xlarge': 244,
-      'db.r5.large': 175,
-      'db.r5.xlarge': 350,
-    };
+    // The same table, now in config/aws-pricing.ts so the inventory pricing rule reads it too. The stored
+    // value is unchanged; readers never show it as a price (services/inventory-cost.ts).
+    const costs: Readonly<Record<string, number>> = RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ;
     return costs[instanceClass] || 75; // Default estimate
   }
 

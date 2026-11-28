@@ -5,6 +5,22 @@ import autoTable from 'jspdf-autotable';
 import { ExportColumn, ColumnMapping } from '../types/export.types';
 import { ResourceFilters, AWSResource } from '../types/aws-resources.types';
 import { activeComplianceFindings } from '../utils/frameworkApplicability';
+import {
+  inventoryCost,
+  inventoryCostCell,
+  inventoryCostColumns,
+  INVENTORY_PRICE_BASIS,
+  NO_DIRECT_CHARGE_TEXT,
+  NO_PRICE_TEXT,
+  NOT_RUNNING_TEXT,
+  VPC_SEPARATE_CHARGES_LINE,
+} from './inventory-cost';
+
+/** The PDF's note on the Monthly Cost column, printed whenever the column is exported. */
+export const INVENTORY_COST_BASIS_NOTE: string[] = [
+  `Monthly Cost: a dollar figure is a ${INVENTORY_PRICE_BASIS} for the resource's recorded configuration (on-demand list price; RDS instance hours only, EBS volume storage only, Lambda requests and duration), not AWS billed spend.`,
+  `"${NO_PRICE_TEXT}" means DevControl has no defensible price for the resource; it is not $0. "${NOT_RUNNING_TEXT}" is a stopped instance. "${NO_DIRECT_CHARGE_TEXT}" is a VPC: ${VPC_SEPARATE_CHARGES_LINE}`,
+];
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
@@ -57,14 +73,12 @@ export class AWSResourcesExportService {
     },
     cost: {
       label: 'Monthly Cost',
-      field: 'estimated_monthly_cost',
-      formatter: (r: any) => {
-        // null means the cost hasn't actually been calculated yet for this
-        // resource (e.g. a Lambda function whose CloudWatch usage lookup
-        // failed on its most recent discovery) -- never coerce to $0.00.
-        if (r.estimated_monthly_cost == null) return 'Not available';
-        return `$${Number(r.estimated_monthly_cost).toFixed(2)}`;
-      },
+      field: 'stored_monthly_cost',
+      // The shared inventory pricing rule (services/inventory-cost.ts): the amount with its basis
+      // ("us-east-1 list-price estimate; ..."), or "No price" / "Not running: no instance-hour
+      // charge" / "No direct charge. NAT gateways, ...". Never the stored figure, never "$0.00"
+      // for a missing price.
+      formatter: (r: any) => inventoryCostCell(inventoryCost(r)),
     },
     security: {
       label: 'Security Status',
@@ -215,10 +229,17 @@ export class AWSResourcesExportService {
         columns.map((col) => this.formatCellValue(col, resource))
       );
 
+      const showsCost = columns.includes('cost');
+      if (showsCost) {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(INVENTORY_COST_BASIS_NOTE, margin, margin + 0.55, { maxWidth: contentWidth });
+      }
+
       autoTable(doc, {
         head: [tableHeaders],
         body: tableData,
-        startY: margin + 0.5,
+        startY: showsCost ? margin + 1.2 : margin + 0.5,
         margin: { left: margin, right: margin },
         theme: 'grid',
         headStyles: {
@@ -347,6 +368,7 @@ export class AWSResourcesExportService {
     const query = `
       SELECT
         r.*,
+        ${inventoryCostColumns('r')},
         t.name as team_name,
         s.name as service_name
       FROM aws_resources r

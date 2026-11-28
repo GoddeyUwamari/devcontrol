@@ -75,7 +75,7 @@ function estimatedCosts(amount: number, estimated: number, total: number): ChatC
     state: estimated < total ? 'partial' : 'available', source: 'estimated', current: amount, asOf: '2026-09-26T05:00:00.000Z',
     period: null, scope: INVENTORY_SCOPE, topSpenders: null,
     costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
-    estimateCoverage: { estimatedResources: estimated, totalResources: total },
+    estimateCoverage: { pricedResources: estimated, totalResources: total },
     comparison: unavailableComparison('no Cost Explorer data for the current period, so there is nothing to compare'),
   });
 }
@@ -532,7 +532,7 @@ describe('AI Reports deterministic fallback', () => {
     const data = await evidence({ costs: estimatedCosts(3200, 10, 10) });
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
 
-    expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of discovered resources at $3,200.00 (a list-price estimate, not AWS billing data)');
+    expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of the discovered resources it can price at $3,200.00 (a us-east-1 list-price estimate, not AWS billing data; Estimated from 10 of 10 priced resources).');
     expect(JSON.stringify(report)).not.toMatch(/AWS spending|Cloud Spending/i);
   });
 

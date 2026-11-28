@@ -145,6 +145,11 @@ export interface PlatformStats {
   active_deployments: number;
   total_infrastructure_cost: number;
   cost_source: SpendProvenance;
+  /**
+   * Only with cost_source 'estimated': how many resources the inventory estimate covers
+   * ("Estimated from K of N priced resources", ruling F-5). null for billed spend.
+   */
+  cost_estimate_coverage?: { priced_resources: number; total_resources: number } | null;
   free_tier_remaining: number;
   recent_deployments: Deployment[];
   service_health: {

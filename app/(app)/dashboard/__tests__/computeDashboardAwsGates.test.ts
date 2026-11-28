@@ -80,4 +80,22 @@ describe('computeDashboardAwsGates', () => {
     expect(gates.isBillingSyncing).toBe(false)
     expect(gates.showRecommendationSections).toBe(false)
   })
+
+  describe('placeholder-costs D2: placeholders never open the billing-data gate', () => {
+    const gate = (stats: Parameters<typeof computeDashboardAwsGates>[0]['stats']) =>
+      computeDashboardAwsGates({ isDemoActive: false, isAwsConnected: true, statsLoading: false, stats }).hasBillingData
+
+    it('an estimate with nothing priced (the backend sends $0 and 0 of N) is not billing data', () => {
+      expect(gate({ totalServices: 12, monthlyAwsCost: 0, costSource: 'estimated', costEstimateCoverage: { pricedResources: 0, totalResources: 12 } })).toBe(false)
+    })
+
+    it('an estimate without its coverage (an older or malformed response) is not billing data', () => {
+      expect(gate({ totalServices: 12, monthlyAwsCost: 9, costSource: 'estimated' })).toBe(false)
+    })
+
+    it('a priced estimate above $0 with its coverage, or any Cost Explorer result, is', () => {
+      expect(gate({ totalServices: 12, monthlyAwsCost: 142, costSource: 'estimated', costEstimateCoverage: { pricedResources: 2, totalResources: 12 } })).toBe(true)
+      expect(gate({ totalServices: 12, monthlyAwsCost: 0, costSource: 'actual' })).toBe(true)
+    })
+  })
 })

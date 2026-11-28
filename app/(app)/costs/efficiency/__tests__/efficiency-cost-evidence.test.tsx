@@ -153,7 +153,7 @@ describe('Total Spend keeps its provenance', () => {
       ...actual(0),
       spend: {
         state: 'available', source: 'DevControl inventory cost estimate', provenance: 'estimated', asOf: null, coverage: null, reason: null,
-        data: { amount: 42.5, basis: 'estimated_monthly_run_rate', lastDayInProgress: false },
+        data: { amount: 42.5, basis: 'estimated_monthly_run_rate', lastDayInProgress: false, estimateCoverage: { pricedResources: 3, totalResources: 4 } },
       },
     })
     renderPage()

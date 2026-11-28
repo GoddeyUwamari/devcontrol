@@ -42,7 +42,8 @@ import { monthHasUnfinishedDays, monthName, monthOnly, periodWords, type CostMon
 import { noUrgentFindingsLine, reviewedFindingsLine } from './top-risk-selection';
 import { collectEvidence, fingerprintSections, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
-import { LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { INVENTORY_PRICE_BASIS, inventoryCoverageText } from './inventory-cost';
 import type { EvidenceBundle } from './ai/evidence/types';
 import { SECURITY_EVALUATION_MAX_AGE_SECONDS as EVALUATION_MAX_AGE, topRiskTitle, type PostureCountsEvidence, type TopRiskEvidence } from './ai/evidence/providers/security';
 import type { CostFindingsEvidence } from './ai/evidence/providers/cost';
@@ -58,7 +59,7 @@ const EMPTY_FIELDS: StructuredDashboardSummary = {
 
 /** Bump when the prompt or the facts it is built from change, so cached prose is not reused. */
 // v6: "Never show $0" -- open findings with no estimate total are stated as having no dollar estimate.
-const PROMPT_VERSION = 'dashboard-summary-v6';
+const PROMPT_VERSION = 'dashboard-summary-v7';
 
 /** Evidence budget for the summary prompt, in estimated tokens. */
 export const SUMMARY_EVIDENCE_BUDGET_TOKENS = 6_000;
@@ -381,10 +382,13 @@ export class AISummaryService {
       } else if (d.basis === 'billed_month_to_date' || d.amount === null) {
         facts.push(`Cloud spend: not available (${month?.reason?.text ?? month?.state ?? 'no usable amount'}). Do not describe spend as $0 or unchanged.`);
       } else {
-        const partial = s.spend.state === 'partial' && s.spend.reason ? `; ${s.spend.reason}` : '';
+        // F-5: priced resources only, with K of N; never called spend.
+        const coverage = d.estimateCoverage
+          ? `; ${inventoryCoverageText(d.estimateCoverage)}${d.estimateCoverage.totalResources > d.estimateCoverage.pricedResources ? ', the others have no price and are not included' : ''}`
+          : '';
         facts.push(
-          `Estimated current monthly cloud spend is approximately ${money(d.amount)} ` +
-          `(based on discovered resource pricing, not live billing data${partial}).`
+          `The estimated monthly run-rate of the discovered resources DevControl can price is approximately ${money(d.amount)} ` +
+          `(${INVENTORY_PRICE_BASIS}, not AWS billed spend${coverage}).`
         );
       }
     } else {
@@ -480,7 +484,7 @@ export class AISummaryService {
       `generic advice or filler. Each field should be a short, plain-English clause or sentence, ` +
       `not a list. If a fact needed for a field is not present below, leave that field null ` +
       `rather than guessing.\n\n` +
-      `Evidence rules:\n${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}\n- ${UNTRUSTED_TEXT_RULE}\n- ${LOW_ACTIVITY_FINDING_RULE}\n\n` +
+      `Evidence rules:\n${EVIDENCE_CLAIM_RULES.split('\n').map(rule => `- ${rule}`).join('\n')}\n- ${UNTRUSTED_TEXT_RULE}\n- ${LOW_ACTIVITY_FINDING_RULE}\n- ${INVENTORY_ESTIMATE_RULE}\n\n` +
       `Fields to populate:\n` +
       `- overallHealth: the composite System Intelligence score (if present) plus a brief ` +
       `clause of context on what's driving it.\n` +

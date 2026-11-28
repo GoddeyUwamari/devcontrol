@@ -58,11 +58,25 @@ async function insertOrg(): Promise<string> {
   return rows[0].id as string;
 }
 
-async function insertResource(organizationId: string, estimatedMonthlyCost: number | null): Promise<void> {
+/**
+ * A resource the shared pricing rule prices (placeholder-costs PR 1): a us-east-1 gp2 volume whose
+ * list price is exactly `estimatedMonthlyCost` ($0.10/GB-month).
+ */
+async function insertResource(organizationId: string, estimatedMonthlyCost: number): Promise<void> {
+  await pool.query(
+    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost, metadata)
+     VALUES ($1, $2, $3, 'ebs', 'us-east-1', 'in-use', $4, $5)`,
+    [organizationId, `arn:aws:ec2:us-east-1:${ACCOUNT_ID}:volume/vol-${uniqueSuffix()}`, `vol-${uniqueSuffix()}`, estimatedMonthlyCost,
+      JSON.stringify({ volume_type: 'gp2', size_gb: estimatedMonthlyCost * 10 })]
+  );
+}
+
+/** A legacy Resource Explorer row: an ECS service whose stored $9 is a flat placeholder (never a price). */
+async function insertPlaceholder(organizationId: string): Promise<void> {
   await pool.query(
     `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost)
-     VALUES ($1, $2, $3, 'ec2', 'us-east-1', 'running', $4)`,
-    [organizationId, `arn:aws:ec2:us-east-1:${ACCOUNT_ID}:instance/i-${uniqueSuffix()}`, `i-${uniqueSuffix()}`, estimatedMonthlyCost]
+     VALUES ($1, $2, $3, 'ecs', 'us-east-1', 'active', 9)`,
+    [organizationId, `arn:aws:ecs:us-east-1:${ACCOUNT_ID}:service/svc-${uniqueSuffix()}`, `svc-${uniqueSuffix()}`]
   );
 }
 
@@ -317,7 +331,7 @@ describe('Inventory estimate fallback', () => {
     expect(context.costs.period).toEqual({ kind: 'point_in_time' });
     expect(context.costs.data?.topSpenders ?? null).toBeNull();
     expect(context.costs.costExplorer.state).toBe('error');
-    expect(context.costs.data!.estimateCoverage).toEqual({ estimatedResources: 2, totalResources: 2 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 2, totalResources: 2 });
     expect(context.costs.scope).toEqual({ kind: 'resource_inventory', connectedAccountId: ACCOUNT_ID, discoveryRegion: 'us-east-1' });
     expect(context.costs.scope).not.toHaveProperty('regions');
     expect(context.costs.scope).not.toHaveProperty('linkedAccountFilter');
@@ -327,15 +341,16 @@ describe('Inventory estimate fallback', () => {
     expect(formatted).toMatch(/Source: DevControl inventory estimate .*NOT AWS billing data/);
     expect(formatted).toMatch(/Scope: AWS resources DevControl discovered under the connected IAM role/);
     expect(formatted).toMatch(/Regions: us-east-1 only/);
-    expect(formatted).toMatch(/Estimated monthly cost: \$42\.50/);
+    expect(formatted).toMatch(/Estimated monthly cost of priced resources: \$42\.50/);
+    expect(formatted).toContain('Coverage: Estimated from 2 of 2 priced resources');
     expect(formatted).not.toMatch(/- month_to_date_spend:/);
     expect(formatted).not.toMatch(/scope\.kind: cost_explorer/);
   });
 
-  it('resources without an estimate make the estimate "partial" with its coverage, not a silently complete total', async () => {
+  it('an unpriced resource (a flat placeholder) makes the estimate "partial" with K of N, and is never summed', async () => {
     const orgId = await insertOrg();
     await insertResource(orgId, 40);
-    await insertResource(orgId, null);
+    await insertPlaceholder(orgId);
     stubConnectedAccount();
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AWS_NOT_CONNECTED: none'));
     jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
@@ -343,8 +358,31 @@ describe('Inventory estimate fallback', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('partial');
-    expect(context.costs.data!.estimateCoverage).toEqual({ estimatedResources: 1, totalResources: 2 });
-    expect(format(context)).toMatch(/Coverage: 1 of 2 discovered resources have a cost estimate/);
+    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 1, totalResources: 2 });
+    expect(context.costs.data!.current).toBe(40);
+    expect(context.costs.reason).toBe('Estimated from 1 of 2 priced resources; the other 1 have no price and are not included');
+    expect(format(context)).toContain('Coverage: Estimated from 1 of 2 priced resources; the other 1 have no price -- not $0, and not included');
+    expect(format(context)).not.toMatch(/\$49/);
+  });
+});
+
+describe('Inventory estimate fallback: nothing priced (placeholder-costs F-5)', () => {
+  it('only flat placeholders: no estimate at all -- "unavailable" with a null figure, never $0.00 or $18', async () => {
+    const orgId = await insertOrg();
+    await insertPlaceholder(orgId);
+    await insertPlaceholder(orgId);
+    stubConnectedAccount();
+    jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('AccessDeniedException'));
+    jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
+
+    const context = await contextRepo.gatherContext(orgId);
+
+    expect(context.costs.provenance).toBeNull();
+    expect(context.costs.data).toBeNull();
+    expect(context.costs.state).toBe('error'); // Cost Explorer failed; no estimate to fall back on
+    const formatted = format(context);
+    expect(formatted).toContain('Spend: not available (no Cost Explorer result and no inventory estimate)');
+    expect(formatted).not.toMatch(/\$0\.00|\$18|\$9\b/);
   });
 });
 

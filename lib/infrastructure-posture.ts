@@ -74,8 +74,8 @@ const COST_LIMITATION_CAPTIONS: Array<[sentence: string, caption: string]> = [
 
 /**
  * The Cost tile's one caption: where its spend comes from (the component's
- * costSource -- the inventory's monthly run-rate estimate, not the Spend
- * card's Cost Explorer month-to-date figure), then its known limitations.
+ * costSource -- AWS Cost Explorer month-to-date billed spend since
+ * placeholder-costs F-13; 'estimated' is no longer sent), then its known limitations.
  * null when the component has no costSource and no recognized limitation.
  */
 export function costComponentCaption(component: Pick<SystemIntelligenceResult['components']['cost'], 'costSource' | 'reason'> | undefined): string | null {

@@ -52,7 +52,7 @@ function stats(amount: number, provenance: 'actual' | 'estimated') {
     spend: {
       state: 'available', source: actual ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance, asOf: '2026-11-12T09:00:00.000Z', coverage: null, reason: null,
       period: actual ? { kind: 'range', start: '2026-11-01', endExclusive: '2026-11-13' } : { kind: 'point_in_time' },
-      data: { amount, basis: actual ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false, finishedThrough: actual ? '2026-11-10' : null },
+      data: { amount, basis: actual ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false, finishedThrough: actual ? '2026-11-10' : null, ...(actual ? {} : { estimateCoverage: { pricedResources: 3, totalResources: 4 } }) },
     },
     monthOverMonth: { state: 'unavailable', source: 'x', provenance: null, asOf: null, coverage: null, reason: 'fixture', data: null },
   }

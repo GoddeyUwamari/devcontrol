@@ -33,7 +33,7 @@ function spendSection(amount: number, provenance: 'actual' | 'estimated', state:
   return {
     state, source: provenance === 'actual' ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance,
     asOf: '2026-09-27T09:00:00.000Z', coverage: null, reason: null,
-    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false },
+    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false, ...(provenance === 'estimated' ? { estimateCoverage: { pricedResources: 3, totalResources: 4 } } : {}) },
   }
 }
 
@@ -138,6 +138,17 @@ describe('month-to-date spend', () => {
     expect(d.sub).toMatch(/not AWS billed spend/)
     expect(d.sub).not.toMatch(/^Actual|Live from AWS/)
     expect(d.provenance).toBe('estimated')
+    // Placeholder-costs F-5: the estimate names its coverage.
+    expect(d.sub).toBe('Estimated from 3 of 4 priced resources · not AWS billed spend (Cost Explorer unavailable)')
+  })
+
+  it('F-5: an estimate without its K of N coverage, or with nothing priced, shows no figure', () => {
+    const noCoverage = spendSection(42.5, 'estimated')
+    delete (noCoverage.data as { estimateCoverage?: unknown }).estimateCoverage
+    expect(describeSpend(noCoverage, ready)).toMatchObject({ value: '—', provenance: null })
+    const nothingPriced = spendSection(0, 'estimated')
+    ;(nothingPriced.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 0, totalResources: 12 }
+    expect(describeSpend(nothingPriced, ready)).toMatchObject({ value: '—', provenance: null })
   })
 
   it('unavailable and error are missing figures -- never $0', () => {

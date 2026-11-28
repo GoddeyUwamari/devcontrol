@@ -35,6 +35,7 @@ jest.mock('../../config/database', () => {
   };
 });
 
+import { INVENTORY_ESTIMATE_RULE } from '../ai/evidence/render';
 import { AISummaryService, SYSTEM_STATUS_UNAVAILABLE, systemStatusFor } from '../ai-summary.service';
 import { operationsSources } from '../ai/evidence/providers/operations';
 import { chatCosts } from './chat-context-fixtures';
@@ -72,7 +73,7 @@ function estimatedCosts(amount: number): ChatContext['costs'] {
   return chatCosts({
     state: 'available', source: 'estimated', current: amount, asOf: '2026-09-26T05:00:00.000Z', period: null, scope: INVENTORY_SCOPE,
     topSpenders: null, costExplorer: { state: 'unavailable', reason: 'no connected AWS account' },
-    estimateCoverage: { estimatedResources: 5, totalResources: 5 }, comparison: unavailableComparison(),
+    estimateCoverage: { pricedResources: 5, totalResources: 5 }, comparison: unavailableComparison(),
   });
 }
 
@@ -197,7 +198,7 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
   it('a real $0 Cost Explorer month stays actual billed spend -- not dropped, not an estimate', async () => {
     const { prompt } = await run({ costs: actualCosts(0) });
     expect(prompt).toContain('AWS Cost Explorer month-to-date billed spend (2026-09-01 through 2026-09-26) is $0.00; the current day is still being billed.');
-    expect(prompt).not.toMatch(/Estimated current monthly cloud spend/);
+    expect(prompt).not.toMatch(/estimated monthly run-rate of the discovered resources/);
   });
 
   it('a net-credit month stays actual, with its negative amount', async () => {
@@ -207,7 +208,10 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
 
   it('an inventory estimate is labeled as an estimate', async () => {
     const { prompt } = await run({ costs: estimatedCosts(3200) });
-    expect(prompt).toContain('Estimated current monthly cloud spend is approximately $3,200.00 (based on discovered resource pricing, not live billing data).');
+    expect(prompt).toContain('The estimated monthly run-rate of the discovered resources DevControl can price is approximately $3,200.00 (us-east-1 list-price estimate, not AWS billed spend; Estimated from 5 of 5 priced resources).');
+    expect(prompt).not.toMatch(/cloud spend is approximately/i);
+    // Placeholder-costs PR 1: the dashboard summary carries the inventory claim rule.
+    expect(prompt).toContain(INVENTORY_ESTIMATE_RULE);
     expect(prompt).not.toMatch(/AWS Cost Explorer month-to-date billed spend/);
   });
 

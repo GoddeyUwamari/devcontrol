@@ -18,7 +18,7 @@ export function computeDashboardAwsGates(params: {
   isDemoActive: boolean
   isAwsConnected: boolean
   statsLoading: boolean
-  stats: Pick<PlatformDashboardStats, 'totalServices' | 'monthlyAwsCost' | 'costSource'> | undefined
+  stats: Pick<PlatformDashboardStats, 'totalServices' | 'monthlyAwsCost' | 'costSource' | 'costEstimateCoverage'> | undefined
 }) {
   const { isDemoActive, isAwsConnected, statsLoading, stats } = params
   const hasBillingData = !isDemoActive && !!stats && statsHasSpendFigure(stats)

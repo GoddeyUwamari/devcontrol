@@ -5,6 +5,19 @@ import { AWSResourcesExportService } from './awsResourcesExport.service';
 import { ExportColumn } from '../types/export.types';
 import { ResourceFilters } from '../types/aws-resources.types';
 import { activeComplianceFindings } from '../utils/frameworkApplicability';
+import awsCostService, { type MonthlyCost } from './aws-cost.service';
+import {
+  aggregateInventoryCosts,
+  formatInventoryUsd,
+  inventoryCost,
+  inventoryCostCell,
+  inventoryCostColumns,
+  INVENTORY_PRICE_BASIS,
+  NO_PRICE_TEXT,
+  type InventoryCost,
+  type InventoryCostTotal,
+} from './inventory-cost';
+import { INVENTORY_COST_BASIS_NOTE } from './awsResourcesExport.service';
 
 export interface ReportData {
   organizationId: string;
@@ -13,14 +26,39 @@ export interface ReportData {
   columns?: ExportColumn[];
 }
 
-export interface CostSummaryData {
-  totalCost: number;
-  costByTeam: { team: string; cost: number }[];
-  costByService: { service: string; cost: number }[];
-  costByEnvironment: { env: string; cost: number }[];
-  costByResourceType: { type: string; cost: number }[];
-  topSpenders: { resource: string; cost: number; type: string }[];
+/**
+ * The Cost Summary headline (ruling F-4): AWS Cost Explorer billed spend for the
+ * month to date when Cost Explorer has a usable amount; otherwise it is stated as
+ * unavailable. Never a sum of inventory figures, never "$0.00" for missing data.
+ */
+export type BilledSpendHeadline =
+  | {
+      state: 'usable';
+      amount: number;
+      periodStart: string;
+      periodEndExclusive: string;
+      latestDaysUpdating: boolean;
+      topServices: { service: string; amount: number }[];
+    }
+  | { state: 'unavailable'; reason: string };
+
+export interface InventoryGroupCost {
+  name: string;
+  total: InventoryCostTotal;
 }
+
+export interface CostSummaryData {
+  billed: BilledSpendHeadline;
+  /** The appendix: inventory pricing through the shared rule (K of N priced). */
+  inventory: InventoryCostTotal;
+  inventoryByEnvironment: InventoryGroupCost[];
+  inventoryByTeam: InventoryGroupCost[];
+  /** Priced resources only, highest first (at most 10). */
+  topPriced: { resource: string; type: string; cell: string }[];
+}
+
+/** How the report reads billed spend (AWSCostService.fetchMonthlyCosts by default; injectable for tests). */
+export type BilledSpendReader = (organizationId: string) => Promise<MonthlyCost>;
 
 export interface SecurityAuditData {
   totalResources: number;
@@ -43,11 +81,90 @@ export interface ComplianceStatusData {
   complianceScore: number;
 }
 
+/** Billed spend keeps its sign (credits); cents always. A real $0.00 billed month is billing data. */
+export function formatBilledUsd(amount: number): string {
+  const abs = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return amount < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+/** The last included day of an exclusive end date (YYYY-MM-DD). */
+function lastDayBefore(endExclusive: string): string {
+  const [y, m, d] = endExclusive.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+/** The cover headline (F-4): billed when usable, otherwise "unavailable" with the reason. */
+export function costSummaryHeadlineLines(billed: BilledSpendHeadline): string[] {
+  if (billed.state === 'unavailable') {
+    return [
+      'Billed spend: unavailable',
+      `AWS Cost Explorer billed spend is unavailable (${billed.reason}).`,
+      'No inventory estimate is shown in its place; see the appendix for priced resources.',
+    ];
+  }
+  const last = lastDayBefore(billed.periodEndExclusive);
+  return [
+    `Billed spend, month to date: ${formatBilledUsd(billed.amount)}`,
+    `AWS Cost Explorer, billed ${billed.periodStart} through ${last} (UTC)${billed.amount < 0 ? ', net of credits' : ''}${billed.latestDaysUpdating ? '; the latest days are still updating' : ''}.`,
+    "Account-wide billed spend: not filtered by this report's resource filters.",
+  ];
+}
+
+/** The appendix's coverage and total lines (F-4): "K of N resources priced"; no total when K = 0. */
+export function costSummaryAppendixLines(inventory: InventoryCostTotal): string[] {
+  const coverage = `Coverage: ${inventory.pricedResources} of ${inventory.totalResources} resources priced.`;
+  if (inventory.amount === null) {
+    return [coverage, 'No resource has a defensible price, so there is no inventory estimate.'];
+  }
+  return [
+    coverage,
+    `Estimated monthly cost of the ${inventory.pricedResources} priced resources: ${formatInventoryUsd(inventory.amount)} (${INVENTORY_PRICE_BASIS}; not AWS billed spend). Resources without a price are not included and are not $0.`,
+  ];
+}
+
+/** A group's cell: the priced estimate, or "No price" when nothing in the group is priced. */
+export function inventoryGroupCell(total: InventoryCostTotal): string {
+  return total.amount === null ? NO_PRICE_TEXT : `${formatInventoryUsd(total.amount)} (${INVENTORY_PRICE_BASIS})`;
+}
+
 export class ReportGeneratorService {
   private exportService: AWSResourcesExportService;
 
-  constructor(private pool: Pool) {
+  constructor(
+    private pool: Pool,
+    private readBilledSpend: BilledSpendReader = (organizationId) => awsCostService.fetchMonthlyCosts(organizationId)
+  ) {
     this.exportService = new AWSResourcesExportService(pool);
+  }
+
+  /** F-4 headline: Cost Explorer month to date when its amount is usable; otherwise why not. */
+  private async billedSpendHeadline(organizationId: string): Promise<BilledSpendHeadline> {
+    let costs: MonthlyCost;
+    try {
+      costs = await this.readBilledSpend(organizationId);
+    } catch (error: any) {
+      const message = String(error?.message ?? '');
+      console.error('[ReportGenerator] Cost Explorer read failed for the Cost Summary headline:', error?.name ?? 'Error');
+      return {
+        state: 'unavailable',
+        reason: message.startsWith('AWS_NOT_CONNECTED') ? 'no connected AWS account' : 'the AWS Cost Explorer request failed',
+      };
+    }
+    const month = costs.monthState;
+    if (!month || !month.amountUsable || !Number.isFinite(costs.total)) {
+      return {
+        state: 'unavailable',
+        reason: month?.state === 'no_billed_days_yet' ? 'AWS Cost Explorer has no billed days yet this month' : 'AWS Cost Explorer has no usable amount',
+      };
+    }
+    return {
+      state: 'usable',
+      amount: costs.total,
+      periodStart: costs.period.start,
+      periodEndExclusive: costs.period.end,
+      latestDaysUpdating: month.state === 'latest_days_updating',
+      topServices: [...costs.byService].filter((s) => Number.isFinite(s.amount)).sort((a, b) => b.amount - a.amount).slice(0, 10),
+    };
   }
 
   /**
@@ -184,96 +301,53 @@ export class ReportGeneratorService {
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
-    // Total cost and top spenders
-    const totalQuery = `
+    // Every resource row through the shared inventory pricing rule (services/inventory-cost.ts).
+    // No SQL sum of estimated_monthly_cost: a stored figure is a placeholder unless the rule
+    // establishes its basis, and a missing price is never 0.
+    const rowsQuery = `
       SELECT
-        COALESCE(SUM(r.estimated_monthly_cost), 0) as total_cost,
-        COUNT(*) as total_resources
-      FROM aws_resources r
-      ${whereClause}
-    `;
-
-    const topSpendersQuery = `
-      SELECT
-        r.resource_name as resource,
-        r.resource_type as type,
-        r.estimated_monthly_cost as cost
-      FROM aws_resources r
-      ${whereClause}
-      ORDER BY r.estimated_monthly_cost DESC NULLS LAST
-      LIMIT 10
-    `;
-
-    // Cost by team
-    const byTeamQuery = `
-      SELECT
-        COALESCE(t.name, 'Unassigned') as team,
-        COALESCE(SUM(r.estimated_monthly_cost), 0) as cost
+        r.resource_name AS resource,
+        COALESCE(t.name, 'Unassigned') AS team,
+        COALESCE(r.environment, 'Unknown') AS env,
+        ${inventoryCostColumns('r')}
       FROM aws_resources r
       LEFT JOIN teams t ON r.team_id = t.id
       ${whereClause}
-      GROUP BY t.name
-      ORDER BY cost DESC
-      LIMIT 10
     `;
 
-    // Cost by service
-    const byServiceQuery = `
-      SELECT
-        COALESCE(s.name, 'Unassigned') as service,
-        COALESCE(SUM(r.estimated_monthly_cost), 0) as cost
-      FROM aws_resources r
-      LEFT JOIN services s ON r.service_id = s.id
-      ${whereClause}
-      GROUP BY s.name
-      ORDER BY cost DESC
-      LIMIT 10
-    `;
-
-    // Cost by environment
-    const byEnvQuery = `
-      SELECT
-        COALESCE(r.environment, 'Unknown') as env,
-        COALESCE(SUM(r.estimated_monthly_cost), 0) as cost
-      FROM aws_resources r
-      ${whereClause}
-      GROUP BY r.environment
-      ORDER BY cost DESC
-    `;
-
-    // Cost by resource type
-    const byTypeQuery = `
-      SELECT
-        r.resource_type as type,
-        COALESCE(SUM(r.estimated_monthly_cost), 0) as cost
-      FROM aws_resources r
-      ${whereClause}
-      GROUP BY r.resource_type
-      ORDER BY cost DESC
-    `;
-
-    // Sequential, not Promise.all: these all run on a single shared, RLS-tagged
-    // client, and interleaving concurrent queries on one connection risks them
-    // executing out of order relative to the SET of app.current_organization_id.
+    // Sequential, not Promise.all: these run on a single shared, RLS-tagged client.
     const client = executor ?? this.pool;
-    const totalResult = await client.query(totalQuery, values);
-    const topSpendersResult = await client.query(topSpendersQuery, values);
-    const byTeamResult = await client.query(byTeamQuery, values);
-    const byServiceResult = await client.query(byServiceQuery, values);
-    const byEnvResult = await client.query(byEnvQuery, values);
-    const byTypeResult = await client.query(byTypeQuery, values);
+    const { rows } = await client.query(rowsQuery, values);
+    const now = new Date();
+    const costed = rows.map((row: any) => ({ row, cost: inventoryCost(row, now) }));
+
+    const groupBy = (key: (row: any) => string): InventoryGroupCost[] => {
+      const groups = new Map<string, InventoryCost[]>();
+      for (const { row, cost } of costed) {
+        const name = key(row);
+        const list = groups.get(name) ?? [];
+        list.push(cost);
+        groups.set(name, list);
+      }
+      return [...groups.entries()]
+        .map(([name, costs]) => ({ name, total: aggregateInventoryCosts(costs) }))
+        // Priced groups first, highest estimate first; then by size.
+        .sort((a, b) => (b.total.amount ?? -1) - (a.total.amount ?? -1) || b.total.totalResources - a.total.totalResources)
+        .slice(0, 10);
+    };
+
+    const topPriced = costed
+      .filter((c): c is { row: any; cost: Extract<InventoryCost, { kind: 'priced' }> } => c.cost.kind === 'priced')
+      .sort((a, b) => b.cost.amount - a.cost.amount)
+      .slice(0, 10)
+      .map(({ row, cost }) => ({ resource: String(row.resource ?? 'N/A'), type: String(row.resource_type ?? ''), cell: inventoryCostCell(cost) }));
 
     return {
-      totalCost: parseFloat(totalResult.rows[0]?.total_cost || 0),
-      costByTeam: byTeamResult.rows.map((r) => ({ team: r.team, cost: parseFloat(r.cost) })),
-      costByService: byServiceResult.rows.map((r) => ({ service: r.service, cost: parseFloat(r.cost) })),
-      costByEnvironment: byEnvResult.rows.map((r) => ({ env: r.env, cost: parseFloat(r.cost) })),
-      costByResourceType: byTypeResult.rows.map((r) => ({ type: r.type, cost: parseFloat(r.cost) })),
-      topSpenders: topSpendersResult.rows.map((r) => ({
-        resource: r.resource,
-        type: r.type,
-        cost: parseFloat(r.cost || 0),
-      })),
+      billed: await this.billedSpendHeadline(organizationId),
+      inventory: aggregateInventoryCosts(costed.map((c) => c.cost)),
+      inventoryByEnvironment: groupBy((row) => String(row.env)),
+      inventoryByTeam: groupBy((row) => String(row.team)),
+      topPriced,
     };
   }
 
@@ -469,6 +543,7 @@ export class ReportGeneratorService {
     const pageWidth = 11;
     const pageHeight = 8.5;
     const margin = 0.75;
+    const contentWidth = pageWidth - margin * 2;
 
     const primaryBlue = '#2563eb';
     const darkGray = '#1f2937';
@@ -487,64 +562,84 @@ export class ReportGeneratorService {
     const reportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     doc.text(reportDate, pageWidth / 2, 3.2, { align: 'center' });
 
-    // Key metrics on cover
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Total Monthly Cost: $${summary.totalCost.toFixed(2)}`, pageWidth / 2, 4.5, { align: 'center' });
-
-    // Summary table on cover
-    let y = 5.2;
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-
-    if (summary.costByEnvironment.length > 0) {
-      doc.text('Cost by Environment:', margin, y);
-      y += 0.3;
-      summary.costByEnvironment.slice(0, 3).forEach((item) => {
-        doc.text(`  ${item.env}: $${item.cost.toFixed(2)}`, margin + 0.2, y);
-        y += 0.25;
-      });
+    // Headline (F-4): billed spend from AWS Cost Explorer, or a plain statement that it is
+    // unavailable. Never an inventory sum in its place.
+    for (const [i, line] of costSummaryHeadlineLines(summary.billed).entries()) {
+      doc.setFontSize(i === 0 ? 18 : 12);
+      doc.setFont('helvetica', i === 0 ? 'bold' : 'normal');
+      doc.text(line, pageWidth / 2, 4.4 + i * 0.4, { align: 'center', maxWidth: contentWidth });
     }
 
-    // Detailed tables on subsequent pages
     doc.addPage();
     doc.setTextColor(darkGray);
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Cost Breakdown', margin, margin + 0.3);
+    let startY = margin + 0.3;
 
-    let startY = margin + 0.6;
-
-    // Top spenders table
-    if (summary.topSpenders.length > 0) {
+    // Billed spend by AWS service (Cost Explorer), when there is a usable month.
+    if (summary.billed.state === 'usable' && summary.billed.topServices.length > 0) {
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Billed spend by AWS service (month to date)', margin, startY);
       autoTable(doc, {
-        head: [['Resource', 'Type', 'Monthly Cost']],
-        body: summary.topSpenders.map((r) => [r.resource, r.type.toUpperCase(), `$${r.cost.toFixed(2)}`]),
-        startY,
+        head: [['AWS service', 'Billed, month to date']],
+        body: summary.billed.topServices.map((s) => [s.service, formatBilledUsd(s.amount)]),
+        startY: startY + 0.3,
         margin: { left: margin, right: margin },
         theme: 'grid',
         headStyles: { fillColor: primaryBlue, textColor: '#ffffff', fontSize: 10, fontStyle: 'bold' },
         bodyStyles: { fontSize: 9 },
       });
-      startY = (doc as any).lastAutoTable.finalY + 0.4;
+      doc.addPage();
+      startY = margin + 0.3;
     }
 
-    // Cost by team table
-    if (summary.costByTeam.length > 0 && startY < pageHeight - 2) {
+    // Appendix: inventory pricing, through the shared rule. K of N, priced rows only.
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Appendix: inventory price estimates', margin, startY);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    const appendixLines = [...costSummaryAppendixLines(summary.inventory), ...INVENTORY_COST_BASIS_NOTE];
+    doc.text(appendixLines, margin, startY + 0.35, { maxWidth: contentWidth });
+    startY += 0.35 + appendixLines.length * 0.4 + 0.2;
+
+    const groupTable = (title: string, label: string, groups: InventoryGroupCost[]) => {
+      if (groups.length === 0) return;
+      if (startY > pageHeight - 2) { doc.addPage(); startY = margin + 0.3; }
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
-      doc.text('Cost by Team', margin, startY);
-      startY += 0.3;
-
+      doc.text(title, margin, startY);
       autoTable(doc, {
-        head: [['Team', 'Monthly Cost']],
-        body: summary.costByTeam.map((r) => [r.team, `$${r.cost.toFixed(2)}`]),
-        startY,
-        margin: { left: margin, right: pageWidth / 2 },
+        head: [[label, 'Resources priced', 'Estimated monthly cost of priced resources']],
+        body: groups.map((g) => [g.name, `${g.total.pricedResources} of ${g.total.totalResources}`, inventoryGroupCell(g.total)]),
+        startY: startY + 0.2,
+        margin: { left: margin, right: margin },
         theme: 'grid',
         headStyles: { fillColor: primaryBlue, textColor: '#ffffff', fontSize: 10 },
         bodyStyles: { fontSize: 9 },
       });
+      startY = (doc as any).lastAutoTable.finalY + 0.4;
+    };
+    groupTable('By environment', 'Environment', summary.inventoryByEnvironment);
+    groupTable('By team', 'Team', summary.inventoryByTeam);
+
+    if (startY > pageHeight - 2) { doc.addPage(); startY = margin + 0.3; }
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Highest priced resources', margin, startY);
+    if (summary.topPriced.length > 0) {
+      autoTable(doc, {
+        head: [['Resource', 'Type', 'Monthly Cost']],
+        body: summary.topPriced.map((r) => [r.resource, r.type.toUpperCase(), r.cell]),
+        startY: startY + 0.2,
+        margin: { left: margin, right: margin },
+        theme: 'grid',
+        headStyles: { fillColor: primaryBlue, textColor: '#ffffff', fontSize: 10, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 9 },
+      });
+    } else {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text('No resource has a defensible price.', margin, startY + 0.35);
     }
 
     // Add page numbers

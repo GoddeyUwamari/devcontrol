@@ -231,7 +231,7 @@ describe('costs: the PR #135 evidence-aware cost path', () => {
       source: 'estimated', current: 812.2, period: null, topSpenders: null,
       scope: { kind: 'resource_inventory', connectedAccountId: null, discoveryRegion: 'us-east-1' },
       costExplorer: { state: 'unavailable', reason: 'no AWS account is connected' },
-      estimateCoverage: { estimatedResources: 8, totalResources: 10 },
+      estimateCoverage: { pricedResources: 8, totalResources: 10 },
     }));
     const { result } = await run();
     expect(result.data.outcome).toBe('answered');

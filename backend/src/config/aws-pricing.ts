@@ -241,6 +241,26 @@ export function rdsInstanceHourlyPrice(key: RdsInstancePriceKey): number | null 
   return typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : null;
 }
 
+// Discovery's original RDS instance table (awsResourceDiscovery.ts estimateRDSCost, moved here
+// unchanged so the inventory pricing rule reads the same numbers). $/month for 730 instance hours,
+// keyed by instance class ONLY. The code never stated its assumptions; compared with the AWS Price
+// List data in rds-instance-prices.json (us-east-1, version in RDS_INSTANCE_HOURLY_PRICE_SOURCE),
+// these figures track the MySQL/MariaDB Single-AZ on-demand instance-hour price (within 3.3%, never
+// above it) and sit 4-8% under PostgreSQL and far under the licensed engines. So the inventory
+// pricing rule (services/inventory-cost.ts) prices an RDS row from this table only when the row
+// records us-east-1, engine mysql or mariadb, Multi-AZ false and status available (ruling F-2).
+// Instance hours only: storage, Provisioned IOPS, backup storage and public IPv4 are excluded.
+export const RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ: Readonly<Record<string, number>> = Object.freeze({
+  'db.t3.micro': 12,
+  'db.t3.small': 24,
+  'db.t3.medium': 48,
+  'db.t3.large': 96,
+  'db.m5.large': 122,
+  'db.m5.xlarge': 244,
+  'db.r5.large': 175,
+  'db.r5.xlarge': 350,
+});
+
 // AWS S3 storage pricing, us-east-1, $/GB-month, first 50TB tier -- verified
 // via AWS's published pricing (confirmed current as of 2026-09-06) -- used
 // only by the s3_lifecycle analyzer's ceiling estimate (see

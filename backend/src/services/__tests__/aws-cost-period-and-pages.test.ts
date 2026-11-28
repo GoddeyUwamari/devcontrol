@@ -50,7 +50,9 @@ beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   mockCostExplorerSend.mockReset();
   mockCostExplorerSend.mockImplementation(async (command: Sent) => ceLedgerResponse(command.input));
-  poolQuery = jest.fn(async (sql: string) => (/aws_resources/.test(sql) ? { rows: [{ total: '88.00' }] } : { rows: [ACCOUNT_ROW] }));
+  // Inventory rows for the run-rate fallback: one defensibly priced gp2 volume (880 GB x $0.10 =
+  // $88) and an ECS service whose stored $9 is a flat placeholder (never summed, F-5).
+  poolQuery = jest.fn(async (sql: string) => (/aws_resources/.test(sql) ? { rows: INVENTORY_ROWS } : { rows: [ACCOUNT_ROW] }));
   // A fresh instance per test: its caches are per instance.
   service = new AWSCostService({ query: poolQuery } as unknown as Pool);
 });
@@ -59,6 +61,11 @@ afterEach(() => {
   jest.useRealTimers();
   jest.restoreAllMocks();
 });
+
+const INVENTORY_ROWS = [
+  { resource_type: 'ebs', region: 'us-east-1', status: 'in-use', metadata: { volume_type: 'gp2', size_gb: 880 }, stored_monthly_cost: '88.00', last_synced_at: null },
+  { resource_type: 'ecs', region: 'us-east-1', status: 'active', metadata: {}, stored_monthly_cost: '9.00', last_synced_at: null },
+];
 
 describe('rollover: 2026-10-31T23:59Z vs 2026-11-01T00:37Z (Oct 31 8:37 PM EDT)', () => {
   it('month to date: the October entry never answers the November request', async () => {
@@ -237,7 +244,7 @@ describe('getMonthlySpendWithFallback: any Cost Explorer success is actual', () 
   it('only a failed Cost Explorer read falls back to the inventory estimate', async () => {
     at('2026-11-12T12:00:00Z');
     mockCostExplorerSend.mockRejectedValue(new Error('AccessDeniedException'));
-    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated' });
+    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated', estimateCoverage: { pricedResources: 1, totalResources: 2 } });
   });
 });
 
@@ -327,6 +334,6 @@ describe('a Cost Explorer group without the requested metric is never $0 (DAY1-D
   it('getMonthlySpendWithFallback: falls back to the estimate, never "$0 actual"', async () => {
     at('2026-11-12T12:00:00Z');
     mockCostExplorerSend.mockImplementation(async (command: Sent) => renamedMetric(command));
-    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated' });
+    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated', estimateCoverage: { pricedResources: 1, totalResources: 2 } });
   });
 });

@@ -50,7 +50,7 @@ function noData(state: ContextSection<never>['state'], extra: Partial<ContextSec
 
 const RESOURCES: InventoryResources = {
   ec2: { count: 3 },
-  rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
+  rds: { count: 0, pricedMonthlyCost: null, pricedCount: 0 },
   lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
 };
 
@@ -63,7 +63,7 @@ function estimatedCosts(current: number): ChatContext['costs'] {
     state: 'available', source: 'estimated', current, asOf: '2026-09-06T06:00:00.000Z', period: null,
     scope: INVENTORY_SCOPE, topSpenders: null,
     costExplorer: { state: 'error', reason: 'the Cost Explorer request failed' },
-    estimateCoverage: { estimatedResources: 3, totalResources: 3 }, comparison: NO_COMPARISON,
+    estimateCoverage: { pricedResources: 3, totalResources: 3 }, comparison: NO_COMPARISON,
   });
 }
 
@@ -208,7 +208,7 @@ describe('AIChatService getFallbackResponse (non-LLM degraded path)', () => {
     const response = await fallbackFor('What is my monthly AWS spend?', context);
 
     expect(response).toMatch(/\$500/);
-    expect(response).toMatch(/estimated from your last synced resource inventory/i);
+    expect(response).toMatch(/for the resources DevControl can price \(Estimated from 3 of 3 priced resources; us-east-1 list-price estimate from your last synced resource inventory/i);
   });
 
   it('a real "actual" cost still renders normally (no regression for the common case)', async () => {

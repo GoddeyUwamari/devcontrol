@@ -31,9 +31,10 @@ const summaryCases: Array<[string, ContextSection<CostSpendEvidence> | undefined
   ['actual $0', section({ data: { amount: 0 } }), ok],
   ['actual net credit', section({ data: { amount: -12 } }), ok],
   ['actual partial', section({ state: 'partial' }), ok],
-  ['estimated provenance', section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate' } }), ok],
-  ['estimated basis only', section({ data: { basis: 'estimated_monthly_run_rate' } }), ok],
-  ['estimated partial', section({ provenance: 'estimated', state: 'partial', data: { basis: 'estimated_monthly_run_rate' } }), ok],
+  ['estimated provenance', section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate', estimateCoverage: { pricedResources: 3, totalResources: 10 } } }), ok],
+  ['estimated without coverage (F-5: not shown)', section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate' } }), ok],
+  ['estimated basis only', section({ data: { basis: 'estimated_monthly_run_rate', estimateCoverage: { pricedResources: 3, totalResources: 10 } } }), ok],
+  ['estimated partial', section({ provenance: 'estimated', state: 'partial', data: { basis: 'estimated_monthly_run_rate', estimateCoverage: { pricedResources: 3, totalResources: 10 } } }), ok],
   ['estimated $0', section({ provenance: 'estimated', data: { amount: 0, basis: 'estimated_monthly_run_rate' } }), ok],
   ['unavailable', section({ state: 'unavailable', data: null }), ok],
   ['error', section({ state: 'error', data: null }), ok],
@@ -43,7 +44,9 @@ const summaryCases: Array<[string, ContextSection<CostSpendEvidence> | undefined
 
 const statsCases: Array<[string, Parameters<typeof describeStatsSpend>[0], { isLoading: boolean; isError: boolean }]> = [
   ['actual', { monthlyAwsCost: 1234.5, costSource: 'actual' }, ok],
-  ['estimated', { monthlyAwsCost: 412.5, costSource: 'estimated' }, ok],
+  ['estimated', { monthlyAwsCost: 412.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 10 } }, ok],
+  ['estimated without coverage', { monthlyAwsCost: 412.5, costSource: 'estimated' }, ok],
+  ['estimated, nothing priced', { monthlyAwsCost: 0, costSource: 'estimated', costEstimateCoverage: { pricedResources: 0, totalResources: 10 } }, ok],
   ['estimated $0', { monthlyAwsCost: 0, costSource: 'estimated' }, ok],
   ['source not stated', { monthlyAwsCost: 99 }, ok],
   ['loading', undefined, { isLoading: true, isError: false }],
@@ -68,7 +71,11 @@ describe('describeSpend (GET /api/platform/costs/summary)', () => {
   })
 
   it('an estimate is labeled as a run-rate, an actual figure as month-to-date spend', () => {
-    expect(describeSpend(section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate' } }), ok).label).toBe(ESTIMATED_RUN_RATE_LABEL)
+    expect(describeSpend(section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate', estimateCoverage: { pricedResources: 3, totalResources: 10 } } }), ok)).toMatchObject({
+      label: ESTIMATED_RUN_RATE_LABEL, sub: 'Estimated from 3 of 10 priced resources · not AWS billed spend (Cost Explorer unavailable)',
+    })
+    // F-5: an estimate without its K of N is not shown.
+    expect(describeSpend(section({ provenance: 'estimated', data: { basis: 'estimated_monthly_run_rate' } }), ok)).toMatchObject({ value: '—', provenance: null })
     expect(describeSpend(section({}), ok).label).toBe(ACTUAL_SPEND_LABEL)
   })
 })
@@ -82,9 +89,10 @@ describe('describeStatsSpend (GET /api/platform/stats/dashboard)', () => {
     expect(describeStatsSpend({ monthlyAwsCost: 1234.5, costSource: 'actual' }, ok)).toMatchObject({
       label: ACTUAL_SPEND_LABEL, value: '$1,234.50', provenance: 'actual',
     })
-    expect(describeStatsSpend({ monthlyAwsCost: 412.5, costSource: 'estimated' }, ok)).toMatchObject({
-      label: ESTIMATED_RUN_RATE_LABEL, value: '$412.50/mo', provenance: 'estimated',
+    expect(describeStatsSpend({ monthlyAwsCost: 412.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 10 } }, ok)).toMatchObject({
+      label: ESTIMATED_RUN_RATE_LABEL, value: '$412.50/mo', provenance: 'estimated', sub: 'Estimated from 3 of 10 priced resources · not AWS billed spend',
     })
+    expect(describeStatsSpend({ monthlyAwsCost: 412.5, costSource: 'estimated' }, ok)).toMatchObject({ value: '—', provenance: null })
   })
 
   // What the backend actually sends when Cost Explorer has no positive total
@@ -107,7 +115,7 @@ describe('describeStatsSpend (GET /api/platform/stats/dashboard)', () => {
     })
 
     it('any of them with a positive inventory estimate: the estimate, labeled as a run-rate', () => {
-      expect(describeStatsSpend({ monthlyAwsCost: 87.2, costSource: 'estimated' }, ok)).toMatchObject({
+      expect(describeStatsSpend({ monthlyAwsCost: 87.2, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 10 } }, ok)).toMatchObject({
         label: ESTIMATED_RUN_RATE_LABEL, value: '$87.20/mo', provenance: 'estimated',
       })
     })
@@ -118,8 +126,9 @@ describe('describeStatsSpend (GET /api/platform/stats/dashboard)', () => {
       .toMatchObject({ value: '—', sub: NO_SPEND_FIGURE_SUB, provenance: null })
   })
 
-  it('a response that does not state its source is treated as an estimate, never as spend', () => {
-    expect(describeStatsSpend({ monthlyAwsCost: 99 }, ok).provenance).toBe('estimated')
+  it('a response that does not state its source is treated as an estimate, never as spend (and needs its coverage)', () => {
+    expect(describeStatsSpend({ monthlyAwsCost: 99, costEstimateCoverage: { pricedResources: 3, totalResources: 10 } }, ok).provenance).toBe('estimated')
+    expect(describeStatsSpend({ monthlyAwsCost: 99 }, ok).provenance).toBeNull()
   })
 
   it('loading or a failed request shows no figure', () => {
@@ -131,10 +140,13 @@ describe('describeStatsSpend (GET /api/platform/stats/dashboard)', () => {
 describe('the Dashboard billing gate and the by-team / /infrastructure spend cards agree', () => {
   const inputs: Array<Parameters<typeof describeStatsSpend>[0] & {}> = [
     { monthlyAwsCost: 1234.5, costSource: 'actual' },
+    { monthlyAwsCost: 412.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 10 } },
     { monthlyAwsCost: 412.5, costSource: 'estimated' },
+    { monthlyAwsCost: 412.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 0, totalResources: 4 } },
     { monthlyAwsCost: 0, costSource: 'estimated' },
     { monthlyAwsCost: -3, costSource: 'estimated' },
     { monthlyAwsCost: 99 },
+    { monthlyAwsCost: 99, costEstimateCoverage: { pricedResources: 3, totalResources: 10 } },
     { monthlyAwsCost: 0 },
   ]
   it.each(inputs)('%o: a figure is shown exactly when the Dashboard sees billing data', (stats) => {

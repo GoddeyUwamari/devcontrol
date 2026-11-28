@@ -12,7 +12,7 @@ import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service'
 import { formatSavingsCurrency } from '../utils/formatSavingsCurrency'
 
 /** The cost component's basis sentence (without its period), as written into its reason. */
-export const COST_RUN_RATE_BASIS = 'Based on monthly run-rate estimate from resource inventory'
+export const COST_BILLED_BASIS = 'Based on AWS Cost Explorer month-to-date billed spend'
 import { RiskTrackingService }
   from './risk-tracking.service'
 import { CostRecommendationsRepository }
@@ -34,12 +34,11 @@ export interface ComponentScore {
   // for every error/fallback path so callers can
   // tell "bad score" apart from "no data yet"
   ready: boolean
-  // The monthly spend the cost score stands on: the inventory's monthly
-  // run-rate estimate (AWSCostService.getInventoryMonthlyRunRate), never Cost
-  // Explorer month-to-date spend. Only populated on the cost component.
+  // The spend the cost score stands on: AWS Cost Explorer month-to-date billed
+  // spend when usable (placeholder-costs F-13), never the inventory sum. Only
+  // on the cost component, and absent when there is no usable billed amount.
   monthlySpend?: number
-  // Always 'estimated' on the cost component (monthlySpend above is the
-  // inventory run-rate), so the Cost tile never presents it as billed spend.
+  // 'actual' whenever monthlySpend is present; absent otherwise.
   costSource?: SpendProvenance
   // Evidence state behind this component's score, in the shared
   // ContextDataState vocabulary: 'available' only when nothing is missing,
@@ -166,19 +165,30 @@ export class SystemIntelligenceService {
 
       const costAnalysisRan = (scanResult.rowCount ?? 0) > 0
 
-      // Monthly spend = the inventory's monthly run-rate estimate, the same
-      // period as the monthly savings estimate it is compared with. Never Cost
-      // Explorer month-to-date spend: early in a month that is a day or two of
-      // billing against a full month of savings, which moves the score with the
-      // calendar, not the infrastructure.
-      const monthlySpend = await awsCostService.getInventoryMonthlyRunRate(organizationId)
-      const costSource = 'estimated' as const
+      // Spend = AWS Cost Explorer month-to-date billed spend, when Cost Explorer
+      // has a usable amount (placeholder-costs ruling F-13). Otherwise there is
+      // no spend figure and the score takes its "insufficient spend data" branch
+      // below. Never the inventory sum: its stored figures are placeholders unless
+      // the shared pricing rule establishes a basis. (The month-to-date period
+      // differs from the monthly savings estimate it is compared with; the
+      // founder ruled month-to-date anyway, see review-logs/placeholder-costs.)
+      let monthlySpend: number | undefined
+      let costSource: SpendProvenance | undefined
+      try {
+        const billed = await awsCostService.fetchMonthlyCosts(organizationId)
+        if (billed.monthState?.amountUsable === true && Number.isFinite(billed.total)) {
+          monthlySpend = billed.total
+          costSource = 'actual'
+        }
+      } catch {
+        // No Cost Explorer result: insufficient spend data, never a fallback figure.
+      }
 
       // Scoring model — continuous weighted-coverage-ratio, same shape as
       // Security's riskScoring.ts:
       // every term is a real ratio scaled to 0–100, combined with fixed
       // weights. No base value with bolted-on flat bonuses/penalties.
-      const hasSpendData = monthlySpend > 0
+      const hasSpendData = monthlySpend !== undefined && monthlySpend > 0
 
       // Cost efficiency ratio: what fraction of the dollars under
       // consideration (spend + identified waste) are NOT flagged as waste.
@@ -188,7 +198,7 @@ export class SystemIntelligenceService {
       // (ratio≈0.02 → 2) land in meaningfully different places instead of
       // both hitting the same ceiling.
       const costEfficiencyRatio =
-        hasSpendData
+        hasSpendData && monthlySpend !== undefined
           ? (monthlySpend / (monthlySpend + totalSavings)) * 100
           : 0
 
@@ -245,7 +255,7 @@ export class SystemIntelligenceService {
         !hasSpendData && 'Insufficient spend data to assess cost efficiency',
         !ANOMALY_DETECTION_ACTIVE && 'Anomaly checks not yet active',
       ].filter((l): l is string => typeof l === 'string')
-      const reasonSentences = [hasSpendData ? COST_RUN_RATE_BASIS : null, ...limitations]
+      const reasonSentences = [hasSpendData ? COST_BILLED_BASIS : null, ...limitations]
         .filter((l): l is string => typeof l === 'string')
 
       return {
@@ -259,8 +269,8 @@ export class SystemIntelligenceService {
           : score >= 55 ? 'warning'
           : 'risk',
         ready: costAnalysisRan,
-        monthlySpend,
-        costSource,
+        ...(monthlySpend !== undefined ? { monthlySpend } : {}),
+        ...(costSource !== undefined ? { costSource } : {}),
         ...(!costAnalysisRan
           ? { state: 'unavailable' as const, reason: 'No cost scan has completed yet.' }
           : limitations.length > 0

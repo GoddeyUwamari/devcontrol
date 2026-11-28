@@ -176,7 +176,7 @@ describe('AI Chat context — current infrastructure must exclude terminated res
 
     const resources = await resourceData();
 
-    expect(resources.rds).toEqual({ count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 });
+    expect(resources.rds).toEqual({ count: 0, pricedMonthlyCost: null, pricedCount: 0 });
   });
 
   it('(6) getServices does not list a resource_type whose only instances are terminated', async () => {

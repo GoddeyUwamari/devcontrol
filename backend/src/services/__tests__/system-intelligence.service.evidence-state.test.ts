@@ -19,7 +19,7 @@ jest.mock('../../config/database', () => ({
 }));
 
 import { SystemIntelligenceService, type ComponentScore, type ObservabilityComponentScore } from '../system-intelligence.service';
-import awsCostService from '../aws-cost.service';
+import awsCostService, { type MonthlyCost } from '../aws-cost.service';
 import { RiskTrackingService } from '../risk-tracking.service';
 import { CostRecommendationsRepository } from '../../repositories/cost-recommendations.repository';
 import { ANOMALY_DETECTION_ACTIVE } from '../anomaly-detection.service';
@@ -28,14 +28,14 @@ import type { ContextDataState } from '../ai-context-contract';
 const ORG = '7c1e4a2b-9d3f-4b6a-8e5c-2f0d1a3b4c5d';
 const ANOMALY = 'Anomaly checks not yet active';
 const INSUFFICIENT = 'Insufficient spend data to assess cost efficiency';
-const BASIS = 'Based on monthly run-rate estimate from resource inventory';
+const BASIS = 'Based on AWS Cost Explorer month-to-date billed spend';
 const ALERT_REASON =
   'Measures EC2 alert coverage only (0 of 1 in-scope resources covered); monitoring coverage, signal freshness, response setup, and ALB/Lambda alert coverage are not supported yet.';
 // Wording that would claim a retrieval failure the cost path cannot observe.
 const FAILURE_CLAIMS = /Cost data unavailable|Cost Explorer failed|No billing data|AWS cost unavailable/i;
 
 /**
- * Cost inputs: the inventory run-rate, the savings estimate, and whether a
+ * Cost inputs: the billed month-to-date amount (F-13), the savings estimate, and whether a
  * cost scan ran. anomaly_detections answers `anomalyRows` when read -- and
  * every test with detection off asserts it is never read.
  */
@@ -51,9 +51,22 @@ function mockCostInputs(opts: { runRate: number; scanRan?: boolean; savings?: nu
     if (sql.includes('anomaly_detections')) return { rowCount: 1, rows: [{ count: String(opts.anomalyRows ?? 0) }] };
     throw new Error(`unexpected query: ${sql}`);
   });
-  const runRate = jest.spyOn(awsCostService, 'getInventoryMonthlyRunRate').mockResolvedValue(opts.runRate);
-  const monthToDate = jest.spyOn(awsCostService, 'getMonthlySpendWithFallback').mockResolvedValue({ amount: 0.19, source: 'actual' });
-  return { runRate, monthToDate };
+  // F-13: the spend input is Cost Explorer month to date (fetchMonthlyCosts); `runRate` here is
+  // that billed amount. The inventory sum is never read.
+  const billed = jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockResolvedValue(usableMonth(opts.runRate));
+  const fallback = jest.spyOn(awsCostService, 'getMonthlySpendWithFallback');
+  const inventory = jest.spyOn(awsCostService, 'getInventoryPricedRunRate');
+  return { billed, fallback, inventory };
+}
+
+function usableMonth(total: number): MonthlyCost {
+  return {
+    total,
+    byService: [],
+    period: { start: '2026-11-01', end: '2026-11-28' },
+    previousMonth: null,
+    monthState: { state: 'month_to_date', amountUsable: true, amount: total } as unknown as MonthlyCost['monthState'],
+  };
 }
 
 const anomalyQueries = () => mockQuery.mock.calls.filter(([sql]) => String(sql).includes('anomaly_detections'))
@@ -73,13 +86,14 @@ describe('Cost component evidence state', () => {
     expect(ANOMALY_DETECTION_ACTIVE).toBe(false);
   });
 
-  it('spend input is the inventory run-rate, never Cost Explorer month-to-date spend', async () => {
-    const { runRate, monthToDate } = mockCostInputs({ runRate: 25, savings: 0.96 });
+  it('F-13: spend input is Cost Explorer month-to-date billed spend, never the inventory sum', async () => {
+    const { billed, fallback, inventory } = mockCostInputs({ runRate: 25, savings: 0.96 });
     const result = await cost(new SystemIntelligenceService());
-    expect(runRate).toHaveBeenCalledWith(ORG);
-    expect(monthToDate).not.toHaveBeenCalled();
+    expect(billed).toHaveBeenCalledWith(ORG);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(inventory).not.toHaveBeenCalled();
     expect(result.monthlySpend).toBe(25);
-    expect(result.costSource).toBe('estimated');
+    expect(result.costSource).toBe('actual');
     // 100 x 25 / (25 + 0.96) = 96.3 -> 96
     expect(result.score).toBe(96);
   });
@@ -101,7 +115,19 @@ describe('Cost component evidence state', () => {
     expect(result.reason).toBe(`${BASIS}. ${ANOMALY}.`);
   });
 
-  it('no run-rate (no resources / sum <= 0): keeps the existing Cost=50 insufficient-data behavior, partial, no failure claim', async () => {
+  it('F-13: Cost Explorer fails -> insufficient spend data (Cost=50), no spend figure, the inventory is not read', async () => {
+    const { billed, fallback, inventory } = mockCostInputs({ runRate: 0, savings: 0.96 });
+    billed.mockRejectedValue(new Error('the Cost Explorer request failed'));
+    const result = await cost(new SystemIntelligenceService());
+    expect(fallback).not.toHaveBeenCalled();
+    expect(inventory).not.toHaveBeenCalled();
+    expect(result.score).toBe(50);
+    expect(result.monthlySpend).toBeUndefined();
+    expect(result.costSource).toBeUndefined();
+    expect(result.reason).toBe(`${INSUFFICIENT}. ${ANOMALY}.`);
+  });
+
+  it('a billed month of $0 (nothing to divide by): keeps the existing Cost=50 insufficient-data behavior, partial, no failure claim', async () => {
     mockCostInputs({ runRate: 0, savings: 0.96 });
     const result = await cost(new SystemIntelligenceService());
     expect(result.score).toBe(50);
@@ -158,7 +184,7 @@ describe('Cost component evidence state', () => {
       });
       mockQuery.mockImplementation(async (sql: string) =>
         sql.includes('resource_discovery_jobs') ? { rowCount: 1, rows: [{}] } : { rowCount: 1, rows: [{ count: String(anomalyRows) }] });
-      jest.spyOn(costService, 'getInventoryMonthlyRunRate').mockResolvedValue(300);
+      jest.spyOn(costService, 'fetchMonthlyCosts').mockResolvedValue(usableMonth(300));
       return (new Service() as any).computeCostScore(ORG) as Promise<ComponentScore>;
     };
 

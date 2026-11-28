@@ -23,6 +23,20 @@ import awsCostService, { CostTrendPoint } from '../../services/aws-cost.service'
 const ORG_ID = '00000000-0000-0000-0000-0000000000c5';
 const FETCHED_AT = '2026-09-27T09:00:00.000Z';
 
+/**
+ * Inventory rows for the shared pricing rule (placeholder-costs PR 1): `estimated` defensibly priced
+ * us-east-1 gp2 volumes that add up to `total`, and the rest ECS services whose stored $9 is a flat
+ * placeholder (never priced, never summed).
+ */
+function inventoryRows(estimate: { total: string | null; estimated: string; resources: string }) {
+  const priced = parseInt(estimate.estimated, 10);
+  const all = parseInt(estimate.resources, 10);
+  const each = priced > 0 ? Number(estimate.total) / priced : 0;
+  const volume = { resource_type: 'ebs', region: 'us-east-1', status: 'in-use', metadata: { volume_type: 'gp2', size_gb: each / 0.1 }, stored_monthly_cost: String(each), last_synced_at: null };
+  const placeholder = { resource_type: 'ecs', region: 'us-east-1', status: 'active', metadata: {}, stored_monthly_cost: '9.00', last_synced_at: null };
+  return [...Array(priced).fill(volume), ...Array(Math.max(0, all - priced)).fill(placeholder)];
+}
+
 /** Fixture pool: a completed discovery run, a connected account, and the given inventory estimate rows. */
 function fixturePool(estimate: { total: string | null; estimated: string; resources: string } | 'throws' = { total: null, estimated: '0', resources: '0' }): Pool {
   const query = jest.fn(async (sql: string) => {
@@ -32,7 +46,7 @@ function fixturePool(estimate: { total: string | null; estimated: string; resour
     if (sql.includes('aws_accounts')) return { rows: [{ account_id: '111122223333', region: 'us-east-1' }] };
     if (sql.includes('aws_resources')) {
       if (estimate === 'throws') throw new Error('relation "aws_resources" does not exist');
-      return { rows: [{ total: estimate.total, estimated_resources: estimate.estimated, total_resources: estimate.resources }] };
+      return { rows: inventoryRows(estimate) };
     }
     throw new Error(`unexpected query in fixture: ${sql}`);
   });

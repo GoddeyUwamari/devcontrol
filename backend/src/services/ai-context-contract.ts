@@ -848,6 +848,7 @@ export const EVIDENCE_CLAIM_RULES = [
   'A section whose evidencePresent is false has no data: never describe it as zero, none, empty, unchanged, flat, or "no findings" -- say it is not available and why.',
   'A partial section is incomplete: say what is missing (completeness/coverage/reason) and never present it as complete.',
   'Provenance "estimated" is an estimate, not billed or observed spend; "derived" is calculated by DevControl, not observed.',
+  'An inventory cost estimate covers only the resources it says are priced ("K of N priced resources"): never present it as billed spend, never sum per-resource estimates yourself, and never give a dollar figure (or $0) for a resource without a price.',
   'State that nothing was found (e.g. "no recommendation was identified") only when the section is available and its outcome is no_candidate_identified.',
 ].join('\n');
 
