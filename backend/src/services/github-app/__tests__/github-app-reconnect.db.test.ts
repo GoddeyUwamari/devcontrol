@@ -518,7 +518,7 @@ describe('two workspaces claiming one installation at once', () => {
     expect(await eventCount(loser, k.inst)).toBe(eventsBefore[loser]);
     expect(await linkedRepos(loser, k.inst)).toBe(0);
     expect((await fx.admin.query('SELECT count(*)::int AS n FROM deployments WHERE organization_id = $1', [loser])).rows[0].n).toBe(0);
-  });
+  }, 30_000); // above the barrier's own 15 s wait; jest's 5 s default timed out on a loaded runner (I3 fix round)
 
   it('deterministic: the loser\'s insert waits on the winner\'s uncommitted claim, then answers 409 with nothing released', async () => {
     const k = await contested('race-ordered');
