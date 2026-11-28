@@ -50,7 +50,7 @@ export class AccountSecurityFindingsController {
    * Open-finding counts by severity and category (PR B2b): active findings
    * that are not dismissed and not accepted risk (isOpenFinding). Same shape
    * as before; the list endpoint still returns every active finding, each
-   * with isOpen.
+   * with is_open.
    */
   async getStats(req: Request, res: Response): Promise<void> {
     try {

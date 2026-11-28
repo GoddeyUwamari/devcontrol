@@ -9,7 +9,7 @@
  *     banner, tile and key findings card) counts open findings only, in every
  *     severity (Critical included), aggregated in SQL per organization;
  *   - GET /api/security/account-findings still lists dismissed and
- *     accepted-risk findings, unchanged, each with isOpen from the same rule;
+ *     accepted-risk findings, unchanged, each with is_open from the same rule;
  *   - getStats() (risk score, daily snapshot) is unchanged;
  *   - another organization's findings never enter any count.
  *
@@ -159,45 +159,45 @@ describe('getOpenStats: open counts only, every severity, per organization', () 
   });
 });
 
-describe('getActive: the list keeps dismissed and accepted-risk findings, each with isOpen', () => {
+describe('getActive: the list keeps dismissed and accepted-risk findings, each with is_open', () => {
   it('returns all six active findings of org A, severity-sorted, none of org B', async () => {
     const list = await repository.getActive(orgA);
     expect(list).toHaveLength(6);
     expect(list.every((f) => f.organization_id === orgA)).toBe(true);
     expect(list.map((f) => f.severity)).toEqual(['critical', 'critical', 'critical', 'high', 'high', 'medium']);
-    const byDisposition = (d: AccountFindingDisposition | null) => list.filter((f) => f.disposition === d).map((f) => f.isOpen);
+    const byDisposition = (d: AccountFindingDisposition | null) => list.filter((f) => f.disposition === d).map((f) => f.is_open);
     expect(byDisposition('dismissed')).toEqual([false]);
     expect(byDisposition('accepted_risk')).toEqual([false, false]);
     expect(byDisposition('acknowledged')).toEqual([true]);
     expect(byDisposition(null)).toEqual([true, true]);
   });
 
-  it('isOpen is the same rule as the counts: the open rows tally exactly to getOpenStats', async () => {
+  it('is_open is the same rule as the counts: the open rows tally exactly to getOpenStats', async () => {
     for (const org of [orgA, orgB]) {
       const list = await repository.getActive(org);
       const tally = { critical: 0, high: 0, medium: 0, low: 0 };
       for (const f of list) {
-        expect(f.isOpen).toBe(isOpenFinding(f.status, f.disposition));
-        if (f.isOpen) tally[f.severity] += 1;
+        expect(f.is_open).toBe(isOpenFinding(f.status, f.disposition));
+        if (f.is_open) tally[f.severity] += 1;
       }
       expect(tally).toEqual((await repository.getOpenStats(org)).bySeverity);
     }
   });
 
   it('filters and limit work as before', async () => {
-    expect((await repository.getActive(orgA, { severity: 'critical' })).map((f) => f.isOpen).sort()).toEqual([false, false, true]);
+    expect((await repository.getActive(orgA, { severity: 'critical' })).map((f) => f.is_open).sort()).toEqual([false, false, true]);
     expect(await repository.getActive(orgA, { category: 'iam' })).toHaveLength(3);
     expect(await repository.getActive(orgA, { limit: 2 })).toHaveLength(2);
   });
 
-  it('getById carries isOpen too (the same mapRow)', async () => {
+  it('getById carries is_open too (the same mapRow)', async () => {
     const dismissed = (await repository.getActive(orgA)).find((f) => f.disposition === 'dismissed')!;
-    expect((await repository.getById(orgA, dismissed.id))!.isOpen).toBe(false);
+    expect((await repository.getById(orgA, dismissed.id))!.is_open).toBe(false);
     expect(await repository.getById(orgB, dismissed.id)).toBeNull();
   });
 });
 
-describe('HTTP: response shapes are unchanged apart from the additive isOpen', () => {
+describe('HTTP: response shapes are unchanged apart from the additive is_open', () => {
   function call(handler: 'getStats' | 'getActive', organizationId: string, query: Record<string, string> = {}) {
     const json = jest.fn();
     const status = jest.fn(() => ({ json }));
@@ -217,7 +217,7 @@ describe('HTTP: response shapes are unchanged apart from the additive isOpen', (
     });
   });
 
-  it('GET / (Security page list): { success, data, total }; every field kept, isOpen added', async () => {
+  it('GET / (Security page list): { success, data, total }; every field kept, is_open added', async () => {
     const { run, json, status } = call('getActive', orgA);
     await run();
     expect(status).not.toHaveBeenCalled();
@@ -227,10 +227,12 @@ describe('HTTP: response shapes are unchanged apart from the additive isOpen', (
     for (const f of body.data) {
       expect(Object.keys(f).sort()).toEqual([
         'category', 'created_at', 'derived_status', 'detected_at', 'disposition', 'disposition_actor_id', 'disposition_at', 'disposition_note',
-        'evidence', 'finding_key', 'framework_mapping', 'id', 'isOpen', 'last_seen_at', 'organization_id', 'recommendation', 'region',
+        'evidence', 'finding_key', 'framework_mapping', 'id', 'is_open', 'last_seen_at', 'organization_id', 'recommendation', 'region',
         'resolved_at', 'resource_identifier', 'severity', 'status', 'title', 'updated_at',
       ]);
-      expect(typeof f.isOpen).toBe('boolean');
+      expect(typeof f.is_open).toBe('boolean');
+      // snake_case like derived_status; no camelCase alias is emitted.
+      expect(f).not.toHaveProperty('isOpen');
     }
     expect(body.data.filter((f: { derived_status: string }) => f.derived_status === 'dismissed' || f.derived_status === 'accepted_risk')).toHaveLength(3);
   });

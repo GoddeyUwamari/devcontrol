@@ -35,7 +35,7 @@ import { formatSavingsCurrency } from '@/lib/utils'
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from '@/components/ui/typography'
 import { CHART_TICK, CHART_TOOLTIP } from '@/lib/chart-theme'
 import { DEFAULT_PRICE_SUFFIX, countSubCentFigures, formatRecommendationSavings, isDefaultPriceEstimate } from '@/lib/savings-basis'
-import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, noFinalDayThisMonth, previousMonthLine, roundCents } from './cost-display'
+import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, MOM_NET_NOTE, noFinalDayThisMonth, previousMonthLine, roundCents } from './cost-display'
 import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
 import {
@@ -451,7 +451,7 @@ export default function CostsPage() {
       key: 'momchange', label: 'Month-over-Month Change', value: mom.value, lines: [mom.sub],
       TrendIcon: mom.direction === 'up' ? TrendingUp : mom.direction === 'down' ? TrendingDown : Minus,
       // Safeguard 2: the % compares finished days only, not the month to date, and not the selected range.
-      basis: `${MOM_BASIS_LABEL} · ${TREND_TOTALS_NOTE}`,
+      basis: `${MOM_BASIS_LABEL} · ${MOM_NET_NOTE}`,
       valueClass: 'text-slate-900', href: '/invoices', accent: '',
       // Neutral whichever way it moves (ruling Q3): a slate badge, never green, amber or red.
       Icon: ChartLine, badge: 'bg-slate-100 text-slate-600', span: 'phone',

@@ -40,9 +40,9 @@ export interface AccountSecurityFinding {
    * Read-time projection, never stored: the finding is open (isOpenFinding) --
    * active and neither dismissed nor accepted risk. The same rule as the open
    * counts in getOpenStats() (GET /stats). Dismissed and accepted-risk findings
-   * are still listed, with isOpen false.
+   * are still listed, with is_open false.
    */
-  isOpen: boolean;
+  is_open: boolean;
 }
 
 export interface NewAccountFinding {
@@ -123,7 +123,7 @@ export const CLOSED_FINDING_DISPOSITIONS: readonly AccountFindingDisposition[] =
 /**
  * THE definition of an open account finding: status 'active' and a disposition
  * that is not one of CLOSED_FINDING_DISPOSITIONS (none, or acknowledged). Each
- * finding's isOpen is this function; getOpenStats() counts with
+ * finding's is_open is this function; getOpenStats() counts with
  * OPEN_FINDING_SQL, the same rule in SQL over the same constant.
  */
 export function isOpenFinding(status: AccountFindingStatus, disposition: AccountFindingDisposition | null): boolean {
@@ -169,7 +169,7 @@ export class AccountSecurityFindingsRepository {
       evidence,
       derived_status: deriveFindingStatus(row.status, row.disposition),
       framework_mapping: getFrameworkMapping(evidence),
-      isOpen: isOpenFinding(row.status, row.disposition ?? null),
+      is_open: isOpenFinding(row.status, row.disposition ?? null),
     };
   }
 
@@ -465,7 +465,7 @@ export class AccountSecurityFindingsRepository {
    * /api/security/account-findings/stats -- the Dashboard banner, tile and key
    * findings card. Same shape as getStats(), aggregated in SQL with the same
    * organization predicate, counting only open findings (openFindingSql, the
-   * rule behind each finding's isOpen): dismissed and accepted-risk findings
+   * rule behind each finding's is_open): dismissed and accepted-risk findings
    * are in no count, Critical included. getStats() is unchanged for the risk
    * score and the daily snapshot, which still count every active finding.
    */

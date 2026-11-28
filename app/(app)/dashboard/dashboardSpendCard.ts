@@ -14,7 +14,7 @@
  * Router only permits a fixed set of named exports from a page file.
  */
 import type { CostSummary } from '@/lib/types'
-import { describeComparisonWindows, describeMonthOverMonth, describeSpend, estimateCoverageSub, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthHasUnfinishedDays, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinalDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
+import { describeComparisonWindows, describeMonthOverMonth, describeSpend, estimateCoverageSub, formatUsd, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthHasUnfinishedDays, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinalDayThisMonth, previousMonthLine, roundCents, spendPeriodLabel } from '../costs/cost-display'
 
 export interface DashboardSpendCard {
   label: string
@@ -61,6 +61,21 @@ function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: Retu
   return notes.join(' · ')
 }
 
+/**
+ * The tile's trend label when the comparison has no percentage (changePercent
+ * null): the backend gives none when the previous window's net is not above $0.
+ * Since PR B1 that net can be below $0 (credits exceeded charges), which is not
+ * "last month was $0": the net itself is stated, with the same formatter as
+ * every other amount here, and never as a percentage. A net that rounds to
+ * $0.00 is the zero case (never "-$0.00"). `value` is the signed dollar change.
+ */
+export function undefinedPercentLabel(value: string, previousWindowTotal: number | null | undefined): string {
+  const cents = typeof previousWindowTotal === 'number' && Number.isFinite(previousWindowTotal) ? roundCents(previousWindowTotal) : 0
+  return cents < 0
+    ? `${value} · Same days last month netted ${formatUsd(cents)} (credits exceeded charges)`
+    : `${value} vs same days last month (% change undefined: last month was $0)`
+}
+
 export function computeDashboardSpendCard(params: {
   costSummary: CostSummary | undefined
   isLoading: boolean
@@ -101,7 +116,7 @@ export function computeDashboardSpendCard(params: {
       direction: mom.direction,
       label: mom.changePercent !== null
         ? `${mom.value} vs same days last month`
-        : `${mom.value} vs same days last month (% change undefined: last month was $0)`,
+        : undefinedPercentLabel(mom.value, costSummary?.monthOverMonth.data?.previousWindowTotal),
       color,
     }
     const windows = costSummary?.monthOverMonth.data ? ` · ${describeComparisonWindows(costSummary.monthOverMonth.data)}` : ''

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { CostSummary } from '@/lib/types'
-import { computeDashboardSpendCard } from '../dashboardSpendCard'
+import { computeDashboardSpendCard, undefinedPercentLabel } from '../dashboardSpendCard'
 
 const ready = { isLoading: false, isError: false }
 
@@ -215,6 +215,49 @@ describe('Dashboard spend comparison: finished days only (backend finishedThroug
   it('a response without finishedThrough (older backend) never claims days are still being reported', () => {
     const c = card({ spend: spend(0.19, 'actual', true, { kind: 'range', start: '2026-10-01', endExclusive: '2026-10-03' }), monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
     expect(c.caption).toBe('Oct 1–2 (UTC) · Actual · AWS Cost Explorer · today still billing')
+    expect(c.evidence?.comparison).toBe('Month-over-month not available')
+  })
+})
+
+/**
+ * PR B follow-up, fix 2: since B1 the previous window is a real net, which can
+ * be below $0 (credits exceeded charges). The backend then gives no percentage,
+ * and the tile states the net -- never a percentage, never "$0", never "-$0.00".
+ */
+describe('Dashboard tile: the previous window nets below $0', () => {
+  const label = (m: CostSummary['monthOverMonth']) => card({ spend: spend(130), monthOverMonth: m }).trend?.label
+
+  it('positive previous window: the percentage, unchanged', () => {
+    expect(label(mom(25, 26, 104, false))).toBe('+25% vs same days last month')
+  })
+
+  it('exactly $0 previous window: the existing zero-baseline wording', () => {
+    expect(label(mom(null, 13, 0, false))).toBe('+$13.00 vs same days last month (% change undefined: last month was $0)')
+  })
+
+  it('negative previous window: "Same days last month netted -$26.00 (credits exceeded charges)", no % and no $0', () => {
+    const l = label(mom(null, 156, -26, false))
+    expect(l).toBe('+$156.00 · Same days last month netted -$26.00 (credits exceeded charges)')
+    expect(l).not.toMatch(/%/)
+    expect(l).not.toMatch(/last month was \$0|-\$0\.00/)
+    // The comparison text and the trend direction are unchanged by the label.
+    const c = card({ spend: spend(130), monthOverMonth: mom(null, 156, -26, false) })
+    expect(c.trend?.direction).toBe('up')
+    expect(c.evidence?.comparison).toBe('Finished days this month vs same days last month · not the selected range · Sep 1–27 vs Aug 1–27')
+  })
+
+  it('a negative net that rounds to $0.00 is the zero case, never "-$0.00"', () => {
+    for (const previous of [-0.004, -0.005, -0]) {
+      const l = label(mom(null, 1, previous, false))
+      expect(l).toBe('+$1.00 vs same days last month (% change undefined: last month was $0)')
+      expect(l).not.toMatch(/-\$0\.00/)
+    }
+    expect(undefinedPercentLabel('+$1.00', -0.006)).toBe('+$1.00 · Same days last month netted -$0.01 (credits exceeded charges)')
+  })
+
+  it('unavailable comparison (missing day-level data): the existing unavailable state, no trend', () => {
+    const c = card({ spend: spend(130), monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
+    expect(c.trend).toBeUndefined()
     expect(c.evidence?.comparison).toBe('Month-over-month not available')
   })
 })
