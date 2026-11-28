@@ -17,7 +17,12 @@ import crypto from 'crypto';
 import { GitHubAppConfig } from '../../config/github-app';
 
 export class GitHubClientError extends Error {
-  constructor(readonly code: 'github_unavailable' | 'github_rejected' | 'github_malformed') {
+  /**
+   * I3: the HTTP status of a refused GitHub answer (github_rejected only), so
+   * the reconnect can tell "no such installation" (404) from any other
+   * refusal. Never a body. The code alone still decides every existing mapping.
+   */
+  constructor(readonly code: 'github_unavailable' | 'github_rejected' | 'github_malformed', readonly httpStatus?: number) {
     super(code);
     this.name = 'GitHubClientError';
   }
@@ -35,6 +40,8 @@ export interface GitHubInstallationDetails {
   repositorySelection: 'all' | 'selected';
   permissions: Record<string, string>;
   events: string[];
+  /** I3 / D9: when GitHub says the installation was suspended (ISO), or null. */
+  suspendedAt: string | null;
 }
 
 interface GitHubRepository {
@@ -44,8 +51,13 @@ interface GitHubRepository {
 }
 
 export interface GitHubAppClient {
-  /** OAuth code -> user access token (kept in memory by the caller for one request). */
-  exchangeCode(code: string): Promise<string>;
+  /**
+   * OAuth code -> user access token (kept in memory by the caller for one request).
+   * `pkce` (I3 reconnect only, D3): the PKCE verifier and the redirect_uri the
+   * authorize request named. Without it the request body is exactly the
+   * first-install one.
+   */
+  exchangeCode(code: string, pkce?: { codeVerifier: string; redirectUri: string }): Promise<string>;
   getAuthenticatedUser(userToken: string): Promise<{ id: number; login: string }>;
   /** Installation ids of this App the user can access (paginated, bounded). */
   listUserInstallations(userToken: string): Promise<Array<{ id: number; account: GitHubAccount }>>;
@@ -73,6 +85,18 @@ export function createAppJwt(config: Pick<GitHubAppConfig, 'clientId' | 'private
 
 type Fetch = typeof fetch;
 
+/**
+ * D9: GitHub's suspended_at, null when absent or null. A value that is there
+ * but is not a timestamp fails closed (malformed): a suspended installation
+ * must never be stored as healthy.
+ */
+function suspendedAt(x: unknown): string | null {
+  if (x === null || x === undefined) return null;
+  const at = typeof x === 'string' ? Date.parse(x) : NaN;
+  if (!Number.isFinite(at)) throw new GitHubClientError('github_malformed');
+  return new Date(at).toISOString();
+}
+
 const positiveId = (x: unknown): number | null => (typeof x === 'number' && Number.isSafeInteger(x) && x > 0 ? x : null);
 
 function account(x: any): GitHubAccount | null {
@@ -95,7 +119,7 @@ export function createFetchGitHubAppClient(config: GitHubAppConfig, fetchImpl: F
       throw new GitHubClientError('github_unavailable');
     }
     if (response.status >= 500 || response.status === 429) throw new GitHubClientError('github_unavailable');
-    if (!response.ok) throw new GitHubClientError('github_rejected');
+    if (!response.ok) throw new GitHubClientError('github_rejected', response.status);
     const body = await response.text();
     try {
       return JSON.parse(body);
@@ -129,11 +153,16 @@ export function createFetchGitHubAppClient(config: GitHubAppConfig, fetchImpl: F
   }
 
   return {
-    async exchangeCode(code) {
+    async exchangeCode(code, pkce) {
+      const request: Record<string, string> = { client_id: config.clientId, client_secret: config.clientSecret, code };
+      if (pkce) {
+        request.redirect_uri = pkce.redirectUri;
+        request.code_verifier = pkce.codeVerifier;
+      }
       const body = await call(OAUTH_TOKEN_URL, {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'devcontrol-github-app' },
-        body: JSON.stringify({ client_id: config.clientId, client_secret: config.clientSecret, code }),
+        body: JSON.stringify(request),
       });
       if (typeof body?.access_token !== 'string' || body.access_token.length === 0) throw new GitHubClientError('github_rejected');
       return body.access_token;
@@ -171,7 +200,7 @@ export function createFetchGitHubAppClient(config: GitHubAppConfig, fetchImpl: F
       const permissions: Record<string, string> = {};
       for (const [k, v] of Object.entries(body?.permissions ?? {})) if (typeof v === 'string') permissions[k] = v;
       const events = Array.isArray(body?.events) ? body.events.filter((e: unknown) => typeof e === 'string') : [];
-      return { id: installationId, account: acct, repositorySelection: selection, permissions, events };
+      return { id: installationId, account: acct, repositorySelection: selection, permissions, events, suspendedAt: suspendedAt(body?.suspended_at) };
     },
 
     async listInstallationRepositories(installationId) {

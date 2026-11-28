@@ -100,6 +100,13 @@ describe('GitHub client (local fixtures, no network)', () => {
     expect(JSON.parse(json.calls[0].init.body as string)).toEqual({ client_id: 'Iv1.placeholder0000', client_secret: SECRET_VALUES.clientSecret, code: 'code123' });
     const form = fakeFetch({ 'https://github.com/login/oauth/access_token': () => ({ status: 200, body: 'access_token=ghu_form&token_type=bearer' }) });
     expect(await createFetchGitHubAppClient(config, form.impl).exchangeCode('c')).toBe('ghu_form');
+    // I3 (D3): the reconnect's exchange adds exactly redirect_uri and code_verifier.
+    const pkce = fakeFetch({ 'https://github.com/login/oauth/access_token': () => ({ status: 200, body: '{"access_token":"ghu_pkce"}' }) });
+    expect(await createFetchGitHubAppClient(config, pkce.impl).exchangeCode('code123', { codeVerifier: 'v'.repeat(43), redirectUri: 'https://getdevcontrol.com/auth/github/callback' })).toBe('ghu_pkce');
+    expect(JSON.parse(pkce.calls[0].init.body as string)).toEqual({
+      client_id: 'Iv1.placeholder0000', client_secret: SECRET_VALUES.clientSecret, code: 'code123',
+      redirect_uri: 'https://getdevcontrol.com/auth/github/callback', code_verifier: 'v'.repeat(43),
+    });
     const denied = fakeFetch({ 'https://github.com/login/oauth/access_token': () => ({ status: 200, body: '{"error":"bad_verification_code"}' }) });
     await expect(createFetchGitHubAppClient(config, denied.impl).exchangeCode('c')).rejects.toEqual(new GitHubClientError('github_rejected'));
   });
@@ -111,7 +118,11 @@ describe('GitHub client (local fixtures, no network)', () => {
     expect(err.code).toBe('github_unavailable');
     expect(String(err.message)).not.toContain('upstream');
     const no = fakeFetch({ 'https://api.github.com/user': () => ({ status: 401, body: '{}' }) });
-    expect((await createFetchGitHubAppClient(config, no.impl).getAuthenticatedUser('t').catch((e) => e)).code).toBe('github_rejected');
+    const refused = await createFetchGitHubAppClient(config, no.impl).getAuthenticatedUser('t').catch((e) => e);
+    expect([refused.code, refused.httpStatus]).toEqual(['github_rejected', 401]);
+    const missing = fakeFetch({ 'https://api.github.com/app/installations/77': () => ({ status: 404, body: '{"message":"Not Found"}' }) });
+    const gone = await createFetchGitHubAppClient(config, missing.impl).getInstallation(77).catch((e) => e);
+    expect([gone.code, gone.httpStatus, String(gone.message)]).toEqual(['github_rejected', 404, 'github_rejected']);
   });
 
   it('lists the user installations across pages, and reads an installation with the App JWT', async () => {
@@ -126,8 +137,19 @@ describe('GitHub client (local fixtures, no network)', () => {
     expect(list).toHaveLength(101);
     expect(list.some((i) => i.id === 4242)).toBe(true);
     const details = await client.getInstallation(4242);
-    expect(details).toMatchObject({ id: 4242, repositorySelection: 'all', account: { login: 'acme' } });
+    expect(details).toMatchObject({ id: 4242, repositorySelection: 'all', account: { login: 'acme' }, suspendedAt: null });
     const auth = (f.calls.at(-1)!.init.headers as Record<string, string>).Authorization;
     expect(auth).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+  });
+
+  it('I3 / D9: reads suspended_at (null or a timestamp); anything else there is malformed, never "not suspended"', async () => {
+    const installation = (suspended: unknown) => JSON.stringify({ id: 5150, account: { id: 777, login: 'acme', type: 'Organization' }, repository_selection: 'all', permissions: {}, events: [], suspended_at: suspended });
+    const read = async (suspended: unknown) => {
+      const f = fakeFetch({ 'https://api.github.com/app/installations/5150': () => ({ status: 200, body: installation(suspended) }) });
+      return createFetchGitHubAppClient(config, f.impl).getInstallation(5150);
+    };
+    expect((await read(null)).suspendedAt).toBeNull();
+    expect((await read('2026-11-20T08:30:00Z')).suspendedAt).toBe('2026-11-20T08:30:00.000Z');
+    for (const bad of ['yesterday', 12345, true, {}]) await expect(read(bad)).rejects.toEqual(new GitHubClientError('github_malformed'));
   });
 });

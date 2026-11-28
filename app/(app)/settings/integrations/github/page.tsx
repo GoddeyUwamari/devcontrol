@@ -9,7 +9,7 @@ import { useRegisteredServices } from '@/lib/hooks/use-registered-services'
 import { useServiceLimit } from '@/lib/hooks/use-service-limit'
 import { cn } from '@/lib/utils'
 import { BUTTON_OUTLINE, CARD, Chip, LoadingBlocks, PageHeader } from '@/components/integrations/parts'
-import { ClaimOutcomeCard, ConnectSetup, GitHubOff } from './_components/NotConnected'
+import { ClaimOutcomeCard, ConnectSetup, GitHubOff, ReconnectSetup } from './_components/NotConnected'
 import { ConnectedBanner, DisconnectRow, InstallationBanners, ManageOnGitHub, SummaryCard } from './_components/Connected'
 import { Repositories } from './_components/Repositories'
 import { DEMO_REPOSITORIES, DEMO_SERVICES } from './_components/demo-sample'
@@ -65,17 +65,40 @@ export default function GitHubIntegrationPage() {
   const canManage = data.can_manage
   const installations = data.installations
   const outcome = claim.outcome
+  // I3: not connected, but connected before -> the Reconnect card instead of the first-time setup (D1, D10).
+  // Not once GitHub said the app was uninstalled: Reconnect can't work there; the outcome card offers Connect.
+  const previousInstallations = data.previous_installations ?? []
+  const reconnectable = installations.length === 0 && previousInstallations.length > 0 && outcome?.kind !== 'removed_on_github'
   const outcomeCard = outcome && outcome.kind !== 'connected' && outcome.kind !== 'already_connected'
-    ? <ClaimOutcomeCard outcome={outcome} canManage={canManage} onConnect={() => void claim.connect()} onTryAgain={claim.tryAgain} starting={claim.starting} />
+    ? <ClaimOutcomeCard outcome={outcome} canManage={canManage} onConnect={() => void claim.connect()} onTryAgain={claim.tryAgain} starting={claim.starting} reconnectBelow={reconnectable} />
     : null
 
   if (installations.length === 0) {
     // Just claimed: the connection is being read again; grey blocks, never the "not connected" setup in between.
     const refetching = outcome?.kind === 'connected' || outcome?.kind === 'already_connected'
+    if (refetching) return shell(<>{header()}<LoadingBlocks /></>)
+    if (reconnectable) {
+      return shell(
+        <>
+          {header()}
+          {outcomeCard}
+          {outcome?.kind !== 'waiting' && (
+            <ReconnectSetup
+              previous={previousInstallations}
+              canManage={canManage}
+              onReconnect={(id) => void claim.reconnect(id)}
+              onInstall={() => void claim.connect()}
+              starting={claim.starting}
+              startFailed={claim.installProblem === 'failed'}
+            />
+          )}
+        </>
+      )
+    }
     return shell(
       <>
         {header()}
-        {refetching ? <LoadingBlocks /> : outcomeCard ?? (
+        {outcomeCard ?? (
           <ConnectSetup canManage={canManage} onConnect={() => void claim.connect()} starting={claim.starting} installFailed={claim.installProblem === 'failed'} />
         )}
       </>
@@ -96,7 +119,7 @@ export default function GitHubIntegrationPage() {
   return shell(
     <>
       {header(<ManageOnGitHub installation={manageTarget} />)}
-      {outcome?.kind === 'connected' && <ConnectedBanner account={outcome.account} onDismiss={claim.dismiss} />}
+      {outcome?.kind === 'connected' && <ConnectedBanner account={outcome.account} reconnected={outcome.reconnected} onDismiss={claim.dismiss} />}
       {outcomeCard}
       {installations.map((installation) => (
         <InstallationBanners key={`banners-${installation.installation_id}`} installation={installation} canManage={canManage} onConnect={() => void claim.connect()} starting={claim.starting} />

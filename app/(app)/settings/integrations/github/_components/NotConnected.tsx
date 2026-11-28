@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { Clock, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { COPY, RECORD_DEPLOYMENT_HREF } from '@/lib/github-connection/copy'
+import { COPY, RECONNECT_COPY, RECORD_DEPLOYMENT_HREF } from '@/lib/github-connection/copy'
 import type { ClaimOutcome } from '@/lib/github-connection/model'
-import { BUTTON_OUTLINE, BUTTON_PRIMARY, CARD, OutcomeCard } from '@/components/integrations/parts'
+import type { PreviousInstallation } from '@/lib/services/github-connection.service'
+import { BUTTON_OUTLINE, BUTTON_PRIMARY, CARD, OutcomeCard, TEXT_LINK } from '@/components/integrations/parts'
 
 /** Board 2: the feature is switched off. No Connect button anywhere. */
 export function GitHubOff() {
@@ -72,6 +73,62 @@ export function ConnectSetup({
   )
 }
 
+/**
+ * I3 (founder D1, D10): not connected, but the workspace had an installation
+ * before. Instead of the first-time setup: "Reconnect {account}" (GitHub's
+ * authorize, then the existing claim), and the secondary "Install on a
+ * different GitHub account" (the install URL, as Connect GitHub). Members get
+ * the ask-an-owner row and no button.
+ */
+export function ReconnectSetup({
+  previous, canManage, onReconnect, onInstall, starting, startFailed,
+}: {
+  previous: readonly PreviousInstallation[]
+  canManage: boolean
+  onReconnect: (installationId: string) => void
+  onInstall: () => void
+  starting: boolean
+  startFailed: boolean
+}) {
+  return (
+    <div data-testid="github-reconnect" className="flex flex-col gap-4">
+      {previous.map((p) => (
+        <section key={p.installation_id} data-testid="github-reconnect-card" className={cn(CARD, 'flex flex-col gap-4 p-7')}>
+          <div className="flex flex-col gap-1.5">
+            <h2 className="m-0 text-section text-ink">{RECONNECT_COPY.title(p.account_login)}</h2>
+            <p className="m-0 text-ui text-ink-body">{RECONNECT_COPY.body(p.account_login)}</p>
+          </div>
+          {canManage ? (
+            <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 pt-5">
+              <button
+                type="button"
+                data-testid="github-reconnect-button"
+                onClick={() => onReconnect(p.installation_id)}
+                disabled={starting}
+                aria-busy={starting}
+                className={cn(BUTTON_PRIMARY, 'min-h-12 px-5 text-body')}
+              >
+                {RECONNECT_COPY.button}
+              </button>
+              <span className="text-meta text-ink-muted">{COPY.onlyOwnersCanConnect}</span>
+            </div>
+          ) : (
+            <MemberRow />
+          )}
+        </section>
+      ))}
+      {canManage && (
+        <div className="flex flex-col gap-2">
+          {startFailed && <p role="alert" data-testid="github-install-failed" className="m-0 text-ui text-ink-danger">{COPY.installFailed}</p>}
+          <button type="button" data-testid="github-install-different" onClick={onInstall} disabled={starting} className={cn(TEXT_LINK, 'border-0 bg-transparent p-0')}>
+            {RECONNECT_COPY.differentAccount}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Board 3's member version of the button row: no disabled button. */
 export function MemberRow() {
   return (
@@ -84,15 +141,17 @@ export function MemberRow() {
 
 /** Board 4: what the claim answered. Success is the banner on the connected view, not a card. */
 export function ClaimOutcomeCard({
-  outcome, canManage, onConnect, onTryAgain, starting,
+  outcome, canManage, onConnect, onTryAgain, starting, reconnectBelow = false,
 }: {
   outcome: ClaimOutcome
   canManage: boolean
   onConnect: () => void
   onTryAgain: () => void
   starting: boolean
+  /** I3: the Reconnect card is shown under this one, so this card offers no Connect GitHub (the install URL) of its own. */
+  reconnectBelow?: boolean
 }) {
-  const restart = canManage ? (
+  const restart = canManage && !reconnectBelow ? (
     <button type="button" data-testid="github-outcome-connect" onClick={onConnect} disabled={starting} className={cn(BUTTON_OUTLINE, 'self-start')}>
       {COPY.connectGitHub}
     </button>
@@ -103,6 +162,9 @@ export function ClaimOutcomeCard({
     case 'expired':
       return <OutcomeCard testId="github-claim-expired" live title={COPY.expiredTitle} action={restart}>{COPY.expiredBody}</OutcomeCard>
     case 'no_response':
+      if (outcome.reconnect && !outcome.canRetry) {
+        return <OutcomeCard testId="github-claim-no-response" live title={COPY.noResponseTitle}>{RECONNECT_COPY.noResponseBody}</OutcomeCard>
+      }
       return (
         <OutcomeCard
           testId="github-claim-no-response"
@@ -116,7 +178,36 @@ export function ClaimOutcomeCard({
     case 'elsewhere':
       return <OutcomeCard testId="github-claim-elsewhere" live title={COPY.elsewhereTitle}>{COPY.elsewhereBody}</OutcomeCard>
     case 'installer_mismatch':
-      return <OutcomeCard testId="github-claim-installer" live title={COPY.installerTitle} action={restart}>{COPY.installerBody}</OutcomeCard>
+      return (
+        <OutcomeCard testId="github-claim-installer" live title={COPY.installerTitle} action={restart}>
+          {outcome.reconnect ? <><p className="m-0">{COPY.installerBody}</p><p className="m-0 mt-2">{RECONNECT_COPY.installerLeft}</p></> : COPY.installerBody}
+        </OutcomeCard>
+      )
+    case 'reconnect_cancelled':
+      return <OutcomeCard testId="github-claim-cancelled" live title={COPY.cancelledTitle}>{RECONNECT_COPY.cancelledBody}</OutcomeCard>
+    case 'github_refused':
+      return <OutcomeCard testId="github-claim-refused" live title={COPY.noResponseTitle}>{RECONNECT_COPY.refusedBody}</OutcomeCard>
+    case 'reconnect_not_accessible':
+      return (
+        <OutcomeCard testId="github-claim-not-accessible" live title={COPY.notAccessibleTitle}>
+          {outcome.account ? RECONNECT_COPY.notAccessibleBody(outcome.account) : COPY.notAccessibleBody}
+        </OutcomeCard>
+      )
+    case 'removed_on_github':
+      return (
+        <OutcomeCard
+          testId="github-claim-removed"
+          live
+          title={COPY.noResponseTitle}
+          action={canManage ? (
+            <button type="button" data-testid="github-outcome-connect" onClick={onConnect} disabled={starting} className={cn(BUTTON_OUTLINE, 'self-start')}>
+              {COPY.connectGitHub}
+            </button>
+          ) : undefined}
+        >
+          {RECONNECT_COPY.removedBody(outcome.account)}
+        </OutcomeCard>
+      )
     case 'approval_requested':
       return <OutcomeCard testId="github-claim-approval" live title={COPY.approvalTitle}>{COPY.approvalBody}</OutcomeCard>
     case 'not_allowed':

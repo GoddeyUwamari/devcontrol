@@ -4,12 +4,32 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/lib/contexts/auth-context'
 import { githubConnectionService, type GitHubConnection } from '@/lib/services/github-connection.service'
-import { clearInstallStart, readInstallStart, saveInstallStart, takeParkedCallback } from '@/lib/github-connection/pending-claim'
+import {
+  CODE_VERIFIER_PATTERN,
+  clearInstallStart,
+  readInstallStart,
+  saveInstallStart,
+  saveReconnectStart,
+  takeParkedCallback,
+  type ParkedCallback,
+  type ReconnectStart,
+} from '@/lib/github-connection/pending-claim'
 import { claimOutcome, MAX_RETRIES, RETRY_INTERVAL_MS, type ClaimOutcome } from '@/lib/github-connection/model'
 import { GITHUB_CONNECTION_KEY, GITHUB_REPOSITORIES_KEY } from '@/lib/hooks/use-github-connection'
 import { goToGitHub } from '@/lib/github-connection/navigate'
 
 const GITHUB_INSTALL_URL = /^https:\/\/github\.com\/apps\/[A-Za-z0-9-]+\/installations\/new\?state=[A-Za-z0-9_-]{43}$/
+/**
+ * I3: the only authorize URL the tab follows: github.com's OAuth authorize, the
+ * registered callback as redirect_uri (D1), a state, an S256 challenge (D3) and
+ * prompt=select_account (D4), in that order and nothing else.
+ */
+const GITHUB_AUTHORIZE_URL =
+  /^https:\/\/github\.com\/login\/oauth\/authorize\?client_id=[A-Za-z0-9._-]{1,100}&redirect_uri=https%3A%2F%2Fgetdevcontrol\.com%2Fauth%2Fgithub%2Fcallback&state=([A-Za-z0-9_-]{43})&code_challenge=[A-Za-z0-9_-]{43}&code_challenge_method=S256&prompt=select_account$/
+
+/** A callback shaped like GitHub's authorize redirect (I3): an error, or a code without an installation id. */
+const viaAuthorize = (parked: ParkedCallback) =>
+  parked.error !== undefined || (parked.code !== undefined && parked.installationId === undefined && parked.setupAction === undefined)
 
 export type InstallProblem = 'failed' | null
 
@@ -27,6 +47,14 @@ export type InstallProblem = 'failed' | null
  * 202 waiting_for_github: POST /claim/retry every 3 s, never more than the
  * server's 10 retries. A 502 after that keeps the state for Try again
  * (RC-O2); a 502 before it spent the state, so Try again answers "expired".
+ *
+ * I3 Reconnect (founder D1-D10): POST /reconnect, then GitHub's authorize in
+ * the same tab, with the state, installation id and PKCE verifier kept for
+ * this tab only. Back from GitHub, the claim is sent only when this tab
+ * started the reconnect in this workspace and GitHub echoed exactly its
+ * state (required here); it carries the stored installation id and verifier.
+ * GitHub's error (denied, cancelled, refused) sends nothing. Anything else
+ * reads "expired", with no call.
  */
 export function useGitHubClaim(connection: GitHubConnection | undefined) {
   const queryClient = useQueryClient()
@@ -39,6 +67,8 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
   const stateRef = useRef<string | null>(null)
   const retriesLeft = useRef(MAX_RETRIES)
   const waited = useRef(false)
+  /** I3: the account of the reconnect under way, so its answers read as a reconnect's. */
+  const reconnecting = useRef<{ account: string } | undefined>(undefined)
   const alive = useRef(true)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -82,7 +112,7 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
       return
     }
     retriesLeft.current -= 1
-    const next = claimOutcome(await githubConnectionService.retryClaim(state), waited.current)
+    const next = claimOutcome(await githubConnectionService.retryClaim(state), waited.current, reconnecting.current)
     settle(next)
     if (next.kind === 'waiting') scheduleRetry()
   }, [settle, scheduleRetry])
@@ -90,6 +120,53 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
   useEffect(() => {
     retryRef.current = retry
   }, [retry])
+
+  /**
+   * I3: back from GitHub's authorize. Fails closed: the claim is sent only for a
+   * reconnect this tab started in this workspace, with GitHub's echoed state
+   * equal to the stored one, and a code. GitHub's error sends nothing.
+   */
+  const finishReconnect = useCallback(async (
+    parked: ParkedCallback,
+    stored: ReconnectStart | null,
+    canManage: boolean,
+    previous: readonly { installation_id: string; account_login: string }[],
+  ) => {
+    if (!canManage) {
+      settle({ kind: 'not_allowed' })
+      return
+    }
+    if (!stored || stored.organizationId !== organizationId) {
+      settle({ kind: 'expired' })
+      return
+    }
+    if (parked.state !== undefined && parked.state !== stored.state) {
+      settle({ kind: 'expired' })
+      return
+    }
+    if (parked.error !== undefined) {
+      settle(parked.error === 'access_denied' ? { kind: 'reconnect_cancelled' } : { kind: 'github_refused' })
+      return
+    }
+    // The authorize redirect always echoes the state (GitHub docs): required here, unlike the install path's V1 fallback.
+    if (parked.state === undefined || parked.code === undefined || parked.installationId !== undefined || parked.setupAction !== undefined) {
+      settle({ kind: 'expired' })
+      return
+    }
+    const account = previous.find((p) => p.installation_id === stored.installationId)?.account_login ?? ''
+    reconnecting.current = { account }
+    stateRef.current = stored.state
+    setOutcome({ kind: 'waiting' })
+    const answer = await githubConnectionService.claim({
+      state: stored.state,
+      code: parked.code,
+      installation_id: stored.installationId,
+      code_verifier: stored.codeVerifier,
+    })
+    const next = claimOutcome(answer, false, reconnecting.current)
+    settle(next)
+    if (next.kind === 'waiting') scheduleRetry()
+  }, [organizationId, settle, scheduleRetry])
 
   useEffect(() => {
     if (started.current || !connection) return
@@ -102,6 +179,14 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
     }
     const stored = readInstallStart()
     clearInstallStart()
+    if ((stored && 'mode' in stored) || viaAuthorize(parked)) {
+      const reconnectStart = stored && 'mode' in stored ? stored : null
+      void (async () => {
+        await Promise.resolve()
+        await finishReconnect(parked, reconnectStart, connection.can_manage, connection.previous_installations ?? [])
+      })()
+      return
+    }
     void (async () => {
       await Promise.resolve()
       if (!connection.can_manage) {
@@ -134,7 +219,7 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
       settle(next)
       if (next.kind === 'waiting') scheduleRetry()
     })()
-  }, [connection, organizationId, settle, scheduleRetry])
+  }, [connection, organizationId, settle, scheduleRetry, finishReconnect])
 
   /** Try again on "GitHub didn't respond": the retry route, with the state this tab still holds. */
   const tryAgain = useCallback(() => {
@@ -164,7 +249,44 @@ export function useGitHubClaim(connection: GitHubConnection | undefined) {
     setInstallProblem('failed')
   }, [organizationId, refresh])
 
+  /**
+   * I3 Reconnect: POST /reconnect for an installation this workspace had, keep
+   * the state, installation id and verifier for this tab, then GitHub's
+   * authorize in the same tab. Only the exact authorize URL shape is followed,
+   * and only when its state is the one returned with it.
+   */
+  const reconnect = useCallback(async (installationId: string) => {
+    setInstallProblem(null)
+    setOutcome(null)
+    setStarting(true)
+    const answer = await githubConnectionService.startReconnect(installationId)
+    const data = (answer.body?.data ?? {}) as { authorize_url?: unknown; state?: unknown; code_verifier?: unknown; installation_id?: unknown; account_login?: unknown }
+    const url = typeof data.authorize_url === 'string' ? data.authorize_url : ''
+    const urlState = GITHUB_AUTHORIZE_URL.exec(url)?.[1]
+    if (
+      answer.status === 200 && urlState !== undefined && urlState === data.state &&
+      typeof data.code_verifier === 'string' && CODE_VERIFIER_PATTERN.test(data.code_verifier) &&
+      data.installation_id === installationId && organizationId &&
+      saveReconnectStart({ state: urlState, organizationId, installationId, codeVerifier: data.code_verifier })
+    ) {
+      goToGitHub(url)
+      return
+    }
+    setStarting(false)
+    if (answer.status === 409 && answer.body?.error === 'installation_removed_on_github') {
+      setOutcome({ kind: 'removed_on_github', account: typeof data.account_login === 'string' ? data.account_login : '' })
+      return
+    }
+    const mapped = claimOutcome(answer, false)
+    if (mapped.kind === 'not_allowed' || mapped.kind === 'demo' || mapped.kind === 'off') {
+      setOutcome(mapped)
+      if (mapped.kind !== 'not_allowed') refresh()
+      return
+    }
+    setInstallProblem('failed')
+  }, [organizationId, refresh])
+
   const dismiss = useCallback(() => setOutcome(null), [])
 
-  return { outcome, tryAgain, connect, starting, installProblem, dismiss }
+  return { outcome, tryAgain, connect, reconnect, starting, installProblem, dismiss }
 }

@@ -146,6 +146,8 @@ interface InstallationClaim {
   installerGithubUserId: number;
   claimedByUserId: string;
   claimedByGithubUserId: number;
+  /** I3 / D9: GitHub's suspended_at at the claim (a re-claimed suspended installation never shows healthy). */
+  suspendedAt: string | null;
 }
 
 interface InstallationRow {
@@ -180,12 +182,12 @@ export async function insertInstallationClaim(
   const inserted = await client.query(
     `INSERT INTO github_installations
        (installation_id, organization_id, account_id, account_login, account_type, repository_selection, permissions, events,
-        permissions_state, installer_github_user_id, claimed_by_user_id, claimed_by_github_user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12)
+        permissions_state, installer_github_user_id, claimed_by_user_id, claimed_by_github_user_id, suspended_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13::timestamptz)
      ON CONFLICT (installation_id) DO NOTHING`,
     [claim.installationId, organizationId, claim.accountId, claim.accountLogin, claim.accountType, claim.repositorySelection,
       JSON.stringify(claim.permissions), JSON.stringify(claim.events), claim.permissionsState, claim.installerGithubUserId,
-      claim.claimedByUserId, claim.claimedByGithubUserId]
+      claim.claimedByUserId, claim.claimedByGithubUserId, claim.suspendedAt]
   );
   if (inserted.rowCount === 1) return 'inserted';
   const own = await client.query(
@@ -203,6 +205,51 @@ export async function listInstallations(client: PoolClient, organizationId: stri
       WHERE gi.organization_id = $1
       ORDER BY gi.claimed_at, gi.installation_id`,
     [organizationId]
+  );
+  return rows;
+}
+
+export interface PreviousInstallation {
+  installation_id: string;
+  account_login: string;
+  account_type: 'User' | 'Organization' | 'Enterprise';
+}
+
+/** How many previous installations GET / lists at most. */
+const PREVIOUS_INSTALLATIONS_LIMIT = 20;
+
+/**
+ * I3 (Option A): installations this organization had before and has no
+ * claim on now, from its own stored installation.created events (row level
+ * security: only this organization's rows), newest first. Account from the
+ * signed event's facts; an event stored without a well-formed account is
+ * left out.
+ *
+ * For display and for scoping POST /reconnect only. **Never authority**: the
+ * claim still needs the OAuth identity, /user/installations and the
+ * installer proof (claim.ts). An installation another organization holds
+ * now is listed too (RLS hides that claim); its claim answers 409.
+ */
+export async function listPreviousInstallations(client: PoolClient, organizationId: string): Promise<PreviousInstallation[]> {
+  const { rows } = await client.query<PreviousInstallation>(
+    `SELECT installation_id, account_login, account_type
+       FROM (
+         SELECT DISTINCT ON (pe.installation_id)
+                pe.installation_id::text AS installation_id,
+                pe.facts -> 'account' ->> 'login' AS account_login,
+                pe.facts -> 'account' ->> 'type' AS account_type,
+                pe.received_at
+           FROM pipeline_events pe
+          WHERE pe.organization_id = $1 AND pe.event = 'installation' AND pe.action = 'created'
+            AND pe.facts -> 'account' ->> 'login' IS NOT NULL
+            AND pe.facts -> 'account' ->> 'type' IN ('User', 'Organization', 'Enterprise')
+            AND NOT EXISTS (SELECT 1 FROM github_installations gi
+                             WHERE gi.organization_id = $1 AND gi.installation_id = pe.installation_id)
+          ORDER BY pe.installation_id, pe.received_at DESC
+       ) latest
+      ORDER BY received_at DESC, installation_id
+      LIMIT $2`,
+    [organizationId, PREVIOUS_INSTALLATIONS_LIMIT]
   );
   return rows;
 }

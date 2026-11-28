@@ -71,14 +71,24 @@ export function removedRepositories(repositories: readonly GitHubRepository[]): 
 // ── Claim outcomes (board 4) ─────────────────────────────────────────────────
 
 export type ClaimOutcome =
-  | { kind: 'connected'; account: string }
+  /** I3: `reconnected` with the deploys the reconnect recorded (D6: recorded_events). */
+  | { kind: 'connected'; account: string; reconnected?: { recordedEvents: number } }
   | { kind: 'already_connected' }
   | { kind: 'waiting' }
   | { kind: 'approval_requested' }
   | { kind: 'expired' }
-  | { kind: 'no_response'; canRetry: boolean }
+  | { kind: 'no_response'; canRetry: boolean; reconnect?: boolean }
   | { kind: 'elsewhere' }
-  | { kind: 'installer_mismatch' }
+  /** `reconnect`: also says what to do when the installer has left the GitHub organization (D7). */
+  | { kind: 'installer_mismatch'; reconnect?: boolean }
+  /** I3: GitHub's authorize answered access_denied (the user cancelled). */
+  | { kind: 'reconnect_cancelled' }
+  /** I3: GitHub's authorize answered another error (redirect_uri_mismatch, application_suspended, ...). */
+  | { kind: 'github_refused' }
+  /** I3: POST /reconnect found the installation uninstalled on GitHub. */
+  | { kind: 'removed_on_github'; account: string }
+  /** I3: the GitHub account used can't see the installation (installation_not_accessible on a reconnect). */
+  | { kind: 'reconnect_not_accessible'; account: string }
   | { kind: 'cancelled' }
   | { kind: 'not_accessible' }
   | { kind: 'github_auth_failed' }
@@ -94,7 +104,18 @@ export type ClaimOutcome =
  * succeed (RC-O2); before that, a 502 spent the state and a retry answers 400,
  * which then reads "expired".
  */
-export function claimOutcome(answer: ApiAnswer, afterWaiting: boolean): ClaimOutcome {
+export function claimOutcome(answer: ApiAnswer, afterWaiting: boolean, reconnect?: { account: string }): ClaimOutcome {
+  if (reconnect) {
+    const outcome = claimOutcome(answer, afterWaiting)
+    const data = (answer.body?.data ?? {}) as { recorded_events?: unknown }
+    if (outcome.kind === 'connected') {
+      const n = data.recorded_events
+      return { ...outcome, reconnected: { recordedEvents: typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0 } }
+    }
+    if (outcome.kind === 'not_accessible') return { kind: 'reconnect_not_accessible', account: reconnect.account }
+    if (outcome.kind === 'installer_mismatch' || outcome.kind === 'no_response') return { ...outcome, reconnect: true }
+    return outcome
+  }
   const { status, body } = answer
   const error = body?.error
   const data = (body?.data ?? {}) as { status?: unknown; installation?: { account_login?: unknown } }

@@ -28,6 +28,13 @@ export interface GitHubInstallation {
   deleted_at: string | null
 }
 
+/** I3: an installation this workspace had before and has no claim on now (display only; the claim proves everything again). */
+export interface PreviousInstallation {
+  installation_id: string
+  account_login: string
+  account_type: 'User' | 'Organization' | 'Enterprise'
+}
+
 export type GitHubConnection =
   | { configured: false }
   | {
@@ -35,6 +42,8 @@ export type GitHubConnection =
       can_manage: boolean
       demo: boolean
       installations: GitHubInstallation[]
+      /** I3: with no installation connected, the ones this workspace had before (newest first). Always set by get(); absent means none. */
+      previous_installations?: PreviousInstallation[]
       last_event_at: string | null
     }
 
@@ -121,6 +130,18 @@ async function answer(request: Promise<{ status: number; data: unknown }>): Prom
   }
 }
 
+const ACCOUNT_TYPES = new Set(['User', 'Organization', 'Enterprise'])
+
+/** Only well-formed entries: an id the claim accepts, a login, a known account type. */
+function parsePreviousInstallations(raw: unknown): PreviousInstallation[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((p): p is PreviousInstallation =>
+    typeof p?.installation_id === 'string' && /^[1-9][0-9]{0,18}$/.test(p.installation_id) &&
+    typeof p?.account_login === 'string' && p.account_login.length > 0 && p.account_login.length <= 100 &&
+    ACCOUNT_TYPES.has(p?.account_type))
+    .map((p) => ({ installation_id: p.installation_id, account_login: p.account_login, account_type: p.account_type }))
+}
+
 function parseConnection(data: unknown): GitHubConnection {
   const d = (data ?? {}) as Record<string, unknown>
   if (d.configured === false) return { configured: false }
@@ -130,6 +151,7 @@ function parseConnection(data: unknown): GitHubConnection {
     can_manage: d.can_manage === true,
     demo: d.demo === true,
     installations: d.installations as GitHubInstallation[],
+    previous_installations: parsePreviousInstallations(d.previous_installations),
     last_event_at: typeof d.last_event_at === 'string' ? d.last_event_at : null,
   }
 }
@@ -161,8 +183,12 @@ export const githubConnectionService = {
 
   startInstall: () => answer(api.post('/api/integrations/github/install', {}, ANSWER_EVERY_STATUS)),
 
-  claim: (body: { state: string; code?: string; installation_id?: string; setup_action?: string }) =>
+  claim: (body: { state: string; code?: string; installation_id?: string; setup_action?: string; code_verifier?: string }) =>
     answer(api.post('/api/integrations/github/claim', body, ANSWER_EVERY_STATUS)),
+
+  /** I3: GitHub's authorize URL, a state and a PKCE verifier, for an installation this workspace had before. */
+  startReconnect: (installationId: string) =>
+    answer(api.post('/api/integrations/github/reconnect', { installation_id: installationId }, ANSWER_EVERY_STATUS)),
 
   retryClaim: (state: string) => answer(api.post('/api/integrations/github/claim/retry', { state }, ANSWER_EVERY_STATUS)),
 

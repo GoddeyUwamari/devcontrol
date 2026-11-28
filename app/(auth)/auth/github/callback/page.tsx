@@ -8,8 +8,10 @@ import { loginPathReturningTo } from '@/lib/login-redirect'
 import { parkCallback } from '@/lib/github-connection/pending-claim'
 import { COPY, GITHUB_PAGE_HREF } from '@/lib/github-connection/copy'
 
-/** What GitHub sends back after an install (the App's Callback URL, Q1). */
-const GITHUB_CALLBACK_PARAMS = ['code', 'installation_id', 'setup_action', 'state'] as const
+/** What GitHub sends back after an install (the App's Callback URL, Q1), and after an authorize (I3 reconnect: code + state, or error). */
+const GITHUB_CALLBACK_PARAMS = ['code', 'installation_id', 'setup_action', 'state', 'error'] as const
+/** Taken out of the URL and history too, never read: GitHub's free text about an error. */
+const GITHUB_CALLBACK_SCRUBBED = ['error_description', 'error_uri'] as const
 
 /**
  * /auth/github/callback (D8b-1, Q1): outside the signed-in app, so AuthGate
@@ -32,8 +34,8 @@ function GitHubCallbackContent() {
   useEffect(() => {
     if (taken.current) return
     taken.current = true
-    const values = takeUrlCredentials(GITHUB_CALLBACK_PARAMS, { legacyQuery: GITHUB_CALLBACK_PARAMS })
-    parkCallback(values)
+    const values = takeUrlCredentials([...GITHUB_CALLBACK_PARAMS, ...GITHUB_CALLBACK_SCRUBBED], { legacyQuery: GITHUB_CALLBACK_PARAMS })
+    parkCallback({ code: values.code, installation_id: values.installation_id, setup_action: values.setup_action, state: values.state, error: values.error })
   }, [])
 
   useEffect(() => {

@@ -511,6 +511,128 @@ describe('D8b-2: repository activity, current role, one environment', () => {
   });
 });
 
+/**
+ * I3 reconnect (founder D1-D10): the route's gates and scoping. The claim core
+ * through the reconnect entry is proven in github-app-reconnect.db.test.ts;
+ * here GitHub's one read at the start is a stubbed fetch, never the network.
+ */
+describe('I3: POST /reconnect and previous_installations', () => {
+  let C: RoleGateOrg;
+  let D: RoleGateOrg;
+  const instC = 8_700_000_000 + Math.floor(Math.random() * 1e8);
+  const instD = instC + 1;
+  const seedCreated = (org: string, inst: number, login: string) => harness.pool.query(
+    `INSERT INTO pipeline_events (delivery_id, organization_id, installation_id, event, action, normalizer_version, facts, processing_status, processed_at)
+     VALUES (gen_random_uuid(), $1, $2, 'installation', 'created', 1, $3::jsonb, 'processed', NOW())`,
+    [org, inst, JSON.stringify({ kind: 'installation', account: { id: 777, login, type: 'Organization' }, sender: { id: 8123, login: 'installer' },
+      repository: null, repository_selection: 'selected', permissions: {}, events: [], repositories: [], repositories_truncated: false })]);
+  const githubCalls = (spy: jest.SpyInstance) => spy.mock.calls.filter(([url]) => /github\.com/.test(String(url)));
+  /** GitHub's answers stubbed; every other request (the test's own calls to the local server) goes through. */
+  const realFetch = global.fetch;
+  const stubGitHub = (answer: (url: string) => Response) => jest.spyOn(global, 'fetch').mockImplementation(async (url, init) =>
+    (/github\.com/.test(String(url)) ? answer(String(url)) : realFetch(url, init)));
+
+  beforeAll(async () => {
+    C = await harness.buildOrg();
+    D = await harness.buildOrg();
+    await seedCreated(C.orgId, instC, 'acme-c');
+    await seedCreated(D.orgId, instD, 'acme-d');
+  });
+  afterAll(async () => {
+    await harness.pool.query('DELETE FROM github_installations WHERE installation_id = ANY($1::bigint[])', [[instC, instD]]);
+  });
+
+  it.each(['viewer', 'member'] as const)('%s: POST /reconnect is refused (403) before any GitHub call', async (role) => {
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    const res = await harness.sendAs(C.orgId, C[role], 'POST', '/integrations/github/reconnect', { installation_id: String(instC) });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ...ADMIN_REFUSAL, current: role });
+    expect(githubCalls(fetchSpy)).toEqual([]);
+  });
+
+  it('the demo workspace is refused (403 not_available_in_demo)', async () => {
+    jest.spyOn(demo, 'isDemoOrganization').mockResolvedValue(true);
+    const res = await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/reconnect', { installation_id: String(instC) });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ success: false, error: 'not_available_in_demo' });
+  });
+
+  it('bodies are strict: a number, a padded or missing id, an organization id, a state -> 400', async () => {
+    for (const body of [{ installation_id: instC }, { installation_id: '0042' }, {}, { installation_id: String(instC), organization_id: D.orgId }, { installation_id: String(instC), state: STATE }]) {
+      const res = await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/reconnect', body);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ success: false, error: 'invalid_request' });
+    }
+  });
+
+  it('GET lists only the organization\'s own previous installations, while it has none connected', async () => {
+    const c = (await (await harness.sendAs(C.orgId, C.viewer, 'GET', '/integrations/github')).json()).data;
+    expect(c).toMatchObject({ configured: true, installations: [], previous_installations: [{ installation_id: String(instC), account_login: 'acme-c', account_type: 'Organization' }] });
+    const d = (await (await harness.sendAs(D.orgId, D.viewer, 'GET', '/integrations/github')).json()).data;
+    expect(d.previous_installations).toEqual([{ installation_id: String(instD), account_login: 'acme-d', account_type: 'Organization' }]);
+  });
+
+  it('another organization\'s previous installation, or an unknown id -> 404, no GitHub call, no state', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    for (const id of [String(instD), '9876543210']) {
+      const res = await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/reconnect', { installation_id: id });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ success: false, error: 'not_found' });
+    }
+    expect(githubCalls(fetchSpy)).toEqual([]);
+    expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_install_states WHERE organization_id = $1', [C.orgId])).rows[0].n).toBe(0);
+  });
+
+  it('on record: GitHub is read with the App JWT once, and the answer is the authorize URL with a fresh state and a verifier', async () => {
+    const fetchSpy = stubGitHub((url) => {
+      expect(url).toBe(`https://api.github.com/app/installations/${instC}`);
+      return new Response(JSON.stringify({ id: instC, account: { id: 777, login: 'acme-c', type: 'Organization' }, repository_selection: 'selected', permissions: {}, events: [], suspended_at: null }), { status: 200 });
+    });
+    const res = await harness.sendAs(C.orgId, C.admin, 'POST', '/integrations/github/reconnect', { installation_id: String(instC) });
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data).toMatchObject({ expires_in_minutes: 15, installation_id: String(instC), account_login: 'acme-c', suspended: false });
+    expect(data.authorize_url).toMatch(new RegExp(
+      '^https://github\\.com/login/oauth/authorize\\?client_id=Iv1\\.placeholder0000&redirect_uri=https%3A%2F%2Fgetdevcontrol\\.com%2Fauth%2Fgithub%2Fcallback'
+      + `&state=${data.state}&code_challenge=[A-Za-z0-9_-]{43}&code_challenge_method=S256&prompt=select_account$`));
+    expect(data.code_verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(githubCalls(fetchSpy)).toHaveLength(1);
+    expect(((githubCalls(fetchSpy)[0][1] as RequestInit).headers as Record<string, string>).Authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+    expect((await harness.pool.query('SELECT count(*)::int AS n FROM github_install_states WHERE organization_id = $1 AND user_id = $2', [C.orgId, C.admin])).rows[0].n).toBe(1);
+  });
+
+  it('uninstalled on GitHub (404) -> 409 installation_removed_on_github with the account', async () => {
+    stubGitHub(() => new Response('{"message":"Not Found"}', { status: 404 }));
+    const res = await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/reconnect', { installation_id: String(instC) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ success: false, error: 'installation_removed_on_github', data: { account_login: 'acme-c' } });
+  });
+
+  it('claim: code_verifier is shape-checked (400); a well-formed one with an unknown state -> 400 invalid_state before any GitHub call', async () => {
+    for (const verifier of ['short', 'x'.repeat(129), `${'a'.repeat(42)} `, `${'a'.repeat(42)}/`]) {
+      const res = await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/claim', { state: STATE, code: 'abc', installation_id: String(instC), code_verifier: verifier });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ success: false, error: 'invalid_request' });
+    }
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    const res = await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/claim', { state: STATE, code: 'abc', installation_id: String(instC), code_verifier: 'a.b~c-d_'.repeat(6) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ success: false, error: 'invalid_state' });
+    expect(githubCalls(fetchSpy)).toEqual([]);
+  });
+
+  it('once the organization has an installation connected, GET lists no previous ones and the old id is no longer "previous" (404)', async () => {
+    await harness.pool.query(
+      `INSERT INTO github_installations (installation_id, organization_id, account_id, account_login, account_type, repository_selection,
+         permissions_state, installer_github_user_id, claimed_by_github_user_id)
+       VALUES ($1, $2, 777, 'acme-c', 'Organization', 'selected', 'expected', 8123, 8123)`, [instC, C.orgId]);
+    const c = (await (await harness.sendAs(C.orgId, C.owner, 'GET', '/integrations/github')).json()).data;
+    expect(c.installations.map((i: { installation_id: string }) => i.installation_id)).toEqual([String(instC)]);
+    expect(c.previous_installations).toEqual([]);
+    expect((await harness.sendAs(C.orgId, C.owner, 'POST', '/integrations/github/reconnect', { installation_id: String(instC) })).status).toBe(404);
+  });
+});
+
 describe('/api/webhooks/github-app through the application body parsing', () => {
   const post = (raw: Buffer, headers: Record<string, string>) => fetch(webhookUrl, { method: "POST", body: new Uint8Array(raw), headers });
   const signed = (raw: Buffer) => 'sha256=' + crypto.createHmac('sha256', SECRET).update(raw).digest('hex');
