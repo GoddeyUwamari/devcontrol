@@ -84,7 +84,7 @@ export class StatsController {
         total_infrastructure_cost: totalCost,
         cost_source: costSource,
         cost_estimate_coverage: estimateCoverage
-          ? { priced_resources: estimateCoverage.pricedResources, total_resources: estimateCoverage.totalResources, excluded_resources: estimateCoverage.excludedResources }
+          ? { priced_resources: estimateCoverage.pricedResources, total_resources: estimateCoverage.totalResources, excluded_resources: estimateCoverage.excludedResources, priced_lambda_resources: estimateCoverage.pricedLambdaResources }
           : null,
         free_tier_remaining: Math.max(0, 25 - totalCost),
         recent_deployments: recentDeployments,

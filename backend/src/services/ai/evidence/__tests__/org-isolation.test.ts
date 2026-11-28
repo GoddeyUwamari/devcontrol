@@ -109,8 +109,8 @@ describe.each([
   });
 
   it('inventory counts its own resources only', () => {
-    expect(sectionOf<{ total: number }>(bundleA, 'inventory.resource_counts').data?.total).toBe(1);
-    expect(sectionOf<{ total: number }>(bundleB, 'inventory.resource_counts').data?.total).toBe(3);
+    expect(sectionOf<{ total: number }>(bundleA, 'inventory.resource_counts').data?.total).toBe(2); // 1 instance + 1 priced volume (B-1 fixture)
+    expect(sectionOf<{ total: number }>(bundleB, 'inventory.resource_counts').data?.total).toBe(6); // 3 instances + 3 priced volumes
     expect(sectionOf<{ ec2: { count: number } }>(bundleA, 'inventory.compute_detail').data?.ec2.count).toBe(1);
     expect(sectionOf<{ ec2: { count: number } }>(bundleB, 'inventory.compute_detail').data?.ec2.count).toBe(3);
   });
@@ -126,14 +126,22 @@ describe.each([
     expect(sectionOf<{ lifecycle: { active: number }; totalEstimatedMonthlySavings: number }>(bundleA, 'cost.findings').data)
       .toMatchObject({ lifecycle: { active: 1 }, totalEstimatedMonthlySavings: 12.5 });
     expect(sectionOf<{ totalEstimatedMonthlySavings: number }>(bundleB, 'cost.findings').data?.totalEstimatedMonthlySavings).toBe(37.5);
+    // Review fix round B-1: each org's priced gp2 volumes only (EC2 is never priced, and its stored
+    // figure is never summed): A 100 GB = $10; B 100 + 200 + 300 GB = $60.
     expect(sectionOf<{ amount: number }>(bundleA, 'cost.spend').data?.amount).toBe(10);
     expect(sectionOf<{ amount: number }>(bundleB, 'cost.spend').data?.amount).toBe(60);
+    expect(sectionOf<{ estimateCoverage: unknown }>(bundleA, 'cost.spend').data?.estimateCoverage).toMatchObject({ pricedResources: 1, totalResources: 2 });
+    expect(sectionOf<{ estimateCoverage: unknown }>(bundleB, 'cost.spend').data?.estimateCoverage).toMatchObject({ pricedResources: 3, totalResources: 6 });
+    const top = (b: EvidenceBundle) => sectionOf<{ items: Array<{ resourceId: string; monthlyCost: number }> }>(b, 'cost.top_estimated_resources').data?.items
+      .map((i) => [i.resourceId, i.monthlyCost]);
+    expect(top(bundleA)).toEqual([['vol-fixturealpha0', 10]]);
+    expect(top(bundleB)).toEqual([['vol-fixturebravo2', 30], ['vol-fixturebravo1', 20], ['vol-fixturebravo0', 10]]);
   });
 
   it('compliance: configuration checks and custom framework scans are its own', () => {
     expect(sectionOf<{ resourcesWithFindings: number; resourcesEvaluated: number }>(bundleA, 'security.config_checks').data)
-      .toMatchObject({ resourcesWithFindings: 1, resourcesEvaluated: 1 });
-    expect(sectionOf<{ resourcesEvaluated: number }>(bundleB, 'security.config_checks').data?.resourcesEvaluated).toBe(3);
+      .toMatchObject({ resourcesWithFindings: 1, resourcesEvaluated: 2 });
+    expect(sectionOf<{ resourcesEvaluated: number }>(bundleB, 'security.config_checks').data?.resourcesEvaluated).toBe(6);
     expect(sectionOf<{ items: Array<{ resourcesScanned: number }> }>(bundleA, 'compliance.custom_scans').data?.items.map((i) => i.resourcesScanned)).toEqual([1]);
     expect(sectionOf<{ items: Array<{ resourcesScanned: number }> }>(bundleB, 'compliance.custom_scans').data?.items.map((i) => i.resourcesScanned)).toEqual([3]);
   });

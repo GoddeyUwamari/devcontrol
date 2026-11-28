@@ -16,6 +16,20 @@ export const legacyRow = (name: string, type: string, stored: string | null, ext
   team: 'Unassigned', env: 'Unknown', team_name: null, service_name: null, environment: null, ...extra,
 });
 
+const LAMBDA_BASIS = 'usage_based: real 30-day CloudWatch Invocations/Duration x published on-demand pricing';
+/** A us-east-1 x86_64 function with a complete usage read: priced, basis "before free tier". */
+export const LAMBDA_PRICED = legacyRow('fn-busy', 'lambda', '0.42', {
+  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'normal_usage', invocations_30d: 1_000_000, avg_duration_ms: 100, memory: 128 },
+});
+/** A complete usage read with no invocations: "No billable usage recorded" (review fix round). */
+export const LAMBDA_ZERO_USAGE = legacyRow('fn-idle', 'lambda', '0.00', {
+  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0, memory: 128 },
+});
+/** zero_usage whose duration was never recorded: not established, so "No price". */
+export const LAMBDA_ZERO_INCOMPLETE = legacyRow('fn-partial', 'lambda', '0.00', {
+  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, memory: 128 },
+});
+
 /** The legacy fixture inventory. */
 export const LEGACY_ROWS = [
   legacyRow('ecs-svc', 'ecs', '9.00'),

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { ContextSection, CostMonthOverMonthEvidence, CostSpendEvidence } from '@/lib/types'
-import { describeAnnualizedSavings, describeComparisonWindows, describeMonthOverMonth, describeSpend, formatUsd, noFinishedDayThisMonth } from '../cost-display'
+import { describeAnnualizedSavings, describeComparisonWindows, describeMonthOverMonth, describeSpend, describeStatsSpend, estimateCoverageSub, formatUsd, noFinishedDayThisMonth } from '../cost-display'
 
 const ready = { isLoading: false, isError: false }
 
@@ -146,6 +146,15 @@ describe('month-to-date spend', () => {
     const withExcluded = spendSection(42.5, 'estimated')
     ;(withExcluded.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 3, totalResources: 4, excludedResources: 2 }
     expect(describeSpend(withExcluded, ready).sub).toBe('Estimated from 3 of 4 priced · 2 not running or no direct charge · not AWS billed spend (Cost Explorer unavailable)')
+  })
+
+  it('review fix round (S-2): an estimate that sums a Lambda figure says "Lambda before free tier"', () => {
+    const withLambda = spendSection(42.5, 'estimated')
+    ;(withLambda.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 3, totalResources: 4, excludedResources: 1, pricedLambdaResources: 1 }
+    expect(describeSpend(withLambda, ready).sub).toBe('Estimated from 3 of 4 priced · 1 not running or no direct charge · Lambda before free tier · not AWS billed spend (Cost Explorer unavailable)')
+    expect(describeStatsSpend({ monthlyAwsCost: 42.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 4, pricedLambdaResources: 2 } }, ready).sub)
+      .toBe('Estimated from 3 of 4 priced · Lambda before free tier · not AWS billed spend')
+    expect(estimateCoverageSub({ pricedResources: 3, totalResources: 4, pricedLambdaResources: 0 })).toBe('Estimated from 3 of 4 priced · not AWS billed spend')
   })
 
   it('F-5: an estimate without its K of N coverage, or with nothing priced, shows no figure', () => {

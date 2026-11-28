@@ -43,7 +43,7 @@ import { noUrgentFindingsLine, reviewedFindingsLine } from './top-risk-selection
 import { collectEvidence, fingerprintSections, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
 import { INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
-import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText } from './inventory-cost';
+import { inventoryRunRateCoverageText, inventoryTotalBasis } from './inventory-cost';
 import type { EvidenceBundle } from './ai/evidence/types';
 import { SECURITY_EVALUATION_MAX_AGE_SECONDS as EVALUATION_MAX_AGE, topRiskTitle, type PostureCountsEvidence, type TopRiskEvidence } from './ai/evidence/providers/security';
 import type { CostFindingsEvidence } from './ai/evidence/providers/cost';
@@ -390,7 +390,7 @@ export class AISummaryService {
           : '';
         facts.push(
           `The estimated monthly run-rate of the discovered resources DevControl can price is approximately ${money(d.amount)} ` +
-          `(${INVENTORY_PRICE_BASIS}, not AWS billed spend${coverage}).`
+          `(${inventoryTotalBasis(d.estimateCoverage ?? {})}, not AWS billed spend${coverage}).`
         );
       }
     } else {

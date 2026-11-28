@@ -24,6 +24,7 @@ import { Pool } from 'pg';
 import { AIChatContextRepository } from '../ai-chat-context.repository';
 import awsCostService from '../../services/aws-cost.service';
 import { AIChatService, ChatContext } from '../../services/ai-chat.service';
+import systemIntelligenceService from '../../services/system-intelligence.service';
 
 function dbConfig() {
   return {
@@ -263,6 +264,9 @@ describe('Cost Explorer failure', () => {
     stubConnectedAccount();
     jest.spyOn(awsCostService, 'fetchMonthlyCosts').mockRejectedValue(new Error('ThrottlingException: Rate exceeded'));
     const trendSpy = jest.spyOn(awsCostService, 'fetchCostTrend').mockResolvedValue([]);
+    // The System Intelligence score makes its own trailing-30-day trend read (F-13 as amended); it
+    // is stubbed here, so every trend request left is the chat cost path's own.
+    jest.spyOn(systemIntelligenceService, 'getSystemIntelligence').mockResolvedValue({ system_score: null } as never);
 
     const context = await contextRepo.gatherContext(orgId);
 
@@ -276,9 +280,9 @@ describe('Cost Explorer failure', () => {
     expect(context.costs.comparison.state).toBe('unavailable');
     expect(context.costs.comparison.previousWindowTotal).toBeNull();
     expect(context.costs.comparison.changePercent).toBeNull();
-    // No month-over-month request (the cost path's 90d trend). The System Intelligence score's own
-    // trailing-30-day read (placeholder-costs F-13 as amended) is a separate '30d' call.
-    expect(trendSpy).not.toHaveBeenCalledWith(expect.anything(), '90d');
+    // No month-over-month request of any range after the Cost Explorer failure (review fix round N-1:
+    // a '30d' or any other range would be caught too).
+    expect(trendSpy).not.toHaveBeenCalled();
 
     const formatted = format(context);
     expect(formatted).toMatch(/- Status: Could not be retrieved/);
@@ -333,7 +337,7 @@ describe('Inventory estimate fallback', () => {
     expect(context.costs.period).toEqual({ kind: 'point_in_time' });
     expect(context.costs.data?.topSpenders ?? null).toBeNull();
     expect(context.costs.costExplorer.state).toBe('error');
-    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 2, totalResources: 2, excludedResources: 0 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 2, totalResources: 2, excludedResources: 0, pricedLambdaResources: 0 });
     expect(context.costs.scope).toEqual({ kind: 'resource_inventory', connectedAccountId: ACCOUNT_ID, discoveryRegion: 'us-east-1' });
     expect(context.costs.scope).not.toHaveProperty('regions');
     expect(context.costs.scope).not.toHaveProperty('linkedAccountFilter');
@@ -360,7 +364,7 @@ describe('Inventory estimate fallback', () => {
     const context = await contextRepo.gatherContext(orgId);
 
     expect(context.costs.state).toBe('partial');
-    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 1, totalResources: 2, excludedResources: 0 });
+    expect(context.costs.data!.estimateCoverage).toEqual({ pricedResources: 1, totalResources: 2, excludedResources: 0, pricedLambdaResources: 0 });
     expect(context.costs.data!.current).toBe(40);
     expect(context.costs.reason).toBe('Estimated from 1 of 2 priced; the other 1 have no price and are not included');
     expect(format(context)).toContain('Coverage: Estimated from 1 of 2 priced; the other 1 have no price -- not $0, and not included');

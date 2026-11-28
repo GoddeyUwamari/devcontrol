@@ -149,7 +149,7 @@ export interface PlatformStats {
    * Only with cost_source 'estimated': how many resources the inventory estimate covers
    * ("Estimated from K of N priced resources", ruling F-5). null for billed spend.
    */
-  cost_estimate_coverage?: { priced_resources: number; total_resources: number; excluded_resources: number } | null;
+  cost_estimate_coverage?: { priced_resources: number; total_resources: number; excluded_resources: number; priced_lambda_resources: number } | null;
   free_tier_remaining: number;
   recent_deployments: Deployment[];
   service_health: {

@@ -5,8 +5,8 @@
  *
  * Every entry names the exact number of findings it covers, so a new finding that
  * shares the snippet fails instead of being silently allowed. Entries for product
- * pages are PR 2's work list (ruling F-1 split): PR 2 removes them as it moves each
- * surface onto the shared rule.
+ * pages are PR 2's work list (ruling F-1 split): each is temporary, ends "Remove in
+ * PR 2.", and PR 2 removes it as it moves that surface onto the shared rule.
  */
 import { scanInventorySource, type InventoryFinding } from './inventory-cost-scan';
 
@@ -25,7 +25,7 @@ const PR2 = 'Product page or its feed, placeholder-costs PR 2 (Stage A §7, outs
 
 export const INVENTORY_ALLOWLIST: Record<string, InventoryEntry[]> = {
   'backend/src/services/awsResourceDiscovery.ts': [
-    ['RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ', `${WRITE_SIDE} The RDS table was moved to config unchanged; discovery still writes it as before.`, 2],
+    ['RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ', `${WRITE_SIDE} The RDS table lives in config and was refreshed to AWS list price x 730 (fix round 1, ruling 2); discovery writes those figures as stored values, which the rule never shows.`, 2],
     ['this.estimateEC2Cost(', `${WRITE_SIDE} P3 EC2 table / $50.`, 1],
     ['this.estimateRDSCost(', `${WRITE_SIDE} P4 RDS table / $75.`, 1],
     ['this.estimateS3Cost()', `${WRITE_SIDE} P2 S3 $5.`, 1],
@@ -44,18 +44,18 @@ export const INVENTORY_ALLOWLIST: Record<string, InventoryEntry[]> = {
     ['SELECT resource_type, SUM(estimated_monthly_cost) as total', 'D6 cost_by_type on the same stats endpoint: no renderer; listed in pr1-build.md "noticed, not fixed".', 1],
     ['ORDER BY estimated_monthly_cost DESC', 'getOrphaned: ordering of S3 rows only, no figure is shown or summed.', 1],
   ],
-  'backend/src/routes/services.routes.ts': [['*', `${PR2} C5: V2 attention-ranking tie-break.`, 4]],
-  'backend/src/services/nl-query-executor.service.ts': [['*', `${PR2} D5: command palette rows, sum and cost filters.`, 7]],
-  'backend/src/controllers/infrastructure.controller.ts': [['*', `${PR2} C1: legacy Infrastructure costPerMonth.`, 1]],
-  'backend/src/utils/infrastructureRow.ts': [['*', `${PR2} C1: legacy Infrastructure row cost.`, 2]],
+  'backend/src/routes/services.routes.ts': [['*', `${PR2} C5: V2 attention-ranking tie-break. Remove in PR 2.`, 4]],
+  'backend/src/services/nl-query-executor.service.ts': [['*', `${PR2} D5: command palette rows, sum and cost filters. Remove in PR 2.`, 7]],
+  'backend/src/controllers/infrastructure.controller.ts': [['*', `${PR2} C1: legacy Infrastructure costPerMonth. Remove in PR 2.`, 1]],
+  'backend/src/utils/infrastructureRow.ts': [['*', `${PR2} C1: legacy Infrastructure row cost. Remove in PR 2.`, 2]],
   'backend/src/routes/tenants.routes.ts': [['*', 'Not inventory: tenants.monthly_cost is its own caller-supplied table (Stage A D8).', 2]],
   'backend/src/services/monitoring-snapshot.service.ts': [['*', 'Not inventory: monitoring_snapshots.monthly_cost is caller-supplied (Stage A D8).', 1]],
-  'app/(app)/costs/efficiency/page.tsx': [['*', `${PR2} D4: Cost Efficiency page tiles, scatter, wasteful table and score (F-8).`, 8]],
-  'app/(app)/infrastructure/page.tsx': [['*', `${PR2} C1-C3: legacy Infrastructure table, card and sort.`, 11]],
-  'app/(app)/infrastructure/costByResource.ts': [['*', `${PR2} C2: legacy "Largest estimated costs" card.`, 4]],
-  'app/(app)/infrastructure/overview/overviewModel.ts': [['*', `${PR2} C5: V2 attention ordering.`, 3]],
-  'components/command-palette.tsx': [['*', `${PR2} D5: command palette "est. $X/mo".`, 3]],
-  'lib/services/infrastructure.service.ts': [['*', `${PR2} C1: GET /api/infrastructure costPerMonth mapper.`, 1]],
+  'app/(app)/costs/efficiency/page.tsx': [['*', `${PR2} D4: Cost Efficiency page tiles, scatter, wasteful table and score (F-8). Remove in PR 2.`, 8]],
+  'app/(app)/infrastructure/page.tsx': [['*', `${PR2} C1-C3: legacy Infrastructure table, card and sort. Remove in PR 2.`, 11]],
+  'app/(app)/infrastructure/costByResource.ts': [['*', `${PR2} C2: legacy "Largest estimated costs" card. Remove in PR 2.`, 4]],
+  'app/(app)/infrastructure/overview/overviewModel.ts': [['*', `${PR2} C5: V2 attention ordering. Remove in PR 2.`, 3]],
+  'components/command-palette.tsx': [['*', `${PR2} D5: command palette "est. $X/mo". Remove in PR 2.`, 3]],
+  'lib/services/infrastructure.service.ts': [['*', `${PR2} C1: GET /api/infrastructure costPerMonth mapper. Remove in PR 2.`, 1]],
   'app/(app)/infrastructure/new/page.tsx': [['*', 'Not inventory: the manual "new infrastructure" form\'s own costPerMonth input, typed by the user.', 5]],
   'app/(app)/costs/by-team/page.tsx': [['*', 'Demo-mode fixture only (DEMO_DATA.total_monthly_cost); real mode reads describeSpend.', 3]],
   'lib/demo-data/demo-generator.ts': [['*', 'Demo fixture generator: synthetic tags, never a customer row.', 1]],

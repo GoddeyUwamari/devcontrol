@@ -52,7 +52,7 @@ export interface SpendEvidence {
    * totalResources discovered (placeholder-costs F-5, "Estimated from K of N priced resources").
    * Absent for billed spend.
    */
-  estimateCoverage?: { pricedResources: number; totalResources: number; excludedResources?: number } | null;
+  estimateCoverage?: { pricedResources: number; totalResources: number; excludedResources?: number; pricedLambdaResources?: number } | null;
   /** For billed spend: the period's last day is today and still being billed. */
   lastDayInProgress: boolean;
   /**

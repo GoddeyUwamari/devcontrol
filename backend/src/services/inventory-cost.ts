@@ -26,10 +26,14 @@
  *                     an Amazon RDS DB instance temporarily": "While the instance is
  *                     stopped, you're not charged for DB instance hours.")
  *   no_direct_charge  VPC (F-7), always with VPC_SEPARATE_CHARGES_LINE
+ *   no_billable_usage a Lambda function whose latest usage read is complete and
+ *                     establishes zero invocations over the 30-day window
+ *                     ("No billable usage recorded"; never $0.00). See lambdaCost.
  *   no_price          everything else, including every flat placeholder
  *
  * Totals sum ONLY priced amounts and always carry "K of N": no_price is never 0,
- * and a total with nothing priced has no amount (null), never $0.00.
+ * and a total with nothing priced has no amount (null), never $0.00. A total that
+ * includes a Lambda figure carries inventoryTotalBasis()'s Lambda qualification.
  */
 import {
   EBS_PER_GB_MONTH_USD,
@@ -44,6 +48,14 @@ export const LAMBDA_PRICE_BASIS = 'us-east-1 list price, before free tier';
 export const NO_PRICE_TEXT = 'No price';
 export const NOT_RUNNING_TEXT = 'Not running: no instance-hour charge';
 export const NO_DIRECT_CHARGE_TEXT = 'No direct charge';
+/** A Lambda function with complete usage data showing no invocations in the window (review fix round). */
+export const NO_BILLABLE_USAGE_TEXT = 'No billable usage recorded';
+/**
+ * The label of any total that includes a Lambda figure (review fix round, S-2): its
+ * Lambda amounts are before the free tier, so the total never reads as one basis.
+ */
+export const LAMBDA_TOTAL_QUALIFIER = 'Lambda before free tier';
+export const INVENTORY_TOTAL_BASIS_WITH_LAMBDA = `${INVENTORY_PRICE_BASIS}s; ${LAMBDA_TOTAL_QUALIFIER}`;
 /** F-7: shown wherever "No direct charge" is shown. */
 export const VPC_SEPARATE_CHARGES_LINE = 'NAT gateways, endpoints and data transfer are charged separately.';
 
@@ -79,6 +91,7 @@ export type InventoryCost =
   | { kind: 'priced'; amount: number; basis: typeof INVENTORY_PRICE_BASIS | typeof LAMBDA_PRICE_BASIS; detail: string }
   | { kind: 'not_running'; reason: string }
   | { kind: 'no_direct_charge'; reason: string }
+  | { kind: 'no_billable_usage'; reason: string }
   | { kind: 'no_price'; reason: string };
 
 export type InventoryCostKind = InventoryCost['kind'];
@@ -156,15 +169,40 @@ function ebsCost(row: InventoryCostRow, m: Record<string, unknown>): InventoryCo
   return priced(size * rate, 'volume storage only');
 }
 
+/**
+ * Lambda (fix round 1, ruling 1; review fix round, zero usage). Usage comes from
+ * discovery's latest CloudWatch read (lambda-usage.util.ts), recorded in metadata.
+ *
+ * "Complete" usage, from the data stored: discovery writes cost_basis "usage_based: ..."
+ * and usage_state 'normal_usage' / 'zero_usage' ONLY when that scan's CloudWatch
+ * Invocations read for the full 30-day window succeeded; a failed read writes
+ * usage_state 'unavailable' and no basis, and every deep scan replaces the metadata, so
+ * these keys describe the latest discovery. For Lambda, CloudWatch returning no
+ * Invocations datapoint for an existing function is AWS's signal for zero invocations,
+ * not missing data. So zero billable usage is established only when ALL of:
+ *   - cost_basis starts "usage_based:" and usage_state is 'zero_usage';
+ *   - invocations_30d is recorded and exactly 0, and avg_duration_ms is recorded and
+ *     exactly 0 (the record agrees with itself);
+ *   - the stored figure is present (as for a priced row).
+ * Then: "No billable usage recorded" (no request or duration charge in the window) --
+ * never "$0.00". Anything missing, unread or inconsistent (zero_usage with invocations,
+ * normal_usage with none) is "No price". Not modelled, for priced and zero rows alike:
+ * Provisioned Concurrency and SnapStart (not recorded by discovery).
+ */
 function lambdaCost(row: InventoryCostRow, m: Record<string, unknown>): InventoryCost {
   if (row.region !== PRICED_REGION) return noPrice('region is not us-east-1');
   if (m.architecture !== 'x86_64') return noPrice('x86_64 architecture not established');
   if (typeof m.cost_basis !== 'string' || !m.cost_basis.startsWith('usage_based:')) return noPrice('no recorded usage basis');
-  if (m.usage_state !== 'normal_usage' && m.usage_state !== 'zero_usage') return noPrice('usage not read on the latest discovery');
   const invocations = finite(m.invocations_30d);
   const duration = finite(m.avg_duration_ms);
+  if (m.usage_state === 'zero_usage') {
+    if (invocations !== 0 || duration !== 0) return noPrice('zero usage not established by the recorded usage');
+    if (finite(row.stored_monthly_cost) === null) return noPrice('no stored figure');
+    return { kind: 'no_billable_usage', reason: 'no invocations in the 30 days read on the latest discovery: no request or duration charge' };
+  }
+  if (m.usage_state !== 'normal_usage') return noPrice('usage not read on the latest discovery');
   const memory = finite(m.memory);
-  if (invocations === null || invocations < 0 || duration === null || duration < 0 || memory === null || !(memory > 0)) {
+  if (invocations === null || !(invocations > 0) || duration === null || duration < 0 || memory === null || !(memory > 0)) {
     return noPrice('usage inputs not recorded');
   }
   if (finite(row.stored_monthly_cost) === null) return noPrice('no stored figure');
@@ -218,6 +256,7 @@ export function inventoryCostWords(cost: Exclude<InventoryCost, { kind: 'priced'
   switch (cost.kind) {
     case 'not_running': return NOT_RUNNING_TEXT;
     case 'no_direct_charge': return `${NO_DIRECT_CHARGE_TEXT}. ${VPC_SEPARATE_CHARGES_LINE}`;
+    case 'no_billable_usage': return NO_BILLABLE_USAGE_TEXT;
     default: return NO_PRICE_TEXT;
   }
 }
@@ -237,27 +276,42 @@ export interface InventoryCostTotal {
    * no-direct-charge resources are excluded from N (fix round 1, ruling 9); they are M.
    */
   totalResources: number;
-  /** M: resources outside N because they are not running or have no direct charge. */
+  /**
+   * M: resources outside N because they are not running or have no direct charge. A
+   * Lambda function with no billable usage recorded counts here too (review fix round):
+   * it did not run in the window and carries no request or duration charge.
+   */
   excludedResources: number;
   /** Sum of priced amounts; null when nothing is priced (never 0 for "nothing priced"). */
   amount: number | null;
+  /** Priced resources whose figure is a Lambda estimate (before free tier): the total's label says so. */
+  pricedLambdaResources: number;
   notRunning: number;
   noDirectCharge: number;
+  noBillableUsage: number;
   noPrice: number;
 }
 
 /** The one aggregation: sums only priced amounts and returns K of N. */
 export function aggregateInventoryCosts(costs: readonly InventoryCost[]): InventoryCostTotal {
   let amount = 0;
-  const total: InventoryCostTotal = { pricedResources: 0, totalResources: 0, excludedResources: 0, amount: null, notRunning: 0, noDirectCharge: 0, noPrice: 0 };
+  const total: InventoryCostTotal = {
+    pricedResources: 0, totalResources: 0, excludedResources: 0, amount: null, pricedLambdaResources: 0,
+    notRunning: 0, noDirectCharge: 0, noBillableUsage: 0, noPrice: 0,
+  };
   for (const c of costs) {
-    if (c.kind === 'priced') { total.pricedResources++; amount += c.amount; }
+    if (c.kind === 'priced') {
+      total.pricedResources++;
+      amount += c.amount;
+      if (c.basis === LAMBDA_PRICE_BASIS) total.pricedLambdaResources++;
+    }
     else if (c.kind === 'not_running') total.notRunning++;
     else if (c.kind === 'no_direct_charge') total.noDirectCharge++;
+    else if (c.kind === 'no_billable_usage') total.noBillableUsage++;
     else total.noPrice++;
   }
   total.totalResources = total.pricedResources + total.noPrice;
-  total.excludedResources = total.notRunning + total.noDirectCharge;
+  total.excludedResources = total.notRunning + total.noDirectCharge + total.noBillableUsage;
   total.amount = total.pricedResources > 0 ? amount : null;
   return total;
 }
@@ -265,6 +319,15 @@ export function aggregateInventoryCosts(costs: readonly InventoryCost[]): Invent
 /** Rows straight to a total. */
 export function aggregateInventoryRows(rows: readonly InventoryCostRow[], now: Date = new Date()): InventoryCostTotal {
   return aggregateInventoryCosts(rows.map((r) => inventoryCost(r, now)));
+}
+
+/**
+ * The basis label of a TOTAL (review fix round, S-2). Table-priced figures only: "us-east-1
+ * list-price estimate". Any Lambda figure in it: "us-east-1 list-price estimates; Lambda
+ * before free tier", so a total never implies every figure shares one basis.
+ */
+export function inventoryTotalBasis(total: { pricedLambdaResources?: number }): string {
+  return (total.pricedLambdaResources ?? 0) > 0 ? INVENTORY_TOTAL_BASIS_WITH_LAMBDA : INVENTORY_PRICE_BASIS;
 }
 
 /** The completeness unit of every inventory estimate section: K of N resources priced. */

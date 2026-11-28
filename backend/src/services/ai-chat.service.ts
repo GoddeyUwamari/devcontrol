@@ -11,7 +11,7 @@ import type { EvidenceBundle } from './ai/evidence/types';
 import { collectedSectionOf } from './ai/evidence/budget';
 import type { CpuTelemetryEvidence } from './ai/evidence/providers/operations';
 import { INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
-import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText } from './inventory-cost';
+import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText, inventoryTotalBasis } from './inventory-cost';
 import {
   CONTEXT_STATE_LABELS,
   OMITTED_REASON,
@@ -134,7 +134,7 @@ export interface ChatCostFigures {
     percentage: number | null;
   }> | null;
   /** For estimates: K of N -- how many discovered (non-terminated) resources have a defensible price (services/inventory-cost.ts). */
-  estimateCoverage: { pricedResources: number; totalResources: number; excludedResources?: number } | null;
+  estimateCoverage: { pricedResources: number; totalResources: number; excludedResources?: number; pricedLambdaResources?: number } | null;
 }
 
 /**
@@ -496,7 +496,7 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
     const sourceLabel = costs.provenance === 'actual'
       ? 'AWS Cost Explorer (actual billing data)'
       : costs.provenance === 'estimated'
-        ? `DevControl inventory estimate (${INVENTORY_PRICE_BASIS}s for defensibly priced discovered resources only; NOT AWS billing data)`
+        ? `DevControl inventory estimate (${costs.data?.estimateCoverage?.pricedLambdaResources ? inventoryTotalBasis(costs.data.estimateCoverage) : `${INVENTORY_PRICE_BASIS}s`} for defensibly priced discovered resources only; NOT AWS billing data)`
         : 'none';
     const figures = costs.data;
     const period = costs.period?.kind === 'range' ? costs.period : null;
@@ -549,7 +549,8 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
         lines.push('- Cost Explorer returned no billed service line items for this period');
       }
     } else {
-      lines.push(`- Basis: monthly run-rate estimate (${INVENTORY_PRICE_BASIS}) for the currently discovered resources that have a defensible price -- not billed spend for any period`);
+      // S-2: a total that includes a Lambda figure says Lambda is before free tier.
+      lines.push(`- Basis: monthly run-rate estimate (${inventoryTotalBasis(figures.estimateCoverage ?? {})}) for the currently discovered resources that have a defensible price -- not billed spend for any period`);
       if (figures.estimateCoverage) {
         const { pricedResources, totalResources } = figures.estimateCoverage;
         lines.push(`- Coverage: ${inventoryRunRateCoverageText(figures.estimateCoverage)}${totalResources > pricedResources ? `; the other ${totalResources - pricedResources} have no price -- not $0, and not included` : ''}`);
@@ -769,7 +770,7 @@ ${renderEvidence(context.evidence, { except: CHAT_FORMATTED_PROVIDERS, style: 'p
     const spendPhrase = figures === null || figures.current === null
       ? null
       : costs.provenance === 'estimated'
-        ? `an estimated ${this.formatMoney(figures.current)}/month for the resources DevControl can price (${figures.estimateCoverage ? `${inventoryRunRateCoverageText(figures.estimateCoverage)}; ` : ''}${INVENTORY_PRICE_BASIS} from your last synced resource inventory as of ${costs.asOf ?? 'unknown'}, not a Cost Explorer billing figure)`
+        ? `an estimated ${this.formatMoney(figures.current)}/month for the resources DevControl can price (${figures.estimateCoverage ? `${inventoryRunRateCoverageText(figures.estimateCoverage)}; ` : ''}${inventoryTotalBasis(figures.estimateCoverage ?? {})} from your last synced resource inventory as of ${costs.asOf ?? 'unknown'}, not a Cost Explorer billing figure)`
         : `${this.formatMoney(figures.current)} month-to-date (AWS Cost Explorer${costs.asOf ? `, as of ${costs.asOf}` : ''}; covers your connected role's billing scope across all regions)`;
     const change = costs.comparison.changePercent;
     const changePhrase = change === null

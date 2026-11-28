@@ -77,6 +77,11 @@ function estimatedCosts(amount: number): ChatContext['costs'] {
   });
 }
 
+/** The same estimate with a Lambda figure (before free tier) among its priced resources (review fix round S-2). */
+function withLambda(costs: ChatContext['costs']): ChatContext['costs'] {
+  return { ...costs, data: { ...costs.data!, estimateCoverage: { ...costs.data!.estimateCoverage!, pricedLambdaResources: 1 } } };
+}
+
 function noCosts(): ChatContext['costs'] {
   return chatCosts({
     state: 'error', source: 'unavailable', current: null, asOf: null, period: null, scope: null, topSpenders: null,
@@ -204,6 +209,11 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
   it('a net-credit month stays actual, with its negative amount', async () => {
     const { prompt } = await run({ costs: actualCosts(-3.21) });
     expect(prompt).toContain('is -$3.21 (net negative: credits and refunds exceed charges)');
+  });
+
+  it('S-2: an inventory estimate that sums a Lambda figure says "Lambda before free tier"', async () => {
+    const { prompt } = await run({ costs: withLambda(estimatedCosts(3200)) });
+    expect(prompt).toContain('The estimated monthly run-rate of the discovered resources DevControl can price is approximately $3,200.00 (us-east-1 list-price estimates; Lambda before free tier, not AWS billed spend; Estimated from 5 of 5 priced).');
   });
 
   it('an inventory estimate is labeled as an estimate', async () => {

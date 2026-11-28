@@ -244,7 +244,7 @@ describe('getMonthlySpendWithFallback: any Cost Explorer success is actual', () 
   it('only a failed Cost Explorer read falls back to the inventory estimate', async () => {
     at('2026-11-12T12:00:00Z');
     mockCostExplorerSend.mockRejectedValue(new Error('AccessDeniedException'));
-    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated', estimateCoverage: { pricedResources: 1, totalResources: 2, excludedResources: 0 } });
+    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated', estimateCoverage: { pricedResources: 1, totalResources: 2, excludedResources: 0, pricedLambdaResources: 0 } });
   });
 });
 
@@ -334,6 +334,6 @@ describe('a Cost Explorer group without the requested metric is never $0 (DAY1-D
   it('getMonthlySpendWithFallback: falls back to the estimate, never "$0 actual"', async () => {
     at('2026-11-12T12:00:00Z');
     mockCostExplorerSend.mockImplementation(async (command: Sent) => renamedMetric(command));
-    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated', estimateCoverage: { pricedResources: 1, totalResources: 2, excludedResources: 0 } });
+    await expect(service.getMonthlySpendWithFallback(ORG)).resolves.toEqual({ amount: 88, source: 'estimated', estimateCoverage: { pricedResources: 1, totalResources: 2, excludedResources: 0, pricedLambdaResources: 0 } });
   });
 });

@@ -26,7 +26,7 @@ import {
 } from '../report-generator.service';
 import { AWSCostService, type MonthlyCost } from '../aws-cost.service';
 
-import { LEGACY_ROWS, MONEY_ZERO, PLACEHOLDER_AMOUNTS, legacyRow as row } from './inventory-cost-fixtures';
+import { LAMBDA_PRICED, LAMBDA_ZERO_INCOMPLETE, LAMBDA_ZERO_USAGE, LEGACY_ROWS, MONEY_ZERO, PLACEHOLDER_AMOUNTS, legacyRow as row } from './inventory-cost-fixtures';
 
 /** jsPDF text (uncompressed): every string drawn with Tj/TJ, unescaped and joined. */
 function pdfText(buffer: Buffer): string {
@@ -193,8 +193,61 @@ describe('D1/D2: the run-rate fallback and the "has billing data" figure', () =>
     const s = service(unpriced);
     jest.spyOn(s, 'fetchMonthlyCosts').mockRejectedValue(new Error('AccessDeniedException'));
     await expect(s.getMonthlySpendWithFallback('org')).resolves.toEqual({
-      amount: 0, source: 'estimated', estimateCoverage: { pricedResources: 0, totalResources: unpriced.length - 2, excludedResources: 2 },
+      amount: 0, source: 'estimated', estimateCoverage: { pricedResources: 0, totalResources: unpriced.length - 2, excludedResources: 2, pricedLambdaResources: 0 },
     });
   });
 
+});
+
+describe('review fix round: Lambda in totals (S-2) and zero-usage Lambda (never $0.00)', () => {
+  const cell = (r: unknown) => (AWSResourcesExportService as any).COLUMN_MAPPINGS.cost.formatter(r) as string;
+  const billed = (total: number): MonthlyCost => ({
+    total, byService: [], period: { start: '2026-11-01', end: '2026-11-28' }, previousMonth: null,
+    monthState: { state: 'month_to_date', amountUsable: true } as unknown as MonthlyCost['monthState'],
+  });
+  const fetchSummary = (rows: unknown[]) =>
+    (new ReportGeneratorService({} as Pool, async () => billed(10)) as any).fetchCostSummaryData('org', {}, mockClient(rows));
+  const pdf = async (rows: unknown[]) =>
+    pdfText((await new ReportGeneratorService(mockClient(rows), async () => billed(10)).generateCostSummaryReport({ organizationId: 'org', format: 'pdf' })).pdf!);
+  const exportCsv = async (rows: unknown[]) =>
+    (await new AWSResourcesExportService(mockClient(rows)).generateCSV('org', {}, ['resource_name', 'cost'])).toString('utf8');
+
+  it('export: a zero-usage function reads "No billable usage recorded"; incomplete usage reads "No price"; neither is $0.00', async () => {
+    expect(cell(LAMBDA_ZERO_USAGE)).toBe('No billable usage recorded');
+    expect(cell(LAMBDA_ZERO_INCOMPLETE)).toBe('No price');
+    const csv = await exportCsv([LAMBDA_ZERO_USAGE, LAMBDA_ZERO_INCOMPLETE]);
+    expect(csv).toContain('No billable usage recorded');
+    expect(csv).not.toMatch(MONEY_ZERO);
+    expect(INVENTORY_COST_BASIS_NOTE.join(' ')).toContain('"No billable usage recorded" is a Lambda function with no invocations');
+    expect(INVENTORY_COST_BASIS_NOTE.join(' ')).toContain('A Lambda figure is requests and duration at us-east-1 list price, before free tier');
+  });
+
+  it('report appendix and group cells: a total that sums a Lambda figure says "Lambda before free tier"', async () => {
+    const data = await fetchSummary([...LEGACY_ROWS, LAMBDA_PRICED]);
+    expect(data.inventory).toMatchObject({ pricedResources: 3, pricedLambdaResources: 1 });
+    const lines = costSummaryAppendixLines(data.inventory);
+    expect(lines[1]).toMatch(/^Estimated monthly cost of the 3 priced resources: \$[\d,.]+ \(us-east-1 list-price estimates; Lambda before free tier; not AWS billed spend\)\./);
+    const unknownEnv = data.inventoryByEnvironment.find((g: { name: string }) => g.name === 'Unknown');
+    const prod = data.inventoryByEnvironment.find((g: { name: string }) => g.name === 'production');
+    expect(inventoryGroupCell(unknownEnv.total)).toMatch(/^\$[\d,.]+ \(us-east-1 list-price estimates; Lambda before free tier\)$/);
+    expect(inventoryGroupCell(prod.total)).toBe('$144.83 (us-east-1 list-price estimate)');
+    expect(await pdf([...LEGACY_ROWS, LAMBDA_PRICED])).toContain('Lambda before free tier');
+  });
+
+  it('report: zero-usage functions alone give no total (never $0.00) and are counted outside N', async () => {
+    const data = await fetchSummary([LAMBDA_ZERO_USAGE, LAMBDA_ZERO_INCOMPLETE]);
+    expect(data.inventory).toMatchObject({ pricedResources: 0, totalResources: 1, excludedResources: 1, amount: null });
+    expect(costSummaryAppendixLines(data.inventory)).toEqual([
+      'Coverage: 0 of 1 priced · 1 not running or no direct charge.',
+      'No resource has a defensible price, so there is no inventory estimate.',
+    ]);
+    expect(await pdf([LAMBDA_ZERO_USAGE, LAMBDA_ZERO_INCOMPLETE])).not.toMatch(MONEY_ZERO);
+  });
+
+  it('run-rate fallback carries how many priced figures are Lambda (the label\'s qualification)', async () => {
+    const s = new AWSCostService({ query: jest.fn(async () => ({ rows: [...LEGACY_ROWS, LAMBDA_PRICED, LAMBDA_ZERO_USAGE] })) } as unknown as Pool);
+    jest.spyOn(s, 'fetchMonthlyCosts').mockRejectedValue(new Error('AccessDeniedException'));
+    const r = await s.getMonthlySpendWithFallback('org');
+    expect(r.estimateCoverage).toEqual({ pricedResources: 3, totalResources: LEGACY_ROWS.length - 1, excludedResources: 3, pricedLambdaResources: 1 });
+  });
 });

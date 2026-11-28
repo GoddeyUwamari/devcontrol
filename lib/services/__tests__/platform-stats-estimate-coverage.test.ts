@@ -27,6 +27,13 @@ describe('platformStatsService.getDashboardStats: costEstimateCoverage', () => {
     expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20, excluded_resources: -1 } })).costEstimateCoverage).toEqual({ pricedResources: 2, totalResources: 20 })
   })
 
+  it('review fix round (S-2): maps priced Lambda figures when well-formed, drops them otherwise', async () => {
+    expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20, excluded_resources: 0, priced_lambda_resources: 1 } })).costEstimateCoverage)
+      .toEqual({ pricedResources: 2, totalResources: 20, excludedResources: 0, pricedLambdaResources: 1 })
+    expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20, priced_lambda_resources: 3 } })).costEstimateCoverage).toEqual({ pricedResources: 2, totalResources: 20 })
+    expect((await stats({ cost_estimate_coverage: { priced_resources: 2, total_resources: 20, priced_lambda_resources: '1' } })).costEstimateCoverage).toEqual({ pricedResources: 2, totalResources: 20 })
+  })
+
   it.each([
     ['absent', {}],
     ['null', { cost_estimate_coverage: null }],

@@ -12,7 +12,7 @@ import { pool } from '../../../../config/database';
 import { defineProvider, ref, summarizeItems, untrustedFor, withOrgClient } from './shared';
 import { discoveryGated } from './inventory';
 import { isLowActivityFinding } from '../../../finding-display';
-import { aggregateInventoryCosts, INVENTORY_PRICE_BASIS, inventoryCost, inventoryCostColumns, PRICED_RESOURCES_UNIT } from '../../../inventory-cost';
+import { aggregateInventoryCosts, INVENTORY_TOTAL_BASIS_WITH_LAMBDA, inventoryCost, inventoryCostColumns, PRICED_RESOURCES_UNIT } from '../../../inventory-cost';
 
 export const spendProvider = defineProvider<SpendEvidence>({
   id: 'cost.spend',
@@ -70,7 +70,8 @@ export const topEstimatedResourcesProvider = defineProvider<TopEstimatedResource
         classification: 'estimated',
         scope: inventoryScope,
         period: { kind: 'point_in_time' },
-        coverage: `${INVENTORY_PRICE_BASIS}s for individual discovered resources DevControl can price -- not AWS billed spend. Resources without a price are not listed and are not $0. Never add these figures together.`,
+        // S-2: items mix table prices and Lambda usage figures; each item carries its own basis.
+        coverage: `${INVENTORY_TOTAL_BASIS_WITH_LAMBDA} (each item names its own basis) for individual discovered resources DevControl can price -- not AWS billed spend. Resources without a price are not listed and are not $0. Never add these figures together.`,
       },
       discovery,
       (d) => d.items.length === 0,

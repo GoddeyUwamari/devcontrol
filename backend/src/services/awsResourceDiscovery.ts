@@ -3783,8 +3783,10 @@ export class AWSResourceDiscoveryService {
    * Hardcoded estimates based on instance class
    */
   private estimateRDSCost(instanceClass: string): number {
-    // The same table, now in config/aws-pricing.ts so the inventory pricing rule reads it too. The stored
-    // value is unchanged; readers never show it as a price (services/inventory-cost.ts).
+    // The shared table in config/aws-pricing.ts, which the inventory pricing rule reads too. Since fix
+    // round 1 (ruling 2) it holds AWS list price x 730 h, so stored RDS values move to those figures on
+    // the next deep scan; the unlisted-class fallback (75) is unchanged. PR 1 surfaces never show a
+    // stored value (services/inventory-cost.ts recomputes the figure); PR 2 surfaces still do.
     const costs: Readonly<Record<string, number>> = RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ;
     return costs[instanceClass] || 75; // Default estimate
   }

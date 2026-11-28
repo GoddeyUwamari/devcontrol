@@ -560,7 +560,7 @@ export class AIChatContextRepository {
         [organizationId]
       );
       const priced = aggregateInventoryRows(rows);
-      const { pricedResources, totalResources, excludedResources } = priced;
+      const { pricedResources, totalResources, excludedResources, pricedLambdaResources } = priced;
 
       if (priced.amount !== null) {
         const partial = pricedResources < totalResources;
@@ -574,7 +574,7 @@ export class AIChatContextRepository {
           completeness: { unit: PRICED_RESOURCES_UNIT, expected: totalResources, received: pricedResources, missing: null },
           coverage: null,
           reason: partial ? `${inventoryRunRateCoverageText(priced)}; the other ${totalResources - pricedResources} have no price and are not included` : null,
-          data: { current: roundCents(priced.amount), topSpenders: null, estimateCoverage: { pricedResources, totalResources, excludedResources } },
+          data: { current: roundCents(priced.amount), topSpenders: null, estimateCoverage: { pricedResources, totalResources, excludedResources, pricedLambdaResources } },
           ...costSectionFields('estimated'),
           costExplorer,
           comparison: noCurrentPeriod,

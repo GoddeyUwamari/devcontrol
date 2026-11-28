@@ -16,7 +16,7 @@ import { execFileSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { scanInventorySource } from './inventory-cost-scan';
-import { checkInventoryFiles, INVENTORY_ALLOWLIST, RULE_FILE } from './inventory-cost-allowlist';
+import { checkInventoryFiles, INVENTORY_ALLOWLIST, PR2, RULE_FILE } from './inventory-cost-allowlist';
 
 const REPO = join(__dirname, '..', '..', '..', '..');
 const SCANNED_DIRS = ['app', 'components', 'lib', 'backend/src'];
@@ -56,6 +56,13 @@ describe('inventory-cost source guard', () => {
       expect(reason.length).toBeGreaterThan(20);
       expect(count).toBeGreaterThan(0);
     }
+  });
+
+  it('every PR 2 entry is marked temporary: "Remove in PR 2."', () => {
+    const pr2 = Object.entries(INVENTORY_ALLOWLIST).flatMap(([file, entries]) =>
+      entries.filter(([, reason]) => reason.startsWith(PR2)).map(([, reason]) => ({ file, marked: reason.endsWith('Remove in PR 2.') })));
+    expect(pr2.length).toBe(10);
+    expect(pr2.filter((e) => !e.marked)).toEqual([]);
   });
 
   it('no PR 1 surface has an allowlist entry: each goes through the rule', () => {
@@ -118,7 +125,22 @@ describe('inventory-cost source guard', () => {
       expect(rules('function f(estimatedMonthlyCost: number) {}')).toEqual([]);
       expect(rules('class S { private estimateS3Cost(): number { return 5; } }')).toEqual([]);
       expect(rules('const q = `SELECT ${inventoryCostColumns()} FROM aws_resources`;')).toEqual([]);
-      expect(rules('const n = row.stored_monthly_cost;')).toEqual([]);
+      expect(rules('interface Row { stored_monthly_cost?: unknown }')).toEqual([]);
+    });
+
+    it('review fix round S-1: the stored figure under the rule\'s alias, in every read shape a surface could use', () => {
+      // The pre-S-1 gap (review mutant G1): the export cell printing the stored figure.
+      expect(rules('const f = (r: any) => `$${Number(r.stored_monthly_cost).toFixed(2)}`;')).toEqual(['cost-read']);
+      expect(rules('const n = row.stored_monthly_cost;')).toEqual(['cost-read']);
+      expect(rules("const n = row['stored_monthly_cost'];")).toEqual(['cost-read']);
+      expect(rules('const n = result.rows[0].stored_monthly_cost;')).toEqual(['cost-read']);
+      expect(rules('const t = rows.reduce((s, r) => s + Number(r.stored_monthly_cost), 0);')).toEqual(['cost-read']);
+      expect(rules('const { stored_monthly_cost } = row;')).toEqual(['cost-read']);
+      expect(rules('const { stored_monthly_cost: stored } = row; const x = stored;')).toEqual(['cost-read']);
+      expect(rules('const x = { stored_monthly_cost };')).toEqual(['cost-read']);
+      // SQL that sums, orders or re-aliases it over the rule's own column fragment.
+      expect(rules('const q = `SELECT SUM(stored_monthly_cost) FROM (SELECT ${inventoryCostColumns()} FROM aws_resources) t`;')).toEqual(['sql-cost']);
+      expect(rules('const q = `SELECT ${inventoryCostColumns()} FROM aws_resources ORDER BY stored_monthly_cost DESC`;')).toEqual(['sql-cost']);
     });
   });
 });

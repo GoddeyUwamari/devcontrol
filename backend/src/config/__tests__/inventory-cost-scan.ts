@@ -10,12 +10,17 @@
  * and a reasoned allowlist (inventory-cost-allowlist.ts), the guard fails on:
  *
  *   sql-cost      a string or template literal naming the stored cost column
- *                 (`estimated_monthly_cost`): SQL that sums, orders, filters or
- *                 selects it. Readers select inventoryCostColumns() instead, whose
- *                 text lives in the rule's file.
+ *                 (`estimated_monthly_cost`) or the alias the rule's own column
+ *                 fragment gives it (`stored_monthly_cost`): SQL that sums, orders,
+ *                 filters, selects or re-aliases it. Readers select
+ *                 inventoryCostColumns() instead, whose text lives in the rule's file.
  *   cost-read     a read of an inventory cost field by name: `r.estimated_monthly_cost`,
  *                 `row['estimated_monthly_cost']`, `costPerMonth`, `monthly_cost`,
- *                 `total_monthly_cost`, `estimatedMonthlyCost` (an identifier, a
+ *                 `total_monthly_cost`, `estimatedMonthlyCost`, and the stored figure
+ *                 as every PR 1 query result carries it, `stored_monthly_cost`
+ *                 (`row.stored_monthly_cost`, `rows[0].stored_monthly_cost`,
+ *                 `const { stored_monthly_cost: s } = row`; review fix round S-1),
+ *                 which only the rule may read (an identifier, a
  *                 property access, a string-keyed element access, a destructured or
  *                 shorthand property). Declarations are not reads: an interface or
  *                 type member, an object-literal key being written, a variable or
@@ -31,8 +36,13 @@ import ts from 'typescript';
 export type InventoryFinding = { rule: 'sql-cost' | 'cost-read' | 'placeholder'; line: number; lineText: string; nodeText: string };
 
 export const COST_COLUMN = 'estimated_monthly_cost';
+/** The alias inventoryCostColumns() gives the stored figure on every PR 1 query result (S-1). */
+export const STORED_COST_ALIAS = 'stored_monthly_cost';
+/** Text that names the stored figure in SQL: the column, or the rule's alias for it. */
+const SQL_COST_NAMES = [COST_COLUMN, STORED_COST_ALIAS];
 export const COST_FIELD_NAMES: ReadonlySet<string> = new Set([
   'estimated_monthly_cost',
+  STORED_COST_ALIAS,
   'estimatedMonthlyCost',
   'costPerMonth',
   'monthly_cost',
@@ -81,7 +91,7 @@ export function scanInventorySource(file: string, text: string): InventoryFindin
   const visit = (n: ts.Node): void => {
     // sql-cost: the column named in any string or template text.
     if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) &&
-        n.text.toLowerCase().includes(COST_COLUMN)) {
+        SQL_COST_NAMES.some((name) => n.text.toLowerCase().includes(name))) {
       // A string used as an element-access key is a cost-read, reported below, not SQL.
       const asKey = ts.isElementAccessExpression(n.parent) && n.parent.argumentExpression === n;
       // An import/export specifier path is not data.

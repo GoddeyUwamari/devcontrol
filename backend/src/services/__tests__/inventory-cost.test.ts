@@ -12,6 +12,7 @@ import {
   INVENTORY_PRICE_BASIS,
   LAMBDA_PRICE_BASIS,
   inventoryRunRateCoverageText,
+  inventoryTotalBasis,
   type InventoryCost,
   type InventoryCostRow,
 } from '../inventory-cost';
@@ -123,7 +124,33 @@ describe('inventoryCost: priced only when every F-2 assumption is established', 
     expect(LAMBDA_PRICE_BASIS).toBe('us-east-1 list price, before free tier');
     expect(cost(LAMBDA)).toEqual({ kind: 'priced', amount: expected, basis: 'us-east-1 list price, before free tier', detail: 'requests and duration from 30 days of CloudWatch usage' });
     expect(inventoryCostCell(cost(LAMBDA))).toBe(`${formatInventoryUsd(expected)} (us-east-1 list price, before free tier; requests and duration from 30 days of CloudWatch usage)`);
-    expect(cost(withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0 }))).toMatchObject({ kind: 'priced', amount: 0 });
+  });
+
+  // Review fix round (founder: zero-usage Lambda never renders $0.00).
+  const ZERO = withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0 });
+
+  it('zero usage, complete: "No billable usage recorded", never a priced $0 or "$0.00"', () => {
+    expect(cost(ZERO)).toMatchObject({ kind: 'no_billable_usage' });
+    expect(inventoryCostCell(cost(ZERO))).toBe('No billable usage recorded');
+    expect(inventoryCostCell(cost(ZERO))).not.toMatch(/\$/);
+    // Memory is not an input to "no invocations".
+    expect(cost(without(ZERO, 'memory')).kind).toBe('no_billable_usage');
+  });
+
+  it.each([
+    ['usage unavailable on the latest discovery', withMeta(ZERO, { usage_state: 'unavailable' })],
+    ['usage state missing', without(ZERO, 'usage_state')],
+    ['no usage basis recorded (no successful read)', without(ZERO, 'cost_basis')],
+    ['invocations not recorded', without(ZERO, 'invocations_30d')],
+    ['invocations null', withMeta(ZERO, { invocations_30d: null })],
+    ['duration not recorded', without(ZERO, 'avg_duration_ms')],
+    ['zero_usage that records invocations (inconsistent)', withMeta(ZERO, { invocations_30d: 12 })],
+    ['zero_usage that records a duration (inconsistent)', withMeta(ZERO, { avg_duration_ms: 40 })],
+    ['normal_usage with zero invocations (inconsistent)', withMeta(ZERO, { usage_state: 'normal_usage' })],
+    ['no stored figure', { ...ZERO, stored_monthly_cost: null }],
+  ])('zero usage not established (%s) -> "No price", never "No billable usage recorded" or $0.00', (_name, row) => {
+    expect(cost(row).kind).toBe('no_price');
+    expect(inventoryCostCell(cost(row))).toBe('No price');
   });
 
   it.each([
@@ -221,6 +248,7 @@ describe('cells and money', () => {
   it('the exact words for the non-priced kinds', () => {
     expect(inventoryCostCell({ kind: 'no_price', reason: 'x' })).toBe('No price');
     expect(inventoryCostCell({ kind: 'not_running', reason: 'x' })).toBe('Not running: no instance-hour charge');
+    expect(inventoryCostCell({ kind: 'no_billable_usage', reason: 'x' })).toBe('No billable usage recorded');
   });
 });
 
@@ -229,7 +257,7 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
 
   it('K of N is correct; not-running and no-direct-charge are outside N (fix round 1, ruling 9)', () => {
     const total = aggregateInventoryCosts([priced(10), priced(2.5), { kind: 'no_price', reason: '' }, { kind: 'not_running', reason: '' }, { kind: 'no_direct_charge', reason: '' }]);
-    expect(total).toEqual({ pricedResources: 2, totalResources: 3, excludedResources: 2, amount: 12.5, notRunning: 1, noDirectCharge: 1, noPrice: 1 });
+    expect(total).toEqual({ pricedResources: 2, totalResources: 3, excludedResources: 2, amount: 12.5, pricedLambdaResources: 0, notRunning: 1, noDirectCharge: 1, noBillableUsage: 0, noPrice: 1 });
     expect(inventoryCoverageText(total)).toBe('2 of 3 priced · 2 not running or no direct charge');
     expect(inventoryRunRateCoverageText(total)).toBe('Estimated from 2 of 3 priced · 2 not running or no direct charge');
   });
@@ -252,6 +280,29 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
     expect(aggregateInventoryCosts(PLACEHOLDERS.map(([, r]) => cost(r))).amount).toBeNull();
     expect(aggregateInventoryCosts([]).amount).toBeNull();
     expect(aggregateInventoryCosts([{ kind: 'no_direct_charge', reason: '' }, { kind: 'not_running', reason: '' }]).amount).toBeNull();
+  });
+
+  it('a zero-usage Lambda is outside N (M) and adds nothing: only zero-usage functions -> no total, never $0.00', () => {
+    const zero: InventoryCost = { kind: 'no_billable_usage', reason: '' };
+    const only = aggregateInventoryCosts([zero, zero]);
+    expect(only).toMatchObject({ pricedResources: 0, totalResources: 0, excludedResources: 2, noBillableUsage: 2, amount: null });
+    const mixed = aggregateInventoryCosts([priced(4), zero, { kind: 'no_price', reason: '' }]);
+    expect(mixed).toMatchObject({ pricedResources: 1, totalResources: 2, excludedResources: 1, amount: 4 });
+    expect(inventoryCoverageText(mixed)).toBe('1 of 2 priced · 1 not running or no direct charge');
+  });
+
+  it('S-2: a total with a Lambda figure carries "Lambda before free tier"; table-priced only keeps the table label', () => {
+    const tableOnly = aggregateInventoryRows([RDS, EBS], NOW);
+    expect(tableOnly.pricedLambdaResources).toBe(0);
+    expect(inventoryTotalBasis(tableOnly)).toBe('us-east-1 list-price estimate');
+    const withLambda = aggregateInventoryRows([RDS, EBS, LAMBDA], NOW);
+    expect(withLambda.pricedLambdaResources).toBe(1);
+    expect(inventoryTotalBasis(withLambda)).toBe('us-east-1 list-price estimates; Lambda before free tier');
+    expect(inventoryTotalBasis(aggregateInventoryRows([LAMBDA], NOW))).toBe('us-east-1 list-price estimates; Lambda before free tier');
+    // A zero-usage function is not a figure in the total, so it adds no qualification.
+    expect(inventoryTotalBasis(aggregateInventoryRows([RDS, withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0 })], NOW)))
+      .toBe('us-east-1 list-price estimate');
+    expect(inventoryTotalBasis({})).toBe('us-east-1 list-price estimate');
   });
 
   it('a mixed legacy inventory sums only the defensibly priced rows', () => {

@@ -12,6 +12,8 @@ import {
   inventoryCoverageText,
   inventoryCostColumns,
   INVENTORY_PRICE_BASIS,
+  LAMBDA_PRICE_BASIS,
+  NO_BILLABLE_USAGE_TEXT,
   NO_DIRECT_CHARGE_TEXT,
   NO_PRICE_TEXT,
   NOT_RUNNING_TEXT,
@@ -20,8 +22,8 @@ import {
 
 /** The PDF's note on the Monthly Cost column, printed whenever the column is exported. */
 export const INVENTORY_COST_BASIS_NOTE: string[] = [
-  `Monthly Cost: a dollar figure is a ${INVENTORY_PRICE_BASIS} for the resource's recorded configuration (on-demand list price; RDS instance hours only, EBS volume storage only, Lambda requests and duration), not AWS billed spend.`,
-  `"${NO_PRICE_TEXT}" means DevControl has no defensible price for the resource; it is not $0. "${NOT_RUNNING_TEXT}" is a stopped instance. "${NO_DIRECT_CHARGE_TEXT}" is a VPC: ${VPC_SEPARATE_CHARGES_LINE}`,
+  `Monthly Cost: a dollar figure is a ${INVENTORY_PRICE_BASIS} for the resource's recorded configuration (on-demand list price; RDS instance hours only, EBS volume storage only), not AWS billed spend. A Lambda figure is requests and duration at ${LAMBDA_PRICE_BASIS}; each cell names its own basis.`,
+  `"${NO_PRICE_TEXT}" means DevControl has no defensible price for the resource; it is not $0. "${NOT_RUNNING_TEXT}" is a stopped instance. "${NO_DIRECT_CHARGE_TEXT}" is a VPC: ${VPC_SEPARATE_CHARGES_LINE} "${NO_BILLABLE_USAGE_TEXT}" is a Lambda function with no invocations in the 30 days read on its latest discovery.`,
 ];
 
 // Extend jsPDF type to include autoTable
@@ -75,11 +77,13 @@ export class AWSResourcesExportService {
     },
     cost: {
       label: 'Monthly Cost',
-      field: 'stored_monthly_cost',
+      // Not a column read: the cell comes only from the rule over inventoryCostColumns().
+      field: 'inventoryCostColumns()',
       // The shared inventory pricing rule (services/inventory-cost.ts): the amount with its basis
-      // ("us-east-1 list-price estimate; ..."), or "No price" / "Not running: no instance-hour
-      // charge" / "No direct charge. NAT gateways, ...". Never the stored figure, never "$0.00"
-      // for a missing price.
+      // ("us-east-1 list-price estimate; ..." or Lambda's "us-east-1 list price, before free
+      // tier; ..."), or "No price" / "Not running: no instance-hour charge" / "No direct
+      // charge. NAT gateways, ..." / "No billable usage recorded". Never the stored figure,
+      // never "$0.00" for a missing price or a zero-usage function.
       formatter: (r: any) => inventoryCostCell(inventoryCost(r)),
     },
     security: {

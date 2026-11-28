@@ -67,6 +67,11 @@ function estimatedCosts(current: number): ChatContext['costs'] {
   });
 }
 
+/** The same estimate with a Lambda figure (before free tier) among its priced resources (review fix round S-2). */
+function withLambda(costs: ChatContext['costs']): ChatContext['costs'] {
+  return { ...costs, data: { ...costs.data!, estimateCoverage: { ...costs.data!.estimateCoverage!, pricedLambdaResources: 1 } } };
+}
+
 function unavailableCosts(): ChatContext['costs'] {
   return chatCosts({
     state: 'unavailable', source: 'unavailable', current: null, asOf: null, period: null, scope: null,
@@ -209,6 +214,18 @@ describe('AIChatService getFallbackResponse (non-LLM degraded path)', () => {
 
     expect(response).toMatch(/\$500/);
     expect(response).toMatch(/for the resources DevControl can price \(Estimated from 3 of 3 priced; us-east-1 list-price estimate from your last synced resource inventory/i);
+  });
+
+  it('S-2: an estimate that sums a Lambda figure says "Lambda before free tier" in the reply and in the model\'s cost section', async () => {
+    const response = await fallbackFor('What is my monthly AWS spend?', baseContext({ costs: withLambda(estimatedCosts(500)) }));
+    expect(response).toMatch(/\(Estimated from 3 of 3 priced; us-east-1 list-price estimates; Lambda before free tier from your last synced resource inventory/);
+    const section: string = (new AIChatService({} as never) as any).formatCostSection(withLambda(estimatedCosts(500)));
+    expect(section).toContain('- Source: DevControl inventory estimate (us-east-1 list-price estimates; Lambda before free tier for defensibly priced discovered resources only; NOT AWS billing data)');
+    expect(section).toContain('- Basis: monthly run-rate estimate (us-east-1 list-price estimates; Lambda before free tier) for the currently discovered resources');
+    // Without a Lambda figure the table label stands alone.
+    const tableOnly: string = (new AIChatService({} as never) as any).formatCostSection(estimatedCosts(500));
+    expect(tableOnly).toContain('- Basis: monthly run-rate estimate (us-east-1 list-price estimate) for');
+    expect(tableOnly).not.toContain('Lambda');
   });
 
   it('a real "actual" cost still renders normally (no regression for the common case)', async () => {

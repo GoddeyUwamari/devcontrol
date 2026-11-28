@@ -70,6 +70,11 @@ function actualCosts(amount: number, comparison = unavailableComparison()): Chat
   });
 }
 
+/** The same estimate with a Lambda figure (before free tier) among its priced resources (review fix round S-2). */
+function withLambda(costs: ChatContext['costs']): ChatContext['costs'] {
+  return { ...costs, data: { ...costs.data!, estimateCoverage: { ...costs.data!.estimateCoverage!, pricedLambdaResources: 1 } } };
+}
+
 function estimatedCosts(amount: number, estimated: number, total: number): ChatContext['costs'] {
   return chatCosts({
     state: estimated < total ? 'partial' : 'available', source: 'estimated', current: amount, asOf: '2026-09-26T05:00:00.000Z',
@@ -534,6 +539,12 @@ describe('AI Reports deterministic fallback', () => {
 
     expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of the discovered resources it can price at $3,200.00 (a us-east-1 list-price estimate, not AWS billing data; Estimated from 10 of 10 priced).');
     expect(JSON.stringify(report)).not.toMatch(/AWS spending|Cloud Spending/i);
+  });
+
+  it('S-2: an estimate that sums a Lambda figure says "Lambda before free tier"', async () => {
+    const data = await evidence({ costs: withLambda(estimatedCosts(3200, 10, 10)) });
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of the discovered resources it can price at $3,200.00 (us-east-1 list-price estimates; Lambda before free tier, not AWS billing data; Estimated from 10 of 10 priced).');
   });
 
   it('a $0 actual month is reported as $0.00 of billed spend, not as unavailable or an estimate', async () => {

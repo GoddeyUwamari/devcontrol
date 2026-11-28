@@ -13,7 +13,7 @@ import {
   inventoryCostCell,
   inventoryCostColumns,
   inventoryCoverageText,
-  INVENTORY_PRICE_BASIS,
+  inventoryTotalBasis,
   NO_PRICE_TEXT,
   type InventoryCost,
   type InventoryCostTotal,
@@ -119,13 +119,16 @@ export function costSummaryAppendixLines(inventory: InventoryCostTotal): string[
   }
   return [
     coverage,
-    `Estimated monthly cost of the ${inventory.pricedResources} priced resources: ${formatInventoryUsd(inventory.amount)} (${INVENTORY_PRICE_BASIS}; not AWS billed spend). Resources without a price are not included and are not $0.`,
+    `Estimated monthly cost of the ${inventory.pricedResources} priced resources: ${formatInventoryUsd(inventory.amount)} (${inventoryTotalBasis(inventory)}; not AWS billed spend). Resources without a price are not included and are not $0.`,
   ];
 }
 
-/** A group's cell: the priced estimate, or "No price" when nothing in the group is priced. */
+/**
+ * A group's cell: the priced estimate with its basis (Lambda-qualified when the group sums a
+ * Lambda figure, S-2), or "No price" when nothing in the group is priced.
+ */
 export function inventoryGroupCell(total: InventoryCostTotal): string {
-  return total.amount === null ? NO_PRICE_TEXT : `${formatInventoryUsd(total.amount)} (${INVENTORY_PRICE_BASIS})`;
+  return total.amount === null ? NO_PRICE_TEXT : `${formatInventoryUsd(total.amount)} (${inventoryTotalBasis(total)})`;
 }
 
 export class ReportGeneratorService {
