@@ -609,8 +609,8 @@ export default function ApiReferencePage() {
                 </CardTitle>
                 <CardDescription>
                   Create a new service in your catalog. Organization owners and admins only.
-                  name, template (api, frontend, worker or database), owner (an email) and
-                  team_id (one of your organization&apos;s teams) are required; github_url and
+                  name, template (api, frontend, worker or database) and owner (an email) are
+                  required; team_id (one of your organization&apos;s teams), github_url and
                   description are optional.
                 </CardDescription>
               </CardHeader>

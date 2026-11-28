@@ -97,7 +97,8 @@ export interface CreateServiceRequest {
   name: string;
   template: 'api' | 'frontend' | 'worker' | 'database';
   owner: string;
-  team_id: string;
+  /** Absent = no team (onboarding D5). */
+  team_id?: string;
   github_url?: string;
   description?: string;
 }

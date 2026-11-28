@@ -4,7 +4,9 @@
  *
  * Policy under test:
  *   - POST /api/services creates the service only when `team_id` names a team
- *     of the caller's organization.
+ *     of the caller's organization, or is empty (omitted, null or ''), which
+ *     means no team (onboarding D5). A team_id naming no team of the caller's
+ *     organization is 400.
  *   - POST /api/infrastructure creates the resource only when `service_id`
  *     names a service of the caller's organization.
  *   - An id that belongs to another organization is answered exactly like an
@@ -217,10 +219,11 @@ describe('POST /api/services checks that the team is the caller\'s own', () => {
     const foreign = await createService({ team_id: orgB.teamId });
     const unknown = await createService({ team_id: randomUUID() });
 
-    expect(foreign.status).toBe(404);
+    // 400 (onboarding D5): a team_id that names no team of this organization is an invalid value.
+    expect(foreign.status).toBe(400);
     expect(unknown.status).toBe(foreign.status);
     const foreignBody = await foreign.json();
-    expect(foreignBody).toEqual({ success: false, error: 'Team not found', code: 'NOT_FOUND' });
+    expect(foreignBody).toEqual({ success: false, error: 'Team not found', code: 'VALIDATION_ERROR' });
     expect(await unknown.json()).toEqual(foreignBody);
     // No service anywhere, and the other organization's team is as it was.
     expect(await rowsTouching('services', 'team_id', orgB.teamId)).toEqual(servicesBefore);
@@ -235,18 +238,45 @@ describe('POST /api/services checks that the team is the caller\'s own', () => {
     // ...and does not move a valid request out of the caller's organization.
     const own = await createService({ team_id: orgA.teamId, organization_id: orgB.orgId });
 
-    expect(foreign.status).toBe(404);
+    expect(foreign.status).toBe(400);
     expect(own.status).toBe(201);
     const created = (await own.json()).data;
     expect(created).toMatchObject({ team_id: orgA.teamId, organization_id: orgA.orgId });
     expect(await rowsTouching('services', 'team_id', orgB.teamId)).toEqual([...servicesBefore, created.id].sort());
   });
 
-  it('still requires a team', async () => {
-    const res = await createService({});
+  // Onboarding D5: an empty team value means "no team".
+  it.each([
+    ['omitted', {}],
+    ['null', { team_id: null }],
+    ['an empty string', { team_id: '' }],
+  ])('creates the service with no team when team_id is %s', async (_label, body) => {
+    const res = await createService(body);
 
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ success: false, error: 'Validation failed' });
+    expect(res.status).toBe(201);
+    const created = (await res.json()).data;
+    expect(created).toMatchObject({ team_id: null, organization_id: orgA.orgId, status: 'active' });
+    expect(await row('services', created.id)).toMatchObject({ team_id: null, organization_id: orgA.orgId });
+  });
+
+  it('a malformed team_id is 400 and writes nothing', async () => {
+    const before = (await pool.query('SELECT COUNT(*)::int AS n FROM services WHERE organization_id = $1', [orgA.orgId])).rows[0].n;
+    for (const team_id of ['not-a-uuid', ' ', 42, { id: orgA.teamId }]) {
+      const res = await createService({ team_id });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ success: false, error: 'Validation failed' });
+    }
+    const after = (await pool.query('SELECT COUNT(*)::int AS n FROM services WHERE organization_id = $1', [orgA.orgId])).rows[0].n;
+    expect(after).toBe(before);
+  });
+
+  it('a request with no team takes the organization from the caller, never from the body', async () => {
+    const res = await createService({ organization_id: orgB.orgId });
+
+    expect(res.status).toBe(201);
+    const created = (await res.json()).data;
+    expect(created).toMatchObject({ team_id: null, organization_id: orgA.orgId });
+    expect(await row('services', created.id)).toMatchObject({ organization_id: orgA.orgId });
   });
 });
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Loader2, ArrowLeft, Layers } from 'lucide-react'
+import { Loader2, ArrowLeft, Layers, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -27,6 +27,7 @@ import { servicesService } from '@/lib/services/services.service'
 import { teamsService } from '@/lib/services/teams.service'
 import { logError } from '@/lib/safe-log'
 import { useServiceLimit } from '@/lib/hooks/use-service-limit'
+import { useAuth } from '@/lib/contexts/auth-context'
 import {
   SERVICE_LIMIT_CONTACT_HREF,
   SERVICE_LIMIT_COPY,
@@ -47,7 +48,8 @@ const serviceSchema = z.object({
     error: () => ({ message: 'Please select a valid template' })
   }),
   owner: z.string().email('Must be a valid email address'),
-  teamId: z.string().uuid('Please select a team'),
+  // Optional (onboarding D1): no team is sent as no team_id at all.
+  teamId: z.string().uuid('Please select a team').optional(),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
   githubUrl: z.string().url('Must be a valid URL').optional().or(z.literal('')),
 })
@@ -55,6 +57,19 @@ const serviceSchema = z.object({
 type ServiceFormData = z.infer<typeof serviceSchema>
 
 const NOTICE_LINK = 'font-semibold text-ink-accent underline'
+
+/** The Team select's "no team" choice (a Radix SelectItem cannot have an empty value). Never sent. */
+const NO_TEAM = 'no-team'
+
+/** Onboarding D2 / D4 / D8, founder-approved copy. */
+export const NEW_SERVICE_COPY = {
+  moreOptions: 'More options',
+  ownerLabel: 'Owner email',
+  ownerHelp: 'Who to contact about this service. Defaults to you.',
+  teamLabel: 'Team (optional)',
+  teamHelp: 'You can group services into teams later.',
+  noTeam: 'No team',
+} as const
 
 /**
  * At the services limit (stage-a C1-C5): why no service can be created, with
@@ -83,7 +98,10 @@ export default function NewServicePage() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const limitReasonId = useId()
+  const moreOptionsId = useId()
   const serviceLimit = useServiceLimit()
+  const { user, isLoading: authLoading } = useAuth()
+  const userEmail = user?.email
   const limit = serviceLimit.data
   const atLimit = limit !== undefined && limit.reached && limit.max !== null
 
@@ -98,14 +116,40 @@ export default function NewServicePage() {
     handleSubmit,
     setValue,
     watch,
+    getFieldState,
     formState: { errors, isValid },
   } = useForm<ServiceFormData>({
     resolver: zodResolver(serviceSchema),
     mode: 'onChange',
+    defaultValues: { owner: userEmail ?? '' },
   })
 
   const template = watch('template')
   const teamId = watch('teamId')
+
+  // D2: the owner defaults to the signed-in user, once, and never over a value
+  // already typed (the user can arrive after the first render).
+  const ownerPrefilled = useRef(Boolean(userEmail))
+  useEffect(() => {
+    if (!userEmail || ownerPrefilled.current) return
+    ownerPrefilled.current = true
+    if (getFieldState('owner').isDirty) return
+    setValue('owner', userEmail, { shouldValidate: true })
+  }, [userEmail, getFieldState, setValue])
+
+  // D8: "More options" starts collapsed. It opens on its own, and cannot be
+  // collapsed, while a field inside it has an error or while there is no email
+  // to default the owner to (the one required field inside would otherwise be
+  // empty and out of sight). Once opened that way it stays open after the fix,
+  // so it never closes under the user's typing; they collapse it themselves.
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false)
+  const errorInMoreOptions = Boolean(errors.teamId || errors.owner || errors.githubUrl || errors.description)
+  const ownerNeedsInput = !authLoading && !userEmail
+  const moreOptionsHeldOpen = errorInMoreOptions || ownerNeedsInput
+  const moreOptionsExpanded = moreOptionsOpen || moreOptionsHeldOpen
+  useEffect(() => {
+    if (moreOptionsHeldOpen) setMoreOptionsOpen(true)
+  }, [moreOptionsHeldOpen])
 
   const onSubmit = async (data: ServiceFormData) => {
     // At the limit nothing is sent (the button is disabled too); the server refuses on its own anyway.
@@ -118,7 +162,7 @@ export default function NewServicePage() {
         name: data.name,
         template: data.template,
         owner: data.owner,
-        teamId: data.teamId,
+        teamId: data.teamId || undefined,
         description: data.description || undefined,
         githubUrl: data.githubUrl || undefined,
       })
@@ -169,7 +213,7 @@ export default function NewServicePage() {
         </CardHeader>
         <CardContent>
           {atLimit && <div className="mb-6"><ServiceLimitNotice limit={{ ...limit, max: limit.max as number }} /></div>}
-          <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form method="post" onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-6">
             {/* Service Name */}
             <div className="space-y-2">
               <Label htmlFor="name" className="text-ui font-medium">
@@ -198,7 +242,7 @@ export default function NewServicePage() {
                 value={template}
                 onValueChange={(value) => setValue('template', value as 'api' | 'frontend' | 'worker' | 'database', { shouldValidate: true })}
               >
-                <SelectTrigger className={errors.template ? 'border-red-500' : ''}>
+                <SelectTrigger id="template" className={errors.template ? 'border-red-500' : ''}>
                   <SelectValue placeholder="Select a template" />
                 </SelectTrigger>
                 <SelectContent>
@@ -213,93 +257,106 @@ export default function NewServicePage() {
               )}
             </div>
 
-            {/* Team */}
-            <div className="space-y-2">
-              <Label htmlFor="teamId" className="text-ui font-medium">
-                Team <span className="text-ink-danger">*</span>
-              </Label>
-              <Select
-                value={teamId}
-                onValueChange={(value) => setValue('teamId', value, { shouldValidate: true })}
-                disabled={teamsLoading}
+            {/* More options (D8): collapsed by default; Name and Template stay above */}
+            <div>
+              <button
+                type="button"
+                aria-expanded={moreOptionsExpanded}
+                aria-controls={moreOptionsId}
+                onClick={() => { if (!moreOptionsHeldOpen) setMoreOptionsOpen(!moreOptionsOpen) }}
+                className="inline-flex items-center gap-1.5 rounded-md text-ui font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <SelectTrigger className={errors.teamId ? 'border-red-500' : ''}>
-                  <SelectValue placeholder={teamsLoading ? 'Loading teams...' : 'Select a team'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.map((team) => (
-                    <SelectItem key={team.id} value={team.id}>
-                      {team.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.teamId && (
-                <p className="text-ui text-ink-danger">{errors.teamId.message}</p>
-              )}
-              {teams.length === 0 && !teamsLoading && (
-                <p className="text-meta text-ink-warning">
-                  No teams found. Please create a team first.
-                </p>
-              )}
-            </div>
+                <ChevronRight className={cn('h-4 w-4 transition-transform', moreOptionsExpanded && 'rotate-90')} aria-hidden="true" />
+                {NEW_SERVICE_COPY.moreOptions}
+              </button>
+              <div id={moreOptionsId} data-testid="more-options" hidden={!moreOptionsExpanded} className="mt-6 space-y-6">
+                {/* Team (D1, D4): optional; no team is sent as no team_id */}
+                <div className="space-y-2">
+                  <Label htmlFor="teamId" className="text-ui font-medium">
+                    {NEW_SERVICE_COPY.teamLabel}
+                  </Label>
+                  <Select
+                    value={teamId ?? NO_TEAM}
+                    onValueChange={(value) => setValue('teamId', value === NO_TEAM ? undefined : value, { shouldValidate: true })}
+                    disabled={teamsLoading}
+                  >
+                    <SelectTrigger id="teamId" className={errors.teamId ? 'border-red-500' : ''}>
+                      <SelectValue placeholder={teamsLoading ? 'Loading teams...' : NEW_SERVICE_COPY.noTeam} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_TEAM}>{NEW_SERVICE_COPY.noTeam}</SelectItem>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.teamId && (
+                    <p className="text-ui text-ink-danger">{errors.teamId.message}</p>
+                  )}
+                  <p className="text-meta text-muted-foreground">{NEW_SERVICE_COPY.teamHelp}</p>
+                </div>
 
-            {/* Owner Email */}
-            <div className="space-y-2">
-              <Label htmlFor="owner" className="text-ui font-medium">
-                Owner Email <span className="text-ink-danger">*</span>
-              </Label>
-              <Input
-                id="owner"
-                type="email"
-                placeholder="owner@example.com"
-                {...register('owner')}
-                className={errors.owner ? 'border-red-500 text-base' : 'text-base'}
-              />
-              {errors.owner && (
-                <p className="text-ui text-ink-danger">{errors.owner.message}</p>
-              )}
-            </div>
+                {/* Owner email (D2) */}
+                <div className="space-y-2">
+                  <Label htmlFor="owner" className="text-ui font-medium">
+                    {NEW_SERVICE_COPY.ownerLabel} <span className="text-ink-danger">*</span>
+                  </Label>
+                  <Input
+                    id="owner"
+                    type="email"
+                    placeholder="owner@example.com"
+                    {...register('owner')}
+                    className={errors.owner ? 'border-red-500 text-base' : 'text-base'}
+                  />
+                  {errors.owner && (
+                    <p className="text-ui text-ink-danger">{errors.owner.message}</p>
+                  )}
+                  <p className="text-meta text-muted-foreground">{NEW_SERVICE_COPY.ownerHelp}</p>
+                </div>
 
-            {/* GitHub URL (Optional) */}
-            <div className="space-y-2">
-              <Label htmlFor="githubUrl" className="text-ui font-medium">GitHub Repository URL</Label>
-              <Input
-                id="githubUrl"
-                type="url"
-                placeholder="https://github.com/username/repo"
-                {...register('githubUrl')}
-                className={errors.githubUrl ? 'border-red-500 text-base' : 'text-base'}
-              />
-              {errors.githubUrl && (
-                <p className="text-ui text-ink-danger">{errors.githubUrl.message}</p>
-              )}
-              <p className="text-meta text-muted-foreground">Optional</p>
-            </div>
+                {/* GitHub URL (Optional) */}
+                <div className="space-y-2">
+                  <Label htmlFor="githubUrl" className="text-ui font-medium">GitHub Repository URL</Label>
+                  <Input
+                    id="githubUrl"
+                    type="url"
+                    placeholder="https://github.com/username/repo"
+                    {...register('githubUrl')}
+                    className={errors.githubUrl ? 'border-red-500 text-base' : 'text-base'}
+                  />
+                  {errors.githubUrl && (
+                    <p className="text-ui text-ink-danger">{errors.githubUrl.message}</p>
+                  )}
+                  <p className="text-meta text-muted-foreground">Optional</p>
+                </div>
 
-            {/* Description (Optional) */}
-            <div className="space-y-2">
-              <Label htmlFor="description" className="text-ui font-medium">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="A brief description of your service..."
-                rows={4}
-                {...register('description')}
-                className={errors.description ? 'border-red-500 text-base' : 'text-base resize-none min-h-[100px]'}
-              />
-              {errors.description && (
-                <p className="text-ui text-ink-danger">{errors.description.message}</p>
-              )}
-              <p className="text-meta text-muted-foreground">
-                Optional - Maximum 500 characters
-              </p>
+                {/* Description (Optional) */}
+                <div className="space-y-2">
+                  <Label htmlFor="description" className="text-ui font-medium">Description</Label>
+                  <Textarea
+                    id="description"
+                    placeholder="A brief description of your service..."
+                    rows={4}
+                    {...register('description')}
+                    className={errors.description ? 'border-red-500 text-base' : 'text-base resize-none min-h-[100px]'}
+                  />
+                  {errors.description && (
+                    <p className="text-ui text-ink-danger">{errors.description.message}</p>
+                  )}
+                  <p className="text-meta text-muted-foreground">
+                    Optional - Maximum 500 characters
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Submit Button */}
             <div className="flex items-center gap-4 pt-4 border-t">
               <Button
                 type="submit"
-                disabled={!isValid || isSubmitting || teams.length === 0 || atLimit}
+                disabled={!isValid || isSubmitting || atLimit}
                 aria-describedby={atLimit ? limitReasonId : undefined}
                 className="min-w-[140px]"
               >

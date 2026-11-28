@@ -4,8 +4,8 @@
  * server's 402 is the guarantee, and when a stale page still submits, its own
  * message is shown (C7), never the HTTP client's generic text.
  *
- * The page is real; the limit hook, the services/teams clients, the router and
- * the toast are stubbed. The Radix select is replaced with a native one so the
+ * The page is real; the limit hook, the services/teams clients, the signed-in
+ * user, the router and the toast are stubbed. The Radix select is replaced with a native one so the
  * form can be filled in jsdom.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,6 +25,7 @@ vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/hooks/use-service-limit', () => ({ useServiceLimit: () => ({ data: state.limit, refetch }) }))
 vi.mock('@/lib/services/services.service', () => ({ servicesService: { create: (...a: unknown[]) => create(...a) } }))
 vi.mock('@/lib/services/teams.service', () => ({ teamsService: { getAll: async () => [{ id: '00000000-0000-4000-8000-0000000000a1', name: 'Platform' }] } }))
+vi.mock('@/lib/contexts/auth-context', () => ({ useAuth: () => ({ user: { email: 'signed-in@example.com' }, isLoading: false }) }))
 
 vi.mock('@/components/ui/select', async () => {
   const React = await import('react')
@@ -60,7 +61,8 @@ function mount() {
 
 async function fillForm() {
   fireEvent.change(screen.getByLabelText(/Service Name/), { target: { value: 'checkout-api' } })
-  fireEvent.change(screen.getByLabelText(/Owner Email/), { target: { value: 'owner@example.com' } })
+  fireEvent.click(screen.getByRole('button', { name: 'More options' }))
+  fireEvent.change(screen.getByLabelText(/Owner email/), { target: { value: 'owner@example.com' } })
   const [template, team] = screen.getAllByTestId('native-select')
   fireEvent.change(template, { target: { value: 'api' } })
   await within(team).findByText('Platform')

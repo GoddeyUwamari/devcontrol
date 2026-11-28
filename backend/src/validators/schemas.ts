@@ -5,7 +5,13 @@ export const createServiceSchema = z.object({
   name: z.string().min(1, 'Service name is required').max(255, 'Service name too long'),
   template: z.enum(['api', 'frontend', 'worker', 'database']),
   owner: z.string().email('Owner must be a valid email'),
-  team_id: z.string().uuid('Team ID must be a valid UUID'),
+  // Optional (onboarding D5): omitted, null or '' means "no team". Anything
+  // else must be a UUID here, and a team of the caller's own organization in
+  // ServicesController.create; otherwise 400.
+  team_id: z.preprocess(
+    (value) => (value === '' || value === null ? undefined : value),
+    z.string().uuid('Team ID must be a valid UUID').optional()
+  ),
   github_url: z.string().url('GitHub URL must be a valid URL').optional(),
   description: z.string().max(500, 'Description too long').optional(),
 });

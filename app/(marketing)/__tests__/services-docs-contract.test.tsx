@@ -1,7 +1,7 @@
 /**
  * The service-registration docs restored after #221 describe the real API:
- * POST /api/services (owners and admins) with name, template, owner, team_id
- * and optional github_url and description -- validated here by the backend's
+ * POST /api/services (owners and admins) with name, template and owner, and
+ * optional team_id, github_url and description -- validated here by the backend's
  * own createServiceSchema -- answered 201 with the services row; GET
  * /api/services/registered lists registered services. No /v1 paths and no
  * tier, repository or tags fields. Authentication is the access token from
@@ -45,12 +45,16 @@ describe('/docs/api: Services API', () => {
 
     expect(Object.keys(body).sort()).toEqual(['description', 'github_url', 'name', 'owner', 'team_id', 'template'])
     expect(() => createServiceSchema.parse(body)).not.toThrow()
-    // Only description and github_url are optional.
-    for (const field of ['name', 'template', 'owner', 'team_id']) {
+    // team_id, description and github_url are optional (team_id: onboarding D1/D5); the rest are required.
+    for (const field of ['name', 'template', 'owner']) {
       const { [field]: _omitted, ...rest } = body
       expect(createServiceSchema.safeParse(rest).success).toBe(false)
     }
     expect(createServiceSchema.safeParse({ ...body, github_url: undefined, description: undefined }).success).toBe(true)
+    const withoutTeam = { ...body }
+    delete withoutTeam.team_id
+    expect(createServiceSchema.safeParse(withoutTeam).success).toBe(true)
+    expect(screen.getByText(/team_id \(one of your organization's teams\), github_url and description are optional/)).toBeInTheDocument()
     expect(request).not.toMatch(FAKE_FIELDS)
     expect(screen.getByText(/Organization owners and admins only/)).toBeInTheDocument()
   })
