@@ -21,13 +21,31 @@ const LAMBDA_BASIS = 'usage_based: real 30-day CloudWatch Invocations/Duration x
 export const LAMBDA_PRICED = legacyRow('fn-busy', 'lambda', '0.42', {
   status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'normal_usage', invocations_30d: 1_000_000, avg_duration_ms: 100, memory: 128 },
 });
-/** A complete usage read with no invocations: "No billable usage recorded" (review fix round). */
+/**
+ * Provisioned concurrency explicitly confirmed absent and a complete usage read with no
+ * invocations: "No billable usage recorded" (follow-up ruling). Discovery does not write
+ * provisioned_concurrency_state yet, so no stored row looks like this today.
+ */
 export const LAMBDA_ZERO_USAGE = legacyRow('fn-idle', 'lambda', '0.00', {
-  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0, memory: 128 },
+  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0, memory: 128, provisioned_concurrency_state: 'none' },
 });
 /** zero_usage whose duration was never recorded: not established, so "No price". */
 export const LAMBDA_ZERO_INCOMPLETE = legacyRow('fn-partial', 'lambda', '0.00', {
-  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, memory: 128 },
+  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, memory: 128, provisioned_concurrency_state: 'none' },
+});
+/** Zero invocations, but provisioned concurrency configured (billed with no requests): "No price". */
+export const LAMBDA_ZERO_PROVISIONED = legacyRow('fn-warm', 'lambda', '0.00', {
+  status: 'unknown', metadata: { architecture: 'x86_64', cost_basis: LAMBDA_BASIS, usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0, memory: 128, provisioned_concurrency_state: 'configured' },
+});
+/**
+ * A zero-usage function exactly as discovery writes it today (awsResourceDiscovery.ts
+ * discoverLambdaFunctions metadata): no provisioned-concurrency key, so unknown -> "No price".
+ */
+export const LAMBDA_ZERO_AS_DISCOVERED = legacyRow('fn-quiet', 'lambda', '0.00', {
+  status: 'unknown', metadata: {
+    tags_state: 'observed', runtime: 'nodejs20.x', memory: 128, timeout: 3, last_modified: '2026-11-01T00:00:00.000+0000', code_size: 1024,
+    handler: 'index.handler', architecture: 'x86_64', cost_basis: LAMBDA_BASIS, invocations_30d: 0, avg_duration_ms: 0, usage_state: 'zero_usage',
+  },
 });
 
 /** The legacy fixture inventory. */

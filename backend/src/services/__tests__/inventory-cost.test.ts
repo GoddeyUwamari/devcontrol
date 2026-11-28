@@ -127,7 +127,7 @@ describe('inventoryCost: priced only when every F-2 assumption is established', 
   });
 
   // Review fix round (founder: zero-usage Lambda never renders $0.00).
-  const ZERO = withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0 });
+  const ZERO = withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0, provisioned_concurrency_state: 'none' });
 
   it('zero usage, complete: "No billable usage recorded", never a priced $0 or "$0.00"', () => {
     expect(cost(ZERO)).toMatchObject({ kind: 'no_billable_usage' });
@@ -148,6 +148,13 @@ describe('inventoryCost: priced only when every F-2 assumption is established', 
     ['zero_usage that records a duration (inconsistent)', withMeta(ZERO, { avg_duration_ms: 40 })],
     ['normal_usage with zero invocations (inconsistent)', withMeta(ZERO, { usage_state: 'normal_usage' })],
     ['no stored figure', { ...ZERO, stored_monthly_cost: null }],
+    // Follow-up ruling: provisioned concurrency is billed with no requests.
+    ['provisioned concurrency configured', withMeta(ZERO, { provisioned_concurrency_state: 'configured' })],
+    ['provisioned concurrency not recorded (as discovery writes rows today)', without(ZERO, 'provisioned_concurrency_state')],
+    ['provisioned concurrency unknown', withMeta(ZERO, { provisioned_concurrency_state: 'unknown' })],
+    ['provisioned concurrency unreadable', withMeta(ZERO, { provisioned_concurrency_state: 'unavailable' })],
+    ['provisioned concurrency null', withMeta(ZERO, { provisioned_concurrency_state: null })],
+    ['provisioned concurrency as a boolean', withMeta(ZERO, { provisioned_concurrency_state: false })],
   ])('zero usage not established (%s) -> "No price", never "No billable usage recorded" or $0.00', (_name, row) => {
     expect(cost(row).kind).toBe('no_price');
     expect(inventoryCostCell(cost(row))).toBe('No price');
@@ -258,8 +265,8 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
   it('K of N is correct; not-running and no-direct-charge are outside N (fix round 1, ruling 9)', () => {
     const total = aggregateInventoryCosts([priced(10), priced(2.5), { kind: 'no_price', reason: '' }, { kind: 'not_running', reason: '' }, { kind: 'no_direct_charge', reason: '' }]);
     expect(total).toEqual({ pricedResources: 2, totalResources: 3, excludedResources: 2, amount: 12.5, pricedLambdaResources: 0, notRunning: 1, noDirectCharge: 1, noBillableUsage: 0, noPrice: 1 });
-    expect(inventoryCoverageText(total)).toBe('2 of 3 priced · 2 not running or no direct charge');
-    expect(inventoryRunRateCoverageText(total)).toBe('Estimated from 2 of 3 priced · 2 not running or no direct charge');
+    expect(inventoryCoverageText(total)).toBe('2 of 3 priced · 2 not running, with no direct charge, or with no billable usage');
+    expect(inventoryRunRateCoverageText(total)).toBe('Estimated from 2 of 3 priced · 2 not running, with no direct charge, or with no billable usage');
   });
 
   it('with no excluded resources the M part is omitted', () => {
@@ -288,7 +295,7 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
     expect(only).toMatchObject({ pricedResources: 0, totalResources: 0, excludedResources: 2, noBillableUsage: 2, amount: null });
     const mixed = aggregateInventoryCosts([priced(4), zero, { kind: 'no_price', reason: '' }]);
     expect(mixed).toMatchObject({ pricedResources: 1, totalResources: 2, excludedResources: 1, amount: 4 });
-    expect(inventoryCoverageText(mixed)).toBe('1 of 2 priced · 1 not running or no direct charge');
+    expect(inventoryCoverageText(mixed)).toBe('1 of 2 priced · 1 not running, with no direct charge, or with no billable usage');
   });
 
   it('S-2: a total with a Lambda figure carries "Lambda before free tier"; table-priced only keeps the table label', () => {
@@ -300,7 +307,7 @@ describe('aggregateInventoryCosts: sums only priced amounts, K of N', () => {
     expect(inventoryTotalBasis(withLambda)).toBe('us-east-1 list-price estimates; Lambda before free tier');
     expect(inventoryTotalBasis(aggregateInventoryRows([LAMBDA], NOW))).toBe('us-east-1 list-price estimates; Lambda before free tier');
     // A zero-usage function is not a figure in the total, so it adds no qualification.
-    expect(inventoryTotalBasis(aggregateInventoryRows([RDS, withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0 })], NOW)))
+    expect(inventoryTotalBasis(aggregateInventoryRows([RDS, withMeta(LAMBDA, { usage_state: 'zero_usage', invocations_30d: 0, avg_duration_ms: 0, provisioned_concurrency_state: 'none' })], NOW)))
       .toBe('us-east-1 list-price estimate');
     expect(inventoryTotalBasis({})).toBe('us-east-1 list-price estimate');
   });

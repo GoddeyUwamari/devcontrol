@@ -11,7 +11,7 @@ import type { EvidenceBundle } from './ai/evidence/types';
 import { collectedSectionOf } from './ai/evidence/budget';
 import type { CpuTelemetryEvidence } from './ai/evidence/providers/operations';
 import { INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, renderEvidence, statusPhrase, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
-import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText, inventoryTotalBasis } from './inventory-cost';
+import { EXCLUDED_GROUP_TEXT, INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText, inventoryTotalBasis } from './inventory-cost';
 import {
   CONTEXT_STATE_LABELS,
   OMITTED_REASON,
@@ -625,8 +625,8 @@ Your goal: Help users understand their AWS environment, reduce cost, improve rel
 
     // Only databases the shared pricing rule prices are summed; the rest have no price (never $0).
     const unpricedRds = rds.priceExpectedCount - rds.pricedCount;
-    // "K of N priced databases · M not running or no direct charge" (fix round 1, ruling 9).
-    const rdsCoverage = `${rds.pricedCount} of ${rds.priceExpectedCount} priced databases${rds.notRunningCount > 0 ? ` · ${rds.notRunningCount} not running or no direct charge` : ''}`;
+    // "K of N priced databases · M not running, with no direct charge, or with no billable usage" (fix round 1, ruling 9).
+    const rdsCoverage = `${rds.pricedCount} of ${rds.priceExpectedCount} priced databases${rds.notRunningCount > 0 ? ` · ${rds.notRunningCount} ${EXCLUDED_GROUP_TEXT}` : ''}`;
     const rdsEstimate = rds.pricedMonthlyCost === null
       ? rds.count > 0
         ? `; no database has a defensible price (${rdsCoverage}; no price is not $0; do not give a cost figure for them)`

@@ -26,9 +26,9 @@
  *                     an Amazon RDS DB instance temporarily": "While the instance is
  *                     stopped, you're not charged for DB instance hours.")
  *   no_direct_charge  VPC (F-7), always with VPC_SEPARATE_CHARGES_LINE
- *   no_billable_usage a Lambda function whose latest usage read is complete and
- *                     establishes zero invocations over the 30-day window
- *                     ("No billable usage recorded"; never $0.00). See lambdaCost.
+ *   no_billable_usage a Lambda function with provisioned concurrency confirmed absent
+ *                     and a complete latest usage read of zero invocations over the
+ *                     30-day window ("No billable usage recorded"; never $0.00). See lambdaCost.
  *   no_price          everything else, including every flat placeholder
  *
  * Totals sum ONLY priced amounts and always carry "K of N": no_price is never 0,
@@ -56,6 +56,17 @@ export const NO_BILLABLE_USAGE_TEXT = 'No billable usage recorded';
  */
 export const LAMBDA_TOTAL_QUALIFIER = 'Lambda before free tier';
 export const INVENTORY_TOTAL_BASIS_WITH_LAMBDA = `${INVENTORY_PRICE_BASIS}s; ${LAMBDA_TOTAL_QUALIFIER}`;
+/** How M, the group outside N, is described everywhere (founder ruling, follow-up): "M not running, ...". */
+export const EXCLUDED_GROUP_TEXT = 'not running, with no direct charge, or with no billable usage';
+/**
+ * The metadata key a Lambda row must carry for "No billable usage recorded" (follow-up ruling):
+ * 'none' = provisioned concurrency explicitly confirmed absent on the function's versions and
+ * aliases; 'configured' = present (billed with no requests). Anything else, or the key missing,
+ * is unknown. Discovery does NOT write this key yet (awsResourceDiscovery.ts discoverLambdaFunctions
+ * reads only ListFunctions and ListTags), so today every zero-usage function reads "No price";
+ * recording it is the prerequisite for the label to appear.
+ */
+export const LAMBDA_PROVISIONED_CONCURRENCY_KEY = 'provisioned_concurrency_state';
 /** F-7: shown wherever "No direct charge" is shown. */
 export const VPC_SEPARATE_CHARGES_LINE = 'NAT gateways, endpoints and data transfer are charged separately.';
 
@@ -179,15 +190,21 @@ function ebsCost(row: InventoryCostRow, m: Record<string, unknown>): InventoryCo
  * usage_state 'unavailable' and no basis, and every deep scan replaces the metadata, so
  * these keys describe the latest discovery. For Lambda, CloudWatch returning no
  * Invocations datapoint for an existing function is AWS's signal for zero invocations,
- * not missing data. So zero billable usage is established only when ALL of:
+ * not missing data. But zero invocations is not zero cost while provisioned concurrency is
+ * configured: AWS bills it with no requests (follow-up ruling: zero usage is not zero cost
+ * unless all billable capacity is also accounted for). So zero billable usage is
+ * established only when ALL of:
+ *   - metadata.provisioned_concurrency_state is 'none' (explicitly confirmed absent);
+ *     'configured' never gets the label, and a missing or unknown value is "No price".
+ *     Discovery does not record it yet, so no stored row meets this today;
  *   - cost_basis starts "usage_based:" and usage_state is 'zero_usage';
  *   - invocations_30d is recorded and exactly 0, and avg_duration_ms is recorded and
  *     exactly 0 (the record agrees with itself);
  *   - the stored figure is present (as for a priced row).
  * Then: "No billable usage recorded" (no request or duration charge in the window) --
  * never "$0.00". Anything missing, unread or inconsistent (zero_usage with invocations,
- * normal_usage with none) is "No price". Not modelled, for priced and zero rows alike:
- * Provisioned Concurrency and SnapStart (not recorded by discovery).
+ * normal_usage with none) is "No price". Not modelled in a priced figure: Provisioned
+ * Concurrency and SnapStart (not recorded by discovery).
  */
 function lambdaCost(row: InventoryCostRow, m: Record<string, unknown>): InventoryCost {
   if (row.region !== PRICED_REGION) return noPrice('region is not us-east-1');
@@ -196,9 +213,12 @@ function lambdaCost(row: InventoryCostRow, m: Record<string, unknown>): Inventor
   const invocations = finite(m.invocations_30d);
   const duration = finite(m.avg_duration_ms);
   if (m.usage_state === 'zero_usage') {
+    const provisioned = m[LAMBDA_PROVISIONED_CONCURRENCY_KEY];
+    if (provisioned === 'configured') return noPrice('provisioned concurrency is configured: billed with no requests');
+    if (provisioned !== 'none') return noPrice('provisioned concurrency not recorded');
     if (invocations !== 0 || duration !== 0) return noPrice('zero usage not established by the recorded usage');
     if (finite(row.stored_monthly_cost) === null) return noPrice('no stored figure');
-    return { kind: 'no_billable_usage', reason: 'no invocations in the 30 days read on the latest discovery: no request or duration charge' };
+    return { kind: 'no_billable_usage', reason: 'no provisioned concurrency and no invocations in the 30 days read on the latest discovery: no request, duration or provisioned-concurrency charge' };
   }
   if (m.usage_state !== 'normal_usage') return noPrice('usage not read on the latest discovery');
   const memory = finite(m.memory);
@@ -277,9 +297,8 @@ export interface InventoryCostTotal {
    */
   totalResources: number;
   /**
-   * M: resources outside N because they are not running or have no direct charge. A
-   * Lambda function with no billable usage recorded counts here too (review fix round):
-   * it did not run in the window and carries no request or duration charge.
+   * M: resources outside N: not running, with no direct charge, or with no billable usage
+   * (EXCLUDED_GROUP_TEXT).
    */
   excludedResources: number;
   /** Sum of priced amounts; null when nothing is priced (never 0 for "nothing priced"). */
@@ -335,14 +354,14 @@ export const PRICED_RESOURCES_UNIT = 'discovered resources with a defensible pri
 
 /**
  * Coverage wherever it is shown (fix round 1, ruling 9): "K of N priced", and
- * " · M not running or no direct charge" when M > 0.
+ * " · M not running, with no direct charge, or with no billable usage" when M > 0.
  */
 export function inventoryCoverageText(total: Pick<InventoryCostTotal, 'pricedResources' | 'totalResources'> & { excludedResources?: number }): string {
   const m = total.excludedResources ?? 0;
-  return `${total.pricedResources} of ${total.totalResources} priced${m > 0 ? ` · ${m} not running or no direct charge` : ''}`;
+  return `${total.pricedResources} of ${total.totalResources} priced${m > 0 ? ` · ${m} ${EXCLUDED_GROUP_TEXT}` : ''}`;
 }
 
-/** The run-rate label (F-5 with ruling 9): "Estimated from K of N priced[ · M not running or no direct charge]". */
+/** The run-rate label (F-5 with ruling 9): "Estimated from K of N priced[ · M not running, with no direct charge, or with no billable usage]". */
 export function inventoryRunRateCoverageText(total: Pick<InventoryCostTotal, 'pricedResources' | 'totalResources'> & { excludedResources?: number }): string {
   return `Estimated from ${inventoryCoverageText(total)}`;
 }

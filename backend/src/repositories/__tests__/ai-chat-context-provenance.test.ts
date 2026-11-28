@@ -344,7 +344,7 @@ describe('Resources section', () => {
 
     expect(context.resources.data!.rds).toEqual({ count: 5, pricedMonthlyCost: 37.23, pricedCount: 2, priceExpectedCount: 4, notRunningCount: 1 });
     const formatted = format(context);
-    expect(formatted).toContain('- RDS: 5 databases; DevControl us-east-1 list-price estimate $37.23/month for 2 of 4 priced databases · 1 not running or no direct charge (instance hours only; excludes storage, I/O and backups; not AWS billed spend); the other 2 have no price -- not $0, and not included in that figure');
+    expect(formatted).toContain('- RDS: 5 databases; DevControl us-east-1 list-price estimate $37.23/month for 2 of 4 priced databases · 1 not running, with no direct charge, or with no billable usage (instance hours only; excludes storage, I/O and backups; not AWS billed spend); the other 2 have no price -- not $0, and not included in that figure');
     expect(formatted).not.toMatch(/\$75|\$186/);
     expect(formatted).not.toMatch(/storage cost/);
   });

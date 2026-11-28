@@ -23,7 +23,7 @@ import {
 /** The PDF's note on the Monthly Cost column, printed whenever the column is exported. */
 export const INVENTORY_COST_BASIS_NOTE: string[] = [
   `Monthly Cost: a dollar figure is a ${INVENTORY_PRICE_BASIS} for the resource's recorded configuration (on-demand list price; RDS instance hours only, EBS volume storage only), not AWS billed spend. A Lambda figure is requests and duration at ${LAMBDA_PRICE_BASIS}; each cell names its own basis.`,
-  `"${NO_PRICE_TEXT}" means DevControl has no defensible price for the resource; it is not $0. "${NOT_RUNNING_TEXT}" is a stopped instance. "${NO_DIRECT_CHARGE_TEXT}" is a VPC: ${VPC_SEPARATE_CHARGES_LINE} "${NO_BILLABLE_USAGE_TEXT}" is a Lambda function with no invocations in the 30 days read on its latest discovery.`,
+  `"${NO_PRICE_TEXT}" means DevControl has no defensible price for the resource; it is not $0. "${NOT_RUNNING_TEXT}" is a stopped instance. "${NO_DIRECT_CHARGE_TEXT}" is a VPC: ${VPC_SEPARATE_CHARGES_LINE} "${NO_BILLABLE_USAGE_TEXT}" is a Lambda function with provisioned concurrency confirmed absent and no invocations in the 30 days read on its latest discovery.`,
 ];
 
 // Extend jsPDF type to include autoTable

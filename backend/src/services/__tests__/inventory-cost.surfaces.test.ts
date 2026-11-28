@@ -26,7 +26,7 @@ import {
 } from '../report-generator.service';
 import { AWSCostService, type MonthlyCost } from '../aws-cost.service';
 
-import { LAMBDA_PRICED, LAMBDA_ZERO_INCOMPLETE, LAMBDA_ZERO_USAGE, LEGACY_ROWS, MONEY_ZERO, PLACEHOLDER_AMOUNTS, legacyRow as row } from './inventory-cost-fixtures';
+import { LAMBDA_PRICED, LAMBDA_ZERO_AS_DISCOVERED, LAMBDA_ZERO_INCOMPLETE, LAMBDA_ZERO_PROVISIONED, LAMBDA_ZERO_USAGE, LEGACY_ROWS, MONEY_ZERO, PLACEHOLDER_AMOUNTS, legacyRow as row } from './inventory-cost-fixtures';
 
 /** jsPDF text (uncompressed): every string drawn with Tj/TJ, unescaped and joined. */
 function pdfText(buffer: Buffer): string {
@@ -85,7 +85,7 @@ describe('A1/A2: the inventory export "Monthly Cost" column', () => {
     const withCost = pdfText(await service.generatePDF('org', {}, ['resource_name', 'cost']));
     expect(withCost).toContain('us-east-1 list-price estimate');
     // Fix round 1 (ruling 9): the column's coverage, N excluding not-running / no-direct-charge.
-    expect(withCost).toContain(`Monthly Cost coverage: 2 of ${LEGACY_ROWS.length - 2} priced · 2 not running or no direct charge.`);
+    expect(withCost).toContain(`Monthly Cost coverage: 2 of ${LEGACY_ROWS.length - 2} priced · 2 not running, with no direct charge, or with no billable usage.`);
     expect(withCost).toContain('it is not $0');
     expect(withCost).toContain('No price');
     for (const amount of PLACEHOLDER_AMOUNTS) expect(withCost).not.toContain(`$${amount}`);
@@ -149,7 +149,7 @@ describe('A3: Cost Summary report (F-4)', () => {
     const data = await fetchSummary(LEGACY_ROWS, async () => billed(10));
     expect(data.inventory).toMatchObject({ pricedResources: 2, totalResources: LEGACY_ROWS.length - 2, excludedResources: 2, amount: expect.closeTo(144.83, 6) });
     expect(costSummaryAppendixLines(data.inventory)).toEqual([
-      `Coverage: 2 of ${LEGACY_ROWS.length - 2} priced · 2 not running or no direct charge.`,
+      `Coverage: 2 of ${LEGACY_ROWS.length - 2} priced · 2 not running, with no direct charge, or with no billable usage.`,
       'Estimated monthly cost of the 2 priced resources: $144.83 (us-east-1 list-price estimate; not AWS billed spend). Resources without a price are not included and are not $0.',
     ]);
     expect(data.topPriced.map((r: { resource: string }) => r.resource)).toEqual(['orders-db', 'data-vol']);
@@ -218,8 +218,28 @@ describe('review fix round: Lambda in totals (S-2) and zero-usage Lambda (never 
     const csv = await exportCsv([LAMBDA_ZERO_USAGE, LAMBDA_ZERO_INCOMPLETE]);
     expect(csv).toContain('No billable usage recorded');
     expect(csv).not.toMatch(MONEY_ZERO);
-    expect(INVENTORY_COST_BASIS_NOTE.join(' ')).toContain('"No billable usage recorded" is a Lambda function with no invocations');
+    expect(INVENTORY_COST_BASIS_NOTE.join(' ')).toContain('"No billable usage recorded" is a Lambda function with provisioned concurrency confirmed absent and no invocations');
     expect(INVENTORY_COST_BASIS_NOTE.join(' ')).toContain('A Lambda figure is requests and duration at us-east-1 list price, before free tier');
+  });
+
+  it('follow-up ruling: zero invocations with provisioned concurrency configured or unknown is "No price" on every surface', async () => {
+    // Configured: billed with no requests.
+    expect(cell(LAMBDA_ZERO_PROVISIONED)).toBe('No price');
+    // Unknown: discovery records no provisioned concurrency today, so every real zero-usage row reads "No price".
+    expect(cell(LAMBDA_ZERO_AS_DISCOVERED)).toBe('No price');
+    const rows = [LAMBDA_ZERO_PROVISIONED, LAMBDA_ZERO_AS_DISCOVERED];
+    const csv = await exportCsv(rows);
+    expect(csv).not.toContain('No billable usage recorded');
+    expect(csv).not.toMatch(MONEY_ZERO);
+    const data = await fetchSummary(rows);
+    // Unpriced: inside N, never in M, never a total.
+    expect(data.inventory).toMatchObject({ pricedResources: 0, totalResources: 2, excludedResources: 0, noBillableUsage: 0, amount: null });
+    const pdfText = await pdf(rows);
+    // The only occurrence is the basis note's legend line; no row, group or total uses the label.
+    const occurrences = (t: string) => t.split('No billable usage recorded').length - 1;
+    expect(occurrences(pdfText)).toBe(occurrences(INVENTORY_COST_BASIS_NOTE.join(' ')));
+    expect(pdfText).toContain('Unknown 0 of 2 priced No price');
+    expect(pdfText).not.toMatch(MONEY_ZERO);
   });
 
   it('report appendix and group cells: a total that sums a Lambda figure says "Lambda before free tier"', async () => {
@@ -238,7 +258,7 @@ describe('review fix round: Lambda in totals (S-2) and zero-usage Lambda (never 
     const data = await fetchSummary([LAMBDA_ZERO_USAGE, LAMBDA_ZERO_INCOMPLETE]);
     expect(data.inventory).toMatchObject({ pricedResources: 0, totalResources: 1, excludedResources: 1, amount: null });
     expect(costSummaryAppendixLines(data.inventory)).toEqual([
-      'Coverage: 0 of 1 priced · 1 not running or no direct charge.',
+      'Coverage: 0 of 1 priced · 1 not running, with no direct charge, or with no billable usage.',
       'No resource has a defensible price, so there is no inventory estimate.',
     ]);
     expect(await pdf([LAMBDA_ZERO_USAGE, LAMBDA_ZERO_INCOMPLETE])).not.toMatch(MONEY_ZERO);

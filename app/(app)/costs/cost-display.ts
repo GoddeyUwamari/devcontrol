@@ -58,7 +58,7 @@ export function estimateCoverageSub(coverage: { pricedResources: number; totalRe
   const m = coverage.excludedResources ?? 0
   // Review fix round (S-2): an estimate that sums a Lambda figure says Lambda is before free tier.
   const lambda = (coverage.pricedLambdaResources ?? 0) > 0 ? ' · Lambda before free tier' : ''
-  return `Estimated from ${coverage.pricedResources} of ${coverage.totalResources} priced${m > 0 ? ` · ${m} not running or no direct charge` : ''}${lambda} · not AWS billed spend`
+  return `Estimated from ${coverage.pricedResources} of ${coverage.totalResources} priced${m > 0 ? ` · ${m} not running, with no direct charge, or with no billable usage` : ''}${lambda} · not AWS billed spend`
 }
 /**
  * Shown instead of an estimate of $0 or less. An inventory estimate is a sum of
