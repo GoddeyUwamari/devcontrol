@@ -482,6 +482,8 @@ export interface EC2InstanceMetadata {
   private_ip?: string;
   availability_zone?: string;
   launch_time?: string;
+  /** DescribeInstances State.Name as reported (pending, running, stopping, stopped, shutting-down, terminated); null when absent. */
+  instance_state?: string | null;
   /** The security groups attached to the instance, as DescribeInstances reports them. */
   security_group_ids?: string[];
   /** Read from those groups on each discovery: see utils/adminPortExposure.ts. */

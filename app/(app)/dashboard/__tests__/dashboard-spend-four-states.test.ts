@@ -83,7 +83,7 @@ describe('no data yet is only the first days of a month with nothing reported', 
   })
 
   it('an estimate gets no period prefix and no previous-month line', () => {
-    const s = { state: 'available', source: 'DevControl inventory cost estimate', provenance: 'estimated', asOf: null, period: { kind: 'point_in_time' }, coverage: null, reason: null, data: { amount: 88, basis: 'estimated_monthly_run_rate', lastDayInProgress: false } } as unknown as Spend
-    expect(card(s)).toMatchObject({ value: '$88.00/mo', caption: 'Estimated from inventory · not AWS billed spend', previousMonth: null })
+    const s = { state: 'available', source: 'DevControl inventory cost estimate', provenance: 'estimated', asOf: null, period: { kind: 'point_in_time' }, coverage: null, reason: null, data: { estimateCoverage: { pricedResources: 3, totalResources: 4 }, amount: 88, basis: 'estimated_monthly_run_rate', lastDayInProgress: false } } as unknown as Spend
+    expect(card(s)).toMatchObject({ value: '$88.00/mo', caption: 'Estimated from 3 of 4 priced · not AWS billed spend', previousMonth: null })
   })
 })

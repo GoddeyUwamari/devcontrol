@@ -14,7 +14,7 @@ function spend(amount: number, provenance: 'actual' | 'estimated' = 'actual', la
   return {
     state: 'available', source: provenance === 'actual' ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance, asOf: null, coverage: null, reason: null,
     period: provenance === 'actual' ? period : { kind: 'point_in_time' },
-    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress },
+    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress, ...(provenance === 'estimated' ? { estimateCoverage: { pricedResources: 3, totalResources: 4 } } : {}) },
   }
 }
 function missing<T>(state: 'unavailable' | 'error'): { state: typeof state; source: string; provenance: null; asOf: null; coverage: null; reason: string; data: T | null } {
@@ -55,9 +55,9 @@ describe('Dashboard spend figure keeps its provenance', () => {
     const c = card({ spend: spend(42.5, 'estimated'), monthOverMonth: missing('unavailable') as CostSummary['monthOverMonth'] })
     expect(c.label).toBe('Estimated Monthly Run-Rate')
     expect(c.value).toBe('$42.50/mo')
-    expect(c.caption).toBe('Estimated from inventory · not AWS billed spend')
+    expect(c.caption).toBe('Estimated from 3 of 4 priced · not AWS billed spend')
     expect(c.caption).not.toMatch(/Actual|Cost Explorer ·/)
-    expect(c.evidence?.source).toMatch(/^Estimate from resource inventory · not AWS billed spend/)
+    expect(c.evidence?.source).toMatch(/^Estimated from 3 of 4 priced · not AWS billed spend/)
   })
 
   it('unavailable, error, and a failed request are "—" -- never $0', () => {

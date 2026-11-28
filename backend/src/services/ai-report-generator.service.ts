@@ -37,7 +37,8 @@ import { runModel, type Interpretation } from './ai/model-client';
 import type { FallbackReason } from './ai/model-response';
 import { collectEvidence, sectionOf } from './ai/evidence/registry';
 import { defaultEvidenceRegistry } from './ai/evidence/providers';
-import { canSeeLines, LOW_ACTIVITY_FINDING_RULE, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { canSeeLines, INVENTORY_ESTIMATE_RULE, LOW_ACTIVITY_FINDING_RULE, untrustedBlock, UNTRUSTED_TEXT_RULE } from './ai/evidence/render';
+import { INVENTORY_PRICE_BASIS, inventoryRunRateCoverageText, inventoryTotalBasis } from './inventory-cost';
 import type { EvidenceBundle } from './ai/evidence/types';
 import type { ConfigChecksEvidence, AccountFindingsEvidence, RiskScoreEvidence, SecurityHubEvidence } from './ai/evidence/providers/security';
 import { isIdleEstimate, type CostFindingsEvidence, type TopEstimatedResources } from './ai/evidence/providers/cost';
@@ -354,6 +355,7 @@ const PROMPT_RULES = [
   'Configuration-check and account-level findings cover only DevControl\'s own checks: no findings means none from those checks, not that no security issues exist. An accepted-risk or dismissed finding is still active; say it was accepted or dismissed by the customer.',
   'Recommend only actions grounded in the supplied evidence. Do not recommend rightsizing, Reserved Instances, or Savings Plans unless a supplied recommendation says so.',
   'Savings are DevControl estimates of potential savings, never realized savings. In topRecommendations, set estimatedSavings only to a value copied from the idle/unused-resource recommendation evidence; otherwise omit the field.',
+  INVENTORY_ESTIMATE_RULE,
   'An idle/unused-resource item with priceKnown: false carries a DevControl default figure, used because the instance type\'s price is unknown. Never present that amount as a known price or as the instance\'s cost; wherever you mention it, say the price is unknown.',
   LOW_ACTIVITY_FINDING_RULE,
   'When a section has no evidence, say that data is not available in the relevant analysis -- do not fill it in.',
@@ -616,8 +618,11 @@ FOCUS: Comprehensive review across the cost, security, and deployment evidence s
       return `Cloud spend is not available: ${month?.reason?.text ?? 'no usable amount'}.`;
     }
     if (d.basis === 'estimated_monthly_run_rate') {
-      const partial = section.state === 'partial' && section.reason ? `; ${section.reason}` : '';
-      return `DevControl estimates the monthly run-rate of discovered resources at ${money(d.amount)} (a list-price estimate, not AWS billing data${partial}).`;
+      // F-5: priced resources only, with K of N; never billed spend.
+      const coverage = d.estimateCoverage ? `; ${inventoryRunRateCoverageText(d.estimateCoverage)}${d.estimateCoverage.totalResources > d.estimateCoverage.pricedResources ? ', the others have no price and are not included' : ''}` : '';
+      // S-2: with a Lambda figure in the total, its basis says Lambda is before free tier.
+      const basis = d.estimateCoverage?.pricedLambdaResources ? inventoryTotalBasis(d.estimateCoverage) : `a ${INVENTORY_PRICE_BASIS}`;
+      return `DevControl estimates the monthly run-rate of the discovered resources it can price at ${money(d.amount)} (${basis}, not AWS billing data${coverage}).`;
     }
     const period = section.period?.kind === 'range' ? ` for ${section.period.start} up to ${section.period.endExclusive} (exclusive)` : '';
     const credit = d.amount < 0 ? ' (net credit: credits and refunds exceed charges)' : '';

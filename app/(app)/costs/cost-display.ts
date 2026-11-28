@@ -45,10 +45,21 @@ export interface SpendDisplay {
 export const ACTUAL_SPEND_LABEL = 'Month-to-Date Spend'
 /**
  * An inventory estimate. Deliberately not called "spend": it is a modeled
- * run-rate from list prices, not what AWS billed.
+ * run-rate over the resources with a defensible us-east-1 list price, not what
+ * AWS billed.
  */
 export const ESTIMATED_RUN_RATE_LABEL = 'Estimated Monthly Run-Rate'
-const ESTIMATE_SUB = 'Estimate from resource inventory · not AWS billed spend'
+/**
+ * F-5: the inventory estimate sums only defensibly priced resources and always says how
+ * many: "Estimated from K of N priced resources". Never described as billed spend.
+ */
+export function estimateCoverageSub(coverage: { pricedResources: number; totalResources: number; excludedResources?: number; pricedLambdaResources?: number }): string {
+  // Fix round 1 (ruling 9): "K of N priced", N excluding not-running / no-direct-charge resources (M).
+  const m = coverage.excludedResources ?? 0
+  // Review fix round (S-2): an estimate that sums a Lambda figure says Lambda is before free tier.
+  const lambda = (coverage.pricedLambdaResources ?? 0) > 0 ? ' · Lambda before free tier' : ''
+  return `Estimated from ${coverage.pricedResources} of ${coverage.totalResources} priced${m > 0 ? ` · ${m} not running, with no direct charge, or with no billable usage` : ''}${lambda} · not AWS billed spend`
+}
 /**
  * Shown instead of an estimate of $0 or less. An inventory estimate is a sum of
  * per-resource list-price estimates, so $0 means nothing was estimated (no
@@ -67,8 +78,11 @@ export const NO_SPEND_FIGURE_SUB = 'Not available · no AWS Cost Explorer spend 
  * fails (AWSCostService.getMonthlySpendWithFallback). The Dashboard's
  * hasBillingData gate and describeStatsSpend both read this.
  */
-export function statsHasSpendFigure(stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated' }): boolean {
-  return stats.costSource === 'actual' || stats.monthlyAwsCost > 0
+export function statsHasSpendFigure(stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated'; costEstimateCoverage?: { pricedResources: number; totalResources: number; excludedResources?: number; pricedLambdaResources?: number } | null }): boolean {
+  if (stats.costSource === 'actual') return true
+  // Placeholder-costs D2/F-5: an estimate counts only above $0 AND with at least one
+  // defensibly priced resource behind it, so placeholders can never open this gate.
+  return stats.monthlyAwsCost > 0 && (stats.costEstimateCoverage?.pricedResources ?? 0) > 0
 }
 
 export function describeSpend(section: ContextSection<CostSpendEvidence> | undefined, { isLoading, isError }: QueryStatus): SpendDisplay {
@@ -81,11 +95,13 @@ export function describeSpend(section: ContextSection<CostSpendEvidence> | undef
 
   const { amount, basis, lastDayInProgress } = section.data
   if (section.provenance === 'estimated' || basis === 'estimated_monthly_run_rate') {
-    if (amount === null || !(amount > 0)) return missing(NO_SPEND_FIGURE_SUB)
+    // An estimate without its K of N coverage is not shown (F-5).
+    const coverage = section.data.estimateCoverage
+    if (amount === null || !(amount > 0) || !coverage) return missing(NO_SPEND_FIGURE_SUB)
     return {
       label: ESTIMATED_RUN_RATE_LABEL,
       value: `${formatUsd(amount)}/mo`,
-      sub: `${ESTIMATE_SUB} (Cost Explorer unavailable)${section.state === 'partial' ? ' · some resources have no estimate' : ''}`,
+      sub: `${estimateCoverageSub(coverage)} (Cost Explorer unavailable)`,
       amount,
       provenance: 'estimated',
     }
@@ -155,7 +171,7 @@ export function billedThroughInPeriod(section: ContextSection<CostSpendEvidence>
  * run-rate the backend falls back to) is never called spend.
  */
 export function describeStatsSpend(
-  stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated' } | undefined,
+  stats: { monthlyAwsCost: number; costSource?: 'actual' | 'estimated'; costEstimateCoverage?: { pricedResources: number; totalResources: number; excludedResources?: number; pricedLambdaResources?: number } | null } | undefined,
   { isLoading, isError }: QueryStatus
 ): SpendDisplay {
   const missing = (sub: string): SpendDisplay => ({ label: ACTUAL_SPEND_LABEL, value: '—', sub, amount: null, provenance: null })
@@ -166,8 +182,10 @@ export function describeStatsSpend(
   if (stats.costSource === 'actual') {
     return { label: ACTUAL_SPEND_LABEL, value: formatUsd(amount), sub: 'Actual · AWS Cost Explorer', amount, provenance: 'actual' }
   }
-  // 'estimated', or a response that does not say: never presented as billed spend.
-  return { label: ESTIMATED_RUN_RATE_LABEL, value: `${formatUsd(amount)}/mo`, sub: ESTIMATE_SUB, amount, provenance: 'estimated' }
+  // 'estimated', or a response that does not say: never presented as billed spend, and
+  // never without its K of N coverage (F-5).
+  if (!stats.costEstimateCoverage) return missing(NO_SPEND_FIGURE_SUB)
+  return { label: ESTIMATED_RUN_RATE_LABEL, value: `${formatUsd(amount)}/mo`, sub: estimateCoverageSub(stats.costEstimateCoverage), amount, provenance: 'estimated' }
 }
 
 /**

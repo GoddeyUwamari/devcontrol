@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { ContextSection, CostMonthOverMonthEvidence, CostSpendEvidence } from '@/lib/types'
-import { describeAnnualizedSavings, describeComparisonWindows, describeMonthOverMonth, describeSpend, formatUsd, noFinishedDayThisMonth } from '../cost-display'
+import { describeAnnualizedSavings, describeComparisonWindows, describeMonthOverMonth, describeSpend, describeStatsSpend, estimateCoverageSub, formatUsd, noFinishedDayThisMonth } from '../cost-display'
 
 const ready = { isLoading: false, isError: false }
 
@@ -33,7 +33,7 @@ function spendSection(amount: number, provenance: 'actual' | 'estimated', state:
   return {
     state, source: provenance === 'actual' ? 'AWS Cost Explorer' : 'DevControl inventory cost estimate', provenance,
     asOf: '2026-09-27T09:00:00.000Z', coverage: null, reason: null,
-    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false },
+    data: { amount, basis: provenance === 'actual' ? 'billed_month_to_date' : 'estimated_monthly_run_rate', lastDayInProgress: false, ...(provenance === 'estimated' ? { estimateCoverage: { pricedResources: 3, totalResources: 4 } } : {}) },
   }
 }
 
@@ -138,6 +138,32 @@ describe('month-to-date spend', () => {
     expect(d.sub).toMatch(/not AWS billed spend/)
     expect(d.sub).not.toMatch(/^Actual|Live from AWS/)
     expect(d.provenance).toBe('estimated')
+    // Placeholder-costs F-5: the estimate names its coverage.
+    expect(d.sub).toBe('Estimated from 3 of 4 priced · not AWS billed spend (Cost Explorer unavailable)')
+  })
+
+  it('fix round 1 (ruling 9): M (not running, with no direct charge, or with no billable usage) is named when present', () => {
+    const withExcluded = spendSection(42.5, 'estimated')
+    ;(withExcluded.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 3, totalResources: 4, excludedResources: 2 }
+    expect(describeSpend(withExcluded, ready).sub).toBe('Estimated from 3 of 4 priced · 2 not running, with no direct charge, or with no billable usage · not AWS billed spend (Cost Explorer unavailable)')
+  })
+
+  it('review fix round (S-2): an estimate that sums a Lambda figure says "Lambda before free tier"', () => {
+    const withLambda = spendSection(42.5, 'estimated')
+    ;(withLambda.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 3, totalResources: 4, excludedResources: 1, pricedLambdaResources: 1 }
+    expect(describeSpend(withLambda, ready).sub).toBe('Estimated from 3 of 4 priced · 1 not running, with no direct charge, or with no billable usage · Lambda before free tier · not AWS billed spend (Cost Explorer unavailable)')
+    expect(describeStatsSpend({ monthlyAwsCost: 42.5, costSource: 'estimated', costEstimateCoverage: { pricedResources: 3, totalResources: 4, pricedLambdaResources: 2 } }, ready).sub)
+      .toBe('Estimated from 3 of 4 priced · Lambda before free tier · not AWS billed spend')
+    expect(estimateCoverageSub({ pricedResources: 3, totalResources: 4, pricedLambdaResources: 0 })).toBe('Estimated from 3 of 4 priced · not AWS billed spend')
+  })
+
+  it('F-5: an estimate without its K of N coverage, or with nothing priced, shows no figure', () => {
+    const noCoverage = spendSection(42.5, 'estimated')
+    delete (noCoverage.data as { estimateCoverage?: unknown }).estimateCoverage
+    expect(describeSpend(noCoverage, ready)).toMatchObject({ value: '—', provenance: null })
+    const nothingPriced = spendSection(0, 'estimated')
+    ;(nothingPriced.data as { estimateCoverage?: unknown }).estimateCoverage = { pricedResources: 0, totalResources: 12 }
+    expect(describeSpend(nothingPriced, ready)).toMatchObject({ value: '—', provenance: null })
   })
 
   it('unavailable and error are missing figures -- never $0', () => {

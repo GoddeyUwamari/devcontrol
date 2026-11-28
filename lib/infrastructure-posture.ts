@@ -14,7 +14,7 @@ export const INFRASTRUCTURE_POSTURE_LABEL = 'Infrastructure Posture'
 export const INFRASTRUCTURE_POSTURE_DESCRIPTION = 'Composite of cost, security, and alert coverage.'
 
 /** The same composite with the backend's 30/40/30 weights spelled out (display copy only). */
-export const INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION = 'Composite of cost (30%), security (40%), and alert coverage (30%)'
+export const INFRASTRUCTURE_POSTURE_WEIGHTED_DESCRIPTION = 'Composite of cost (30%), security (40%), and alert coverage (30%); without cost data, of security and alert coverage only'
 
 /** What the composite is not -- shown alongside the weighted description. */
 export const INFRASTRUCTURE_POSTURE_NOT_UPTIME = 'A posture score, not measured uptime or performance.'
@@ -59,7 +59,11 @@ export function postureStatusLabel(status: string | null | undefined): string | 
 export function postureCompositionCaption(components: SystemIntelligenceResult['components'] | undefined): string | null {
   if (!components) return null
   const { cost, security, observability } = components
-  if (cost?.score == null || security?.score == null || observability?.score == null) return null
+  if (security?.score == null || observability?.score == null || !cost) return null
+  // Cost with insufficient data is not in the composite (placeholder-costs fix round 1, ruling 5).
+  if (cost.score == null) {
+    return cost.insufficientData ? `Composite · Security ${security.score} · Alert coverage ${observability.score} · Cost not included (insufficient data)` : null
+  }
   return `Composite · Cost ${cost.score} · Security ${security.score} · Alert coverage ${observability.score}`
 }
 
@@ -74,8 +78,8 @@ const COST_LIMITATION_CAPTIONS: Array<[sentence: string, caption: string]> = [
 
 /**
  * The Cost tile's one caption: where its spend comes from (the component's
- * costSource -- the inventory's monthly run-rate estimate, not the Spend
- * card's Cost Explorer month-to-date figure), then its known limitations.
+ * costSource -- AWS Cost Explorer billed spend for the trailing 30 days since
+ * placeholder-costs F-13 as amended; 'estimated' is no longer sent), then its known limitations.
  * null when the component has no costSource and no recognized limitation.
  */
 export function costComponentCaption(component: Pick<SystemIntelligenceResult['components']['cost'], 'costSource' | 'reason'> | undefined): string | null {

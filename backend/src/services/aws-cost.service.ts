@@ -19,6 +19,7 @@ import {
   type CostMonthState,
 } from './cost-month-state'
 import { costReportStates, isProvisional, type CostReportState } from './cost-trend-report-state'
+import { aggregateInventoryRows, inventoryCostColumns, type InventoryCostTotal } from './inventory-cost'
 
 
 
@@ -780,7 +781,7 @@ class AWSCostService {
    */
   async getMonthlySpendWithFallback(
     organizationId: string
-  ): Promise<{ amount: number; source: SpendProvenance }> {
+  ): Promise<{ amount: number; source: SpendProvenance; estimateCoverage?: { pricedResources: number; totalResources: number; excludedResources: number; pricedLambdaResources: number } }> {
     try {
       const liveCost = await this.fetchMonthlyCosts(organizationId)
       return { amount: liveCost.total, source: 'actual' }
@@ -789,19 +790,29 @@ class AWSCostService {
       // both call sites this consolidates.
     }
 
-    return { amount: await this.getInventoryMonthlyRunRate(organizationId), source: 'estimated' }
+    // Placeholder-costs PR 1 (F-5, D2): only defensibly priced resources are summed, so a
+    // placeholder ($9 ECS service, $150 Aurora cluster, ...) can never make this a spend
+    // figure. Nothing priced -> 0, which the Dashboard gate and every reader treat as "no
+    // figure" (statsHasSpendFigure: an estimate only above $0), and the coverage says why.
+    const runRate = await this.getInventoryPricedRunRate(organizationId)
+    return {
+      amount: runRate.amount ?? 0,
+      source: 'estimated',
+      estimateCoverage: { pricedResources: runRate.pricedResources, totalResources: runRate.totalResources, excludedResources: runRate.excludedResources, pricedLambdaResources: runRate.pricedLambdaResources },
+    }
   }
 
   /**
-   * The inventory's monthly run-rate estimate: SUM(estimated_monthly_cost) over
-   * the org's non-terminated resources. A DB read only -- never Cost Explorer.
+   * The inventory's monthly run-rate estimate over defensibly priced resources only (the
+   * shared rule, services/inventory-cost.ts), with "K of N". amount is null when nothing is
+   * priced. A DB read only -- never Cost Explorer.
    */
-  async getInventoryMonthlyRunRate(organizationId: string): Promise<number> {
-    const estimateResult = await (this.dbPool || pool).query(
-      `SELECT COALESCE(SUM(estimated_monthly_cost), 0) as total FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
+  async getInventoryPricedRunRate(organizationId: string): Promise<InventoryCostTotal> {
+    const { rows } = await (this.dbPool || pool).query(
+      `SELECT ${inventoryCostColumns()} FROM aws_resources WHERE organization_id = $1 AND status != 'terminated'`,
       [organizationId]
     )
-    return parseFloat(estimateResult.rows[0].total)
+    return aggregateInventoryRows(rows)
   }
 
   /** The trend cache key for a range and the period it resolves to right now. */

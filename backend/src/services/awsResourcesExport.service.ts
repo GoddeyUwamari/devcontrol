@@ -5,6 +5,26 @@ import autoTable from 'jspdf-autotable';
 import { ExportColumn, ColumnMapping } from '../types/export.types';
 import { ResourceFilters, AWSResource } from '../types/aws-resources.types';
 import { activeComplianceFindings } from '../utils/frameworkApplicability';
+import {
+  aggregateInventoryRows,
+  inventoryCost,
+  inventoryCostCell,
+  inventoryCoverageText,
+  inventoryCostColumns,
+  INVENTORY_PRICE_BASIS,
+  LAMBDA_PRICE_BASIS,
+  NO_BILLABLE_USAGE_TEXT,
+  NO_DIRECT_CHARGE_TEXT,
+  NO_PRICE_TEXT,
+  NOT_RUNNING_TEXT,
+  VPC_SEPARATE_CHARGES_LINE,
+} from './inventory-cost';
+
+/** The PDF's note on the Monthly Cost column, printed whenever the column is exported. */
+export const INVENTORY_COST_BASIS_NOTE: string[] = [
+  `Monthly Cost: a dollar figure is a ${INVENTORY_PRICE_BASIS} for the resource's recorded configuration (on-demand list price; RDS instance hours only, EBS volume storage only), not AWS billed spend. A Lambda figure is requests and duration at ${LAMBDA_PRICE_BASIS}; each cell names its own basis.`,
+  `"${NO_PRICE_TEXT}" means DevControl has no defensible price for the resource; it is not $0. "${NOT_RUNNING_TEXT}" is a stopped instance. "${NO_DIRECT_CHARGE_TEXT}" is a VPC: ${VPC_SEPARATE_CHARGES_LINE} "${NO_BILLABLE_USAGE_TEXT}" is a Lambda function with provisioned concurrency confirmed absent and no invocations in the 30 days read on its latest discovery.`,
+];
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
@@ -57,14 +77,14 @@ export class AWSResourcesExportService {
     },
     cost: {
       label: 'Monthly Cost',
-      field: 'estimated_monthly_cost',
-      formatter: (r: any) => {
-        // null means the cost hasn't actually been calculated yet for this
-        // resource (e.g. a Lambda function whose CloudWatch usage lookup
-        // failed on its most recent discovery) -- never coerce to $0.00.
-        if (r.estimated_monthly_cost == null) return 'Not available';
-        return `$${Number(r.estimated_monthly_cost).toFixed(2)}`;
-      },
+      // Not a column read: the cell comes only from the rule over inventoryCostColumns().
+      field: 'inventoryCostColumns()',
+      // The shared inventory pricing rule (services/inventory-cost.ts): the amount with its basis
+      // ("us-east-1 list-price estimate; ..." or Lambda's "us-east-1 list price, before free
+      // tier; ..."), or "No price" / "Not running: no instance-hour charge" / "No direct
+      // charge. NAT gateways, ..." / "No billable usage recorded". Never the stored figure,
+      // never "$0.00" for a missing price or a zero-usage function.
+      formatter: (r: any) => inventoryCostCell(inventoryCost(r)),
     },
     security: {
       label: 'Security Status',
@@ -215,10 +235,19 @@ export class AWSResourcesExportService {
         columns.map((col) => this.formatCellValue(col, resource))
       );
 
+      const showsCost = columns.includes('cost');
+      if (showsCost) {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        // Coverage of the Monthly Cost column (fix round 1, ruling 9), then the basis note.
+        const coverage = `Monthly Cost coverage: ${inventoryCoverageText(aggregateInventoryRows(resources))}.`;
+        doc.text([coverage, ...INVENTORY_COST_BASIS_NOTE], margin, margin + 0.55, { maxWidth: contentWidth });
+      }
+
       autoTable(doc, {
         head: [tableHeaders],
         body: tableData,
-        startY: margin + 0.5,
+        startY: showsCost ? margin + 1.35 : margin + 0.5,
         margin: { left: margin, right: margin },
         theme: 'grid',
         headStyles: {
@@ -347,6 +376,7 @@ export class AWSResourcesExportService {
     const query = `
       SELECT
         r.*,
+        ${inventoryCostColumns('r')},
         t.name as team_name,
         s.name as service_name
       FROM aws_resources r

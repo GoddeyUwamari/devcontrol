@@ -56,11 +56,16 @@ async function insertDiscoveryJob(
   );
 }
 
+/**
+ * A resource the shared pricing rule prices (placeholder-costs PR 1): a us-east-1 gp2 volume whose
+ * size makes its list price exactly `estimatedMonthlyCost` ($0.10/GB-month).
+ */
 async function insertAwsResourceWithEstimate(organizationId: string, estimatedMonthlyCost: number): Promise<void> {
   await pool.query(
-    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost)
-     VALUES ($1, $2, $3, 'ec2', 'us-east-1', 'running', $4)`,
-    [organizationId, `arn:aws:ec2:us-east-1:123456789012:instance/i-${uniqueSuffix()}`, `i-${uniqueSuffix()}`, estimatedMonthlyCost]
+    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost, metadata)
+     VALUES ($1, $2, $3, 'ebs', 'us-east-1', 'in-use', $4, $5)`,
+    [organizationId, `arn:aws:ec2:us-east-1:123456789012:volume/vol-${uniqueSuffix()}`, `vol-${uniqueSuffix()}`, estimatedMonthlyCost,
+      JSON.stringify({ volume_type: 'gp2', size_gb: estimatedMonthlyCost * 10 })]
   );
 }
 
@@ -223,14 +228,19 @@ async function insertResource(
   organizationId: string,
   resourceType: 'ec2' | 'rds',
   estimatedMonthlyCost: number | null,
-  tags: Record<string, string> = {}
+  tags: Record<string, string> = {},
+  extra: { status?: string; metadata?: Record<string, unknown> } = {}
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost, tags)
-     VALUES ($1, $2, $3, $4, 'us-east-1', 'running', $5, $6)`,
-    [organizationId, `arn:aws:${resourceType}:us-east-1:123456789012:r-${uniqueSuffix()}`, `r-${uniqueSuffix()}`, resourceType, estimatedMonthlyCost, JSON.stringify(tags)]
+    `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status, estimated_monthly_cost, tags, metadata, last_synced_at)
+     VALUES ($1, $2, $3, $4, 'us-east-1', $7, $5, $6, $8, NOW())`,
+    [organizationId, `arn:aws:${resourceType}:us-east-1:123456789012:r-${uniqueSuffix()}`, `r-${uniqueSuffix()}`, resourceType, estimatedMonthlyCost, JSON.stringify(tags),
+      extra.status ?? 'running', JSON.stringify(extra.metadata ?? {})]
   );
 }
+
+/** An RDS row the shared rule prices: us-east-1, MySQL, Single-AZ, available, a class in the table. */
+const pricedRds = (instanceClass: string) => ({ status: 'available', metadata: { engine: 'mysql', multi_az: false, db_instance_class: instanceClass } });
 
 /** gatherContext() with Cost Explorer not connected -- these tests are about the other sections. */
 async function contextFor(orgId: string) {
@@ -284,7 +294,7 @@ describe('Resources section', () => {
 
     expect(context.resources.state).toBe('available');
     expect(data.ec2.count).toBe(0);
-    expect(data.rds).toEqual({ count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 });
+    expect(data.rds).toEqual({ count: 0, pricedMonthlyCost: null, pricedCount: 0, priceExpectedCount: 0, notRunningCount: 0 });
     expect(data.lambda).toEqual({ count: 0, invocations: 0, invocationsKnownForCount: 0 });
     const formatted = format(context);
     expect(formatted).toMatch(/- EC2: 0 instances/);
@@ -318,18 +328,24 @@ describe('Resources section', () => {
     expect(formatted).not.toMatch(/\d+ underutilized|underutilized: \d/);
   });
 
-  it('RDS cost is an explicitly estimated figure in cents over only the databases that carry an estimate -- not "storage cost"', async () => {
+  it('RDS cost sums only the databases with a defensible price (K of N priced · M not running); placeholders and Aurora members have no price', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
-    await insertResource(orgId, 'rds', 12.34);
-    await insertResource(orgId, 'rds', 0.5);
-    await insertResource(orgId, 'rds', null);
+    await insertResource(orgId, 'rds', 12.41, {}, pricedRds('db.t3.micro'));
+    await insertResource(orgId, 'rds', 24.82, {}, pricedRds('db.t3.small'));
+    // A legacy row: stored $75 fallback, nothing establishes a price.
+    await insertResource(orgId, 'rds', 75);
+    // An Aurora member (F-10): never a figure.
+    await insertResource(orgId, 'rds', 75, {}, { status: 'available', metadata: { engine: 'aurora-postgresql', multi_az: false, db_instance_class: 'db.t3.micro' } });
+    // Stopped and just observed: not running, outside N (fix round 1, ruling 9).
+    await insertResource(orgId, 'rds', 12.41, {}, { status: 'stopped', metadata: { engine: 'mysql', multi_az: false, db_instance_class: 'db.t3.micro' } });
 
     const context = await contextFor(orgId);
 
-    expect(context.resources.data!.rds).toEqual({ count: 3, estimatedMonthlyCost: 12.84, estimatedForCount: 2 });
+    expect(context.resources.data!.rds).toEqual({ count: 5, pricedMonthlyCost: 37.23, pricedCount: 2, priceExpectedCount: 4, notRunningCount: 1 });
     const formatted = format(context);
-    expect(formatted).toMatch(/- RDS: 3 databases; DevControl estimated monthly cost \$12\.84 across the 2 of 3 databases with a stored estimate value \(list-price estimate for the whole database -- not AWS billed spend\)/);
+    expect(formatted).toContain('- RDS: 5 databases; DevControl us-east-1 list-price estimate $37.23/month for 2 of 4 priced databases · 1 not running, with no direct charge, or with no billable usage (instance hours only; excludes storage, I/O and backups; not AWS billed spend); the other 2 have no price -- not $0, and not included in that figure');
+    expect(formatted).not.toMatch(/\$75|\$186/);
     expect(formatted).not.toMatch(/storage cost/);
   });
 });
@@ -534,11 +550,11 @@ describe('Inventory freshness: completed vs incomplete vs unknown discovery', ()
   });
 });
 
-describe('RDS estimate of $0.00 (column default vs recorded zero)', () => {
-  it('is never presented as a confirmed zero-cost estimate, because databases without an estimate are stored as $0.00', async () => {
+describe('RDS legacy stored values (placeholder-costs F-11)', () => {
+  it('a stored $0.00 or a column default is never a figure: no price, never "$0.00"', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
-    // One database with an explicit $0 estimate, one relying on the column default (0.00).
+    // One database with an explicit $0 stored, one relying on the column default (0.00).
     await insertResource(orgId, 'rds', 0);
     await pool.query(
       `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, region, status)
@@ -548,21 +564,20 @@ describe('RDS estimate of $0.00 (column default vs recorded zero)', () => {
 
     const context = await contextFor(orgId);
 
-    // The two are indistinguishable in the data...
-    expect(context.resources.data!.rds).toEqual({ count: 2, estimatedMonthlyCost: 0, estimatedForCount: 2 });
-    // ...so the wording must not claim a measured $0.
+    expect(context.resources.data!.rds).toEqual({ count: 2, pricedMonthlyCost: null, pricedCount: 0, priceExpectedCount: 2, notRunningCount: 0 });
     const formatted = format(context);
-    expect(formatted).toMatch(/- RDS: 2 databases; DevControl estimated monthly cost \$0\.00 across the 2 of 2 databases with a stored estimate value \(list-price estimate for the whole database -- not AWS billed spend; a \$0\.00 total may mean no estimate was recorded, since databases without an estimate are stored as \$0\.00 by default -- do not present it as a confirmed zero cost\)/);
+    expect(formatted).toContain('- RDS: 2 databases; no database has a defensible price (0 of 2 priced databases; no price is not $0; do not give a cost figure for them)');
+    expect(formatted).not.toMatch(/\$0\.00/);
   });
 
-  it('a non-zero estimate carries no zero-value caveat', async () => {
+  it('every database priced: no unpriced remainder sentence', async () => {
     const orgId = await insertOrg();
     await insertDiscoveryJob(orgId, 'completed', new Date(COMPLETED_AT));
-    await insertResource(orgId, 'rds', 25);
+    await insertResource(orgId, 'rds', 24.82, {}, pricedRds('db.t3.small'));
 
     const formatted = format(await contextFor(orgId));
 
-    expect(formatted).toMatch(/DevControl estimated monthly cost \$25\.00 across the 1 of 1 databases with a stored estimate value \(list-price estimate for the whole database -- not AWS billed spend\)/);
-    expect(formatted).not.toMatch(/may mean no estimate was recorded/);
+    expect(formatted).toContain('DevControl us-east-1 list-price estimate $24.82/month for 1 of 1 priced databases (instance hours only; excludes storage, I/O and backups; not AWS billed spend)\n');
+    expect(formatted).not.toMatch(/have no price/);
   });
 });

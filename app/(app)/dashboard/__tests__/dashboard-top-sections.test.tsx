@@ -60,7 +60,7 @@ const actualSpend = (amount: number, lastDayInProgress = true, period: CostSumma
 })
 const estimatedSpend = (amount: number): CostSummary['spend'] => ({
   state: 'available', source: 'DevControl inventory cost estimate', provenance: 'estimated', asOf: null, coverage: null, reason: null,
-  data: { amount, basis: 'estimated_monthly_run_rate', lastDayInProgress: false },
+  data: { amount, basis: 'estimated_monthly_run_rate', lastDayInProgress: false, estimateCoverage: { pricedResources: 3, totalResources: 4 } },
 })
 const mom = (changePercent: number, changeAmount: number, includesToday: boolean): CostSummary['monthOverMonth'] => ({
   state: 'available', source: 'DevControl month-over-month comparison', provenance: 'derived', asOf: null, coverage: null, reason: null,
@@ -489,9 +489,9 @@ describe('9. estimated spend is labeled as an estimate', () => {
     const card = kpi('/costs')
     expect(within(card).getByTestId('kpi-title').textContent).toBe('Estimated Monthly Run-Rate')
     const dialog = openInfo(card, 'About Estimated Monthly Run-Rate')
-    expect(dialog).toHaveTextContent('Estimate from resource inventory · not AWS billed spend')
+    expect(dialog).toHaveTextContent('Estimated from 3 of 4 priced · not AWS billed spend')
     expect(dialog.textContent).not.toContain('Actual · AWS Cost Explorer')
-    expect(within(card).getByTestId('kpi-caption')).toHaveTextContent('Estimated from inventory · not AWS billed spend')
+    expect(within(card).getByTestId('kpi-caption')).toHaveTextContent('Estimated from 3 of 4 priced · not AWS billed spend')
   })
 
   it('actual spend: the panel gives provenance and the comparison basis with the still-billing note', async () => {

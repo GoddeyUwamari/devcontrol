@@ -241,6 +241,30 @@ export function rdsInstanceHourlyPrice(key: RdsInstancePriceKey): number | null 
   return typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : null;
 }
 
+// RDS instance table for discovery's estimate and the inventory pricing rule
+// (services/inventory-cost.ts). $/month = on-demand instance-hour price x 730 hours, keyed by
+// instance class. Assumptions: us-east-1, engine MySQL or MariaDB (General Public License; the two
+// are priced identically), Single-AZ, instance hours only (storage, Provisioned IOPS, backup storage
+// and public IPv4 are excluded). The rule prices a row from this table only when the row records
+// all of them plus status available (ruling F-2).
+//
+// Fix round 1 (founder ruling 2): refreshed from the older hand-typed figures (12, 24, 48, 96, 122,
+// 244, 175, 350) to the AWS Price List data in rds-instance-prices.json -- us-east-1,
+// "mysql|general-public-license", Single-AZ -- offer version 20261124233028 (published
+// 2026-11-24T23:30:28Z, retrieved 2026-11-25; RDS_INSTANCE_HOURLY_PRICE_SOURCE). Each figure is
+// that hourly price x 730, rounded to cents; config/__tests__/inventory-rds-table.test.ts pins
+// every entry to the JSON. Regional pricing is placeholder-costs PR 3.
+export const RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ: Readonly<Record<string, number>> = Object.freeze({
+  'db.t3.micro': 12.41, // 0.017/h
+  'db.t3.small': 24.82, // 0.034/h
+  'db.t3.medium': 49.64, // 0.068/h
+  'db.t3.large': 99.28, // 0.136/h
+  'db.m5.large': 124.83, // 0.171/h
+  'db.m5.xlarge': 249.66, // 0.342/h
+  'db.r5.large': 175.2, // 0.24/h
+  'db.r5.xlarge': 350.4, // 0.48/h
+});
+
 // AWS S3 storage pricing, us-east-1, $/GB-month, first 50TB tier -- verified
 // via AWS's published pricing (confirmed current as of 2026-09-06) -- used
 // only by the s3_lifecycle analyzer's ceiling estimate (see

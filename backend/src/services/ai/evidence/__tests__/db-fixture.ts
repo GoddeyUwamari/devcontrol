@@ -147,6 +147,22 @@ export class EvidenceDb {
       markers.push(`i-fixture${label}${i}`);
     }
 
+    // The inventory estimate's rows (placeholder-costs PR 1 review fix round, B-1). EC2 is never
+    // priced by the shared rule (F-2), so the instances above (whose stored figures stay, and must
+    // never be summed) give no estimate. These us-east-1 gp2 volumes are priced by the rule at
+    // $0.10/GB-month: 100 GB x (i + 1) -> $10 x (i + 1), so `count` 1 gives $10 and 3 gives $60.
+    for (let i = 0; i < count; i++) {
+      const name = `fixture-${label}-data-${i}`;
+      const volumeId = `vol-fixture${label}${i}`;
+      markers.push(name, volumeId);
+      await this.admin.query(
+        `INSERT INTO aws_resources (organization_id, resource_arn, resource_id, resource_type, resource_name, region, status, estimated_monthly_cost, metadata)
+         VALUES ($1, $2, $3, 'ebs', $4, 'us-east-1', 'in-use', $5, $6::jsonb)`,
+        [id, `arn:aws:ec2:us-east-1:${accountId}:volume/${volumeId}-${this.suffix}`, volumeId, name, 10 * (i + 1),
+          JSON.stringify({ volume_type: 'gp2', size_gb: 100 * (i + 1) })]
+      );
+    }
+
     for (let i = 0; i < count; i++) {
       const title = `fixture ${label} security group open ${i}`;
       markers.push(title);

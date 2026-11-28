@@ -69,7 +69,7 @@ export class StatsController {
       // Live Cost Explorer, falling back to the DB estimate — see
       // AWSCostService.getMonthlySpendWithFallback (the single canonical
       // implementation of this decision, shared with system-intelligence.service.ts).
-      const { amount: totalCost, source: costSource } =
+      const { amount: totalCost, source: costSource, estimateCoverage } =
         await awsCostService.getMonthlySpendWithFallback(organizationId);
 
       const totalResources = parseInt(resourceCountResult.rows[0].total, 10);
@@ -83,6 +83,9 @@ export class StatsController {
         active_deployments: activeDeployments,
         total_infrastructure_cost: totalCost,
         cost_source: costSource,
+        cost_estimate_coverage: estimateCoverage
+          ? { priced_resources: estimateCoverage.pricedResources, total_resources: estimateCoverage.totalResources, excluded_resources: estimateCoverage.excludedResources, priced_lambda_resources: estimateCoverage.pricedLambdaResources }
+          : null,
         free_tier_remaining: Math.max(0, 25 - totalCost),
         recent_deployments: recentDeployments,
         service_health: {

@@ -84,6 +84,14 @@ describe('postureCompositionCaption', () => {
     expect(postureCompositionCaption(components({ score: null }))).toBeNull()
     expect(postureCompositionCaption(undefined)).toBeNull()
   })
+
+  it('placeholder-costs fix round 1 (ruling 5): cost with insufficient data is named as not included', () => {
+    const c = components()
+    const withoutCost = { ...c, cost: { ...c.cost, score: null, insufficientData: true } }
+    expect(postureCompositionCaption(withoutCost)).toBe('Composite · Security 57 · Alert coverage 0 · Cost not included (insufficient data)')
+    // A cost score that is missing for another reason still gives no caption.
+    expect(postureCompositionCaption({ ...c, cost: { ...c.cost, score: null } })).toBeNull()
+  })
 })
 
 describe('posturePartialCaption', () => {

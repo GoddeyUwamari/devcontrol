@@ -28,7 +28,7 @@ const INTERNAL_IDENTIFIERS = [
   'asOf', 'as_of', 'endExclusive', 'end_exclusive', 'currentWindowIncludesToday', 'finishedThrough', 'finished_through', 'connectedAccountId',
   'connected_account_id', 'discoveryRegion', 'discovery_region', 'linkedAccountFilter', 'linked_account_filter',
   'consolidatedBilling', 'consolidated_billing', 'estimatedMonthlyCost', 'estimated_monthly_cost',
-  'estimatedForCount', 'invocationsKnownForCount', 'topSpenders', 'costExplorer', 'estimateCoverage',
+  'pricedCount', 'invocationsKnownForCount', 'topSpenders', 'costExplorer', 'estimateCoverage',
   'currentWindow', 'current_window', 'previousWindow', 'previous_window', 'currentWindowTotal', 'changeAmount',
   'changePercent', 'month_to_date_spend', 'partial_day', 'completedAt', 'accountId',
 ];
@@ -88,7 +88,7 @@ function everyStateContext(): ChatContext {
     inventoryScope: INVENTORY_SCOPE,
     resources: section('available', {
       ec2: { count: 1 },
-      rds: { count: 2, estimatedMonthlyCost: 0, estimatedForCount: 2 },
+      rds: { count: 2, pricedMonthlyCost: 0, pricedCount: 2, priceExpectedCount: 2, notRunningCount: 0 },
       lambda: { count: 3, invocations: 150, invocationsKnownForCount: 2 },
     }, { asOf: '2026-09-25T06:00:03.693Z', scope: INVENTORY_SCOPE, coverage: 'EC2, RDS, and Lambda resources only' }),
     dora: section('available', { deploymentFrequency: '115 deployments in 30 days', changeFailureRate: '0.9% (1 failed out of 115 finished deployments)', leadTime: '6.2 hours (Average time between consecutive deployments)', mttr: '71.35 minutes (1 incidents recovered)' }, {
@@ -121,7 +121,7 @@ function estimatedCostContext(): ChatContext {
       state: 'partial', source: 'estimated', current: 42.5, asOf: '2026-09-25T06:00:03.693Z', period: null,
       scope: INVENTORY_SCOPE, topSpenders: null,
       costExplorer: { state: 'error', reason: 'the Cost Explorer request failed' },
-      estimateCoverage: { estimatedResources: 3, totalResources: 4 },
+      estimateCoverage: { pricedResources: 3, totalResources: 4 },
       comparison: {
         state: 'unavailable', note: 'no Cost Explorer data for the current period, so there is nothing to compare',
         currentWindow: null, previousWindow: null, currentWindowTotal: null, previousWindowTotal: null,

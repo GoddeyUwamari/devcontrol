@@ -12,6 +12,7 @@ import { pool } from '../../../../config/database';
 import { defineProvider, ref, summarizeItems, untrustedFor, withOrgClient } from './shared';
 import { discoveryGated } from './inventory';
 import { isLowActivityFinding } from '../../../finding-display';
+import { aggregateInventoryCosts, INVENTORY_TOTAL_BASIS_WITH_LAMBDA, inventoryCost, inventoryCostColumns, PRICED_RESOURCES_UNIT } from '../../../inventory-cost';
 
 export const spendProvider = defineProvider<SpendEvidence>({
   id: 'cost.spend',
@@ -44,12 +45,17 @@ export const monthOverMonthProvider = defineProvider<MonthOverMonthEvidence>({
 });
 
 export interface TopEstimatedResources {
-  items: Array<{ ref: string; resourceId: string; resourceType: string; estimatedMonthlyCost: number }>;
+  /** Priced resources only (the shared rule, services/inventory-cost.ts), highest first. Unpriced resources are never listed. */
+  items: Array<{ ref: string; resourceId: string; resourceType: string; monthlyCost: number; basis: string; detail: string }>;
+  /** K of N priced (N excludes not-running and no-direct-charge resources, which are M). */
+  pricedResources: number;
+  totalResources: number;
+  excludedResources: number;
 }
 
 export const topEstimatedResourcesProvider = defineProvider<TopEstimatedResources>({
   id: 'cost.top_estimated_resources',
-  version: 1,
+  version: 2,
   title: 'Highest estimated-cost discovered resources',
   source: 'DevControl inventory cost estimates',
   dataSourceIds: ['S3'],
@@ -64,30 +70,40 @@ export const topEstimatedResourcesProvider = defineProvider<TopEstimatedResource
         classification: 'estimated',
         scope: inventoryScope,
         period: { kind: 'point_in_time' },
-        coverage: 'list-price monthly estimates for individual discovered resources -- not AWS billed spend',
+        // S-2: items mix table prices and Lambda usage figures; each item carries its own basis.
+        coverage: `${INVENTORY_TOTAL_BASIS_WITH_LAMBDA} (each item names its own basis) for individual discovered resources DevControl can price -- not AWS billed spend. Resources without a price are not listed and are not $0. Never add these figures together.`,
       },
       discovery,
       (d) => d.items.length === 0,
       async () => {
+        // Placeholder-costs PR 1 (B1): every row through the shared rule; a flat placeholder or
+        // any other unpriced row never reaches the model.
         const result = await pool.query(
-          `SELECT resource_id, resource_type, estimated_monthly_cost, resource_name
+          `SELECT resource_id, resource_name, ${inventoryCostColumns()}
              FROM aws_resources
             WHERE organization_id = $1
-              AND estimated_monthly_cost > 0
-              AND status != 'terminated'
-            ORDER BY estimated_monthly_cost DESC
-            LIMIT 5`,
+              AND status != 'terminated'`,
           [organizationId]
         );
-        const items = result.rows.map((row, i) => ({
+        const now = new Date();
+        const costed = result.rows.map((row) => ({ row, cost: inventoryCost(row, now) }));
+        const total = aggregateInventoryCosts(costed.map((c) => c.cost));
+        const top = costed
+          .flatMap(({ row, cost }) => (cost.kind === 'priced' ? [{ row, cost }] : []))
+          .sort((a, b) => b.cost.amount - a.cost.amount)
+          .slice(0, 5);
+        const items = top.map(({ row, cost }, i) => ({
           ref: ref('e', i),
           resourceId: String(row.resource_id),
           resourceType: String(row.resource_type),
-          estimatedMonthlyCost: Math.round(parseFloat(row.estimated_monthly_cost) * 100) / 100,
+          monthlyCost: Math.round(cost.amount * 100) / 100,
+          basis: cost.basis,
+          detail: cost.detail,
         }));
         return {
-          data: { items },
-          untrusted: result.rows.flatMap((row, i) => untrustedFor(ref('e', i), 'name', row.resource_name)),
+          data: { items, pricedResources: total.pricedResources, totalResources: total.totalResources, excludedResources: total.excludedResources },
+          completeness: { unit: PRICED_RESOURCES_UNIT, expected: total.totalResources, received: total.pricedResources, missing: null },
+          untrusted: top.flatMap(({ row }, i) => untrustedFor(ref('e', i), 'name', row.resource_name)),
         };
       }
     );

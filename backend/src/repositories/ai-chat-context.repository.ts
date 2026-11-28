@@ -42,6 +42,7 @@ import { createEvidenceBasis, defaultBasisSources } from '../services/ai/evidenc
 import { collectEvidence, sectionOf } from '../services/ai/evidence/registry';
 import { defaultEvidenceRegistry } from '../services/ai/evidence/providers';
 import { topicsForConversation } from '../services/ai/evidence/select';
+import { aggregateInventoryRows, inventoryCostColumns, inventoryRunRateCoverageText, PRICED_RESOURCES_UNIT } from '../services/inventory-cost';
 
 const INVENTORY_SOURCE = 'DevControl resource inventory (periodic AWS discovery)';
 
@@ -70,7 +71,7 @@ export const CHAT_CORE_PROVIDERS = [
 ] as const;
 
 const COST_EXPLORER_SOURCE = 'AWS Cost Explorer';
-const ESTIMATE_SOURCE = 'DevControl inventory cost estimate';
+const ESTIMATE_SOURCE = 'DevControl inventory cost estimate (us-east-1 list-price estimates for priced resources only)';
 const NO_COST_SOURCE = 'AWS Cost Explorer and DevControl inventory cost estimate';
 
 /** The version-2 fields a cost section built here carries. */
@@ -545,24 +546,24 @@ export class AIChatContextRepository {
 
     const noCurrentPeriod = emptyComparison('unavailable', 'no Cost Explorer data for the current period, so there is nothing to compare');
 
-    // Cost Explorer unavailable or failed -- fall back to the same DB estimate
-    // stats.controller.ts's getDashboardStats() already uses, labeled as an
-    // estimate with its own inventory scope and coverage.
+    // Cost Explorer unavailable or failed -- fall back to the inventory run-rate over
+    // DEFENSIBLY PRICED resources only (placeholder-costs F-5: the shared rule,
+    // services/inventory-cost.ts), labeled as an estimate with its inventory scope and
+    // "K of N priced resources". A placeholder or unpriced resource is never summed and
+    // never counted as priced; nothing priced -> no estimate at all.
     let estimateState: ContextDataState;
     try {
       const { rows } = await this.pool.query(
-        `SELECT COUNT(*) AS total_resources,
-                COUNT(estimated_monthly_cost) AS estimated_resources,
-                SUM(estimated_monthly_cost) AS total
+        `SELECT ${inventoryCostColumns()}
          FROM aws_resources
          WHERE organization_id = $1 AND status != 'terminated'`,
         [organizationId]
       );
-      const totalResources = parseInt(rows[0]?.total_resources ?? '0', 10);
-      const estimatedResources = parseInt(rows[0]?.estimated_resources ?? '0', 10);
+      const priced = aggregateInventoryRows(rows);
+      const { pricedResources, totalResources, excludedResources, pricedLambdaResources } = priced;
 
-      if (estimatedResources > 0) {
-        const partial = estimatedResources < totalResources;
+      if (priced.amount !== null) {
+        const partial = pricedResources < totalResources;
         return {
           state: partial ? 'partial' : 'available',
           source: ESTIMATE_SOURCE,
@@ -570,10 +571,10 @@ export class AIChatContextRepository {
           asOf: discoveryAsOf,
           scope: inventoryScope,
           period: { kind: 'point_in_time' },
-          completeness: { unit: 'discovered resources with a cost estimate', expected: totalResources, received: estimatedResources, missing: null },
+          completeness: { unit: PRICED_RESOURCES_UNIT, expected: totalResources, received: pricedResources, missing: null },
           coverage: null,
-          reason: partial ? `${estimatedResources} of ${totalResources} discovered resources have a cost estimate` : null,
-          data: { current: roundCents(parseFloat(rows[0].total)), topSpenders: null, estimateCoverage: { estimatedResources, totalResources } },
+          reason: partial ? `${inventoryRunRateCoverageText(priced)}; the other ${totalResources - pricedResources} have no price and are not included` : null,
+          data: { current: roundCents(priced.amount), topSpenders: null, estimateCoverage: { pricedResources, totalResources, excludedResources, pricedLambdaResources } },
           ...costSectionFields('estimated'),
           costExplorer,
           comparison: noCurrentPeriod,
@@ -631,13 +632,10 @@ export class AIChatContextRepository {
         AND status != 'terminated'
       `;
 
-      // estimated_monthly_cost is DevControl's list-price estimate for the whole
-      // database -- only summed over the rows that actually carry one.
+      // RDS rows for the shared inventory pricing rule (services/inventory-cost.ts):
+      // only defensibly priced databases are summed, with K of N.
       const rdsQuery = `
-        SELECT
-          COUNT(*) as total,
-          COUNT(estimated_monthly_cost) as estimated_count,
-          SUM(estimated_monthly_cost) as estimated_cost
+        SELECT ${inventoryCostColumns()}
         FROM aws_resources
         WHERE organization_id = $1
         AND resource_type = 'rds'
@@ -668,13 +666,16 @@ export class AIChatContextRepository {
         this.pool.query(lambdaQuery, [organizationId]),
       ]);
 
-      const rdsEstimatedCount = parseInt(rdsResult.rows[0]?.estimated_count ?? '0', 10);
+      const rdsPriced = aggregateInventoryRows(rdsResult.rows);
       return {
         ec2: { count: parseInt(ec2Result.rows[0]?.total ?? '0', 10) },
         rds: {
-          count: parseInt(rdsResult.rows[0]?.total ?? '0', 10),
-          estimatedMonthlyCost: rdsEstimatedCount > 0 ? roundCents(parseFloat(rdsResult.rows[0].estimated_cost)) : null,
-          estimatedForCount: rdsEstimatedCount,
+          count: rdsResult.rows.length,
+          pricedMonthlyCost: rdsPriced.amount !== null ? roundCents(rdsPriced.amount) : null,
+          pricedCount: rdsPriced.pricedResources,
+          // N and M of "K of N priced · M not running" (fix round 1, ruling 9).
+          priceExpectedCount: rdsPriced.totalResources,
+          notRunningCount: rdsPriced.excludedResources,
         },
         lambda: {
           count: parseInt(lambdaResult.rows[0]?.total ?? '0', 10),

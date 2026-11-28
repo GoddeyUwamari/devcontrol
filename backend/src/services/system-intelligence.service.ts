@@ -12,7 +12,24 @@ import { ANOMALY_DETECTION_ACTIVE } from './anomaly-detection.service'
 import { formatSavingsCurrency } from '../utils/formatSavingsCurrency'
 
 /** The cost component's basis sentence (without its period), as written into its reason. */
-export const COST_RUN_RATE_BASIS = 'Based on monthly run-rate estimate from resource inventory'
+export const COST_BILLED_BASIS = 'Based on AWS Cost Explorer billed spend for the last 30 days'
+/** The cost component with no usable billed spend (fix round 1, ruling 5): no score, out of the overall score. */
+export const COST_INSUFFICIENT_DATA = 'Insufficient data'
+export const COST_INSUFFICIENT_DATA_REASON =
+  'Insufficient data: AWS Cost Explorer has no usable billed spend for the last 30 days, so cost is not included in the overall score.'
+/** Cost Intelligence's window (app/(app)/costs/cost-intelligence.ts trendWindow/trendSummary): the last 30 points of the 30d trend. */
+export const COST_SPEND_WINDOW_DAYS = 30
+
+/**
+ * Billed spend for the trailing 30 days, exactly as Cost Intelligence sums it: the last 30 points
+ * of the 30d trend, days Cost Explorer has not reported (reportState 'not_reported') adding
+ * nothing. null when no day in the window is reported -- no usable amount, never $0.
+ */
+export function trailing30DaySpend(points: readonly { total: number; reportState?: string }[]): { total: number; reportedDays: number } | null {
+  const reported = points.slice(-COST_SPEND_WINDOW_DAYS).filter((p) => p.reportState !== 'not_reported' && Number.isFinite(p.total))
+  if (reported.length === 0) return null
+  return { total: reported.reduce((sum, p) => sum + p.total, 0), reportedDays: reported.length }
+}
 import { RiskTrackingService }
   from './risk-tracking.service'
 import { CostRecommendationsRepository }
@@ -34,12 +51,11 @@ export interface ComponentScore {
   // for every error/fallback path so callers can
   // tell "bad score" apart from "no data yet"
   ready: boolean
-  // The monthly spend the cost score stands on: the inventory's monthly
-  // run-rate estimate (AWSCostService.getInventoryMonthlyRunRate), never Cost
-  // Explorer month-to-date spend. Only populated on the cost component.
+  // The spend the cost score stands on: AWS Cost Explorer billed spend for the
+  // trailing 30 days when usable (placeholder-costs F-13 as amended), never the
+  // inventory sum. Only on the cost component; absent with no usable amount.
   monthlySpend?: number
-  // Always 'estimated' on the cost component (monthlySpend above is the
-  // inventory run-rate), so the Cost tile never presents it as billed spend.
+  // 'actual' whenever monthlySpend is present; absent otherwise.
   costSource?: SpendProvenance
   // Evidence state behind this component's score, in the shared
   // ContextDataState vocabulary: 'available' only when nothing is missing,
@@ -58,6 +74,17 @@ export interface ComponentScore {
 export interface ObservabilityComponentScore
   extends Omit<ComponentScore, 'score'> {
   score: number | null
+}
+
+/**
+ * The cost component's score is null when AWS Cost Explorer has no usable
+ * billed spend: insufficientData is then true, it reads "Insufficient data",
+ * and the overall score is computed without it (fix round 1, ruling 5).
+ */
+export interface CostComponentScore
+  extends Omit<ComponentScore, 'score'> {
+  score: number | null
+  insufficientData?: boolean
 }
 
 export interface SystemDriver {
@@ -93,7 +120,7 @@ export interface SystemIntelligenceResult {
   status: 'Healthy' | 'Stable'
     | 'Degraded' | 'At Risk' | 'Pending'
   components: {
-    cost: ComponentScore
+    cost: CostComponentScore
     security: ComponentScore
     observability: ObservabilityComponentScore
   }
@@ -126,7 +153,7 @@ export class SystemIntelligenceService {
 
   private async computeCostScore(
     organizationId: string
-  ): Promise<ComponentScore> {
+  ): Promise<CostComponentScore> {
     try {
       // Savings aggregate and active-opportunity count -- reused from the same
       // canonical source the Dashboard's Savings Actions card and the cost-
@@ -166,19 +193,29 @@ export class SystemIntelligenceService {
 
       const costAnalysisRan = (scanResult.rowCount ?? 0) > 0
 
-      // Monthly spend = the inventory's monthly run-rate estimate, the same
-      // period as the monthly savings estimate it is compared with. Never Cost
-      // Explorer month-to-date spend: early in a month that is a day or two of
-      // billing against a full month of savings, which moves the score with the
-      // calendar, not the infrastructure.
-      const monthlySpend = await awsCostService.getInventoryMonthlyRunRate(organizationId)
-      const costSource = 'estimated' as const
+      // Spend = AWS Cost Explorer billed spend for the trailing 30 days -- the
+      // same window Cost Intelligence uses (the last 30 points of the 30d
+      // trend; days Cost Explorer has not reported add nothing) -- when Cost
+      // Explorer has a usable amount (placeholder-costs F-13, amended in fix
+      // round 1). Otherwise the component reads "Insufficient data" and leaves
+      // the overall score. Never the inventory sum.
+      let monthlySpend: number | undefined
+      let costSource: SpendProvenance | undefined
+      try {
+        const trailing = trailing30DaySpend(await awsCostService.fetchCostTrend(organizationId, '30d'))
+        if (trailing !== null) {
+          monthlySpend = trailing.total
+          costSource = 'actual'
+        }
+      } catch {
+        // No Cost Explorer result: insufficient data, never a fallback figure.
+      }
 
       // Scoring model — continuous weighted-coverage-ratio, same shape as
       // Security's riskScoring.ts:
       // every term is a real ratio scaled to 0–100, combined with fixed
       // weights. No base value with bolted-on flat bonuses/penalties.
-      const hasSpendData = monthlySpend > 0
+      const hasSpendData = monthlySpend !== undefined && monthlySpend > 0
 
       // Cost efficiency ratio: what fraction of the dollars under
       // consideration (spend + identified waste) are NOT flagged as waste.
@@ -188,7 +225,7 @@ export class SystemIntelligenceService {
       // (ratio≈0.02 → 2) land in meaningfully different places instead of
       // both hitting the same ceiling.
       const costEfficiencyRatio =
-        hasSpendData
+        hasSpendData && monthlySpend !== undefined
           ? (monthlySpend / (monthlySpend + totalSavings)) * 100
           : 0
 
@@ -199,16 +236,14 @@ export class SystemIntelligenceService {
       const anomalyScore =
         Math.max(0, 100 - anomalyCount * 20)
 
-      // No spend data at all means the efficiency ratio above is
-      // meaningless (nothing to divide by) — fall back to a fixed neutral
-      // score so it doesn't read as a false "clean" result. The detail
-      // string below is forced to match this branch so score and text
-      // never contradict each other.
-      // While anomaly detection is off, the score is the efficiency ratio
-      // alone -- no substituted or default anomaly value.
-      const score =
+      // No usable spend means the efficiency ratio above is meaningless
+      // (nothing to divide by): there is no score at all -- "Insufficient
+      // data" -- and the component leaves the overall score (fix round 1,
+      // ruling 5; no neutral 50). While anomaly detection is off, the score is
+      // the efficiency ratio alone -- no substituted or default anomaly value.
+      const score: number | null =
         !hasSpendData
-          ? 50
+          ? null
           : ANOMALY_DETECTION_ACTIVE
             ? Math.round(
                 costEfficiencyRatio * 0.75 +
@@ -219,7 +254,7 @@ export class SystemIntelligenceService {
       const detail =
         !hasSpendData
           ? costAnalysisRan
-            ? 'Spend data unavailable — cost efficiency cannot be assessed'
+            ? COST_INSUFFICIENT_DATA
             : 'No cost scan run yet'
           // "Never show $0" (ruling Q6): the shared formatter, so a total under $1 shows cents ("$0.08/mo"),
           // never "$0/mo estimated savings identified".
@@ -234,7 +269,8 @@ export class SystemIntelligenceService {
               : 'No cost scan run yet'
 
       const severity =
-        score >= 80 ? 'healthy'
+        score === null ? 'medium'
+        : score >= 80 ? 'healthy'
         : score >= 65 ? 'medium'
         : score >= 50 ? 'high'
         : 'critical'
@@ -242,11 +278,9 @@ export class SystemIntelligenceService {
       // What the score above does not stand on -- labels only. A partial reason
       // also names the basis the score does stand on (the run-rate estimate).
       const limitations = [
-        !hasSpendData && 'Insufficient spend data to assess cost efficiency',
         !ANOMALY_DETECTION_ACTIVE && 'Anomaly checks not yet active',
       ].filter((l): l is string => typeof l === 'string')
-      const reasonSentences = [hasSpendData ? COST_RUN_RATE_BASIS : null, ...limitations]
-        .filter((l): l is string => typeof l === 'string')
+      const reasonSentences = [COST_BILLED_BASIS, ...limitations]
 
       return {
         score,
@@ -255,14 +289,17 @@ export class SystemIntelligenceService {
         severity,
         delta: null,
         status:
-          score >= 75 ? 'good'
+          score === null ? 'warning'
+          : score >= 75 ? 'good'
           : score >= 55 ? 'warning'
           : 'risk',
         ready: costAnalysisRan,
-        monthlySpend,
-        costSource,
+        ...(monthlySpend !== undefined ? { monthlySpend } : {}),
+        ...(costSource !== undefined ? { costSource } : {}),
         ...(!costAnalysisRan
           ? { state: 'unavailable' as const, reason: 'No cost scan has completed yet.' }
+          : score === null
+            ? { state: 'unavailable' as const, insufficientData: true, reason: COST_INSUFFICIENT_DATA_REASON }
           : limitations.length > 0
             ? { state: 'partial' as const, reason: reasonSentences.map(l => `${l}.`).join(' ') }
             : { state: 'available' as const, reason: null }),
@@ -469,26 +506,27 @@ export class SystemIntelligenceService {
   // ── Top Drivers ──────────────────────
 
   private buildDrivers(
-    cost: ComponentScore,
+    cost: CostComponentScore,
     security: ComponentScore,
     observability: ObservabilityComponentScore
   ): SystemDriver[] {
     const drivers: SystemDriver[] = []
 
-    if (cost.ready && cost.status !== 'good') {
+    if (cost.ready && cost.score !== null && cost.status !== 'good') {
+      const costScore = cost.score
       drivers.push({
         id: 'cost-efficiency',
         type: 'cost',
         severity:
-          cost.score < 50 ? 'high'
+          costScore < 50 ? 'high'
           : 'medium',
         message: cost.detail,
         consequence:
-          cost.score < 50
+          costScore < 50
             ? 'Significant ongoing waste is reducing budget available for growth'
             : 'Cost inefficiency is reducing system score and budget runway',
         impact_score: Math.round(
-          (100 - cost.score) * 0.30
+          (100 - costScore) * 0.30
         ),
         action: {
           label: 'Review savings',
@@ -666,8 +704,12 @@ export class SystemIntelligenceService {
         ),
       ])
 
+    // Cost with insufficient data leaves the overall score; the remaining
+    // weights are rescaled (security 40/70, alert coverage 30/70).
+    const costIncluded = cost.ready && cost.score !== null
+    const costExcluded = cost.insufficientData === true && cost.score === null
     const allReady =
-      cost.ready &&
+      (costIncluded || costExcluded) &&
       security.ready &&
       observability.ready
 
@@ -677,11 +719,16 @@ export class SystemIntelligenceService {
     let status: SystemIntelligenceResult['status'] = 'Pending'
 
     if (allReady && observability.score !== null) {
-      system_score = Math.round(
-        cost.score * 0.30 +
-        security.score * 0.40 +
-        observability.score * 0.30
-      )
+      system_score = costIncluded && cost.score !== null
+        ? Math.round(
+            cost.score * 0.30 +
+            security.score * 0.40 +
+            observability.score * 0.30
+          )
+        : Math.round(
+            (security.score * 0.40 +
+              observability.score * 0.30) / 0.70
+          )
       status = this.scoreToStatus(system_score)
       // Partial when ANY component's evidence is partial; the score above is
       // unchanged either way. Each partial component names its own reason, so
@@ -696,6 +743,9 @@ export class SystemIntelligenceService {
           const reason = component.reason ?? 'evidence is incomplete'
           return `${name}: ${reason.endsWith('.') ? reason : `${reason}.`}`
         })
+      if (costExcluded) {
+        partialReasons.unshift(`Cost: ${COST_INSUFFICIENT_DATA_REASON} The score is weighted over Security and Alert Coverage only.`)
+      }
       if (partialReasons.length > 0) {
         composite_state = 'partial'
         composite_reason = partialReasons.join(' ')

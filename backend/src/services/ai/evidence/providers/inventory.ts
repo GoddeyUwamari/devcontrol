@@ -8,6 +8,7 @@ import {
   collectSection,
   notBuilt,
   type ContextSection,
+  type EvidenceCompleteness,
   type SectionMeta,
   type UntrustedText,
 } from '../../../ai-context-contract';
@@ -24,12 +25,13 @@ export function discoveryGated<T>(
   meta: SectionMeta,
   discovery: ContextSection<{ completedAt: string }>,
   isEmpty: (data: T) => boolean,
-  query: () => Promise<{ data: T; untrusted?: UntrustedText[] }>
+  query: () => Promise<{ data: T; untrusted?: UntrustedText[]; completeness?: EvidenceCompleteness }>
 ): Promise<ContextSection<T>> {
   return collectSection<T>(meta, async () => {
-    const { data, untrusted } = await query();
+    const { data, untrusted, completeness } = await query();
     if (discovery.state === 'available' && discovery.data) {
-      return { state: 'available', data, asOf: discovery.data.completedAt, untrusted };
+      // Incomplete completeness (e.g. K of N priced) makes the section partial (collectSection).
+      return { state: 'available', data, asOf: discovery.data.completedAt, untrusted, completeness };
     }
     const problem = discovery.state === 'error'
       ? 'the status of the latest discovery run could not be determined'
@@ -37,7 +39,7 @@ export function discoveryGated<T>(
     if (isEmpty(data)) {
       return { state: 'unavailable', reason: `${problem}, so an empty result is not a confirmed zero` };
     }
-    return { state: 'partial', data, asOf: null, reason: `${problem}; data may be stale or incomplete`, untrusted };
+    return { state: 'partial', data, asOf: null, reason: `${problem}; data may be stale or incomplete`, untrusted, completeness };
   });
 }
 

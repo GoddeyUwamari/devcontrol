@@ -76,7 +76,7 @@ function productionLikeContext(overrides: Partial<LegacyChatCosts> = {}, dora: C
       state: 'available', ...inventory, coverage: 'EC2, RDS, and Lambda resources only',
       data: {
         ec2: { count: 1 },
-        rds: { count: 0, estimatedMonthlyCost: null, estimatedForCount: 0 },
+        rds: { count: 0, pricedMonthlyCost: null, pricedCount: 0, priceExpectedCount: 0, notRunningCount: 0 },
         lambda: { count: 0, invocations: 0, invocationsKnownForCount: 0 },
       },
     },

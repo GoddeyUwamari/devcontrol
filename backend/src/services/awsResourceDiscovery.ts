@@ -199,7 +199,7 @@ import {
 } from './resourceExplorer.service';
 import { ResourceReconciliationService } from './resourceReconciliation.service';
 import { getBucketLifecycleStatus } from './s3-lifecycle.util';
-import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage } from '../config/aws-pricing';
+import { estimateEBSMonthlyCost, estimateLambdaMonthlyCostFromUsage, RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ } from '../config/aws-pricing';
 import { getLambdaUsageOverWindow, LAMBDA_USAGE_WINDOW_DAYS } from './lambda-usage.util';
 import { describeDynamoDBTable } from './dynamodb-table.util';
 import { describeDynamoDBAutoscaling } from './dynamodb-autoscaling.util';
@@ -2784,6 +2784,9 @@ export class AWSResourceDiscoveryService {
         private_ip: instance.PrivateIpAddress,
         availability_zone: instance.Placement?.AvailabilityZone,
         launch_time: instance.LaunchTime?.toISOString(),
+        // The state exactly as AWS reports it (status maps stopping and shutting-down to 'stopped'):
+        // only "stopped" reads "Not running" in the inventory pricing rule (placeholder-costs ruling 8).
+        instance_state: instance.State?.Name ?? null,
         tags_state: 'observed',
       };
 
@@ -3780,16 +3783,11 @@ export class AWSResourceDiscoveryService {
    * Hardcoded estimates based on instance class
    */
   private estimateRDSCost(instanceClass: string): number {
-    const costs: Record<string, number> = {
-      'db.t3.micro': 12,
-      'db.t3.small': 24,
-      'db.t3.medium': 48,
-      'db.t3.large': 96,
-      'db.m5.large': 122,
-      'db.m5.xlarge': 244,
-      'db.r5.large': 175,
-      'db.r5.xlarge': 350,
-    };
+    // The shared table in config/aws-pricing.ts, which the inventory pricing rule reads too. Since fix
+    // round 1 (ruling 2) it holds AWS list price x 730 h, so stored RDS values move to those figures on
+    // the next deep scan; the unlisted-class fallback (75) is unchanged. PR 1 surfaces never show a
+    // stored value (services/inventory-cost.ts recomputes the figure); PR 2 surfaces still do.
+    const costs: Readonly<Record<string, number>> = RDS_INSTANCE_MONTHLY_USD_US_EAST_1_MYSQL_SINGLE_AZ;
     return costs[instanceClass] || 75; // Default estimate
   }
 

@@ -14,7 +14,7 @@
  * Router only permits a fixed set of named exports from a page file.
  */
 import type { CostSummary } from '@/lib/types'
-import { describeComparisonWindows, describeMonthOverMonth, describeSpend, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthHasUnfinishedDays, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinalDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
+import { describeComparisonWindows, describeMonthOverMonth, describeSpend, estimateCoverageSub, LATEST_DAYS_REPORTING, MOM_BASIS_LABEL, monthHasUnfinishedDays, monthStateOf, NO_BILLED_DAYS_YET, noBilledDaysThisMonth, noChargesReportedYet, noFinalDayThisMonth, previousMonthLine, spendPeriodLabel } from '../costs/cost-display'
 import { TREND_TOTALS_NOTE } from '@/lib/cost-trend-basis'
 
 export interface DashboardSpendCard {
@@ -41,7 +41,9 @@ export interface DashboardSpendCard {
  */
 function spendFaceCaption(section: CostSummary['spend'] | undefined, spend: ReturnType<typeof describeSpend>): string {
   if (spend.provenance === 'estimated') {
-    return `Estimated from inventory · not AWS billed spend${section?.state === 'partial' ? ' · some resources have no estimate' : ''}`
+    // F-5: describeSpend shows an estimate only with its K of N coverage.
+    const coverage = section?.data?.estimateCoverage
+    return coverage ? estimateCoverageSub(coverage) : spend.sub
   }
   if (spend.provenance !== 'actual' || !section?.data) return spend.sub
   // The month-to-date period, in UTC (Cost Explorer's own day boundary).

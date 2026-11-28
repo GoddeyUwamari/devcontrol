@@ -31,6 +31,9 @@ export const POSTURE_COMPONENT_ICONS: Record<ComponentKey, LucideIcon> = {
  * same 0-100 scale; alert coverage is never graded Strong / Needs
  * attention / At risk.
  */
+/** The cost tile with no usable billed spend; it is left out of the composite. */
+export const INSUFFICIENT_DATA_TEXT = 'Insufficient data'
+
 export function describePostureComponent(
   key: ComponentKey,
   component: SystemIntelligenceResult['components'][ComponentKey],
@@ -45,7 +48,11 @@ export function describePostureComponent(
     scoreText: scored ? String(component.score) : '—',
     tier: scored && !isAlertCoverage ? statusBadge[component.status] : null,
     partial: component.state === 'partial',
-    missingText: scored ? null : component.state === 'error' ? 'Could not be retrieved' : 'Not yet available',
+    missingText: scored ? null
+      : component.state === 'error' ? 'Could not be retrieved'
+      // Cost with no usable AWS Cost Explorer spend (placeholder-costs fix round 1, ruling 5).
+      : 'insufficientData' in component && component.insufficientData ? INSUFFICIENT_DATA_TEXT
+      : 'Not yet available',
   }
 }
 

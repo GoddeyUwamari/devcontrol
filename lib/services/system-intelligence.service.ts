@@ -27,6 +27,16 @@ export interface ObservabilityComponentScore extends Omit<SystemIntelligenceComp
   score: number | null;
 }
 
+/**
+ * Cost's score is null when AWS Cost Explorer has no usable billed spend for the last 30 days:
+ * insufficientData is then true, the tile reads "Insufficient data", and the composite is
+ * computed without it (placeholder-costs fix round 1, ruling 5).
+ */
+export interface CostComponentScore extends Omit<SystemIntelligenceComponentScore, 'score'> {
+  score: number | null;
+  insufficientData?: boolean;
+}
+
 export interface SystemIntelligenceResult {
   system_score: number | null;
   /** 'partial' when system_score is built on any partial component; composite_reason names each one and why. null with a null score. */
@@ -34,7 +44,7 @@ export interface SystemIntelligenceResult {
   composite_reason: string | null;
   status: 'Healthy' | 'Stable' | 'Degraded' | 'At Risk' | 'Pending';
   components: {
-    cost: SystemIntelligenceComponentScore;
+    cost: CostComponentScore;
     security: SystemIntelligenceComponentScore;
     observability: ObservabilityComponentScore;
   };
