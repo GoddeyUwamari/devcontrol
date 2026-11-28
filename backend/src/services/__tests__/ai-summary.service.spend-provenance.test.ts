@@ -247,6 +247,27 @@ describe('Dashboard AI summary -- cost evidence (AI Chat cost path, not getMonth
     const without = await run();
     expect(without.prompt).toMatch(/Month-over-month change: not available \([^)]*\)\. Do not describe spend as up, down, flat, or unchanged\./);
   });
+
+  // PR B review N-2: a previous window that nets below $0 is not "totals $0.00".
+  const noPercentComparison = (previousWindowTotal: number): ChatContext['costs']['comparison'] => ({
+    state: 'available', note: null,
+    currentWindow: { start: '2026-09-01', end: '2026-09-26' }, previousWindow: { start: '2026-08-01', end: '2026-08-26' },
+    currentWindowTotal: 30, previousWindowTotal, changeAmount: 30 - previousWindowTotal, changePercent: null,
+    coverage: { currentDays: 26, previousDays: 26, expectedCurrentDays: 26, expectedPreviousDays: 26 },
+    currentWindowIncludesToday: false, finishedThrough: null, asOf: null, basis: COMPARISON_BASIS,
+  });
+
+  it('a previous window that nets below $0 says "below $0.00 (credits exceeded charges)", never "totals $0.00"', async () => {
+    const { prompt } = await run({ costs: actualCosts(30, noPercentComparison(-26)) });
+    expect(prompt).toContain('Month-to-date spend vs the same days last month: a percentage change is undefined because the previous window totals below $0.00 (credits exceeded charges) ($30.00 vs -$26.00, daily net amounts after credits and refunds, nothing floored at $0).');
+    expect(prompt).not.toMatch(/previous window totals \$0\.00/);
+  });
+
+  it('a previous window of exactly $0 keeps the "totals $0.00" wording', async () => {
+    const { prompt } = await run({ costs: actualCosts(30, noPercentComparison(0)) });
+    expect(prompt).toContain('a percentage change is undefined because the previous window totals $0.00 ($30.00 vs $0.00,');
+    expect(prompt).not.toMatch(/credits exceeded charges/);
+  });
 });
 
 describe('Dashboard AI summary -- monitoring, security, recommendations', () => {

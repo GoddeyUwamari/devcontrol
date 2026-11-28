@@ -83,6 +83,53 @@ describe('finished-day tooltip Total is the real net', () => {
     await waitFor(() => expect(text()).toMatch(/Total:\$3\.00/))
   })
 
+  // N-1: a net that rounds to $0.00 is the zero case, never "-$0.00". Every other net keeps the
+  // currency formatter's own rounding, exactly as before the fix: -0.005 is -$0.01, -0.015 is
+  // -$0.02, -163.825 is -$163.83 (a Math.round(net * 100) pre-round would give -$163.82).
+  // Only (-0.005, 0) and -0 change.
+  it.each([
+    ['-0.004', -0.004],
+    ['-0.0049', -0.0049],
+    ['-0', -0],
+    ['-5.55e-17 (the float sum of -0.1 + -0.2 + 0.3)', -0.1 + -0.2 + 0.3],
+  ])('a net of %s shows "Total: $0.00", never "-$0.00"', async (_label, net) => {
+    show(DAYS.map((d) => point(d, d === '2026-11-12' ? { ec2: 1, s3: -1, net } : { ec2: 2, s3: 1 })), 0)
+    await waitFor(() => expect(text()).toMatch(/Total:\$0\.00/))
+    expect(text()).not.toMatch(/-\$0\.00/)
+  })
+
+  it.each([
+    [-0.005, 'Total:-$0.01'],
+    [-0.006, 'Total:-$0.01'],
+    [-0.01, 'Total:-$0.01'],
+    [-0.015, 'Total:-$0.02'],
+    [-163.825, 'Total:-$163.83'],
+    [-1.2, 'Total:-$1.20'],
+  ])('a real negative net of %s keeps its minus sign (%s)', async (net, expected) => {
+    show(DAYS.map((d) => point(d, d === '2026-11-12' ? { ec2: 1, s3: -1, net } : { ec2: 2, s3: 1 })), 0)
+    await waitFor(() => expect(text()).toContain(expected))
+  })
+
+  it.each([
+    [0.004, 'Total:$0.00'],
+    [0.005, 'Total:$0.01'],
+    [0.015, 'Total:$0.02'],
+    [12.345, 'Total:$12.35'],
+  ])('a positive net of %s is unchanged (%s)', async (net, expected) => {
+    show(DAYS.map((d) => point(d, d === '2026-11-12' ? { ec2: 1, s3: -1, net } : { ec2: 2, s3: 1 })), 0)
+    await waitFor(() => expect(text()).toContain(expected))
+  })
+
+  it('today with a net that rounds to $0.00: "Today · $0.00 so far", never "-$0.00"', async () => {
+    show(DAYS.map((d) => point(d, d === '2026-11-18' ? { ec2: 0.5, s3: -0.503, reportState: 'updating' } : { ec2: 2, s3: 1 })), 6)
+    expect((await screen.findByTestId('cost-trend-today-tooltip')).textContent).toBe('Today · $0.00 so far · still updating')
+  })
+
+  it('still updating with a net that rounds to $0.00: "Still updating · $0.00 so far."', async () => {
+    show(DAYS.map((d) => point(d, d === '2026-11-16' ? { ec2: 1, s3: -1, reportState: 'updating', net: -0.002 } : { ec2: 2, s3: 1 })), 4)
+    expect(await screen.findByText('Still updating · $0.00 so far. AWS Cost Explorer may still add charges.')).toBeInTheDocument()
+  })
+
   it('no netTotal (an older backend): "Total: —", never the clamped figure', async () => {
     show(DAYS.map((d) => point(d, d === '2026-11-12' ? { ec2: 10, s3: -5, net: null } : { ec2: 2, s3: 1 })), 0)
     await waitFor(() => expect(text()).toMatch(/Total:—/))

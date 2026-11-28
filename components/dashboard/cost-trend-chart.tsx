@@ -90,10 +90,17 @@ function pointNet(point: { netTotal?: unknown } | undefined): number | null {
   return typeof net === 'number' && Number.isFinite(net) ? net : null;
 }
 
-/** The net as money ("-$1.20" for a credit day), or "—" when it is unknown: never the clamped total. */
+/**
+ * The net as money ("-$1.20" for a credit day), or "—" when it is unknown: never the clamped total.
+ * A net that rounds to $0.00 at the formatter's cent rounding (|net| < $0.005, -0 included) is the
+ * zero case, never "-$0.00". Every other net goes to the formatter unchanged, so it keeps its exact
+ * rounding (-0.005 is "-$0.01"); pre-rounding with Math.round(net * 100) would shift some half-cent
+ * amounts by a cent through float error.
+ */
 function formatNet(point: { netTotal?: unknown } | undefined): string {
   const net = pointNet(point);
-  return net === null ? '—' : formatUsdCents(net);
+  if (net === null) return '—';
+  return formatUsdCents(Math.abs(net) < 0.005 ? 0 : net);
 }
 
 export function CostTrendChart({

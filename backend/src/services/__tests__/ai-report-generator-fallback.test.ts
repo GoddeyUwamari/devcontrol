@@ -547,6 +547,26 @@ describe('AI Reports deterministic fallback', () => {
     expect(report.costAnalysis!.overview).toContain('DevControl estimates the monthly run-rate of the discovered resources it can price at $3,200.00 (us-east-1 list-price estimates; Lambda before free tier, not AWS billing data; Estimated from 10 of 10 priced).');
   });
 
+  // PR B review N-2: a previous window that nets below $0 is not "totals $0.00".
+  const noPercentComparison = (previousWindowTotal: number): ChatContext['costs']['comparison'] => ({
+    ...AVAILABLE_COMPARISON, currentWindowIncludesToday: false,
+    currentWindowTotal: 30, previousWindowTotal, changeAmount: 30 - previousWindowTotal, changePercent: null,
+  });
+
+  it('a previous window that nets below $0: the trend says "below $0.00, credits exceeded charges", never "totals $0.00"', async () => {
+    const data = await evidence({ costs: actualCosts(30, noPercentComparison(-26)) });
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(report.costAnalysis!.trends).toBe('Spend from 2026-09-01 to 2026-09-26 was $30.00 vs -$26.00 for 2026-08-01 to 2026-08-26, a change of $56.00 (percentage undefined: the previous window totals below $0.00, credits exceeded charges), from AWS Cost Explorer daily net amounts after credits and refunds, nothing floored at $0.');
+    expect(JSON.stringify(report)).not.toMatch(/previous window totals \$0\.00/);
+  });
+
+  it('a previous window of exactly $0 keeps the "totals $0.00" wording', async () => {
+    const data = await evidence({ costs: actualCosts(30, noPercentComparison(0)) });
+    const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
+    expect(report.costAnalysis!.trends).toContain('(percentage undefined: the previous window totals $0.00)');
+    expect(report.costAnalysis!.trends).not.toMatch(/credits exceeded charges/);
+  });
+
   it('a $0 actual month is reported as $0.00 of billed spend, not as unavailable or an estimate', async () => {
     const data = await evidence({ costs: actualCosts(0) });
     const { report } = await new AIReportGeneratorService(fakePool()).generateWeeklyReport(data);
