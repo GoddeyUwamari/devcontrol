@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useMemo, useId } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
@@ -14,6 +14,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { usePlan } from '@/lib/hooks/use-plan'
 import { useAuth } from '@/lib/contexts/auth-context'
+import { useCurrentRole } from '@/lib/hooks/use-current-role'
 import { useCostSummary, useUtcDay } from '@/lib/hooks/useCostSummary'
 import { costRecommendationsService, type CostAnalysisRun } from '@/lib/services/cost-recommendations.service'
 import { awsResourcesService } from '@/lib/services/aws-resources.service'
@@ -23,6 +24,8 @@ import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConne
 import { pickLatestAnalysis } from '../cost-optimization/costOptimizationStatus'
 import { deriveCostScanState, type CostScanState } from '../cost-optimization/costScanState'
 import { LAST_ANALYSIS, LAST_ANALYSIS_SOURCE } from '../cost-optimization/costOptimizationCopy'
+import { ScanResultBanner } from '../cost-optimization/ScanResultBanner'
+import { bringSectionIntoView, useCostRunResultBanner } from '../cost-optimization/useCostRunResultBanner'
 import { nlQueryService, NLQueryResult, NLQueryOutcome } from '@/lib/services/nl-query.service'
 import { useDemoMode } from '@/components/demo/demo-mode-toggle'
 import { useSalesDemo } from '@/lib/demo/sales-demo-data'
@@ -36,12 +39,12 @@ import { describeMonthOverMonth, describeSpend, MOM_BASIS_LABEL, noFinalDayThisM
 import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING_LEGEND, TREND_TOTALS_NOTE, unreportedTrendNote } from '@/lib/cost-trend-basis'
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
 import {
-  acrossCategories, activeChecks, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, formatDriverAmount, lastAnalysisParts, opportunityFigure, PAGE_SUBTITLE,
-  rankByDisplayedSavings, servicesLine, topDrivers, TREND_RANGES, trendSummary, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
+  acrossCategories, activeChecks, canRunCostAnalysis, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, formatDriverAmount, lastAnalysisParts, opportunityFigure, PAGE_SUBTITLE,
+  OPTIMIZE_NOW_DEMO_NOTE, rankByDisplayedSavings, RUN_ANALYSIS_ROLE_NOTE, RUNNING_COST_ANALYSIS_LABEL, servicesLine, topDrivers, TREND_RANGES, trendSummary, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
 } from './cost-intelligence'
 import { whyLine } from './why-evidence'
 import { CostDriversCard } from './CostDriversCard'
-import { OPPORTUNITY_LIMIT, OpportunitiesCard, type OpportunityRow } from './OpportunitiesCard'
+import { OPPORTUNITIES_ANCHOR, OPPORTUNITY_LIMIT, OpportunitiesCard, type OpportunityRow } from './OpportunitiesCard'
 import { PageCoverageCard } from './PageCoverageCard'
 import { DEMO_FINDING_COUNT, DEMO_GROWTH_PERCENT, DEMO_HOME_REGION, DEMO_STATS, demoAnalysisAt, demoMtdSpend, demoRecommendations, demoTrendPoints } from './demo-data'
 
@@ -178,6 +181,39 @@ export default function CostsPage() {
   const notConnected = !isDemoActive && awsAccounts?.connection === 'not_connected'
   const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError
 
+  // ── Optimize Now (PR B): runs the cost analysis here; its result shows in the result banner at the top of the
+  // page, with Cost Optimization's lifecycle (#368), shared, unchanged: only a run this user started, once,
+  // dismissible, never replayed, never for a scheduled run. ──
+  const queryClient = useQueryClient()
+  const role = useCurrentRole()
+  const roleNoteId = useId()
+  // The banner shows (and so is "seen") only where the page renders it, as on Cost Optimization.
+  const bannerSlotShown = !isDemoActive && !notConnected && !connectionLoading
+  // Ruling Q10: after a run, the findings, the savings and the analysis status refresh; spend and the trend don't
+  // (a cost analysis doesn't change Cost Explorer data). Cost Optimization's lists of the same findings too.
+  const refreshAnalysisData = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-active'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
+  ])
+  const { isAnalyzing, runRunning, resultView, closeResult, runAnalysis } = useCostRunResultBanner({
+    enabled: !isDemoActive,
+    bannerSlotShown,
+    refreshAfterRun: refreshAnalysisData,
+    refreshWhenRunEnds: refreshAnalysisData,
+  })
+  // Ruling Q9: members and viewers can't run an analysis (the backend's rule); they get a short note why. An unknown
+  // role (the first render) is disabled with no note. Otherwise as Cost Optimization's Run cost analysis.
+  const roleCanRun = canRunCostAnalysis(role)
+  const showRoleNote = role !== null && !roleCanRun
+  const canRunAnalysis = roleCanRun && !runRunning && !isDemoActive && !notConnected
+  // The note under a disabled Optimize Now: demo mode first (ruling B-3: no run in demo), else the role note (Q9).
+  const optimizeNowNote = isDemoActive ? { text: OPTIMIZE_NOW_DEMO_NOTE, testId: 'optimize-now-demo-note' }
+    : showRoleNote ? { text: RUN_ANALYSIS_ROLE_NOTE, testId: 'optimize-now-role-note' }
+    : null
+
   const { data: activeRecs = [], isLoading: activeRecsLoading, isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
     queryFn: () => costRecommendationsService.getAll({ status: 'ACTIVE' }),
@@ -269,14 +305,18 @@ export default function CostsPage() {
     isDemoActive || savingsMissing || activeRecsCount > 0 ? null
       : analysisRunsLoading || discoveryJobsLoading ? 'loading'
       : analysisRunsError || discoveryJobsError ? 'unknown'
+      // This page's own run (Optimize Now) is in flight: the run list isn't refetched until it returns.
+      : isAnalyzing ? 'in_progress'
       : !latestAnalysis ? 'not_evaluated'
       : latestAnalysis.status === 'running' ? 'in_progress'
       : latestAnalysis.status === 'failed' && !latestRunPartial ? 'failed'
       : null
   const recsUnavailable = savingsMissing || zeroRecsState !== null
-  const recsUnavailableSub = !isDemoActive && recStatsLoading ? 'Loading…'
+  // Review RN-3: whether the tile's inputs are still loading, as a boolean (the Opportunities card reads it), not
+  // inferred from the tile's display text.
+  const recsInputsLoading = (!isDemoActive && recStatsLoading) || zeroRecsState === 'loading'
+  const recsUnavailableSub = recsInputsLoading ? 'Loading…'
     : savingsMissing ? 'Could not be retrieved'
-    : zeroRecsState === 'loading' ? 'Loading…'
     : zeroRecsState === 'unknown' ? 'Could not be retrieved'
     : zeroRecsState === 'in_progress' ? 'Cost analysis in progress'
     : zeroRecsState === 'failed' ? 'Latest cost analysis did not complete'
@@ -291,12 +331,19 @@ export default function CostsPage() {
 
   const checks = activeChecks(ruleCatalog)
 
+  // Opportunities with nothing open says what the savings tile says: N-1, after an analysis that left nothing open
+  // ("None found"); review RN-1, while an analysis is running or after the latest one didn't complete (never "Run
+  // cost analysis" then). Otherwise the card's own prompt.
+  const opportunitiesEmptyText = savingsTile?.kind === 'none_found' ? `${savingsTile.value}. ${savingsTile.lines[0]}.`
+    : zeroRecsState === 'in_progress' || zeroRecsState === 'failed' ? `${recsUnavailableSub}.`
+    : undefined
+
   // The scan state Cost Optimization's Last analysis line reads (runs first; jobs only with no run row).
   const scan: CostScanState = deriveCostScanState({
     connection: { data: awsAccounts?.connection, isError: accountsError },
     runs: { data: analysisRuns, isError: analysisRunsError },
     jobs: { data: discoveryJobs, isError: discoveryJobsError },
-    isAnalyzing: false,
+    isAnalyzing,
   })
   const latestRun: CostAnalysisRun | undefined = analysisRuns?.[0]
 
@@ -456,6 +503,19 @@ export default function CostsPage() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 pt-page-top pb-6 sm:px-6 sm:pb-8 lg:px-14 lg:pb-10 max-w-[1320px] mx-auto overflow-x-hidden">
 
+      {/* ── RESULT BANNER (PR B): only a run this user started (running, then its result until closed), at the top of
+          the page as on Cost Optimization. Never a scheduled run. ── */}
+      {bannerSlotShown && resultView && (
+        <ScanResultBanner
+          className="mb-6"
+          view={resultView}
+          onClose={closeResult}
+          onRetry={() => { void runAnalysis() }}
+          onSeeNew={() => bringSectionIntoView(OPPORTUNITIES_ANCHOR)}
+          retryDisabled={!canRunAnalysis}
+        />
+      )}
+
       {/* ── PAGE HEADER ── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         {/* Title, then (from sm) the status chip beside it and the subtitle under both; on a phone the chip sits under
@@ -488,13 +548,27 @@ export default function CostsPage() {
           )}
         </div>
         {connectionLoading ? <HeaderActionLoading /> : notConnected ? <ConnectAwsHeaderButton /> : (
-        <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-center sm:gap-2 sm:flex-wrap sm:shrink-0">
+        <div className="flex flex-col gap-2 sm:items-end sm:shrink-0">
+        <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-center sm:gap-2 sm:flex-wrap">
           <button onClick={handleExportCSV} className="flex items-center justify-center gap-2 bg-white text-slate-900 px-4 py-2.5 min-h-11 rounded-lg text-ui font-semibold border border-slate-200 hover:border-slate-300 cursor-pointer transition-colors whitespace-nowrap">
             <Download size={16} aria-hidden="true" /> Export CSV
           </button>
-          <a href="/cost-optimization" className="flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 min-h-11 rounded-lg text-ui font-semibold no-underline transition-colors whitespace-nowrap">
-            <Zap size={14} aria-hidden="true" /> Optimize Now
-          </a>
+          {/* PR B: Optimize Now runs the cost analysis (POST /analyze); the result banner above the title reports it. */}
+          <button
+            type="button"
+            onClick={() => { void runAnalysis() }}
+            disabled={!canRunAnalysis}
+            aria-describedby={optimizeNowNote ? roleNoteId : undefined}
+            aria-busy={runRunning || undefined}
+            data-testid="optimize-now"
+            className="flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 min-h-11 rounded-lg text-ui font-semibold border border-violet-600 cursor-pointer transition-colors whitespace-nowrap disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-ink-muted disabled:hover:bg-slate-100"
+          >
+            {runRunning ? <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden="true" /> : <Zap size={14} aria-hidden="true" />} Optimize Now
+            {/* Ruling B-4: the visible label stays "Optimize Now"; while a run is running, screen readers also hear it. */}
+            {runRunning && <span className="sr-only" data-testid="optimize-now-running-label">, {RUNNING_COST_ANALYSIS_LABEL}</span>}
+          </button>
+        </div>
+        {optimizeNowNote && <p id={roleNoteId} className="m-0 text-meta text-ink-muted sm:text-right" data-testid={optimizeNowNote.testId}>{optimizeNowNote.text}</p>}
         </div>
         )}
       </div>
@@ -818,9 +892,8 @@ export default function CostsPage() {
           total={stats ? stats.activeRecommendations : null}
           isError={!isDemoActive && activeRecsError}
           // N-1: no empty-state text while the list or the tile's inputs are still loading.
-          isLoading={!isDemoActive && (activeRecsLoading || (recsUnavailable && recsUnavailableSub === 'Loading…'))}
-          // N-1: after an analysis that left nothing open, the card agrees with the savings tile ("None found").
-          emptyText={savingsTile?.kind === 'none_found' ? `${savingsTile.value}. ${savingsTile.lines[0]}.` : undefined}
+          isLoading={!isDemoActive && (activeRecsLoading || recsInputsLoading)}
+          emptyText={opportunitiesEmptyText}
         />
       )}
 

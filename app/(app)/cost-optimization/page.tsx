@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useRef, useState, type MouseEvent } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -21,7 +21,7 @@ import awsAccountsService from '@/lib/services/aws-accounts.service';
 import awsServicesService from '@/lib/services/aws-services.service';
 import { awsResourcesService } from '@/lib/services/aws-resources.service';
 import type { CostRecommendation, RecommendationSeverity } from '@/lib/types';
-import type { CostRunResult, OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
+import type { OptimizationRuleCatalog } from '@/lib/services/cost-recommendations.service';
 import { useDemoMode } from '@/components/demo/demo-mode-toggle';
 import { useCurrentRole } from '@/lib/hooks/use-current-role';
 import { useSalesDemo } from '@/lib/demo/sales-demo-data';
@@ -35,8 +35,7 @@ import { SeverityBadge } from '@/components/ui/severity-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiscoveryWarningNotice } from '@/components/aws/discovery-warning-notice';
 import { ConnectAwsHeaderButton, HeaderActionLoading, NotConnectedCard, NotConnectedLoading, UnmeasuredValue } from '@/components/aws/not-connected';
-import { analyzeFailureMessage } from './costOptimizationStatus';
-import { RUNNING_REFETCH_MS, deriveCostScanState, runsRefetchInterval } from './costScanState';
+import { deriveCostScanState, runsRefetchInterval } from './costScanState';
 import { logGroupSummaryLines } from './logGroupSummary';
 import {
   RUNNING_ANALYSIS,
@@ -47,9 +46,9 @@ import {
   TRY_AGAIN,
   UNAVAILABLE,
   lastAnalysisProblem,
-  resultBannerContent,
 } from './costScanBanner';
-import { ScanResultBanner, type ScanResultView } from './ScanResultBanner';
+import { ScanResultBanner } from './ScanResultBanner';
+import { bringSectionIntoView, prefersReducedMotion, useCostRunResultBanner } from './useCostRunResultBanner';
 import { ReviewList, StillDetectedSlot, type HiddenView } from './HiddenFindings';
 import {
   ALREADY_REOPENED,
@@ -152,31 +151,6 @@ const CHECKS_ANCHOR = 'how-devcontrol-checks';
 /** The Opportunities section: the result banner's "See the new opportunity" scrolls to it. */
 const OPPORTUNITIES_ANCHOR = 'opportunities';
 
-/** The result banner's query: this user's latest manual run in this organization, until seen or closed. */
-const RUN_RESULT_KEY = ['cost-run-result'] as const;
-
-const tabVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
-
-/**
- * What GET my-result answered, and whether this tab was visible for the whole request (review S-1). An answer
- * fetched while the tab was hidden may already be stale: another tab can show and acknowledge the result
- * meanwhile. Such an answer is never shown or acknowledged; the tab asks again once it is visible.
- */
-interface MyRunResultAnswer {
-  result: CostRunResult | null;
-  fetchedVisible: boolean;
-}
-
-async function fetchMyRunResult(): Promise<MyRunResultAnswer> {
-  const visibleAtStart = tabVisible();
-  const result = await costRecommendationsService.getMyRunResult();
-  return { result, fetchedVisible: visibleAtStart && tabVisible() };
-}
-
-function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 /** "Nov 18, 2026" from a recommendation's createdAt; nothing for a missing or unreadable date. */
 function foundDate(iso: string | undefined): string | null {
   if (!iso) return null;
@@ -234,7 +208,6 @@ function OpportunitySavings({ rec }: { rec: CostRecommendation }) {
 
 export default function CostOptimizationPage() {
   const queryClient = useQueryClient();
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const demoMode = useDemoMode();
   const salesDemoMode = useSalesDemo((state) => state.enabled);
@@ -408,128 +381,6 @@ export default function CostOptimizationPage() {
     onError: () => toast.error('Failed to dismiss recommendation'),
   });
 
-  // ── The result banner (founder-locked behaviour, Nov 23) ──
-  // Only for a run THIS user started with "Run cost analysis", keyed to that run: the server returns this user's
-  // latest manual run in this organization until it is acknowledged (seen while the tab is visible, or closed), so
-  // it shows on the next visit if the run finished after they left, never again once seen, and a later scheduled
-  // run can't replace it. gcTime 0: a remount (navigating back) asks the server again, never replays the cache.
-  const runResultQuery = useQuery({
-    queryKey: RUN_RESULT_KEY,
-    queryFn: fetchMyRunResult,
-    staleTime: 0,
-    gcTime: 0,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchInterval: (query) => (query.state.data?.result?.state === 'running' ? RUNNING_REFETCH_MS : false),
-    enabled: !isDemoActive,
-  });
-  // A result whose run row couldn't be saved (ruling 8): shown for this session only, never acknowledged.
-  const [sessionResult, setSessionResult] = useState<CostRunResult | null>(null);
-  const [closedRunId, setClosedRunId] = useState<string | null>(null);
-  const runResultAnswer = runResultQuery.data;
-  const serverResult = runResultAnswer?.result ?? null;
-  // Review S-1: a finished result is shown (and so acknowledged) only from an answer fetched while this tab was
-  // visible. Once shown here it stays until closed: nothing refetches it while it is on screen.
-  const verifiedResult = runResultAnswer?.fetchedVisible ? serverResult : null;
-  const shownResult: CostRunResult | null = sessionResult
-    ?? (verifiedResult && verifiedResult.state !== 'running' && verifiedResult.id !== closedRunId ? verifiedResult : null);
-  const runRunning = isAnalyzing || serverResult?.state === 'running';
-
-  // An answer fetched while hidden (a background tab, or a run that ended while the user was elsewhere) is asked
-  // again as soon as the tab is visible, so a result already seen in another tab is never replayed here.
-  const answerNeedsVisibleFetch = !isDemoActive && runResultAnswer !== undefined && !runResultAnswer.fetchedVisible;
-  useEffect(() => {
-    if (!answerNeedsVisibleFetch) return undefined;
-    const refetchIfVisible = () => {
-      if (tabVisible()) void queryClient.refetchQueries({ queryKey: RUN_RESULT_KEY, exact: true });
-    };
-    refetchIfVisible();
-    document.addEventListener('visibilitychange', refetchIfVisible);
-    return () => document.removeEventListener('visibilitychange', refetchIfVisible);
-  }, [answerNeedsVisibleFetch, queryClient]);
-
-  // Seen = shown while the tab is visible: acknowledged once, so a refresh, another tab or device never replays it.
-  // A failed acknowledge leaves it to show again next visit (never lost).
-  const acknowledged = useRef(new Set<string>());
-  const acknowledge = useCallback((runId: string) => {
-    if (acknowledged.current.has(runId)) return;
-    acknowledged.current.add(runId);
-    costRecommendationsService.acknowledgeRunResult(runId).catch(() => acknowledged.current.delete(runId));
-  }, []);
-
-  const closeResult = () => {
-    if (sessionResult) setSessionResult(null);
-    else if (shownResult?.id) {
-      setClosedRunId(shownResult.id);
-      acknowledge(shownResult.id);
-    }
-  };
-
-  // A run this page didn't start (the user left mid-run and came back) finished while they watched: the
-  // findings, totals and status refresh with it.
-  const serverState = serverResult?.state;
-  const previousServerState = useRef(serverState);
-  useEffect(() => {
-    const before = previousServerState.current;
-    previousServerState.current = serverState;
-    if (before === 'running' && serverState && serverState !== 'running') {
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] }),
-        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
-        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
-        queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
-      ]);
-    }
-  }, [serverState, queryClient]);
-
-  const handleScan = async () => {
-    setIsAnalyzing(true);
-    setSessionResult(null);
-    try {
-      const result = await costRecommendationsService.analyze();
-      await Promise.all([
-        refetch(),
-        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
-        // The backend records this run in cost_analysis_runs: "Last analysis" reflects it at once.
-        queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
-        // The run records which hidden findings it found again.
-        queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
-      ]);
-      // The banner shows the run's own result at once (the same facts GET my-result gives).
-      // Seen only if this tab is visible now (S-1); otherwise it is asked again once the tab is visible.
-      if (result.result?.id) queryClient.setQueryData<MyRunResultAnswer>(RUN_RESULT_KEY, { result: result.result, fetchedVisible: tabVisible() });
-      else if (result.result) setSessionResult(result.result);
-      else await queryClient.invalidateQueries({ queryKey: RUN_RESULT_KEY });
-    } catch (err: unknown) {
-      // The run's own record says what happened (it may even still be running, e.g. after a proxy timeout).
-      void queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] });
-      const recorded = await queryClient
-        .fetchQuery({ queryKey: RUN_RESULT_KEY, queryFn: fetchMyRunResult, staleTime: 0 })
-        .catch(() => null);
-      if (!recorded?.result) {
-        // No row (it couldn't be created): this session only, and no claim that the findings are unchanged.
-        setSessionResult({
-          id: null, state: 'failed', completedAt: null, checksTotal: 0, checksRan: 0, failedChecks: [], services: [],
-          newCount: null, openCount: null, stillOpen: null, unknownResourceCount: null, message: analyzeFailureMessage(err), findingsUnchanged: false,
-        });
-      }
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  // "See the new opportunity": bring Opportunities into view.
-  const seeNewOpportunities = () => {
-    const section = document.getElementById(OPPORTUNITIES_ANCHOR);
-    if (!section) return;
-    section.scrollIntoView?.({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
-    section.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
-  };
-
-  const resultView: ScanResultView | null = runRunning
-    ? { phase: 'running' }
-    : shownResult ? { phase: 'result', content: resultBannerContent(shownResult) } : null;
-
   const pendingMutation = (id: string) => resolveMutation.isPending && resolveMutation.variables === id
     || dismissMutation.isPending && dismissMutation.variables === id;
 
@@ -541,6 +392,33 @@ export default function CostOptimizationPage() {
   // A failed or ambiguous check is neither: today's page, unchanged.
   const notConnected = !isDemoActive && awsConnected === false;
   const connectionLoading = !isDemoActive && awsAccounts === undefined && !accountsError;
+
+  // ── The result banner (founder-locked behaviour, Nov 23): the shared lifecycle, useCostRunResultBanner.ts ──
+  // The result banner shows (and so is "seen") only where the page renders it.
+  const bannerSlotShown = !isDemoActive && !notConnected && !connectionLoading;
+  const { isAnalyzing, runRunning, resultView, closeResult, runAnalysis: handleScan } = useCostRunResultBanner({
+    enabled: !isDemoActive,
+    bannerSlotShown,
+    refreshAfterRun: () => Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+      // The backend records this run in cost_analysis_runs: "Last analysis" reflects it at once.
+      queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
+      // The run records which hidden findings it found again.
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
+    ]),
+    // A run this page didn't start (the user left mid-run and came back) finished while they watched: the
+    // findings, totals and status refresh with it.
+    refreshWhenRunEnds: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations'] }),
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-stats'] }),
+      queryClient.invalidateQueries({ queryKey: ['cost-recommendations-hidden'] }),
+      queryClient.invalidateQueries({ queryKey: ['cost-analysis-runs'] }),
+    ]),
+  });
+  // "See the new opportunity": bring Opportunities into view.
+  const seeNewOpportunities = () => bringSectionIntoView(OPPORTUNITIES_ANCHOR);
+
   const scan = deriveCostScanState({
     connection: { data: connectionState, isError: accountsError },
     runs: { data: analysisRuns, isError: runsError },
@@ -571,18 +449,6 @@ export default function CostOptimizationPage() {
 
   const canRunScan = !runRunning && !isDemoActive && awsConnected !== false;
 
-  // The result banner shows (and so is "seen") only where the page renders it.
-  const bannerSlotShown = !isDemoActive && !notConnected && !connectionLoading;
-  const shownRunId = bannerSlotShown && !runRunning && shownResult?.id ? shownResult.id : null;
-  useEffect(() => {
-    if (!shownRunId) return undefined;
-    const ackIfVisible = () => {
-      if (document.visibilityState === 'visible') acknowledge(shownRunId);
-    };
-    ackIfVisible();
-    document.addEventListener('visibilitychange', ackIfVisible);
-    return () => document.removeEventListener('visibilitychange', ackIfVisible);
-  }, [shownRunId, acknowledge]);
   const listedActiveCount = activeCount ?? recommendations.length;
   const hiddenCount = activeCount === null ? 0 : Math.max(0, activeCount - recommendations.length);
   // The legacy caveat names "each listed check" only when the rail lists them, and not while /hidden has failed (no conclusion).

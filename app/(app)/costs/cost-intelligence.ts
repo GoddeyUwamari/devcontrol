@@ -18,6 +18,20 @@ import { utcChartLabel } from './trend-chart-data'
 /** The page subtitle (spec item 5). */
 export const PAGE_SUBTITLE = 'AWS spend visibility, cost drivers, and evidence-backed optimization opportunities.'
 
+/**
+ * Optimize Now (PR B, ruling Q9): who can run a cost analysis. The same rule the backend enforces on
+ * POST /api/cost-recommendations/analyze (requireAdmin: owner or admin); the page only mirrors it. An unknown
+ * role (null, before the token is read) can't run one.
+ */
+export const RUN_ANALYSIS_ROLES: readonly string[] = ['owner', 'admin']
+export const canRunCostAnalysis = (role: string | null): boolean => role !== null && RUN_ANALYSIS_ROLES.includes(role)
+/** The note beside a disabled Optimize Now for members and viewers (ruling Q9). */
+export const RUN_ANALYSIS_ROLE_NOTE = 'Only owners and admins can run cost analysis.'
+/** The note beside the disabled Optimize Now in demo mode (founder ruling B-3). */
+export const OPTIMIZE_NOW_DEMO_NOTE = 'Not available in demo mode.'
+/** What screen readers hear on Optimize Now while a run is running; the visible label stays "Optimize Now" (ruling B-4). */
+export const RUNNING_COST_ANALYSIS_LABEL = 'Running cost analysis'
+
 // ─── The trend points and the one day window (safeguard 1) ─────────────────
 
 /** One GET /api/platform/costs/trend point, as this page reads it. */
