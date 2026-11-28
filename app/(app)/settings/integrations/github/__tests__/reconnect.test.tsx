@@ -33,9 +33,10 @@ const VERIFIER = 'V'.repeat(43)
 const CHALLENGE = 'C'.repeat(43)
 const CODE = 'plantedReconnectCode0123'
 const CALLBACK = 'https%3A%2F%2Fgetdevcontrol.com%2Fauth%2Fgithub%2Fcallback'
-const authorizeUrl = (over: { host?: string; path?: string; redirect?: string; state?: string; extra?: string } = {}) =>
+const PKCE = `&code_challenge=${CHALLENGE}&code_challenge_method=S256`
+const authorizeUrl = (over: { host?: string; path?: string; redirect?: string; state?: string; pkce?: string; extra?: string } = {}) =>
   `https://${over.host ?? 'github.com'}${over.path ?? '/login/oauth/authorize'}?client_id=Iv1.abc123&redirect_uri=${over.redirect ?? CALLBACK}`
-  + `&state=${over.state ?? STATE}&code_challenge=${CHALLENGE}&code_challenge_method=S256&prompt=select_account${over.extra ?? ''}`
+  + `&state=${over.state ?? STATE}${over.pkce ?? PKCE}&prompt=select_account${over.extra ?? ''}`
 
 const PREVIOUS = { installation_id: '42', account_login: 'acme-inc', account_type: 'Organization' }
 const INSTALLATION = {
@@ -146,6 +147,11 @@ describe('Reconnect: the start', () => {
     ['another redirect_uri', { authorize_url: authorizeUrl({ redirect: 'https%3A%2F%2Fevil.example%2Fauth%2Fgithub%2Fcallback' }) }],
     ['an extra parameter', { authorize_url: authorizeUrl({ extra: '&scope=repo' }) }],
     ['a URL state that differs from the returned one', { authorize_url: authorizeUrl({ state: 'U'.repeat(43) }) }],
+    // I3 review N-1: the tab never follows an authorize URL without an S256 PKCE challenge.
+    ['no PKCE parameters (code_challenge and code_challenge_method=S256 both missing)', { authorize_url: authorizeUrl({ pkce: '' }) }],
+    ['code_challenge without code_challenge_method', { authorize_url: authorizeUrl({ pkce: `&code_challenge=${CHALLENGE}` }) }],
+    ['code_challenge_method=S256 without code_challenge', { authorize_url: authorizeUrl({ pkce: '&code_challenge_method=S256' }) }],
+    ['code_challenge_method=plain', { authorize_url: authorizeUrl({ pkce: `&code_challenge=${CHALLENGE}&code_challenge_method=plain` }) }],
     ['a malformed verifier', { code_verifier: 'short' }],
     ['another installation id', { installation_id: '43' }],
   ])('%s: never followed, nothing kept, "Couldn\'t start"', async (_label, over) => {
