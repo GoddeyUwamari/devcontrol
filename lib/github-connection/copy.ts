@@ -149,26 +149,26 @@ export const COPY = {
 /**
  * I3 Reconnect (founder D1-D10). Strings marked "Stage A" are word for word
  * from i3-reconnect-stage-a.md §3 (outcomes and copy). Strings marked
- * "NEW COPY" are drafts for founder approval (i3-reconnect-build.md), not final.
- * Headings reuse board 4's existing ones.
+ * "Founder copy" are the founder's binding wording (i3-reconnect-build.md,
+ * Copy fix). Headings reuse board 4's existing ones.
  */
 export const RECONNECT_COPY = {
   /** Stage A (§3 step 1, §8 R3): the card's heading. */
   title: (account: string) => `Reconnect ${account}`,
-  /** NEW COPY: the card's body. */
+  /** Founder copy: the card's body. */
   body: (account: string) =>
-    `You connected ${account} to this workspace before. Reconnect to start recording deployments again. Your repositories, services and deploy rules are kept.`,
+    `You connected ${account} to this workspace before. Reconnect to resume recording deployments. Your repositories, services and deploy rules are kept.`,
   /** Stage A (§8 R4): the button. */
   button: 'Reconnect',
   /** Stage A (§3 step 1, D10): the secondary link (the install URL). */
   differentAccount: 'Install on a different GitHub account',
-  /** Stage A success; n = recorded_events (D6). n = 0: the first sentence only. The n = 1 form is NEW COPY. */
+  /** Founder copy: the success toast; n = recorded_events (D6). n = 0: no count. */
   reconnectedBody: (account: string, n: number) =>
     n <= 0
       ? `Reconnected to ${account}.`
       : n === 1
-        ? `Reconnected to ${account}. 1 event received while disconnected was picked up.`
-        : `Reconnected to ${account}. ${n} events received while disconnected were picked up.`,
+        ? `Reconnected to ${account}. 1 deployment from while you were disconnected was recorded.`
+        : `Reconnected to ${account}. ${n} deployments from while you were disconnected were recorded.`,
   /** Stage A: denied / cancelled on GitHub (heading: cancelledTitle). */
   cancelledBody: "You cancelled on GitHub. Nothing changed. Reconnect when you're ready.",
   /** Stage A: redirect_uri_mismatch / application_suspended / other (heading: noResponseTitle). */
@@ -178,9 +178,9 @@ export const RECONNECT_COPY = {
   /** Stage A: installation_not_accessible on a reconnect (heading: notAccessibleTitle). */
   notAccessibleBody: (account: string) =>
     `The GitHub account you used can't see this installation. Reconnect signed in to GitHub as ${account} or as the person who installed it.`,
-  /** NEW COPY (D7): after the existing installerBody on a reconnect: the installer has left the GitHub organization. */
+  /** Founder copy (D7): after the existing installerBody on a reconnect: the installer has left the GitHub organization. */
   installerLeft:
-    'If that person has left the GitHub organization, an owner of the organization has to uninstall DevControl Deployments on GitHub and install it again. Your repositories, services and deploy rules come back.',
+    'If the GitHub installer has left the organization, an organization owner must uninstall DevControl Deployments from GitHub and install it again. Your repositories, services and deploy rules come back.',
   /** Stage A: POST /reconnect found the app uninstalled on GitHub (heading: noResponseTitle; action: Connect GitHub, the install URL). */
   removedBody: (account: string) =>
     `DevControl Deployments is no longer installed on ${account}. Install it again; your repository mappings come back.`,

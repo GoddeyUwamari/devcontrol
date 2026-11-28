@@ -174,3 +174,15 @@ describe('I3 reconnect outcomes', () => {
     expect(claimOutcome(answer(400, { error: 'invalid_state' }), false, rc)).toEqual({ kind: 'expired' })
   })
 })
+
+describe('I3 founder copy (Copy fix), word for word', () => {
+  it('the toast in its three forms, the card body and the D7 paragraph', async () => {
+    const { RECONNECT_COPY } = await import('../copy')
+    expect(RECONNECT_COPY.reconnectedBody('acme', 0)).toBe('Reconnected to acme.')
+    expect(RECONNECT_COPY.reconnectedBody('acme', 1)).toBe('Reconnected to acme. 1 deployment from while you were disconnected was recorded.')
+    expect(RECONNECT_COPY.reconnectedBody('acme', 4)).toBe('Reconnected to acme. 4 deployments from while you were disconnected were recorded.')
+    expect(RECONNECT_COPY.body('acme')).toBe('You connected acme to this workspace before. Reconnect to resume recording deployments. Your repositories, services and deploy rules are kept.')
+    expect(RECONNECT_COPY.installerLeft).toBe(
+      'If the GitHub installer has left the organization, an organization owner must uninstall DevControl Deployments from GitHub and install it again. Your repositories, services and deploy rules come back.')
+  })
+})

@@ -76,7 +76,8 @@ describe('which card (D1, D10)', () => {
     renderPage()
     const card = await screen.findByTestId('github-reconnect-card')
     expect(within(card).getByRole('heading', { name: 'Reconnect acme-inc' })).toBeInTheDocument()
-    expect(card).toHaveTextContent('You connected acme-inc to this workspace before. Reconnect to start recording deployments again. Your repositories, services and deploy rules are kept.')
+    // Founder copy, exact: the body paragraph's whole text.
+    expect(within(card).getByText('You connected acme-inc to this workspace before. Reconnect to resume recording deployments. Your repositories, services and deploy rules are kept.').tagName).toBe('P')
     expect(within(card).getByTestId('github-reconnect-button')).toHaveTextContent('Reconnect')
     expect(screen.queryByText('Connect GitHub in three steps')).toBeNull()
     expect(screen.queryByTestId('github-connect')).toBeNull()
@@ -180,8 +181,8 @@ describe('Reconnect: back from GitHub', () => {
     return reply(status, data)
   })
 
-  it.each([[0, 'Reconnected to acme-inc.'], [1, 'Reconnected to acme-inc. 1 event received while disconnected was picked up.'],
-    [3, 'Reconnected to acme-inc. 3 events received while disconnected were picked up.']])(
+  it.each([[0, 'Reconnected to acme-inc.'], [1, 'Reconnected to acme-inc. 1 deployment from while you were disconnected was recorded.'],
+    [3, 'Reconnected to acme-inc. 3 deployments from while you were disconnected were recorded.']])(
     'success with recorded_events %i: one claim with the stored installation id and verifier, then "%s"; single use', async (recorded, text) => {
       back({ code: CODE, state: STATE })
       claimWith(200, { success: true, data: { status: 'connected', installation: { account_login: 'acme-inc' }, released_events: 9, recorded_events: recorded } },
@@ -189,7 +190,9 @@ describe('Reconnect: back from GitHub', () => {
       renderPage()
       const banner = await screen.findByTestId('github-connected-banner')
       expect(banner).toHaveTextContent('GitHub connected')
-      expect(banner).toHaveTextContent(text)
+      // Founder copy, exact: the banner body's whole text (n = 0 has no count after it).
+      expect(within(banner).getByText(text)).toBeInTheDocument()
+      expect(within(banner).getByText(text).textContent).toBe(text)
       expect(posts('/api/integrations/github/claim')).toHaveLength(1)
       expect(posts('/api/integrations/github/claim')[0][1]).toEqual({ state: STATE, code: CODE, installation_id: '42', code_verifier: VERIFIER })
       expect(sessionStorage.length).toBe(0)
@@ -286,7 +289,7 @@ describe('Reconnect: back from GitHub', () => {
     [403, { success: false, error: 'not_installer' }, 'github-claim-installer', [
       "We couldn't confirm who installed the app",
       'To connect, the person who installs DevControl Deployments on GitHub has to be the one who finishes here. Start again, signed in to GitHub as that person.',
-      'If that person has left the GitHub organization, an owner of the organization has to uninstall DevControl Deployments on GitHub and install it again. Your repositories, services and deploy rules come back.']],
+      'If the GitHub installer has left the organization, an organization owner must uninstall DevControl Deployments from GitHub and install it again. Your repositories, services and deploy rules come back.']],
     [409, { success: false, error: 'installation_claimed_elsewhere' }, 'github-claim-elsewhere', ['This installation belongs to another DevControl workspace']],
     [502, { success: false, error: 'github_unavailable' }, 'github-claim-no-response', ["We couldn't finish connecting", "GitHub didn't respond. Reconnect again."]],
     [400, { success: false, error: 'invalid_state' }, 'github-claim-expired', ['This connection link has expired']],
