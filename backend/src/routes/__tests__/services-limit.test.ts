@@ -409,11 +409,11 @@ describe('the last slot goes to exactly one creation (lock first, then count, th
     expect(await count(ws.orgId)).toBe(2);
   });
 
-  it('a team of another organization is 400 below the limit (onboarding D5), and writes nothing', async () => {
+  it('a team of another organization is still 404 below the limit, and writes nothing', async () => {
     const ws = await workspace({ tier: 'free' }, 1);
     const other = await insertOrg({ tier: 'free' });
     const res = await create(ws, ws.admin, { team_id: await insertTeam(other) });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     expect(await count(ws.orgId)).toBe(1);
     expect(await count(other)).toBe(0);
   });

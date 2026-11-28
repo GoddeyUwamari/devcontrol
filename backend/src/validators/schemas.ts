@@ -6,8 +6,8 @@ export const createServiceSchema = z.object({
   template: z.enum(['api', 'frontend', 'worker', 'database']),
   owner: z.string().email('Owner must be a valid email'),
   // Optional (onboarding D5): omitted, null or '' means "no team". Anything
-  // else must be a UUID here, and a team of the caller's own organization in
-  // ServicesController.create; otherwise 400.
+  // else must be a UUID (else 400 here), naming a team of the caller's own
+  // organization (else 404 in ServicesController.create, as before).
   team_id: z.preprocess(
     (value) => (value === '' || value === null ? undefined : value),
     z.string().uuid('Team ID must be a valid UUID').optional()

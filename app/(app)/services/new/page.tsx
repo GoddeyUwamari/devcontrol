@@ -64,6 +64,8 @@ const NO_TEAM = 'no-team'
 /** Onboarding D2 / D4 / D8, founder-approved copy. */
 export const NEW_SERVICE_COPY = {
   moreOptions: 'More options',
+  /** Shown under the toggle while More options is collapsed (founder fix round 1). */
+  moreOptionsHint: 'Team, owner email (defaults to you), GitHub URL, description',
   ownerLabel: 'Owner email',
   ownerHelp: 'Who to contact about this service. Defaults to you.',
   teamLabel: 'Team (optional)',
@@ -99,6 +101,7 @@ export default function NewServicePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const limitReasonId = useId()
   const moreOptionsId = useId()
+  const moreOptionsHintId = useId()
   const serviceLimit = useServiceLimit()
   const { user, isLoading: authLoading } = useAuth()
   const userEmail = user?.email
@@ -263,12 +266,18 @@ export default function NewServicePage() {
                 type="button"
                 aria-expanded={moreOptionsExpanded}
                 aria-controls={moreOptionsId}
+                aria-describedby={moreOptionsExpanded ? undefined : moreOptionsHintId}
                 onClick={() => { if (!moreOptionsHeldOpen) setMoreOptionsOpen(!moreOptionsOpen) }}
                 className="inline-flex items-center gap-1.5 rounded-md text-ui font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <ChevronRight className={cn('h-4 w-4 transition-transform', moreOptionsExpanded && 'rotate-90')} aria-hidden="true" />
                 {NEW_SERVICE_COPY.moreOptions}
               </button>
+              {!moreOptionsExpanded && (
+                <p id={moreOptionsHintId} data-testid="more-options-hint" className="mt-1 pl-5.5 text-meta text-muted-foreground">
+                  {NEW_SERVICE_COPY.moreOptionsHint}
+                </p>
+              )}
               <div id={moreOptionsId} data-testid="more-options" hidden={!moreOptionsExpanded} className="mt-6 space-y-6">
                 {/* Team (D1, D4): optional; no team is sent as no team_id */}
                 <div className="space-y-2">

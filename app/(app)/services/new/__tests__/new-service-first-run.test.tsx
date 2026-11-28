@@ -7,7 +7,7 @@
  *   - D3 Template stays required, with today's four choices and nothing preselected;
  *   - D4 the Team label and helper, and no "No teams found" dead end;
  *   - D8 "More options" (Team, Owner email, GitHub URL, Description) starts
- *     collapsed, is a real button with aria-expanded/aria-controls, and opens
+ *     collapsed with the approved hint under it (fix round 1), is a real button with aria-expanded/aria-controls, and opens
  *     whenever a field inside it has an error (or there is no owner to default to);
  *   - the GitHub page's "Create a service ->" return path survives (no team detour).
  *
@@ -211,6 +211,27 @@ describe('D8: More options', () => {
     expect(screen.getByLabelText(/Service Name/)).toBeVisible()
     expect(region()).not.toContainElement(selects().template)
     expect(selects().template).toBeVisible()
+  })
+
+  it('collapsed, it shows the approved hint under the toggle, as the toggle\'s description; open, the hint is gone', async () => {
+    mount()
+    const hint = screen.getByTestId('more-options-hint')
+    expect(hint).toHaveTextContent(/^Team, owner email \(defaults to you\), GitHub URL, description$/)
+    expect(hint).toBeVisible()
+    expect(region()).not.toContainElement(hint)
+    expect(toggle()).toHaveAttribute('aria-describedby', hint.id)
+    expect(toggle()).toHaveAccessibleDescription('Team, owner email (defaults to you), GitHub URL, description')
+
+    fireEvent.click(toggle())
+    expect(screen.queryByTestId('more-options-hint')).toBeNull()
+    expect(toggle()).not.toHaveAttribute('aria-describedby')
+    fireEvent.click(toggle())
+    expect(screen.getByTestId('more-options-hint')).toBeVisible()
+
+    // Held open by an error: no hint either.
+    fireEvent.change(screen.getByLabelText(/GitHub Repository URL/), { target: { value: 'not a url' } })
+    await waitFor(() => expect(region()).toBeVisible())
+    expect(screen.queryByTestId('more-options-hint')).toBeNull()
   })
 
   it('is a native, focusable button (Enter and Space work natively) that opens and closes the region', () => {

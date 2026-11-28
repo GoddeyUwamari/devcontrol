@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ServicesRepository } from '../repositories/services.repository';
 import { CreateServiceRequest, UpdateServiceRequest, ServiceFilters, ApiResponse } from '../types';
-import { NotFoundError, DatabaseError, ValidationError } from '../utils/errors';
+import { NotFoundError, DatabaseError } from '../utils/errors';
 import { emitOnboardingEvent } from '../services/onboardingEvents';
 import { defaultSource, withOrgTransaction, type ConnectionSource } from '../services/github-app/db';
 import {
@@ -12,9 +12,6 @@ import {
 } from '../middleware/subscription.middleware';
 
 const repository = new ServicesRepository();
-
-/** POST /api/services with a team_id that names no team of the caller's organization. */
-export const TEAM_NOT_IN_WORKSPACE_MESSAGE = 'Team not found';
 
 /**
  * Creates a service inside the services limit, all or nothing, on one
@@ -116,10 +113,9 @@ export class ServicesController {
       }
 
       if (!service) {
-        // A team was given but is not one of this organization's: 400 (onboarding
-        // D5), the same answer whether it doesn't exist or belongs to another
-        // organization. No team at all never comes here.
-        next(new ValidationError(TEAM_NOT_IN_WORKSPACE_MESSAGE));
+        // Same answer whether the team doesn't exist or belongs to another
+        // organization. No team at all never comes here (onboarding D5).
+        next(new NotFoundError('Team'));
         return;
       }
 

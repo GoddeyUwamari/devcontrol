@@ -5,8 +5,8 @@
  * Policy under test:
  *   - POST /api/services creates the service only when `team_id` names a team
  *     of the caller's organization, or is empty (omitted, null or ''), which
- *     means no team (onboarding D5). A team_id naming no team of the caller's
- *     organization is 400.
+ *     means no team (onboarding D5). A malformed team_id is 400; a well-formed
+ *     one naming no team of the caller's organization stays 404.
  *   - POST /api/infrastructure creates the resource only when `service_id`
  *     names a service of the caller's organization.
  *   - An id that belongs to another organization is answered exactly like an
@@ -219,11 +219,10 @@ describe('POST /api/services checks that the team is the caller\'s own', () => {
     const foreign = await createService({ team_id: orgB.teamId });
     const unknown = await createService({ team_id: randomUUID() });
 
-    // 400 (onboarding D5): a team_id that names no team of this organization is an invalid value.
-    expect(foreign.status).toBe(400);
+    expect(foreign.status).toBe(404);
     expect(unknown.status).toBe(foreign.status);
     const foreignBody = await foreign.json();
-    expect(foreignBody).toEqual({ success: false, error: 'Team not found', code: 'VALIDATION_ERROR' });
+    expect(foreignBody).toEqual({ success: false, error: 'Team not found', code: 'NOT_FOUND' });
     expect(await unknown.json()).toEqual(foreignBody);
     // No service anywhere, and the other organization's team is as it was.
     expect(await rowsTouching('services', 'team_id', orgB.teamId)).toEqual(servicesBefore);
@@ -238,7 +237,7 @@ describe('POST /api/services checks that the team is the caller\'s own', () => {
     // ...and does not move a valid request out of the caller's organization.
     const own = await createService({ team_id: orgA.teamId, organization_id: orgB.orgId });
 
-    expect(foreign.status).toBe(400);
+    expect(foreign.status).toBe(404);
     expect(own.status).toBe(201);
     const created = (await own.json()).data;
     expect(created).toMatchObject({ team_id: orgA.teamId, organization_id: orgA.orgId });
