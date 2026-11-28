@@ -146,6 +146,46 @@ export const COPY = {
   demoBody: 'A sample of the connected screen. Nothing here can be changed.',
 } as const
 
+/**
+ * I3 Reconnect (founder D1-D10). Strings marked "Stage A" are word for word
+ * from i3-reconnect-stage-a.md §3 (outcomes and copy). Strings marked
+ * "Founder copy" are the founder's binding wording (i3-reconnect-build.md,
+ * Copy fix). Headings reuse board 4's existing ones.
+ */
+export const RECONNECT_COPY = {
+  /** Stage A (§3 step 1, §8 R3): the card's heading. */
+  title: (account: string) => `Reconnect ${account}`,
+  /** Founder copy: the card's body. */
+  body: (account: string) =>
+    `You connected ${account} to this workspace before. Reconnect to resume recording deployments. Your repositories, services and deploy rules are kept.`,
+  /** Stage A (§8 R4): the button. */
+  button: 'Reconnect',
+  /** Stage A (§3 step 1, D10): the secondary link (the install URL). */
+  differentAccount: 'Install on a different GitHub account',
+  /** Founder copy: the success toast; n = recorded_events (D6). n = 0: no count. */
+  reconnectedBody: (account: string, n: number) =>
+    n <= 0
+      ? `Reconnected to ${account}.`
+      : n === 1
+        ? `Reconnected to ${account}. 1 deployment from while you were disconnected was recorded.`
+        : `Reconnected to ${account}. ${n} deployments from while you were disconnected were recorded.`,
+  /** Stage A: denied / cancelled on GitHub (heading: cancelledTitle). */
+  cancelledBody: "You cancelled on GitHub. Nothing changed. Reconnect when you're ready.",
+  /** Stage A: redirect_uri_mismatch / application_suspended / other (heading: noResponseTitle). */
+  refusedBody: 'GitHub refused the request. Try again later.',
+  /** Stage A: GitHub down during the reconnect's claim (heading: noResponseTitle). */
+  noResponseBody: "GitHub didn't respond. Reconnect again.",
+  /** Stage A: installation_not_accessible on a reconnect (heading: notAccessibleTitle). */
+  notAccessibleBody: (account: string) =>
+    `The GitHub account you used can't see this installation. Reconnect signed in to GitHub as ${account} or as the person who installed it.`,
+  /** Founder copy (D7): after the existing installerBody on a reconnect: the installer has left the GitHub organization. */
+  installerLeft:
+    'If the GitHub installer has left the organization, an organization owner must uninstall DevControl Deployments from GitHub and install it again. Your repositories, services and deploy rules come back.',
+  /** Stage A: POST /reconnect found the app uninstalled on GitHub (heading: noResponseTitle; action: Connect GitHub, the install URL). */
+  removedBody: (account: string) =>
+    `DevControl Deployments is no longer installed on ${account}. Install it again; your repository mappings come back.`,
+} as const
+
 /** Where a repository is sent to create a service, and where "See plans" goes (D8b-2 R11). */
 export const CREATE_SERVICE_HREF = `/services/new?returnTo=${encodeURIComponent(GITHUB_PAGE_HREF)}`
 export const SEE_PLANS_HREF = '/settings/billing/upgrade'

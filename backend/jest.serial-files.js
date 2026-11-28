@@ -20,6 +20,14 @@
  * take no table lock); ensureSharedFixtureTable() (CREATE TABLE IF NOT
  * EXISTS under an advisory lock, never dropped).
  *
+ * Also here, for a second reason: files that delete other files' rows. A
+ * file belongs here when it runs, against the shared database, a delete that
+ * is not limited to its own fixtures -- today github_purge_held_deliveries(),
+ * which removes every installation's held deliveries older than 7 days. In
+ * the parallel run it raced github-app-reconnect.db.test.ts, whose happy path
+ * ages one of its own held deliveries to 8 days and expects it released (I3
+ * review S-1: released_events 2 instead of 3, 1 run in 6).
+ *
  * Paths are relative to backend/. Each one must exist: a renamed or deleted
  * file fails both configs at load instead of silently dropping out of the
  * serial run.
@@ -60,6 +68,9 @@ const SERIAL_TEST_FILES = [
   'src/services/__tests__/transfer-tenant-table-ownership-migration.test.ts',
   'src/services/__tests__/trial-migration.test.ts',
   'src/services/__tests__/users-previous-login-at-migration.test.ts',
+  // Not schema changes: both call the global held-delivery purge (see above).
+  'src/services/github-app/__tests__/github-app-claim.db.test.ts',
+  'src/services/github-app/__tests__/github-app-installer-retention.db.test.ts',
 ];
 
 const duplicates = SERIAL_TEST_FILES.filter((file, i) => SERIAL_TEST_FILES.indexOf(file) !== i);

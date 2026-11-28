@@ -5,7 +5,7 @@ import { readGitHubAppConfig } from '../config/github-app';
 import { isDemoOrganization } from '../demo/demo-workspace';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/rbac.middleware';
-import { disconnectInstallation, listInstallations } from '../repositories/github-installations.repository';
+import { disconnectInstallation, listInstallations, listPreviousInstallations } from '../repositories/github-installations.repository';
 import { HELD_EVENT_DAYS, lastEventReceivedAt } from '../repositories/pipeline-events.repository';
 import {
   githubRepoIdOf,
@@ -15,7 +15,7 @@ import {
   setRepositoryDeployRule,
   setRepositoryService,
 } from '../repositories/pipeline-repositories.repository';
-import { STATE_PATTERN, claimInstallation, retryClaim, startInstall } from '../services/github-app/claim';
+import { CODE_VERIFIER_PATTERN, STATE_PATTERN, claimInstallation, retryClaim, startInstall, startReconnect } from '../services/github-app/claim';
 import { defaultSource, withOrgClient, withOrgTransaction } from '../services/github-app/db';
 import { deployRuleBody, environmentMapProblem, readStoredDeployRule, storedDeployRule } from '../services/github-app/deploy-rule';
 import { permissionDifferences } from '../services/github-app/permissions';
@@ -63,7 +63,11 @@ const claimBody = z.object({
   code: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).optional(),
   installation_id: z.string().regex(/^[1-9][0-9]{0,18}$/).optional(),
   setup_action: z.enum(['install', 'update', 'request']).optional(),
+  // I3 reconnect (D3): the PKCE verifier the starting tab kept. GitHub checks it at the code exchange.
+  code_verifier: z.string().regex(CODE_VERIFIER_PATTERN).optional(),
 }).strict();
+
+const reconnectBody = z.object({ installation_id: z.string().regex(/^[1-9][0-9]{0,18}$/) }).strict();
 
 const retryBody = z.object({ state: z.string().regex(STATE_PATTERN) }).strict();
 const serviceBody = z.object({ service_id: z.string().uuid().nullable() }).strict();
@@ -101,7 +105,28 @@ router.post('/claim', refuseUnconfigured, requireAdmin, refuseDemo, async (req, 
       code: parsed.data.code,
       installationId,
       setupAction: parsed.data.setup_action,
+      codeVerifier: parsed.data.code_verifier,
     });
+    res.status(result.status).json(result.body);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/integrations/github/reconnect { installation_id } -> { authorize_url, state, code_verifier, ... }
+// I3 (Option A): reconnect an installation this organization had before, through
+// GitHub's OAuth authorize. The id must be on the organization's record (404
+// otherwise, no GitHub call). The claim that follows is POST /claim, unchanged.
+router.post('/reconnect', refuseUnconfigured, requireAdmin, refuseDemo, async (req, res, next) => {
+  const parsed = reconnectBody.safeParse(req.body);
+  const installationId = parsed.success ? Number(parsed.data.installation_id) : NaN;
+  if (!parsed.success || !Number.isSafeInteger(installationId)) {
+    invalid(res);
+    return;
+  }
+  try {
+    const { organizationId, userId } = orgAndUser(req);
+    const result = await startReconnect(organizationId, userId, installationId);
     res.status(result.status).json(result.body);
   } catch (error) {
     next(error);
@@ -133,6 +158,9 @@ const MANAGING_ROLES = new Set(['owner', 'admin']);
 //   demo: the demo workspace (the screen shows its fixed sample, Q9).
 //   installations[].permission_differences: what the granted set differs by
 //     (empty unless permissions_state is 'mismatch'); the raw set stays here.
+//   previous_installations (I3): with no installation connected, the ones this
+//     organization had before (its own stored installation.created events),
+//     newest first, for the Reconnect card. Empty otherwise. Display only.
 router.get('/', async (req, res, next) => {
   if (!readGitHubAppConfig().enabled) {
     res.json({ success: true, data: { configured: false } });
@@ -141,13 +169,17 @@ router.get('/', async (req, res, next) => {
   try {
     const { organizationId } = orgAndUser(req);
     const demo = await isDemoOrganization(pool, organizationId);
-    const data = await withOrgClient(defaultSource, organizationId, async (client) => ({
-      installations: (await listInstallations(client, organizationId)).map(({ permissions, ...row }) => ({
+    const data = await withOrgClient(defaultSource, organizationId, async (client) => {
+      const installations = (await listInstallations(client, organizationId)).map(({ permissions, ...row }) => ({
         ...row,
         permission_differences: permissionDifferences(permissions ?? {}),
-      })),
-      last_event_at: await lastEventReceivedAt(client, organizationId),
-    }));
+      }));
+      return {
+        installations,
+        previous_installations: installations.length === 0 ? await listPreviousInstallations(client, organizationId) : [],
+        last_event_at: await lastEventReceivedAt(client, organizationId),
+      };
+    });
     const canManage = MANAGING_ROLES.has(String(req.user?.role)) && !demo;
     res.json({ success: true, data: { configured: true, can_manage: canManage, demo, ...data } });
   } catch (error) {

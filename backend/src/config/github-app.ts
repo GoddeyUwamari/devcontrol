@@ -21,6 +21,14 @@ export const GITHUB_APP_REQUIRED_ENV = [
   'GITHUB_APP_WEBHOOK_SECRET',
 ] as const;
 
+/**
+ * The App's registered Callback URL (GitHub App settings; d8b-step-a.md Q1).
+ * The reconnect's authorize URL names it as redirect_uri, exactly: GitHub
+ * only redirects to a registered callback URL (I3 Stage A §3, founder D1).
+ * Never built from a request or an environment value.
+ */
+export const GITHUB_APP_CALLBACK_URL = 'https://getdevcontrol.com/auth/github/callback';
+
 export interface GitHubAppConfig {
   appId: string;
   slug: string;

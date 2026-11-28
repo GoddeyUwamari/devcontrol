@@ -12,6 +12,7 @@ import {
 import type { GitHubInstallation } from '@/lib/services/github-connection.service'
 import {
   COPY,
+  RECONNECT_COPY,
   accountTypeLabel,
   installationSettingsUrl,
   permissionsNowHave,
@@ -22,11 +23,15 @@ import {
 import { bannersFor, needsAttention } from '@/lib/github-connection/model'
 import { Banner, BannerLink, BUTTON_DANGER, BUTTON_DANGER_OUTLINE, BUTTON_NEUTRAL, BUTTON_PRIMARY, CARD, Chip } from '@/components/integrations/parts'
 
-/** Board 4's success banner, at the top of the connected screen. */
-export function ConnectedBanner({ account, onDismiss }: { account: string; onDismiss: () => void }) {
+/**
+ * Board 4's success banner, at the top of the connected screen. I3: after a
+ * reconnect, the body says so and counts the deploys it recorded (D6:
+ * recorded_events, never every event released).
+ */
+export function ConnectedBanner({ account, onDismiss, reconnected }: { account: string; onDismiss: () => void; reconnected?: { recordedEvents: number } }) {
   return (
     <Banner tone="success" testId="github-connected-banner" icon={<CircleCheck size={20} strokeWidth={2} />} title={COPY.connectedTitle} onDismiss={onDismiss}>
-      {COPY.connectedBody(account)}
+      {reconnected ? RECONNECT_COPY.reconnectedBody(account, reconnected.recordedEvents) : COPY.connectedBody(account)}
     </Banner>
   )
 }

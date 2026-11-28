@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import GitHubCallbackPage from '../page'
-import { GITHUB_PARKED_CALLBACK_KEY, takeParkedCallback } from '@/lib/github-connection/pending-claim'
+import { GITHUB_PARKED_CALLBACK_KEY, saveReconnectStart, takeParkedCallback } from '@/lib/github-connection/pending-claim'
 
 const replace = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace, push: vi.fn() }) }))
@@ -100,5 +100,40 @@ describe('GitHub callback', () => {
     render(<GitHubCallbackPage />)
     await waitFor(() => expect(replace).toHaveBeenCalled())
     expect(takeParkedCallback()).toMatchObject({ setupAction: 'request', state: STATE })
+  })
+
+  // I3 reconnect: GitHub's authorize redirect.
+  const reconnecting = () => saveReconnectStart({ state: STATE, organizationId: 'org-1', installationId: INSTALLATION, codeVerifier: 'v'.repeat(43) })
+
+  it('reconnect: code + state (no installation id) are taken out of the URL and history and parked, in a tab that started a reconnect', async () => {
+    reconnecting()
+    visit(callbackUrl({ code: CODE, state: STATE }))
+    render(<GitHubCallbackPage />)
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/settings/integrations/github'))
+    await new Promise((r) => setTimeout(r, 5))
+    expectNothingLeftBehind()
+    expect(takeParkedCallback()).toEqual({ code: CODE, state: STATE, savedAt: expect.any(Number) })
+  })
+
+  it('reconnect: an error is parked as its fixed value only; error_description and error_uri leave the URL and are never stored or shown', async () => {
+    reconnecting()
+    const description = 'The user has denied your application access <planted-free-text>'
+    visit(callbackUrl({ error: 'access_denied', error_description: description, error_uri: 'https://docs.github.com/planted', state: STATE }))
+    render(<GitHubCallbackPage />)
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/settings/integrations/github'))
+    await new Promise((r) => setTimeout(r, 5))
+    expect(window.location.search).toBe('')
+    for (const where of [window.location.href, JSON.stringify(window.history.state ?? null), document.body.innerHTML, JSON.stringify({ ...sessionStorage })]) {
+      expect(where).not.toContain('planted')
+    }
+    expect(takeParkedCallback()).toEqual({ error: 'access_denied', state: STATE, savedAt: expect.any(Number) })
+  })
+
+  it('without a reconnect start, an authorize-shaped callback is cleaned from the URL but not parked (first-install flow unchanged)', async () => {
+    visit(callbackUrl({ code: CODE, state: STATE }))
+    render(<GitHubCallbackPage />)
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    expect(window.location.search).toBe('')
+    expect(sessionStorage.getItem(GITHUB_PARKED_CALLBACK_KEY)).toBeNull()
   })
 })

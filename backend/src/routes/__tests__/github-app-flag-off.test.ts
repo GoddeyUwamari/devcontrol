@@ -76,6 +76,8 @@ describe.each([
   ['POST', '/api/integrations/github/install', {}, 503, NOT_CONFIGURED],
   ['POST', '/api/integrations/github/claim', { state: STATE, code: 'abc', installation_id: '42' }, 503, NOT_CONFIGURED],
   ['POST', '/api/integrations/github/claim/retry', { state: STATE }, 503, NOT_CONFIGURED],
+  ['POST', '/api/integrations/github/reconnect', { installation_id: '42' }, 503, NOT_CONFIGURED],
+  ['POST', '/api/integrations/github/claim', { state: STATE, code: 'abc', installation_id: '42', code_verifier: 'v'.repeat(43) }, 503, NOT_CONFIGURED],
   ['DELETE', '/api/integrations/github/installations/42', undefined, 503, NOT_CONFIGURED],
   ['POST', GITHUB_APP_WEBHOOK_PATH, { action: 'created' }, 503, { received: false, error: 'github_app_not_configured' }],
   ['POST', `${GITHUB_APP_WEBHOOK_PATH}/`, { action: 'created' }, 503, { received: false, error: 'github_app_not_configured' }],

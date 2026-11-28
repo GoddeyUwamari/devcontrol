@@ -46,6 +46,7 @@ function fakeClient(f: FakeGitHub): GitHubAppClient {
       repositorySelection: 'selected',
       permissions: { ...EXPECTED_PERMISSIONS },
       events: ['workflow_job'],
+      suspendedAt: null,
     }),
     listInstallationRepositories: async () => (f.repos ?? []).map((r) => ({ id: r.id, fullName: r.fullName, defaultBranch: 'main' })),
   };

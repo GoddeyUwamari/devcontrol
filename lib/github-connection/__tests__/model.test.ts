@@ -154,3 +154,35 @@ describe('copy rules (founder, Nov 23)', () => {
     expect(sources.some((s) => s.includes('COPY.suspendedBody'))).toBe(true)
   })
 })
+
+describe('I3 reconnect outcomes', () => {
+  const answer = (status: number, body: Record<string, unknown>) => ({ status, body })
+  const rc = { account: 'acme-inc' }
+  it('connected carries recorded_events (D6), never a negative or malformed count', () => {
+    expect(claimOutcome(answer(200, { data: { status: 'connected', installation: { account_login: 'acme-inc' }, released_events: 5, recorded_events: 2 } }), false, rc))
+      .toEqual({ kind: 'connected', account: 'acme-inc', reconnected: { recordedEvents: 2 } })
+    for (const n of [undefined, -1, 1.5, '3']) {
+      expect(claimOutcome(answer(200, { data: { status: 'connected', installation: { account_login: 'acme-inc' }, recorded_events: n } }), false, rc))
+        .toMatchObject({ reconnected: { recordedEvents: 0 } })
+    }
+  })
+  it('not accessible names the account; not installer and 502 are marked as a reconnect; the rest map as before', () => {
+    expect(claimOutcome(answer(403, { error: 'installation_not_accessible' }), false, rc)).toEqual({ kind: 'reconnect_not_accessible', account: 'acme-inc' })
+    expect(claimOutcome(answer(403, { error: 'not_installer' }), false, rc)).toEqual({ kind: 'installer_mismatch', reconnect: true })
+    expect(claimOutcome(answer(502, { error: 'github_unavailable' }), false, rc)).toEqual({ kind: 'no_response', canRetry: false, reconnect: true })
+    expect(claimOutcome(answer(409, { error: 'installation_claimed_elsewhere' }), false, rc)).toEqual({ kind: 'elsewhere' })
+    expect(claimOutcome(answer(400, { error: 'invalid_state' }), false, rc)).toEqual({ kind: 'expired' })
+  })
+})
+
+describe('I3 founder copy (Copy fix), word for word', () => {
+  it('the toast in its three forms, the card body and the D7 paragraph', async () => {
+    const { RECONNECT_COPY } = await import('../copy')
+    expect(RECONNECT_COPY.reconnectedBody('acme', 0)).toBe('Reconnected to acme.')
+    expect(RECONNECT_COPY.reconnectedBody('acme', 1)).toBe('Reconnected to acme. 1 deployment from while you were disconnected was recorded.')
+    expect(RECONNECT_COPY.reconnectedBody('acme', 4)).toBe('Reconnected to acme. 4 deployments from while you were disconnected were recorded.')
+    expect(RECONNECT_COPY.body('acme')).toBe('You connected acme to this workspace before. Reconnect to resume recording deployments. Your repositories, services and deploy rules are kept.')
+    expect(RECONNECT_COPY.installerLeft).toBe(
+      'If the GitHub installer has left the organization, an organization owner must uninstall DevControl Deployments from GitHub and install it again. Your repositories, services and deploy rules come back.')
+  })
+})
