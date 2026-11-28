@@ -67,7 +67,7 @@ vi.mock('@/lib/services/nl-query.service', () => ({ nlQueryService: { executeQue
 
 import CostsPage from '../page'
 import CostOptimizationPage from '../../cost-optimization/page'
-import { RUN_ANALYSIS_ROLE_NOTE } from '../cost-intelligence'
+import { OPTIMIZE_NOW_DEMO_NOTE, RUN_ANALYSIS_ROLE_NOTE, RUNNING_COST_ANALYSIS_LABEL } from '../cost-intelligence'
 import { OPPORTUNITIES_EMPTY } from '../OpportunitiesCard'
 
 const pending = () => new Promise<never>(() => {})
@@ -452,6 +452,72 @@ describe('ruling Q9: Optimize Now for members and viewers (the backend\'s rule: 
     await ready()
     expect(optimizeNow()).toBeDisabled()
     expect(screen.queryByTestId('optimize-now-role-note')).not.toBeInTheDocument()
+  })
+})
+
+describe('founder ruling B-3: Optimize Now in demo mode', () => {
+  it.each(['admin', 'member'])('demo (%s): disabled, with exactly "Not available in demo mode." tied to the button; no role note; clicking does nothing', async (role) => {
+    m.demo = true
+    m.role = role
+    renderPage()
+    await ready()
+    expect(optimizeNow()).toBeDisabled()
+    const note = screen.getByTestId('optimize-now-demo-note')
+    expect(OPTIMIZE_NOW_DEMO_NOTE).toBe('Not available in demo mode.')
+    expect(note.textContent).toBe('Not available in demo mode.')
+    expect(optimizeNow()).toHaveAttribute('aria-describedby', note.id)
+    expect(optimizeNow()).toHaveAccessibleDescription('Not available in demo mode.')
+    expect(screen.queryByTestId('optimize-now-role-note')).not.toBeInTheDocument()
+    fireEvent.click(optimizeNow())
+    expect(svc.analyze).not.toHaveBeenCalled()
+  })
+
+  it('not in demo mode: no demo note', async () => {
+    renderPage()
+    await ready()
+    await waitFor(() => expect(optimizeNow()).toBeEnabled())
+    expect(screen.queryByText('Not available in demo mode.')).not.toBeInTheDocument()
+  })
+})
+
+describe('founder ruling B-4: Optimize Now while a run is running', () => {
+  it('aria-busy="true" and "Running cost analysis" in its accessible name while running; the visible label stays "Optimize Now"; both cleared when the run ends', async () => {
+    let finish!: (value: unknown) => void
+    svc.analyze.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    renderPage()
+    await ready()
+    await waitFor(() => expect(optimizeNow()).toBeEnabled())
+    expect(optimizeNow()).not.toHaveAttribute('aria-busy')
+    expect(optimizeNow()).toHaveAccessibleName('Optimize Now')
+
+    fireEvent.click(optimizeNow())
+    await waitFor(() => expect(optimizeNow()).toHaveAttribute('aria-busy', 'true'))
+    expect(RUNNING_COST_ANALYSIS_LABEL).toBe('Running cost analysis')
+    expect(optimizeNow()).toHaveAccessibleName(/Running cost analysis/)
+    expect(optimizeNow()).toHaveAccessibleName(/^Optimize Now/)
+    // Visible text: only "Optimize Now" (the running words are screen-reader only).
+    const runningLabel = screen.getByTestId('optimize-now-running-label')
+    expect(runningLabel).toHaveClass('sr-only')
+    expect(optimizeNow().textContent?.replace(runningLabel.textContent ?? '', '').trim()).toBe('Optimize Now')
+
+    await act(async () => { finish(analyzeResponse(result())) })
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
+    expect(optimizeNow()).not.toHaveAttribute('aria-busy')
+    expect(optimizeNow()).toHaveAccessibleName('Optimize Now')
+    expect(screen.queryByTestId('optimize-now-running-label')).not.toBeInTheDocument()
+  })
+
+  it('a run started elsewhere and still running: busy and named as running here too; cleared when the server says it finished', async () => {
+    svc.getMyRunResult.mockResolvedValue(result({ state: 'running', completedAt: null }))
+    const { client } = renderPage()
+    await waitFor(() => expect(optimizeNow()).toHaveAttribute('aria-busy', 'true'))
+    expect(optimizeNow()).toHaveAccessibleName(/Running cost analysis/)
+    // The server now says the run finished (what the running poll would fetch; asked directly, no timers).
+    svc.getMyRunResult.mockResolvedValue(result())
+    await act(async () => { await client.refetchQueries({ queryKey: ['cost-run-result'] }) })
+    await waitFor(() => expect(banner()).toHaveAttribute('data-tone', 'success'))
+    expect(optimizeNow()).not.toHaveAttribute('aria-busy')
+    expect(optimizeNow()).toHaveAccessibleName('Optimize Now')
   })
 })
 

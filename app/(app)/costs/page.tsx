@@ -40,7 +40,7 @@ import { isNotReportedYet, isStillUpdating, NOT_REPORTED_TOOLTIP, STILL_UPDATING
 import { costsTrendChartData, costsTrendTooltipLines, type CostsTrendRow } from './trend-chart-data'
 import {
   acrossCategories, activeChecks, canRunCostAnalysis, costDrivers, coverageRows, DEFAULT_TREND_RANGE, describeSavingsTile, formatDriverAmount, lastAnalysisParts, opportunityFigure, PAGE_SUBTITLE,
-  rankByDisplayedSavings, RUN_ANALYSIS_ROLE_NOTE, servicesLine, topDrivers, TREND_RANGES, trendSummary, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
+  OPTIMIZE_NOW_DEMO_NOTE, rankByDisplayedSavings, RUN_ANALYSIS_ROLE_NOTE, RUNNING_COST_ANALYSIS_LABEL, servicesLine, topDrivers, TREND_RANGES, trendSummary, trendWindow, windowDatesLabel, type CostTrendPointView, type TrendRangeLabel,
 } from './cost-intelligence'
 import { whyLine } from './why-evidence'
 import { CostDriversCard } from './CostDriversCard'
@@ -209,6 +209,10 @@ export default function CostsPage() {
   const roleCanRun = canRunCostAnalysis(role)
   const showRoleNote = role !== null && !roleCanRun
   const canRunAnalysis = roleCanRun && !runRunning && !isDemoActive && !notConnected
+  // The note under a disabled Optimize Now: demo mode first (ruling B-3: no run in demo), else the role note (Q9).
+  const optimizeNowNote = isDemoActive ? { text: OPTIMIZE_NOW_DEMO_NOTE, testId: 'optimize-now-demo-note' }
+    : showRoleNote ? { text: RUN_ANALYSIS_ROLE_NOTE, testId: 'optimize-now-role-note' }
+    : null
 
   const { data: activeRecs = [], isLoading: activeRecsLoading, isError: activeRecsError } = useQuery<CostRecommendation[]>({
     queryKey: ['cost-recommendations-active'],
@@ -554,15 +558,17 @@ export default function CostsPage() {
             type="button"
             onClick={() => { void runAnalysis() }}
             disabled={!canRunAnalysis}
-            aria-describedby={showRoleNote ? roleNoteId : undefined}
+            aria-describedby={optimizeNowNote ? roleNoteId : undefined}
             aria-busy={runRunning || undefined}
             data-testid="optimize-now"
             className="flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2.5 min-h-11 rounded-lg text-ui font-semibold border border-violet-600 cursor-pointer transition-colors whitespace-nowrap disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-ink-muted disabled:hover:bg-slate-100"
           >
             {runRunning ? <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden="true" /> : <Zap size={14} aria-hidden="true" />} Optimize Now
+            {/* Ruling B-4: the visible label stays "Optimize Now"; while a run is running, screen readers also hear it. */}
+            {runRunning && <span className="sr-only" data-testid="optimize-now-running-label">, {RUNNING_COST_ANALYSIS_LABEL}</span>}
           </button>
         </div>
-        {showRoleNote && <p id={roleNoteId} className="m-0 text-meta text-ink-muted sm:text-right" data-testid="optimize-now-role-note">{RUN_ANALYSIS_ROLE_NOTE}</p>}
+        {optimizeNowNote && <p id={roleNoteId} className="m-0 text-meta text-ink-muted sm:text-right" data-testid={optimizeNowNote.testId}>{optimizeNowNote.text}</p>}
         </div>
         )}
       </div>
