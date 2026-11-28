@@ -26,6 +26,8 @@ const severityStyles: Record<RecommendationSeverity, string> = {
 export const OPPORTUNITY_LIMIT = 5
 
 export const OPPORTUNITIES_TITLE = 'Optimization opportunities'
+/** The section's id: the result banner's "See the new opportunity" brings it into view and focuses its heading (PR B). */
+export const OPPORTUNITIES_ANCHOR = 'opportunities'
 export const OPPORTUNITIES_ERROR = 'Recommendations could not be retrieved.'
 export const OPPORTUNITIES_EMPTY = 'No optimization recommendations yet. Run cost analysis to identify savings opportunities.'
 /**
@@ -53,10 +55,10 @@ export function OpportunitiesCard({ rows, total, isError, isLoading = false, emp
 }) {
   const footer = !isError && !isLoading ? opportunitiesFooter(rows.length, total) : null
   return (
-    <section aria-labelledby="opportunities-heading" className={`bg-white rounded-xl p-5 sm:p-6 border border-slate-200 flex flex-col gap-4 min-w-0 ${className}`}>
+    <section id={OPPORTUNITIES_ANCHOR} aria-labelledby="opportunities-heading" className={`scroll-mt-24 bg-white rounded-xl p-5 sm:p-6 border border-slate-200 flex flex-col gap-4 min-w-0 ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 id="opportunities-heading" className="text-section font-semibold text-slate-900 m-0 tracking-tight">{OPPORTUNITIES_TITLE}</h2>
+          <h2 id="opportunities-heading" tabIndex={-1} className="text-section font-semibold text-slate-900 m-0 tracking-tight outline-none">{OPPORTUNITIES_TITLE}</h2>
           {!isError && rows.length > 0 && total !== null && total > rows.length && (
             <p className="text-meta text-ink-muted m-0 mt-0.5">Top {rows.length} of {total}, largest savings first</p>
           )}

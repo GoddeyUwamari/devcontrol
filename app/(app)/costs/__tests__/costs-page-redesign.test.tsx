@@ -391,7 +391,7 @@ describe('layout order (spec items 8–12) and what is kept', () => {
     for (let i = 1; i < order.length; i++) expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('kept: KPI tiles as links, Export CSV, "Cost data as of", 7D / 30D / 3M (no 6M / 1Y), Optimize Now still a link', async () => {
+  it('kept: KPI tiles as links, Export CSV, "Cost data as of", 7D / 30D / 3M (no 6M / 1Y); Optimize Now is a button (PR B)', async () => {
     renderPage()
     await screen.findByTestId('drivers-total')
     expect(tile('mtd').closest('a')).toHaveAttribute('href', '/invoices')
@@ -403,7 +403,9 @@ describe('layout order (spec items 8–12) and what is kept', () => {
     expect(await screen.findByText(/^Cost data as of /)).toBeInTheDocument()
     for (const label of ['7D', '30D', '3M']) expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     for (const label of ['6M', '1Y']) expect(screen.queryByRole('button', { name: label })).toBeNull()
-    expect(screen.getByRole('link', { name: /Optimize Now/ })).toHaveAttribute('href', '/cost-optimization')
+    // PR B (ruling: "Optimize Now as a plain link" removed; it becomes a real action): a button, no longer a link.
+    expect(screen.getByRole('button', { name: /Optimize Now/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Optimize Now/ })).toBeNull()
   })
 
   it('removed (approved): spike badge and banner, summary strip, top drivers, Cost by Service bars, Top Savings, yearly line', async () => {
