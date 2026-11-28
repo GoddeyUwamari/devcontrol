@@ -114,7 +114,7 @@ export class ServicesController {
 
       if (!service) {
         // Same answer whether the team doesn't exist or belongs to another
-        // organization.
+        // organization. No team at all never comes here (onboarding D5).
         next(new NotFoundError('Team'));
         return;
       }

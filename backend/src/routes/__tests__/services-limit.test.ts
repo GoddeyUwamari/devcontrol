@@ -313,6 +313,25 @@ describe('below, exactly at and above the limit (Visibility, 5)', () => {
     expect(await count(ws.orgId)).toBe(5);
   });
 
+  it('no team (onboarding D5): the last slot is created with no team, the next is refused with the same 402, nothing written', async () => {
+    const ws = await workspace({ tier: 'free' }, 4);
+    const created = await create(ws, ws.admin, { team_id: undefined });
+    expect(created.status).toBe(201);
+    expect((await json(created)).data).toMatchObject({ team_id: null, organization_id: ws.orgId });
+    expect(await count(ws.orgId)).toBe(5);
+
+    for (const team_id of [undefined, null, '']) {
+      const res = await create(ws, ws.admin, { team_id });
+      expect(res.status).toBe(402);
+      expect(await json(res)).toMatchObject({
+        success: false,
+        error: "Your Visibility plan includes 5 services, and this workspace has 5. Existing services aren't affected.",
+        code: 'RESOURCE_LIMIT_REACHED',
+      });
+    }
+    expect(await count(ws.orgId)).toBe(5);
+  });
+
   it('above (e.g. after a downgrade): 7 existing -> 402 naming 7; the 7 are untouched', async () => {
     const ws = await workspace({ tier: 'free' }, 7);
     const before = (await pool.query('SELECT id, name, status, updated_at FROM services WHERE organization_id = $1 ORDER BY id', [ws.orgId])).rows;
@@ -397,6 +416,15 @@ describe('the last slot goes to exactly one creation (lock first, then count, th
     expect(res.status).toBe(404);
     expect(await count(ws.orgId)).toBe(1);
     expect(await count(other)).toBe(0);
+  });
+
+  it('no team (onboarding D5): two concurrent creations for the last slot, one 201, one 402; 5 rows', async () => {
+    const ws = await workspace({ tier: 'free' }, 4);
+    const reachedInsert = barrierAtInsert();
+    const [a, b] = await Promise.all([create(ws, ws.admin, { team_id: undefined }), create(ws, ws.owner, { team_id: '' })]);
+    expect([a.status, b.status].sort()).toEqual([201, 402]);
+    expect(reachedInsert()).toBe(1);
+    expect(await count(ws.orgId)).toBe(5);
   });
 
   describe('the lock: its own namespace, taken before anything else', () => {
@@ -568,6 +596,15 @@ describe('the demo workspace creates no services (FQ6)', () => {
     const ws = await workspace({ tier: 'pro' }, 0);
     jest.spyOn(demo, 'isDemoOrganization').mockResolvedValue(true);
     const res = await create(ws);
+    expect(res.status).toBe(403);
+    expect(await json(res)).toEqual({ success: false, error: 'not_available_in_demo' });
+    expect(await count(ws.orgId)).toBe(0);
+  });
+
+  it('no team (onboarding D5) is refused the same way: 403, nothing written', async () => {
+    const ws = await workspace({ tier: 'pro' }, 0);
+    jest.spyOn(demo, 'isDemoOrganization').mockResolvedValue(true);
+    const res = await create(ws, ws.admin, { team_id: undefined });
     expect(res.status).toBe(403);
     expect(await json(res)).toEqual({ success: false, error: 'not_available_in_demo' });
     expect(await count(ws.orgId)).toBe(0);

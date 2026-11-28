@@ -433,7 +433,8 @@ export interface CreateServicePayload {
   name: string;
   template: ServiceTemplate;
   owner: string;
-  teamId: string;
+  /** Absent = no team (onboarding D1); sent as no team_id at all. */
+  teamId?: string;
   githubUrl?: string;
   description?: string;
 }

@@ -1,6 +1,7 @@
 /**
  * servicesService.create sends the body POST /api/services validates
  * (backend/src/validators/schemas.ts createServiceSchema: team_id, github_url).
+ * team_id is optional (onboarding D1/D5): no team is no team_id.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { servicesService } from "../services.service";
@@ -61,7 +62,22 @@ describe("servicesService.create", () => {
     expect(parsed.data?.team_id).toBe(TEAM_ID);
   });
 
-  it("the old camelCase body is rejected by the backend schema", () => {
-    expect(createServiceSchema.safeParse(formPayload).success).toBe(false);
+  it("no team (onboarding D1): the body carries no team_id at all, and the backend schema accepts it as no team", async () => {
+    await servicesService.create({ ...formPayload, teamId: undefined });
+
+    const body = mockedPost.mock.calls[0][1] as Record<string, unknown>;
+    // JSON drops an undefined value, so the request has no team_id key.
+    expect(Object.keys(JSON.parse(JSON.stringify(body)))).not.toContain("team_id");
+    const parsed = createServiceSchema.safeParse(body);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.team_id).toBeUndefined();
+  });
+
+  it("the old camelCase body would lose the team and the GitHub URL (unknown keys are stripped)", () => {
+    // team_id is optional now, so this parses; what matters is that teamId and githubUrl never arrive.
+    const parsed = createServiceSchema.safeParse(formPayload);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.team_id).toBeUndefined();
+    expect(parsed.data?.github_url).toBeUndefined();
   });
 });
