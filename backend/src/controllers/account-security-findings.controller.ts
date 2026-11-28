@@ -47,7 +47,10 @@ export class AccountSecurityFindingsController {
 
   /**
    * GET /api/security/account-findings/stats
-   * Get active-finding counts by severity and category
+   * Open-finding counts by severity and category (PR B2b): active findings
+   * that are not dismissed and not accepted risk (isOpenFinding). Same shape
+   * as before; the list endpoint still returns every active finding, each
+   * with is_open.
    */
   async getStats(req: Request, res: Response): Promise<void> {
     try {
@@ -57,7 +60,7 @@ export class AccountSecurityFindingsController {
         return;
       }
 
-      const stats = await repository.getStats(organizationId);
+      const stats = await repository.getOpenStats(organizationId);
 
       const response: ApiResponse = {
         success: true,

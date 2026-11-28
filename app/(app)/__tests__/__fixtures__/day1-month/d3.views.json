@@ -11,7 +11,7 @@
     "previousMonth": null,
     "evidence": {
       "source": "Dec 1–3 (UTC) · Actual · AWS Cost Explorer · latest days still updating",
-      "comparison": "Finished days this month vs same days last month · not the selected range · Dec 1 vs Nov 1 · After credits and refunds; amounts below $0 count as $0"
+      "comparison": "Finished days this month vs same days last month · not the selected range · Dec 1 vs Nov 1"
     }
   },
   "costsMonthToDate": {

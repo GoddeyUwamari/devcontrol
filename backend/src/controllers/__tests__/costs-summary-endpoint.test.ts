@@ -85,7 +85,8 @@ function dailyTrend(current: number, previous: number, previousDays?: number): C
   const y = now.getUTCFullYear(), m = now.getUTCMonth(), today = now.getUTCDate();
   const lastM = m === 0 ? 11 : m - 1, lastY = m === 0 ? y - 1 : y;
   const daysInLast = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const point = (date: string, total: number): CostTrendPoint => ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total });
+  // byService carries the day's amount: the comparison sums the real net (PR B1), Σ byService.
+  const point = (date: string, total: number): CostTrendPoint => ({ date, compute: total, storage: 0, database: 0, network: 0, other: 0, total, byService: [{ service: 'AWS Lambda', amount: total }] });
   const points: CostTrendPoint[] = [];
   for (let d = 1; d <= (previousDays ?? daysInLast); d++) points.push(point(isoDate(lastY, lastM, d), previous));
   for (let d = 1; d <= today; d++) points.push(point(isoDate(y, m, d), current));
@@ -425,7 +426,8 @@ describe('GET /api/platform/costs/trend -- a failure is not an empty success', (
     await new StatsController(fixturePool()).getCostTrend(req, res);
 
     expect(status).not.toHaveBeenCalled();
-    expect(json).toHaveBeenCalledWith({ success: true, data: [] });
+    // otherServices (PR B2, additive): nothing folded into "Other" for an empty series.
+    expect(json).toHaveBeenCalledWith({ success: true, data: [], otherServices: [] });
   });
 
   it('a successful series is returned unchanged, including real $0 and sub-dollar days', async () => {
@@ -435,6 +437,7 @@ describe('GET /api/platform/costs/trend -- a failure is not an empty success', (
 
     await new StatsController(fixturePool()).getCostTrend(req, res);
 
-    expect(json).toHaveBeenCalledWith({ success: true, data: points });
+    // The points are passed through unchanged; otherServices is the additive range-level list (one service: none folded).
+    expect(json).toHaveBeenCalledWith({ success: true, data: points, otherServices: [] });
   });
 });

@@ -445,7 +445,8 @@ describe('Costs page -- month-over-month basis', () => {
     for (const range of ['7D', '30D', '3M']) {
       fireEvent.click(await screen.findByRole('button', { name: range }))
       const basis = await screen.findByTestId('mom-basis')
-      expect(basis.textContent).toBe('Finished days this month vs same days last month · not the selected range · After credits and refunds; amounts below $0 count as $0')
+      expect(basis.textContent).toBe('Finished days this month vs same days last month · not the selected range · Net of credits and refunds.')
+      expect(basis.textContent).not.toMatch(/below \$0|count as \$0/)
       expect(within(await card('Month-over-Month Change')).getByTestId('mom-basis')).toBe(basis)
     }
     // The comparison is fetched once, not per range.
@@ -478,7 +479,7 @@ describe('Costs page -- month-over-month basis', () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: momMissing('unavailable') })
     renderPage()
 
-    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range · After credits and refunds; amounts below $0 count as $0')
+    expect((await screen.findByTestId('mom-basis')).textContent).toBe('Finished days this month vs same days last month · not the selected range · Net of credits and refunds.')
   })
 })
 
@@ -522,10 +523,12 @@ describe('Costs page -- trend basis', () => {
     expect(await screen.findByText(/from Cost Explorer · After credits and refunds; amounts below \$0 count as \$0/)).toBeInTheDocument()
   })
 
-  it('the month-over-month strip, built from the same floored trend, says credits/refunds are excluded', async () => {
+  it('the month-over-month strip is net (PR B1: summed from each day\'s real net, nothing floored): "Net of credits and refunds."', async () => {
     mockGetCostSummary.mockResolvedValue({ spend: spendActual(12), monthOverMonth: mom(14.2, 1.42) })
     renderPage()
-    expect((await screen.findByTestId('mom-basis')).textContent).toContain('After credits and refunds; amounts below $0 count as $0')
+    const basis = (await screen.findByTestId('mom-basis')).textContent
+    expect(basis).toContain('Net of credits and refunds.')
+    expect(basis).not.toMatch(/amounts below \$0 count as \$0/)
   })
 
   it('Cost drivers, summed from the trend by AWS service, states the after-credits, floored basis', async () => {

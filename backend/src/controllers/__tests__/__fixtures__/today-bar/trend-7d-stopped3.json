@@ -23,6 +23,7 @@
           "amount": 0.05
         }
       ],
+      "netTotal": 1.55,
       "lineItems": 3,
       "estimated": true,
       "reportState": "final",
@@ -67,6 +68,7 @@
           "amount": 0.05
         }
       ],
+      "netTotal": 1.55,
       "lineItems": 3,
       "estimated": true,
       "reportState": "final",
@@ -111,6 +113,7 @@
           "amount": 0.05
         }
       ],
+      "netTotal": 1.55,
       "lineItems": 3,
       "estimated": true,
       "reportState": "final",
@@ -155,6 +158,7 @@
           "amount": 0.05
         }
       ],
+      "netTotal": 1.55,
       "lineItems": 3,
       "estimated": true,
       "reportState": "updating",
@@ -186,6 +190,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": true,
       "reportState": "not_reported",
@@ -217,6 +222,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": true,
       "reportState": "not_reported",
@@ -248,6 +254,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": true,
       "reportState": "not_reported",
@@ -279,6 +286,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": true,
       "reportState": "not_reported",
@@ -301,5 +309,6 @@
         }
       ]
     }
-  ]
+  ],
+  "otherServices": []
 }

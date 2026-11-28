@@ -127,7 +127,7 @@
         "changeAmount": -4.61,
         "changePercent": -100,
         "currentWindowIncludesToday": false,
-        "basis": "sum of AWS Cost Explorer daily charges per cost category, after credits and refunds, with any negative daily category amount floored to zero, so window totals can differ from month-to-date spend"
+        "basis": "sum of AWS Cost Explorer daily net amounts across all services, after credits and refunds, with nothing floored at zero, so a window total can be negative; window totals cover finished days only and can differ from month-to-date spend"
       },
       "retrievedAt": "2026-11-16T11:30:00.000Z",
       "freshness": null,

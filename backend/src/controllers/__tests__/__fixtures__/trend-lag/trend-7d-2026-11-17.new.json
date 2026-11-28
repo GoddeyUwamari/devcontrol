@@ -43,6 +43,7 @@
           "amount": 0.0002
         }
       ],
+      "netTotal": 0.6099588451,
       "lineItems": 8,
       "estimated": null,
       "reportState": "final",
@@ -132,6 +133,7 @@
           "amount": 0.00025
         }
       ],
+      "netTotal": 0.7737983468999999,
       "lineItems": 8,
       "estimated": null,
       "reportState": "final",
@@ -221,6 +223,7 @@
           "amount": 0.00034
         }
       ],
+      "netTotal": 0.8318914896,
       "lineItems": 8,
       "estimated": null,
       "reportState": "final",
@@ -310,6 +313,7 @@
           "amount": 0.00008
         }
       ],
+      "netTotal": 0.0593626963,
       "lineItems": 8,
       "estimated": null,
       "reportState": "updating",
@@ -366,6 +370,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": null,
       "reportState": "not_reported",
@@ -422,6 +427,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": null,
       "reportState": "not_reported",
@@ -478,6 +484,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": null,
       "reportState": "not_reported",
@@ -534,6 +541,7 @@
       "other": 0,
       "total": 0,
       "byService": [],
+      "netTotal": 0,
       "lineItems": 0,
       "estimated": null,
       "reportState": "not_reported",
@@ -581,5 +589,8 @@
         }
       ]
     }
+  ],
+  "otherServices": [
+    "Glue"
   ]
 }

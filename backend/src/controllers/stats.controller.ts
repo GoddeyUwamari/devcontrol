@@ -6,7 +6,7 @@ import { AWS_ACCOUNT_AMBIGUOUS_MESSAGE, isAwsAccountAmbiguous } from '../reposit
 import { ApiResponse, PlatformStats } from '../types';
 import { pool } from '../config/database';
 import { NO_LIFECYCLE_RESOURCE_TYPES, NOT_APPLICABLE_STATUS, UNKNOWN_STATUS } from '../utils/resourceLifecycle';
-import awsCostService, { CostTrendRange } from '../services/aws-cost.service';
+import awsCostService, { CostTrendRange, otherServicesFrom } from '../services/aws-cost.service';
 import { monthOverMonthSection, spendSection } from '../services/cost-context-sections';
 
 const deploymentsRepo = new DeploymentsRepository();
@@ -110,6 +110,11 @@ export class StatsController {
    * GET /api/platform/costs/trend
    * Time-series cost breakdown by category (compute/storage/database/network/other)
    * from AWS Cost Explorer, for the requested range.
+   *
+   * Body: { success, data, otherServices }. `data` is the points, unchanged
+   * (each also carries the additive netTotal, the unclamped net). `otherServices`
+   * (additive, range-level) lists the display names the points' byServiceDisplay
+   * folds into "Other" (otherServicesFrom), empty when nothing is folded in.
    */
   async getCostTrend(req: Request, res: Response): Promise<void> {
     const organizationId = (req as any).user?.organizationId;
@@ -125,7 +130,7 @@ export class StatsController {
 
     try {
       const data = await awsCostService.fetchCostTrend(organizationId, rangeParam as CostTrendRange);
-      res.json({ success: true, data });
+      res.json({ success: true, data, otherServices: otherServicesFrom(data) });
     } catch (error: any) {
       console.error('Error fetching cost trend:', error);
       if (isAwsAccountAmbiguous(error)) {
@@ -136,7 +141,7 @@ export class StatsController {
       // is the honest answer. Any other failure is not "no spend" -- it must
       // not reach the client as a successful empty series.
       if (String(error?.message ?? '').startsWith('AWS_NOT_CONNECTED')) {
-        res.json({ success: true, data: [] });
+        res.json({ success: true, data: [], otherServices: [] });
         return;
       }
       res.status(502).json({ success: false, error: 'The AWS Cost Explorer trend could not be retrieved' });

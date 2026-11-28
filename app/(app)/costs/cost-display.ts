@@ -197,6 +197,9 @@ export function describeStatsSpend(
  */
 export const MOM_BASIS_LABEL = 'Finished days this month vs same days last month · not the selected range'
 
+/** Beside the month-over-month figure: it is built from each day's real net (PR B1), nothing floored at $0. */
+export const MOM_NET_NOTE = 'Net of credits and refunds.'
+
 /** The latest days of this month are still updating in AWS Cost Explorer (one string everywhere, DAY1-D7). */
 export const LATEST_DAYS_REPORTING = 'latest days still updating'
 

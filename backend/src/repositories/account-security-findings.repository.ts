@@ -36,6 +36,13 @@ export interface AccountSecurityFinding {
   derived_status: DerivedFindingStatus;
   /** The one verified framework mapping for this finding, or null if none applies. */
   framework_mapping: FrameworkMapping | null;
+  /**
+   * Read-time projection, never stored: the finding is open (isOpenFinding) --
+   * active and neither dismissed nor accepted risk. The same rule as the open
+   * counts in getOpenStats() (GET /stats). Dismissed and accepted-risk findings
+   * are still listed, with is_open false.
+   */
+  is_open: boolean;
 }
 
 export interface NewAccountFinding {
@@ -73,6 +80,22 @@ const SEVERITY_ORDER: Record<ComplianceSeverity, number> = {
   low: 3,
 };
 
+/** Per-severity and per-category counts from `GROUP BY severity, category` rows; every key present (0 when none). */
+function tallyStats(rows: Array<{ severity: string; category: string; count: string }>): AccountFindingStats {
+  const bySeverity: Record<ComplianceSeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  const byCategory: Record<AccountFindingCategory, number> = { networking: 0, iam: 0 };
+  let total = 0;
+
+  for (const row of rows) {
+    const count = parseInt(row.count, 10);
+    bySeverity[row.severity as ComplianceSeverity] += count;
+    byCategory[row.category as AccountFindingCategory] += count;
+    total += count;
+  }
+
+  return { total, bySeverity, byCategory };
+}
+
 /**
  * Derives the user-facing status from the system-owned `status` column and the
  * user-owned `disposition` column, without persisting a redundant column.
@@ -87,6 +110,33 @@ export function deriveFindingStatus(
     return disposition;
   }
   return 'active';
+}
+
+/**
+ * Dispositions that close a finding for counting (PR B2b): the customer
+ * decided it needs no action. Acknowledged is not here -- it records that
+ * someone has seen the finding, which still needs action. The row is kept and
+ * stays status 'active' (only a scan resolves it); this is a counting rule only.
+ */
+export const CLOSED_FINDING_DISPOSITIONS: readonly AccountFindingDisposition[] = ['dismissed', 'accepted_risk'];
+
+/**
+ * THE definition of an open account finding: status 'active' and a disposition
+ * that is not one of CLOSED_FINDING_DISPOSITIONS (none, or acknowledged). Each
+ * finding's is_open is this function; getOpenStats() counts with
+ * OPEN_FINDING_SQL, the same rule in SQL over the same constant.
+ */
+export function isOpenFinding(status: AccountFindingStatus, disposition: AccountFindingDisposition | null): boolean {
+  return status === 'active' && !(disposition !== null && CLOSED_FINDING_DISPOSITIONS.includes(disposition));
+}
+
+/**
+ * isOpenFinding() as a SQL condition on account_security_findings, for counts
+ * aggregated in the database. `$n` is bound to CLOSED_FINDING_DISPOSITIONS
+ * (openFindingSql returns the fragment for a given parameter number).
+ */
+export function openFindingSql(closedDispositionsParam: number): string {
+  return `status = 'active' AND (disposition IS NULL OR disposition <> ALL($${closedDispositionsParam}::text[]))`;
 }
 
 export class AccountSecurityFindingsRepository {
@@ -119,6 +169,7 @@ export class AccountSecurityFindingsRepository {
       evidence,
       derived_status: deriveFindingStatus(row.status, row.disposition),
       framework_mapping: getFrameworkMapping(evidence),
+      is_open: isOpenFinding(row.status, row.disposition ?? null),
     };
   }
 
@@ -403,22 +454,32 @@ export class AccountSecurityFindingsRepository {
          GROUP BY severity, category`,
         [organizationId]
       );
-
-      const bySeverity: Record<ComplianceSeverity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-      const byCategory: Record<AccountFindingCategory, number> = { networking: 0, iam: 0 };
-      let total = 0;
-
-      for (const row of result.rows) {
-        const count = parseInt(row.count, 10);
-        bySeverity[row.severity as ComplianceSeverity] += count;
-        byCategory[row.category as AccountFindingCategory] += count;
-        total += count;
-      }
-
-      return { total, bySeverity, byCategory };
+      return tallyStats(result.rows);
     };
 
     return client ? run(client) : this.withOrgClient(organizationId, run);
+  }
+
+  /**
+   * OPEN-finding counts by severity and category (PR B2b), for GET
+   * /api/security/account-findings/stats -- the Dashboard banner, tile and key
+   * findings card. Same shape as getStats(), aggregated in SQL with the same
+   * organization predicate, counting only open findings (openFindingSql, the
+   * rule behind each finding's is_open): dismissed and accepted-risk findings
+   * are in no count, Critical included. getStats() is unchanged for the risk
+   * score and the daily snapshot, which still count every active finding.
+   */
+  async getOpenStats(organizationId: string): Promise<AccountFindingStats> {
+    return this.withOrgClient(organizationId, async (client) => {
+      const result = await client.query(
+        `SELECT severity, category, COUNT(*) as count
+         FROM account_security_findings
+         WHERE organization_id = $1 AND ${openFindingSql(2)}
+         GROUP BY severity, category`,
+        [organizationId, CLOSED_FINDING_DISPOSITIONS]
+      );
+      return tallyStats(result.rows);
+    });
   }
 
   /**
