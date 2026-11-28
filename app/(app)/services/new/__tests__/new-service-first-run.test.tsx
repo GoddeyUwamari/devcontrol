@@ -53,6 +53,7 @@ vi.mock('@/components/ui/select', async () => {
   }
 })
 
+import * as pageModule from '../page'
 import NewServicePage from '../page'
 
 const TEAM_ID = '00000000-0000-4000-8000-0000000000a1'
@@ -179,6 +180,78 @@ describe('D2: Owner email defaults to the signed-in user and stays editable', ()
     await new Promise((r) => setTimeout(r, 20))
     expect((screen.getByLabelText(/Owner email/) as HTMLInputElement).value).toBe('typed@example.com')
   })
+
+  // Review N-3 (probe P3): the existing test above checks only the field's value.
+  it('an email that arrives after Name and Template makes the form submittable, and is what is sent', async () => {
+    create.mockResolvedValue({ id: 'svc-1' })
+    state.auth = { user: null, isLoading: true }
+    const view = mount()
+    fillRequired()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(submit()).toBeDisabled()
+
+    state.auth = { user: { email: 'late@example.com' }, isLoading: false }
+    view.rerenderPage()
+    await waitFor(() => expect(submit()).not.toBeDisabled())
+    expect(screen.queryByText('Must be a valid email address')).toBeNull()
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(submit())
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    expect(create.mock.calls[0][0].owner).toBe('late@example.com')
+  })
+})
+
+// Review N-1: a prefilled owner is checked with the form's own email rule as soon
+// as it is in the field. One the rule rejects (the backend's register check is
+// looser, so 'a@b.c' can be an account email) shows its error on Owner email and
+// opens More options; it never leaves Create disabled with no visible reason.
+describe('N-1: a prefilled owner the form rejects is shown, never a silent disabled Create', () => {
+  const REJECTED = 'a@b.c'
+
+  it.each([
+    ['known at the first render', false],
+    ['arriving after Name and Template', true],
+  ])('%s: the error is on Owner email, More options opens, Create stays disabled, and the value is kept', async (_label, late) => {
+    state.auth = late ? { user: null, isLoading: true } : { user: { email: REJECTED }, isLoading: false }
+    const view = mount()
+    fillRequired()
+    if (late) {
+      state.auth = { user: { email: REJECTED }, isLoading: false }
+      view.rerenderPage()
+    }
+
+    await waitFor(() => expect(region()).toBeVisible())
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+    const owner = screen.getByLabelText(/Owner email/) as HTMLInputElement
+    expect(owner.value).toBe(REJECTED)
+    const field = owner.closest('div')!
+    expect(within(field).getByText('Must be a valid email address')).toBeVisible()
+    expect(submit()).toBeDisabled()
+
+    // Fixing it is all it takes.
+    fireEvent.change(owner, { target: { value: 'owner@example.com' } })
+    await waitFor(() => expect(submit()).not.toBeDisabled())
+    expect(within(field).queryByText('Must be a valid email address')).toBeNull()
+  })
+
+  it('a valid email known at the first render shows no error and leaves More options collapsed', async () => {
+    mount()
+    fillRequired()
+    await waitFor(() => expect(submit()).not.toBeDisabled())
+    expect(screen.queryByText('Must be a valid email address')).toBeNull()
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    expect(region()).not.toBeVisible()
+  })
+
+  it('the check never overwrites what the user typed', async () => {
+    state.auth = { user: { email: REJECTED }, isLoading: false }
+    mount()
+    await waitFor(() => expect(region()).toBeVisible())
+    fireEvent.change(screen.getByLabelText(/Owner email/), { target: { value: 'typed@example.com' } })
+    fillRequired()
+    await waitFor(() => expect(submit()).not.toBeDisabled())
+    expect((screen.getByLabelText(/Owner email/) as HTMLInputElement).value).toBe('typed@example.com')
+  })
 })
 
 describe('D3: Template stays required, with today\'s choices', () => {
@@ -302,6 +375,12 @@ describe('D8: More options', () => {
     expect(region()).toBeVisible()
     expect((screen.getByLabelText(/Owner email/) as HTMLInputElement).value).toBe('')
   })
+})
+
+// Review N-4: an App Router page file may export only its page (plus route config,
+// none of which this page uses); the copy stays private to the page.
+it('the page module exports only its default page', () => {
+  expect(Object.keys(pageModule)).toEqual(['default'])
 })
 
 describe('the GitHub page\'s "Create a service ->" return path survives (no team detour)', () => {

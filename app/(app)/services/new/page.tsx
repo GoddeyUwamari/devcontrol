@@ -61,8 +61,8 @@ const NOTICE_LINK = 'font-semibold text-ink-accent underline'
 /** The Team select's "no team" choice (a Radix SelectItem cannot have an empty value). Never sent. */
 const NO_TEAM = 'no-team'
 
-/** Onboarding D2 / D4 / D8, founder-approved copy. */
-export const NEW_SERVICE_COPY = {
+/** Onboarding D2 / D4 / D8, founder-approved copy. Not exported: a Next page module exports only its page (review N-4). */
+const NEW_SERVICE_COPY = {
   moreOptions: 'More options',
   /** Shown under the toggle while More options is collapsed (founder fix round 1). */
   moreOptionsHint: 'Team, owner email (defaults to you), GitHub URL, description',
@@ -118,6 +118,7 @@ export default function NewServicePage() {
     register,
     handleSubmit,
     setValue,
+    trigger,
     watch,
     getFieldState,
     formState: { errors, isValid },
@@ -131,14 +132,22 @@ export default function NewServicePage() {
   const teamId = watch('teamId')
 
   // D2: the owner defaults to the signed-in user, once, and never over a value
-  // already typed (the user can arrive after the first render).
-  const ownerPrefilled = useRef(Boolean(userEmail))
+  // already typed (the user can arrive after the first render). Either way the
+  // default is validated as soon as it is in the field (review N-1): an account
+  // email the form's email rule rejects shows its error on Owner email, which
+  // opens More options, instead of a silently disabled Create.
+  const ownerDefaultedAtMount = useRef(Boolean(userEmail))
+  const ownerPrefilled = useRef(false)
   useEffect(() => {
     if (!userEmail || ownerPrefilled.current) return
     ownerPrefilled.current = true
+    if (ownerDefaultedAtMount.current) {
+      void trigger('owner')
+      return
+    }
     if (getFieldState('owner').isDirty) return
     setValue('owner', userEmail, { shouldValidate: true })
-  }, [userEmail, getFieldState, setValue])
+  }, [userEmail, getFieldState, setValue, trigger])
 
   // D8: "More options" starts collapsed. It opens on its own, and cannot be
   // collapsed, while a field inside it has an error or while there is no email
